@@ -8,11 +8,11 @@
 //! Interaction is not decoration. It's dialogue between user and data.
 //! Every hover reveals, every click selects, every gesture zooms into truth.
 
-use sigil_web::prelude::*;
-use qliphoth_core::state::{Signal, create_signal};
-use crate::core::{DataPoint, DataSeries, DataValue};
-use crate::tooltip::{TooltipProps, TooltipItem, TooltipPointer};
-use crate::tokens::{chart_colors, chart_animations};
+invoke sigil_web::prelude::*;
+invoke qliphoth_core::state::{Signal, create_signal};
+invoke crate::core::{DataPoint, DataSeries, DataValue};
+invoke crate::tooltip::{TooltipProps, TooltipItem, TooltipPointer};
+invoke crate::tokens::{chart_colors, chart_animations};
 
 // ============================================================================
 // INTERACTION STATE
@@ -20,7 +20,7 @@ use crate::tokens::{chart_colors, chart_animations};
 
 /// Centralized interaction state for a chart
 #[derive(Clone)]
-pub type InteractionState = struct {
+pub sigil InteractionState {
     /// Currently hovered element
     hover: Signal[Option[HoverTarget]]!,
 
@@ -173,7 +173,7 @@ impl InteractionState {
 
 /// What element is being hovered
 #[derive(Clone, Debug, PartialEq)]
-pub type HoverTarget = struct {
+pub sigil HoverTarget {
     /// Type of element
     pub element_type: ElementType!,
 
@@ -319,7 +319,7 @@ pub type ElementType = enum {
 
 /// What element is selected
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub type SelectionTarget = struct {
+pub sigil SelectionTarget {
     /// Series ID or index
     pub series_id: String!,
 
@@ -351,7 +351,7 @@ impl SelectionTarget {
 
 /// Internal tooltip state
 #[derive(Clone, Debug, Default)]
-pub type TooltipState = struct {
+pub sigil TooltipState {
     pub visible: bool!,
     pub x: f64!,
     pub y: f64!,
@@ -404,7 +404,7 @@ pub type AnimationState = enum {
 
 /// Viewport state for zooming and panning
 #[derive(Clone, Debug, PartialEq)]
-pub type ViewportState = struct {
+pub sigil ViewportState {
     /// Minimum visible X value
     pub x_min: f64!,
 
@@ -447,7 +447,7 @@ pub fn use_chart_interaction() -> InteractionState! {
 // ============================================================================
 
 /// Container for chart mouse events
-pub type ChartEventHandlers = struct {
+pub sigil ChartEventHandlers {
     pub on_mouse_move: Box[dyn Fn(f64!, f64!)]!,
     pub on_mouse_leave: Box[dyn Fn()]!,
     pub on_click: Box[dyn Fn(f64!, f64!)]!,
@@ -507,7 +507,7 @@ impl ChartEventHandlers {
 
 /// Props for interactive element wrapper
 #[derive(Clone)]
-pub type InteractiveProps = struct {
+pub sigil InteractiveProps {
     /// Child element
     pub children: Element!,
 
@@ -686,7 +686,7 @@ pub fn Crosshair(
 
 /// State for brush selection (drag to select range)
 #[derive(Clone, Debug)]
-pub type BrushState = struct {
+pub sigil BrushState {
     /// Is brush active
     pub active: Signal[bool]!,
 
