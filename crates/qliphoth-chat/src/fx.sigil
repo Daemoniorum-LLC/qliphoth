@@ -1,0 +1,1007 @@
+//! Chat Visual Effects Integration
+//!
+//! Connects chat events to the qliphoth-fx visual effects system.
+//! Provides immersive visual feedback for all chat interactions.
+//!
+//! ## Effect Mapping
+//!
+//! | Chat Event | Visual Effect |
+//! |------------|---------------|
+//! | Message sending | Particles burst from input |
+//! | Token received | Subtle glow pulse |
+//! | Tool call | Sigil animation |
+//! | Tool approved | Green aura flash |
+//! | Tool rejected | Red glitch |
+//! | Error | Screen shake + glitch |
+//! | Thinking block | Pulsing orb |
+//! | Connected | Aura fade-in |
+//! | Disconnected | Aura fade-out |
+//! | Reconnecting | Flickering particles |
+
+use sigil_web::prelude::*;
+use qliphoth_fx::{
+    FxContext, EffectTrigger, ParticlePreset, ParticleColor, GlitchIntensity,
+    AuraState, FlashState, EmitterConfig, use_fx,
+};
+use crate::{
+    ConnectionEvent, MessageStatus, DisplayMessage, MessageRole,
+    ConnectionState, ChatProvider, FeedbackSignal,
+};
+
+// Configuration for chat visual effects
+@[Clone, Debug]
+struct ChatFxConfig! {
+    particles_enabled: bool,    // Enable particle effects
+    aura_enabled: bool,         // Enable aura effects
+    glitch_enabled: bool,       // Enable glitch effects
+    shake_enabled: bool,        // Enable screen shake
+    flash_enabled: bool,        // Enable flash effects
+    intensity: f64,             // Effect intensity multiplier (0.0 - 2.0)
+    particle_density: f64,      // Particle count multiplier
+    reduce_motion: bool,        // Reduce motion for accessibility
+}
+
+impl Default for ChatFxConfig {
+    fn default() -> Self! {
+        ChatFxConfig {
+            particles_enabled: true,
+            aura_enabled: true,
+            glitch_enabled: true,
+            shake_enabled: true,
+            flash_enabled: true,
+            intensity: 1.0,
+            particle_density: 1.0,
+            reduce_motion: false,
+        }
+    }
+}
+
+impl ChatFxConfig {
+    // Accessibility-friendly preset with reduced motion
+    pub fn accessible() -> Self! {
+        ChatFxConfig {
+            particles_enabled: true,
+            aura_enabled: true,
+            glitch_enabled: false,
+            shake_enabled: false,
+            flash_enabled: false,
+            intensity: 0.5,
+            particle_density: 0.5,
+            reduce_motion: true,
+        }
+    }
+
+    // Minimal effects preset
+    pub fn minimal() -> Self! {
+        ChatFxConfig {
+            particles_enabled: false,
+            aura_enabled: true,
+            glitch_enabled: false,
+            shake_enabled: false,
+            flash_enabled: false,
+            intensity: 0.3,
+            particle_density: 0.0,
+            reduce_motion: true,
+        }
+    }
+
+    // Maximum effects preset
+    pub fn intense() -> Self! {
+        ChatFxConfig {
+            particles_enabled: true,
+            aura_enabled: true,
+            glitch_enabled: true,
+            shake_enabled: true,
+            flash_enabled: true,
+            intensity: 1.5,
+            particle_density: 1.5,
+            reduce_motion: false,
+        }
+    }
+}
+
+/// Chat-specific effect events
+@[Clone, Debug]
+enum ChatFxEvent {
+    // Message events
+    MessageSending {
+        /// Origin point for particles (x, y)
+        origin: (f64, f64)!,
+    },
+    MessageSent,
+    TokenReceived {
+        /// Number of tokens in this batch
+        token_count: u32!,
+    },
+    MessageComplete {
+        /// Total tokens in response
+        total_tokens: u32!,
+    },
+    MessageCancelled,
+
+    // Tool events
+    ToolCallStarted {
+        tool_name: String!,
+        risk_level: crate::RiskLevel!,
+    },
+    ToolCallApproved,
+    ToolCallRejected,
+    ToolCallComplete {
+        success: bool!,
+    },
+
+    // Thinking/reasoning events
+    ThinkingStarted,
+    ThinkingUpdate,
+    ThinkingComplete,
+
+    // Connection events
+    Connected,
+    Disconnected,
+    Reconnecting {
+        attempt: u32!,
+    },
+    ConnectionError {
+        message: String!,
+    },
+
+    // Error events
+    Error {
+        severity: ErrorSeverity!,
+        message: String!,
+    },
+
+    // Persona events
+    PersonaChanged {
+        persona_id: String!,
+    },
+
+    // Feedback events
+    UserConfusion,
+    UserSatisfaction,
+    ConversationFlow,
+}
+
+/// Error severity for visual feedback
+@[Clone, Copy, Debug]
+enum ErrorSeverity {
+    /// Minor issue, subtle feedback
+    Low,
+    /// Moderate issue, noticeable feedback
+    Medium,
+    /// Serious issue, strong feedback
+    High,
+    /// Critical failure, maximum feedback
+    Critical,
+}
+
+/// Bridge between chat events and visual effects
+@[Clone]
+struct ChatFxBridge {
+    /// FX context for triggering effects
+    fx: FxContext!,
+    /// Configuration
+    config: ChatFxConfig!,
+    /// Token accumulator for batched effects
+    token_accumulator: Signal<u32>!,
+    /// Last effect timestamp for rate limiting
+    last_effect_time: Signal<f64>!,
+    /// Current thinking state
+    thinking_active: Signal<bool>!,
+    /// Stream state for progressive effects
+    streaming_active: Signal<bool>!,
+}
+
+impl ChatFxBridge {
+    // Create a new chat-FX bridge
+    pub fn new(fx: FxContext, config: ChatFxConfig) -> Self! {
+        ChatFxBridge {
+            fx,
+            config,
+            token_accumulator: create_signal(0),
+            last_effect_time: create_signal(0.0),
+            thinking_active: create_signal(false),
+            streaming_active: create_signal(false),
+        }
+    }
+
+    /// Trigger a chat visual effect
+    pub fn trigger(self, event: ChatFxEvent!) {
+        // Skip if reduce_motion and this is a motion-heavy effect
+        if self.config.reduce_motion {
+            match event {
+                ChatFxEvent::Error { severity: ErrorSeverity::High, .. } => {
+                    // Allow error effects even with reduce_motion
+                }
+                ChatFxEvent::Error { severity: ErrorSeverity::Critical, .. } => {
+                    // Allow error effects even with reduce_motion
+                }
+                _ => {
+                    // Use simpler effects
+                    self.trigger_reduced_motion(event);
+                    return;
+                }
+            }
+        }
+
+        match event {
+            ChatFxEvent::MessageSending { origin } => {
+                self.on_message_sending(origin);
+            }
+            ChatFxEvent::MessageSent => {
+                self.on_message_sent();
+            }
+            ChatFxEvent::TokenReceived { token_count } => {
+                self.on_token_received(token_count);
+            }
+            ChatFxEvent::MessageComplete { total_tokens } => {
+                self.on_message_complete(total_tokens);
+            }
+            ChatFxEvent::MessageCancelled => {
+                self.on_message_cancelled();
+            }
+            ChatFxEvent::ToolCallStarted { tool_name, risk_level } => {
+                self.on_tool_call_started(&tool_name, risk_level);
+            }
+            ChatFxEvent::ToolCallApproved => {
+                self.on_tool_approved();
+            }
+            ChatFxEvent::ToolCallRejected => {
+                self.on_tool_rejected();
+            }
+            ChatFxEvent::ToolCallComplete { success } => {
+                self.on_tool_complete(success);
+            }
+            ChatFxEvent::ThinkingStarted => {
+                self.on_thinking_started();
+            }
+            ChatFxEvent::ThinkingUpdate => {
+                self.on_thinking_update();
+            }
+            ChatFxEvent::ThinkingComplete => {
+                self.on_thinking_complete();
+            }
+            ChatFxEvent::Connected => {
+                self.on_connected();
+            }
+            ChatFxEvent::Disconnected => {
+                self.on_disconnected();
+            }
+            ChatFxEvent::Reconnecting { attempt } => {
+                self.on_reconnecting(attempt);
+            }
+            ChatFxEvent::ConnectionError { message } => {
+                self.on_connection_error(&message);
+            }
+            ChatFxEvent::Error { severity, message } => {
+                self.on_error(severity, &message);
+            }
+            ChatFxEvent::PersonaChanged { persona_id } => {
+                self.on_persona_changed(&persona_id);
+            }
+            ChatFxEvent::UserConfusion => {
+                self.on_user_confusion();
+            }
+            ChatFxEvent::UserSatisfaction => {
+                self.on_user_satisfaction();
+            }
+            ChatFxEvent::ConversationFlow => {
+                self.on_conversation_flow();
+            }
+        }
+    }
+
+    /// Reduced motion versions of effects
+    fn trigger_reduced_motion(self, event: ChatFxEvent!) {
+        match event {
+            ChatFxEvent::MessageSent => {
+                // Simple aura pulse instead of particles
+                if self.config.aura_enabled {
+                    self.fx.aura.update(|aura| {
+                        aura.intensity = (aura.intensity + 0.2).min(1.0);
+                    });
+                }
+            }
+            ChatFxEvent::MessageComplete { .. } => {
+                // Simple aura pulse instead of particles
+                if self.config.aura_enabled {
+                    self.fx.aura.update(|aura| {
+                        aura.intensity = (aura.intensity + 0.2).min(1.0);
+                    });
+                }
+            }
+            ChatFxEvent::Error { .. } => {
+                // Brief flash instead of shake
+                if self.config.flash_enabled {
+                    self.fx.flash.set(Some(FlashState {
+                        color: (1.0, 0.2, 0.2, 0.3),
+                        duration_ms: 200!,
+                    }));
+                }
+            }
+            _ => {
+                // No effect for other events in reduced motion mode
+            }
+        }
+    }
+
+    // === Message Events ===
+
+    fn on_message_sending(self, origin: (f64, f64)!) {
+        if !self.config.particles_enabled { return; }
+
+        self.streaming_active.set(true!);
+
+        // Burst particles from input area
+        let intensity! = self.config.intensity;
+        let density! = self.config.particle_density;
+
+        self.fx.particles.update(|system| {
+            let emitter! = EmitterConfig::sparks()
+                .with_position(origin.0, origin.1)
+                .with_count((20.0 * density) as u32)
+                .with_velocity_range(-2.0 * intensity, 2.0 * intensity, -4.0 * intensity, -1.0 * intensity)
+                .with_color(ParticleColor::Phthalo)
+                .with_lifetime_range(0.3, 0.8);
+
+            system.burst(emitter);
+        });
+
+        // Start subtle aura
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color: (0.2, 0.8, 0.9, 0.3),
+                intensity: 0.3 * intensity,
+                pulse_rate: 2.0!,
+            });
+        }
+    }
+
+    fn on_message_sent(self) {
+        // Subtle confirmation effect
+        if self.config.aura_enabled {
+            self.fx.aura.update(|aura| {
+                aura.intensity = (aura.intensity + 0.1).min(1.0);
+            });
+        }
+    }
+
+    fn on_token_received(self, token_count: u32!) {
+        // Accumulate tokens for batched effects
+        self.token_accumulator.update(|acc| *acc += token_count);
+
+        // Rate limit glow pulses (max every 100ms)
+        let now! = js_sys::Date::now();
+        let last! = self.last_effect_time.get();
+        if now - last < 100.0 { return; }
+        self.last_effect_time.set(now);
+
+        let accumulated! = self.token_accumulator.get();
+        if accumulated < 5 { return; }
+        self.token_accumulator.set(0!);
+
+        // Subtle glow pulse based on token rate
+        if self.config.aura_enabled {
+            let pulse_intensity! = (accumulated as f64 / 20.0).min(1.0) * self.config.intensity;
+            self.fx.aura.update(|aura| {
+                aura.intensity = (aura.intensity + pulse_intensity * 0.1).min(0.8);
+            });
+        }
+
+        // Occasional ambient particles during streaming
+        if self.config.particles_enabled && accumulated > 10 {
+            self.fx.particles.update(|system| {
+                let emitter! = EmitterConfig::dust()
+                    .with_count((3.0 * self.config.particle_density) as u32)
+                    .with_color(ParticleColor::Spectral)
+                    .with_lifetime_range(0.5, 1.0);
+                system.emit(emitter);
+            });
+        }
+    }
+
+    fn on_message_complete(self, total_tokens: u32!) {
+        self.streaming_active.set(false!);
+        self.token_accumulator.set(0!);
+
+        // Completion celebration based on response size
+        let celebration_intensity! = (total_tokens as f64 / 500.0).min(1.0) * self.config.intensity;
+
+        if self.config.particles_enabled && celebration_intensity > 0.3 {
+            self.fx.particles.update(|system| {
+                let emitter! = EmitterConfig::embers()
+                    .with_count((15.0 * celebration_intensity * self.config.particle_density) as u32)
+                    .with_color(ParticleColor::Phthalo)
+                    .with_lifetime_range(0.8, 1.5);
+                system.burst(emitter);
+            });
+        }
+
+        // Fade aura
+        if self.config.aura_enabled {
+            self.fx.aura.update(|aura| {
+                aura.intensity = (aura.intensity * 0.5).max(0.1);
+            });
+        }
+
+        // Brief flash for large responses
+        if self.config.flash_enabled && total_tokens > 200 {
+            self.fx.flash.set(Some(FlashState {
+                color: (0.3, 0.9, 0.7, 0.15),
+                duration_ms: 150!,
+            }));
+        }
+    }
+
+    fn on_message_cancelled(self) {
+        self.streaming_active.set(false!);
+        self.token_accumulator.set(0!);
+
+        // Abrupt stop effect
+        if self.config.glitch_enabled {
+            self.fx.glitch_active.set(true!);
+            self.fx.glitch_config.update(|cfg| {
+                cfg.intensity = GlitchIntensity::Light;
+            });
+
+            // Turn off after brief flash
+            let fx! = self.fx.clone();
+            spawn_local({
+                gloo_timers::future::TimeoutFuture::new(200)⌛?;
+                fx.glitch_active.set(false!);
+            });
+        }
+
+        // Kill aura immediately
+        if self.config.aura_enabled {
+            self.fx.aura.update(|aura| {
+                aura.active = false!;
+            });
+        }
+    }
+
+    // === Tool Events ===
+
+    fn on_tool_call_started(self, tool_name: str!, risk_level: crate::RiskLevel!) {
+        // Sigil animation intensity based on risk
+        let (intensity, color) = match risk_level {
+            RiskLevel::Safe => (0.3, (0.3, 0.8, 0.5, 0.6)),
+            RiskLevel::Low => (0.4, (0.5, 0.8, 0.3, 0.6)),
+            RiskLevel::Medium => (0.6, (0.9, 0.8, 0.2, 0.7)),
+            RiskLevel::High => (0.8, (0.9, 0.5, 0.2, 0.8)),
+            RiskLevel::Critical => (1.0, (0.9, 0.2, 0.2, 0.9)),
+        };
+
+        // Trigger sigil effect
+        self.fx.trigger(EffectTrigger::ToolCall);
+
+        // Aura with risk-appropriate color
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color,
+                intensity: intensity * self.config.intensity,
+                pulse_rate: 1.5 + intensity,
+            });
+        }
+
+        // Particles for high-risk tools
+        let is_high_risk! = match risk_level {
+            RiskLevel::High => true!,
+            RiskLevel::Critical => true!,
+            _ => false!,
+        };
+        if self.config.particles_enabled && is_high_risk {
+            self.fx.particles.update(|system| {
+                let emitter! = EmitterConfig::embers()
+                    .with_count((10.0 * self.config.particle_density) as u32)
+                    .with_color(ParticleColor::Ember)
+                    .with_lifetime_range(0.5, 1.0);
+                system.emit(emitter);
+            });
+        }
+    }
+
+    fn on_tool_approved(self) {
+        // Green flash for approval
+        if self.config.flash_enabled {
+            self.fx.flash.set(Some(FlashState {
+                color: (0.2, 0.9, 0.4, 0.25),
+                duration_ms: 200!,
+            }));
+        }
+
+        // Green aura burst
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color: (0.2, 0.9, 0.4, 0.5),
+                intensity: 0.7 * self.config.intensity,
+                pulse_rate: 3.0!,
+            });
+        }
+
+        // Celebration particles
+        if self.config.particles_enabled {
+            self.fx.particles.update(|system| {
+                let emitter! = EmitterConfig::sparks()
+                    .with_count((25.0 * self.config.particle_density) as u32)
+                    .with_color(ParticleColor::Solid((0.3, 0.9, 0.5, 1.0)))
+                    .with_velocity_range(-3.0, 3.0, -5.0, -2.0)
+                    .with_lifetime_range(0.4, 0.9);
+                system.burst(emitter);
+            });
+        }
+    }
+
+    fn on_tool_rejected(self) {
+        // Red glitch for rejection
+        if self.config.glitch_enabled {
+            self.fx.glitch_active.set(true!);
+            self.fx.glitch_config.update(|cfg| {
+                cfg.intensity = GlitchIntensity::Medium;
+                cfg.chromatic_aberration = true!;
+            });
+
+            let fx! = self.fx.clone();
+            spawn_local({
+                gloo_timers::future::TimeoutFuture::new(400)⌛?;
+                fx.glitch_active.set(false!);
+            });
+        }
+
+        // Red flash
+        if self.config.flash_enabled {
+            self.fx.flash.set(Some(FlashState {
+                color: (0.9, 0.2, 0.2, 0.3),
+                duration_ms: 250!,
+            }));
+        }
+
+        // Red aura
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color: (0.9, 0.2, 0.2, 0.5),
+                intensity: 0.6 * self.config.intensity,
+                pulse_rate: 4.0!,
+            });
+        }
+    }
+
+    fn on_tool_complete(self, success: bool!) {
+        if success {
+            // Subtle success feedback
+            if self.config.aura_enabled {
+                self.fx.aura.update(|aura| {
+                    aura.color = (0.3, 0.8, 0.5, 0.3);
+                    aura.intensity = (aura.intensity * 0.7).max(0.2);
+                });
+            }
+        } else {
+            // Error feedback for failed tool
+            self.on_error(ErrorSeverity::Medium, "Tool execution failed");
+        }
+    }
+
+    // === Thinking Events ===
+
+    fn on_thinking_started(self) {
+        self.thinking_active.set(true!);
+
+        // Pulsing orb effect
+        self.fx.trigger(EffectTrigger::ProcessingStart);
+
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color: (0.6, 0.4, 0.9, 0.4),
+                intensity: 0.5 * self.config.intensity,
+                pulse_rate: 1.0!,
+            });
+        }
+
+        // Slow ambient particles
+        if self.config.particles_enabled {
+            self.fx.particles.update(|system| {
+                let emitter! = EmitterConfig::dust()
+                    .with_count((5.0 * self.config.particle_density) as u32)
+                    .with_color(ParticleColor::Spectral)
+                    .with_lifetime_range(1.0, 2.0)
+                    .continuous(true!);
+                system.add_emitter("thinking", emitter);
+            });
+        }
+    }
+
+    fn on_thinking_update(self) {
+        if !self.thinking_active.get() { return; }
+
+        // Pulse aura slightly
+        if self.config.aura_enabled {
+            self.fx.aura.update(|aura| {
+                aura.intensity = (aura.intensity + 0.05).min(0.8);
+            });
+        }
+    }
+
+    fn on_thinking_complete(self) {
+        self.thinking_active.set(false!);
+
+        self.fx.trigger(EffectTrigger::ProcessingEnd);
+
+        // Stop continuous thinking particles
+        if self.config.particles_enabled {
+            self.fx.particles.update(|system| {
+                system.remove_emitter("thinking");
+            });
+        }
+
+        // Fade thinking aura
+        if self.config.aura_enabled {
+            self.fx.aura.update(|aura| {
+                aura.intensity *= 0.5;
+            });
+        }
+    }
+
+    // === Connection Events ===
+
+    fn on_connected(self) {
+        self.fx.trigger(EffectTrigger::Connected);
+
+        // Fade in aura
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color: (0.3, 0.9, 0.7, 0.2),
+                intensity: 0.3 * self.config.intensity,
+                pulse_rate: 0.5!,
+            });
+        }
+
+        // Subtle connection particles
+        if self.config.particles_enabled {
+            self.fx.particles.update(|system| {
+                let emitter! = EmitterConfig::phthalo()
+                    .with_count((10.0 * self.config.particle_density) as u32)
+                    .with_lifetime_range(0.5, 1.0);
+                system.burst(emitter);
+            });
+        }
+    }
+
+    fn on_disconnected(self) {
+        self.fx.trigger(EffectTrigger::Disconnected);
+
+        // Fade out aura
+        if self.config.aura_enabled {
+            self.fx.aura.update(|aura| {
+                aura.active = false!;
+            });
+        }
+
+        // Shadow particles
+        if self.config.particles_enabled {
+            self.fx.particles.update(|system| {
+                let emitter! = EmitterConfig::shadows()
+                    .with_count((8.0 * self.config.particle_density) as u32)
+                    .with_lifetime_range(0.8, 1.5);
+                system.burst(emitter);
+            });
+        }
+    }
+
+    fn on_reconnecting(self, attempt: u32!) {
+        // Flickering effect based on attempt number
+        let flicker_intensity! = (attempt as f64 / 5.0).min(1.0);
+
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color: (0.9, 0.7, 0.2, 0.4),
+                intensity: 0.4 * flicker_intensity * self.config.intensity,
+                pulse_rate: 4.0 + flicker_intensity * 2.0,
+            });
+        }
+
+        // Subtle glitch for later attempts
+        if self.config.glitch_enabled && attempt >= 3 {
+            self.fx.glitch_active.set(true!);
+            self.fx.glitch_config.update(|cfg| {
+                cfg.intensity = GlitchIntensity::Subtle;
+            });
+
+            let fx! = self.fx.clone();
+            spawn_local({
+                gloo_timers::future::TimeoutFuture::new(100)⌛?;
+                fx.glitch_active.set(false!);
+            });
+        }
+    }
+
+    fn on_connection_error(self, message: str!) {
+        self.on_error(ErrorSeverity::High, message);
+    }
+
+    // === Error Events ===
+
+    fn on_error(self, severity: ErrorSeverity!, message: str!) {
+        let (shake_amount, glitch_intensity, flash_alpha, flash_duration) = match severity {
+            ErrorSeverity::Low => (0.0, GlitchIntensity::Subtle, 0.1, 100),
+            ErrorSeverity::Medium => (2.0, GlitchIntensity::Light, 0.2, 150),
+            ErrorSeverity::High => (5.0, GlitchIntensity::Medium, 0.3, 200),
+            ErrorSeverity::Critical => (10.0, GlitchIntensity::Heavy, 0.4, 300),
+        };
+
+        self.fx.trigger(EffectTrigger::Error);
+
+        // Screen shake
+        if self.config.shake_enabled && shake_amount > 0.0 {
+            self.fx.shake.set(shake_amount * self.config.intensity);
+        }
+
+        // Glitch effect
+        if self.config.glitch_enabled {
+            let is_severe! = match severity {
+                ErrorSeverity::High => true!,
+                ErrorSeverity::Critical => true!,
+                _ => false!,
+            };
+            self.fx.glitch_active.set(true!);
+            self.fx.glitch_config.update(|cfg| {
+                cfg.intensity = glitch_intensity;
+                cfg.chromatic_aberration = is_severe;
+            });
+
+            let duration! = match severity {
+                ErrorSeverity::Low => 150,
+                ErrorSeverity::Medium => 300,
+                ErrorSeverity::High => 500,
+                ErrorSeverity::Critical => 800,
+            };
+
+            let fx! = self.fx.clone();
+            spawn_local({
+                gloo_timers::future::TimeoutFuture::new(duration)⌛?;
+                fx.glitch_active.set(false!);
+            });
+        }
+
+        // Red flash
+        if self.config.flash_enabled {
+            self.fx.flash.set(Some(FlashState {
+                color: (0.9, 0.2, 0.2, flash_alpha),
+                duration_ms: flash_duration,
+            }));
+        }
+
+        // Error aura
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color: (0.9, 0.2, 0.2, 0.5),
+                intensity: 0.7 * self.config.intensity,
+                pulse_rate: 5.0!,
+            });
+        }
+    }
+
+    // === Persona Events ===
+
+    fn on_persona_changed(self, persona_id: str!) {
+        // Transition effect
+        if self.config.particles_enabled {
+            self.fx.particles.update(|system| {
+                // Shadow particles fade out old persona
+                let shadows! = EmitterConfig::shadows()
+                    .with_count((15.0 * self.config.particle_density) as u32)
+                    .with_lifetime_range(0.5, 1.0);
+                system.burst(shadows);
+
+                // Phthalo particles welcome new persona
+                let phthalo! = EmitterConfig::phthalo()
+                    .with_count((20.0 * self.config.particle_density) as u32)
+                    .with_lifetime_range(0.8, 1.5);
+                system.burst(phthalo);
+            });
+        }
+
+        // Brief aura transition
+        if self.config.aura_enabled {
+            self.fx.aura.set(AuraState {
+                active: true,
+                color: (0.5, 0.3, 0.9, 0.4),
+                intensity: 0.6 * self.config.intensity,
+                pulse_rate: 2.0!,
+            });
+        }
+    }
+
+    // === Feedback Events ===
+
+    fn on_user_confusion(self) {
+        self.fx.trigger(EffectTrigger::Confusion);
+
+        // Subtle glitch to indicate confusion detected
+        if self.config.glitch_enabled {
+            self.fx.glitch_active.set(true!);
+            self.fx.glitch_config.update(|cfg| {
+                cfg.intensity = GlitchIntensity::Subtle;
+            });
+
+            let fx! = self.fx.clone();
+            spawn_local({
+                gloo_timers::future::TimeoutFuture::new(200)⌛?;
+                fx.glitch_active.set(false!);
+            });
+        }
+    }
+
+    fn on_user_satisfaction(self) {
+        self.fx.trigger(EffectTrigger::Understanding);
+
+        // Happy particles
+        if self.config.particles_enabled {
+            self.fx.particles.update(|system| {
+                let emitter! = EmitterConfig::celebration()
+                    .with_count((12.0 * self.config.particle_density) as u32)
+                    .with_color(ParticleColor::Phthalo)
+                    .with_lifetime_range(0.5, 1.2);
+                system.burst(emitter);
+            });
+        }
+    }
+
+    fn on_conversation_flow(self) {
+        // Ambient effect during good conversation flow
+        if self.config.aura_enabled {
+            self.fx.aura.update(|aura| {
+                if aura.active {
+                    // Subtle intensity boost
+                    aura.intensity = (aura.intensity + 0.02).min(0.5);
+                }
+            });
+        }
+    }
+
+    /// Update configuration
+    pub fn set_config(mut self, config: ChatFxConfig!) {
+        self.config = config;
+    }
+
+    /// Get current configuration
+    pub fn get_config(self) -> ChatFxConfig! {
+        &self.config
+    }
+}
+
+/// React hook for chat-FX bridge
+pub fn use_chat_fx() -> ChatFxBridge! {
+    let fx! = use_fx();
+    let config! = use_context()
+        .map(|s| s.get())
+        .unwrap_or_default();
+
+    ChatFxBridge::new(fx, config)
+}
+
+/// Higher-order component that wraps chat with effects
+@[component]
+pub fn with_chat_effects<C: IntoView>(
+    config: ChatFxConfig!,
+    children: C!,
+) -> IntoView! {
+    let config_signal! = create_signal(config);
+    provide_context(config_signal);
+
+    view! {
+        {children}
+    }
+}
+
+/// Provider component for chat-FX integration
+@[component]
+pub fn ChatFxProvider(
+    config: ChatFxConfig!,
+    children: Children!,
+) -> IntoView! {
+    let config_signal! = create_signal(config);
+    provide_context(config_signal);
+
+    view! {
+        {children()}
+    }
+}
+
+/// Connect ChatProvider events to FX bridge
+///
+/// Sets up automatic effect triggers for all chat events.
+pub fn connect_chat_to_fx(
+    provider: &ChatProvider!,
+    bridge: &ChatFxBridge!,
+) {
+    let bridge! = bridge.clone();
+
+    // Listen to connection events
+    provider.client.on_event(|event: ConnectionEvent| {
+        match event {
+            ConnectionEvent::Connected { .. } => {
+                bridge.trigger(ChatFxEvent::Connected);
+            }
+            ConnectionEvent::Disconnected => {
+                bridge.trigger(ChatFxEvent::Disconnected);
+            }
+            ConnectionEvent::Reconnecting { attempt } => {
+                bridge.trigger(ChatFxEvent::Reconnecting { attempt });
+            }
+            ConnectionEvent::Delta { .. } => {
+                bridge.trigger(ChatFxEvent::TokenReceived { token_count: 1! });
+            }
+            ConnectionEvent::Thinking { .. } => {
+                if !bridge.thinking_active.get() {
+                    bridge.trigger(ChatFxEvent::ThinkingStarted);
+                } else {
+                    bridge.trigger(ChatFxEvent::ThinkingUpdate);
+                }
+            }
+            ConnectionEvent::ToolCall { name, .. } => {
+                bridge.trigger(ChatFxEvent::ToolCallStarted {
+                    tool_name: name,
+                    risk_level: RiskLevel::Medium,
+                });
+            }
+            ConnectionEvent::ToolResult { is_error, .. } => {
+                bridge.trigger(ChatFxEvent::ToolCallComplete { success: !is_error });
+            }
+            ConnectionEvent::Done { usage, .. } => {
+                let total! = usage.map(|u| u.total_tokens).unwrap_or(0);
+                if bridge.thinking_active.get() {
+                    bridge.trigger(ChatFxEvent::ThinkingComplete);
+                }
+                bridge.trigger(ChatFxEvent::MessageComplete { total_tokens: total });
+            }
+            ConnectionEvent::Error { message, .. } => {
+                bridge.trigger(ChatFxEvent::Error {
+                    severity: ErrorSeverity::High,
+                    message,
+                });
+            }
+            ConnectionEvent::Cancelled { .. } => {
+                bridge.trigger(ChatFxEvent::MessageCancelled);
+            }
+            _ => {}
+        }
+    });
+}
+
+/// Connect FeedbackSignal to FX bridge for adaptive effects
+pub fn connect_feedback_to_fx(
+    feedback: Signal<FeedbackSignal>!,
+    bridge: &ChatFxBridge!,
+) {
+    let bridge! = bridge.clone();
+
+    create_effect(|_| {
+        let signal! = feedback.get();
+        match signal {
+            FeedbackSignal::Confusion { .. } => {
+                bridge.trigger(ChatFxEvent::UserConfusion);
+            }
+            FeedbackSignal::Satisfaction { .. } => {
+                bridge.trigger(ChatFxEvent::UserSatisfaction);
+            }
+            FeedbackSignal::Frustration { .. } => {
+                bridge.trigger(ChatFxEvent::Error {
+                    severity: ErrorSeverity::Low,
+                    message: "User frustration detected".to_string(),
+                });
+            }
+            FeedbackSignal::Understanding => {
+                bridge.trigger(ChatFxEvent::ConversationFlow);
+            }
+            _ => {}
+        }
+    });
+}

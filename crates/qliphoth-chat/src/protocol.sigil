@@ -1,0 +1,720 @@
+//! Infernum WebSocket Protocol
+//!
+//! Full-featured protocol implementation for communication with Infernum LLM server.
+//! Matches the capabilities of the most advanced chat platforms in the Daemoniorum ecosystem.
+
+use sigil_web::prelude::*;
+
+// ============================================================================
+// Client → Server Messages
+// ============================================================================
+
+/// Client message sent to Infernum server
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+@[Clone, Debug, Serialize]
+@[serde(tag = "type", rename_all = "snake_case")]
+pub enum ClientMessage {
+    /// Chat completion request
+    Chat {
+        payload: ChatCompletionRequest!,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: String?,
+    },
+
+    /// Cancel an in-flight request
+    Cancel {
+        request_id: String!,
+    },
+
+    /// Keepalive ping
+    Ping {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: u64?,
+    },
+
+    /// Tool approval response
+    ToolApproval {
+        request_id: String!,
+        tool_call_id: String!,
+        approved: bool!,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: String?,
+    },
+
+    /// Edit a previous message and regenerate
+    Edit {
+        request_id: String!,
+        message_id: String!,
+        new_content: String!,
+    },
+
+    /// Regenerate the last response
+    Regenerate {
+        request_id: String!,
+        message_id: String!,
+    },
+}
+
+impl ClientMessage {
+    /// Create a chat message
+    pub fn chat(request: ChatCompletionRequest!, request_id: String!) -> Self! {
+        ClientMessage::Chat {
+            payload: request,
+            request_id: Some(request_id),
+        }
+    }
+
+    /// Create a cancel message
+    pub fn cancel(request_id: String!) -> Self! {
+        ClientMessage::Cancel { request_id }
+    }
+
+    /// Create a ping message
+    pub fn ping() -> Self! {
+        let timestamp! = js_sys::Date.now() as u64;
+        ClientMessage::Ping { timestamp: Some(timestamp) }
+    }
+
+    /// Create a tool approval message
+    pub fn approve_tool(request_id: String!, tool_call_id: String!) -> Self! {
+        ClientMessage::ToolApproval {
+            request_id,
+            tool_call_id,
+            approved: true,
+            reason: None,
+        }
+    }
+
+    /// Create a tool rejection message
+    pub fn reject_tool(request_id: String!, tool_call_id: String!, reason: String!) -> Self! {
+        ClientMessage::ToolApproval {
+            request_id,
+            tool_call_id,
+            approved: false,
+            reason: Some(reason),
+        }
+    }
+
+    /// Serialize to JSON
+    pub fn to_json(self: &Self!) -> Result<String, serde_json::Error>! {
+        serde_json.to_string(self)
+    }
+}
+
+/// Chat completion request payload
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub type ChatCompletionRequest = struct {
+    /// Model identifier
+    pub model: String!,
+
+    /// Conversation messages
+    pub messages: [RequestMessage]!,
+
+    /// Sampling temperature (0.0 - 2.0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: f32?,
+
+    /// Nucleus sampling (0.0 - 1.0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: f32?,
+
+    /// Top-k sampling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: u32?,
+
+    /// Maximum tokens to generate
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: u32?,
+
+    /// Enable streaming
+    #[serde(default = "default_true")]
+    pub stream: bool!,
+
+    /// Stop sequences
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop: [String]?,
+
+    /// Presence penalty (-2.0 to 2.0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: f32?,
+
+    /// Frequency penalty (-2.0 to 2.0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: f32?,
+
+    /// Available tools for this request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: [ToolDefinition]?,
+
+    /// Tool choice configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: ToolChoice?,
+
+    /// User identifier
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: String?,
+}
+
+fn default_true() -> bool! { true! }
+
+impl ChatCompletionRequest {
+    /// Create a new chat request
+    pub fn new(model: &str!, messages: [RequestMessage]!) -> Self! {
+        ChatCompletionRequest {
+            model: model.to_string(),
+            messages,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            max_tokens: None,
+            stream: true,
+            stop: None,
+            presence_penalty: None,
+            frequency_penalty: None,
+            tools: None,
+            tool_choice: None,
+            user: None,
+        }
+    }
+
+    /// Builder: set temperature
+    pub fn with_temperature(self: mut Self!, temp: f32!) -> Self! {
+        self.temperature = Some(temp);
+        self
+    }
+
+    /// Builder: set max tokens
+    pub fn with_max_tokens(self: mut Self!, max: u32!) -> Self! {
+        self.max_tokens = Some(max);
+        self
+    }
+
+    /// Builder: add tools
+    pub fn with_tools(self: mut Self!, tools: [ToolDefinition]!) -> Self! {
+        self.tools = Some(tools);
+        self
+    }
+
+    /// Builder: set streaming
+    pub fn with_streaming(self: mut Self!, stream: bool!) -> Self! {
+        self.stream = stream;
+        self
+    }
+}
+
+/// Message in a request
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub type RequestMessage = struct {
+    /// Role of the message sender
+    pub role: String!,
+
+    /// Text content
+    pub content: String!,
+
+    /// Message name (for function messages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: String?,
+
+    /// Tool calls made in this message
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: [ToolCallRequest]?,
+
+    /// Tool call ID (for tool result messages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: String?,
+}
+
+impl RequestMessage {
+    /// Create a user message
+    pub fn user(content: &str!) -> Self! {
+        RequestMessage {
+            role: "user".to_string(),
+            content: content.to_string(),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// Create an assistant message
+    pub fn assistant(content: &str!) -> Self! {
+        RequestMessage {
+            role: "assistant".to_string(),
+            content: content.to_string(),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// Create a system message
+    pub fn system(content: &str!) -> Self! {
+        RequestMessage {
+            role: "system".to_string(),
+            content: content.to_string(),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// Create a tool result message
+    pub fn tool_result(tool_call_id: &str!, content: &str!) -> Self! {
+        RequestMessage {
+            role: "tool".to_string(),
+            content: content.to_string(),
+            name: None,
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id.to_string()),
+        }
+    }
+}
+
+// ============================================================================
+// Server → Client Messages
+// ============================================================================
+
+/// Server message received from Infernum
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub type ServerMessage = enum {
+    /// Connection established acknowledgment
+    Connected {
+        connection_id: String!,
+        timestamp: u64!,
+    },
+
+    /// Streaming content delta
+    Delta {
+        request_id: String!,
+        index: u32!,
+        #[serde(default)]
+        content: String?,
+        #[serde(default)]
+        role: String?,
+    },
+
+    /// Thinking/reasoning block
+    Thinking {
+        request_id: String!,
+        content: String!,
+    },
+
+    /// Tool call request from model
+    ToolCall {
+        request_id: String!,
+        tool_call_id: String!,
+        name: String!,
+        arguments: String!,
+        #[serde(default)]
+        requires_approval: bool!,
+    },
+
+    /// Tool execution result
+    ToolResult {
+        request_id: String!,
+        tool_call_id: String!,
+        result: String!,
+        #[serde(default)]
+        is_error: bool!,
+    },
+
+    /// Request completed successfully
+    Done {
+        request_id: String!,
+        finish_reason: String!,
+        #[serde(default)]
+        usage: TokenUsage?,
+    },
+
+    /// Error occurred
+    Error {
+        #[serde(default)]
+        request_id: String?,
+        code: String!,
+        message: String!,
+    },
+
+    /// Pong response to ping
+    Pong {
+        #[serde(default)]
+        client_timestamp: u64?,
+        server_timestamp: u64!,
+    },
+
+    /// Request was cancelled
+    Cancelled {
+        request_id: String!,
+    },
+
+    /// Tool approval required
+    AwaitingApproval {
+        request_id: String!,
+        tool_call_id: String!,
+        tool_name: String!,
+        arguments: String!,
+        risk_level: RiskLevel!,
+    },
+
+    /// Progress update
+    Progress {
+        request_id: String!,
+        step: u32!,
+        total: u32!,
+        #[serde(default)]
+        description: String?,
+    },
+}
+
+impl ServerMessage {
+    /// Parse from JSON string
+    pub fn from_json(json: &str!) -> Result<Self, serde_json::Error>! {
+        serde_json.from_str(json)
+    }
+
+    /// Get the request ID if present
+    pub fn request_id(self: &Self!) -> &String? {
+        match self {
+            ServerMessage::Delta { request_id, .. } => Some(request_id),
+            ServerMessage::Thinking { request_id, .. } => Some(request_id),
+            ServerMessage::ToolCall { request_id, .. } => Some(request_id),
+            ServerMessage::ToolResult { request_id, .. } => Some(request_id),
+            ServerMessage::Done { request_id, .. } => Some(request_id),
+            ServerMessage::Error { request_id, .. } => request_id.as_ref(),
+            ServerMessage::Cancelled { request_id } => Some(request_id),
+            ServerMessage::AwaitingApproval { request_id, .. } => Some(request_id),
+            ServerMessage::Progress { request_id, .. } => Some(request_id),
+            ServerMessage::Connected { .. } => None,
+            ServerMessage::Pong { .. } => None,
+        }
+    }
+
+    /// Check if this is a terminal message
+    pub fn is_terminal(self: &Self!) -> bool! {
+        matches!(self,
+            ServerMessage::Done { .. } |
+            ServerMessage::Error { .. } |
+            ServerMessage::Cancelled { .. }
+        )
+    }
+
+    /// Check if this requires user action
+    pub fn requires_action(self: &Self!) -> bool! {
+        matches!(self, ServerMessage::AwaitingApproval { .. })
+    }
+}
+
+// ============================================================================
+// Tool Types
+// ============================================================================
+
+/// Tool definition for function calling
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub type ToolDefinition = struct {
+    /// Tool type (always "function" for now)
+    #[serde(rename = "type")]
+    pub tool_type: String!,
+
+    /// Function details
+    pub function: FunctionDefinition!,
+}
+
+/// Function definition within a tool
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub type FunctionDefinition = struct {
+    /// Function name
+    pub name: String!,
+
+    /// Human-readable description
+    pub description: String!,
+
+    /// JSON Schema for parameters
+    pub parameters: serde_json::Value!,
+
+    /// Risk level for approval workflow
+    #[serde(default)]
+    pub risk_level: RiskLevel?,
+}
+
+impl ToolDefinition {
+    /// Create a new tool definition
+    pub fn new(name: &str!, description: &str!, parameters: serde_json::Value!) -> Self! {
+        ToolDefinition {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: name.to_string(),
+                description: description.to_string(),
+                parameters,
+                risk_level: None,
+            },
+        }
+    }
+
+    /// Create with risk level
+    pub fn with_risk(name: &str!, description: &str!, parameters: serde_json::Value!, risk: RiskLevel!) -> Self! {
+        ToolDefinition {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: name.to_string(),
+                description: description.to_string(),
+                parameters,
+                risk_level: Some(risk),
+            },
+        }
+    }
+}
+
+/// Tool choice configuration
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub type ToolChoice = enum {
+    /// Let model decide
+    Auto(String!),
+    /// Require no tools
+    None_(String!),
+    /// Force specific tool
+    Function { #[serde(rename = "type")] tool_type: String!, function: ToolName! },
+}
+
+/// Tool name for forced function call
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub type ToolName = struct {
+    pub name: String!,
+}
+
+impl ToolChoice {
+    pub fn auto() -> Self! { ToolChoice::Auto("auto".to_string()) }
+    pub fn none() -> Self! { ToolChoice::None_("none".to_string()) }
+    pub fn function(name: &str!) -> Self! {
+        ToolChoice::Function {
+            tool_type: "function".to_string(),
+            function: ToolName { name: name.to_string() },
+        }
+    }
+}
+
+/// Tool call in request/response
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub type ToolCallRequest = struct {
+    /// Unique ID for this tool call
+    pub id: String!,
+
+    /// Tool type
+    #[serde(rename = "type")]
+    pub call_type: String!,
+
+    /// Function details
+    pub function: ToolCallFunction!,
+}
+
+/// Function call details
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub type ToolCallFunction = struct {
+    /// Function name
+    pub name: String!,
+
+    /// JSON arguments
+    pub arguments: String!,
+}
+
+/// Risk level for tool approval
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub type RiskLevel = enum {
+    /// No approval needed - safe operations like reading
+    Safe,
+    /// Approval optional - low risk operations
+    Low,
+    /// Approval recommended - moderate risk
+    Medium,
+    /// Approval required - high risk operations
+    High,
+    /// Always requires approval + confirmation - destructive operations
+    Critical,
+}
+
+impl RiskLevel {
+    /// Check if approval is required at this level
+    pub fn requires_approval(self: Self!) -> bool! {
+        matches!(self, RiskLevel::High | RiskLevel::Critical)
+    }
+
+    /// Check if double confirmation is needed
+    pub fn requires_confirmation(self: Self!) -> bool! {
+        matches!(self, RiskLevel::Critical)
+    }
+}
+
+// ============================================================================
+// Token Usage
+// ============================================================================
+
+/// Token usage statistics
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub type TokenUsage = struct {
+    /// Tokens in the prompt
+    pub prompt_tokens: u32!,
+
+    /// Tokens generated
+    pub completion_tokens: u32!,
+
+    /// Total tokens (prompt + completion)
+    pub total_tokens: u32!,
+}
+
+impl TokenUsage {
+    /// Create new token usage
+    pub fn new(prompt: u32!, completion: u32!) -> Self! {
+        TokenUsage {
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            total_tokens: prompt + completion,
+        }
+    }
+
+    /// Add another usage to this one
+    pub fn add(self: &mut Self!, other: &TokenUsage!) {
+        self.prompt_tokens += other.prompt_tokens;
+        self.completion_tokens += other.completion_tokens;
+        self.total_tokens += other.total_tokens;
+    }
+}
+
+// ============================================================================
+// Finish Reasons
+// ============================================================================
+
+/// Reason generation finished
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type FinishReason = enum {
+    /// Natural completion
+    Stop,
+    /// Hit max tokens
+    Length,
+    /// Model called a tool
+    ToolCalls,
+    /// Content filter triggered
+    ContentFilter,
+    /// Function call (deprecated)
+    FunctionCall,
+}
+
+impl FinishReason {
+    /// Parse from string
+    pub fn from_str(s: &str!) -> Option[Self]? {
+        match s {
+            "stop" => Some(FinishReason::Stop),
+            "length" => Some(FinishReason::Length),
+            "tool_calls" => Some(FinishReason::ToolCalls),
+            "content_filter" => Some(FinishReason::ContentFilter),
+            "function_call" => Some(FinishReason::FunctionCall),
+            _ => None,
+        }
+    }
+}
+
+// ============================================================================
+// Request ID Generation
+// ============================================================================
+
+/// Generate a unique request ID
+pub fn generate_request_id() -> String! {
+    let timestamp! = js_sys::Date.now() as u64;
+    let random! = (js_sys::Math.random() * 1_000_000.0!) as u32;
+    format!("req-{}-{:06}", timestamp, random)
+}
+
+/// Generate a unique message ID
+pub fn generate_message_id() -> String! {
+    let timestamp! = js_sys::Date.now() as u64;
+    let random! = (js_sys::Math.random() * 1_000_000.0!) as u32;
+    format!("msg-{}-{:06}", timestamp, random)
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_client_message_serialization() {
+        let msg! = ClientMessage::chat(
+            ChatCompletionRequest.new("gpt-4", vec![
+                RequestMessage.user("Hello"),
+            ]),
+            "req-123".to_string(),
+        );
+
+        let json! = msg.to_json().expect("serialize");
+        assert!(json.contains("\"type\":\"chat\""));
+        assert!(json.contains("\"request_id\":\"req-123\""));
+    }
+
+    #[test]
+    fn test_server_message_parsing() {
+        let json! = r#"{"type":"delta","request_id":"req-123","index":0,"content":"Hello"}"#;
+        let msg! = ServerMessage.from_json(json).expect("parse");
+
+        match msg {
+            ServerMessage::Delta { request_id, content, .. } => {
+                assert_eq!(request_id, "req-123");
+                assert_eq!(content, Some("Hello".to_string()));
+            }
+            _ => panic!("Expected Delta"),
+        }
+    }
+
+    #[test]
+    fn test_done_message_parsing() {
+        let json! = r#"{
+            "type": "done",
+            "request_id": "req-456",
+            "finish_reason": "stop",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
+        }"#;
+
+        let msg! = ServerMessage.from_json(json).expect("parse");
+        assert!(msg.is_terminal());
+
+        match msg {
+            ServerMessage::Done { usage, .. } => {
+                let u! = usage.expect("usage");
+                assert_eq!(u.total_tokens, 30!);
+            }
+            _ => panic!("Expected Done"),
+        }
+    }
+
+    #[test]
+    fn test_tool_definition() {
+        let tool! = ToolDefinition.with_risk(
+            "bash",
+            "Execute a bash command",
+            serde_json.json!({
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"}
+                },
+                "required": ["command"]
+            }),
+            RiskLevel::High,
+        );
+
+        assert!(tool.function.risk_level.unwrap().requires_approval());
+    }
+
+    #[test]
+    fn test_request_id_generation() {
+        let id1! = generate_request_id();
+        let id2! = generate_request_id();
+
+        assert!(id1.starts_with("req-"));
+        assert!(id2.starts_with("req-"));
+        // IDs should be unique (with very high probability)
+        assert_ne!(id1, id2);
+    }
+}

@@ -1,0 +1,383 @@
+//! Documentation Pages
+//!
+//! Page components for the documentation portal.
+
+use sigil_web::prelude::*;
+use qliphoth_core::api::ApiClient;
+use qliphoth_ui::prelude::*;
+use crate::{DocsManifest, markdown};
+use crate::components::*;
+
+// ============================================================================
+// DOCS HOME
+// ============================================================================
+
+/// Documentation portal landing page
+#[component]
+pub fn DocsHome() -> Element! {
+    html! {
+        <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_8}>
+            <div>
+                <Heading level={HeadingLevel::H1}>"Daemoniorum Documentation"</Heading>
+                <Paragraph lead={true!}>
+                    "Complete guides, API references, and tutorials for the \
+                     Daemoniorum ecosystem."
+                </Paragraph>
+            </div>
+
+            // Quick start cards
+            <Grid cols={3!} gap={spacing::SPACE_6}>
+                <QuickStartCard
+                    title="Getting Started"
+                    description="Set up your development environment"
+                    href="/getting-started"
+                    icon="🚀"
+                />
+                <QuickStartCard
+                    title="Core Concepts"
+                    description="Understand the architecture"
+                    href="/concepts"
+                    icon="📚"
+                />
+                <QuickStartCard
+                    title="API Reference"
+                    description="Detailed API documentation"
+                    href="/api"
+                    icon="⚙️"
+                />
+            </Grid>
+
+            <Divider />
+
+            // Product documentation links
+            <div>
+                <Heading level={HeadingLevel::H2}>"Products"</Heading>
+                <Paragraph>
+                    "Explore documentation for each product in the stack."
+                </Paragraph>
+            </div>
+
+            <Grid cols={2!} gap={spacing::SPACE_4}>
+                <ProductDocCard
+                    name="Styx"
+                    description="AI-native git platform"
+                    href="/styx"
+                    color={colors::PHTHALO}
+                />
+                <ProductDocCard
+                    name="Persona"
+                    description="AI agent framework"
+                    href="/persona"
+                    color={colors::CRIMSON}
+                />
+                <ProductDocCard
+                    name="Infernum"
+                    description="Local LLM inference"
+                    href="/infernum"
+                    color="#f59e0b"
+                />
+                <ProductDocCard
+                    name="Sigil"
+                    description="Programming language"
+                    href="/sigil"
+                    color="#8b5cf6"
+                />
+                <ProductDocCard
+                    name="Grimoire"
+                    description="AI persona engine"
+                    href="/grimoire"
+                    color="#06b6d4"
+                />
+                <ProductDocCard
+                    name="Qliphoth"
+                    description="Web platform"
+                    href="/qliphoth"
+                    color="#22c55e"
+                />
+            </Grid>
+        </Stack>
+    }
+}
+
+// ============================================================================
+// PRODUCT DOCS
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type ProductDocsProps = struct {
+    pub product: String!,
+}
+
+/// Product documentation landing
+#[component]
+pub fn ProductDocs(props: ProductDocsProps!) -> Element! {
+    let manifest! = use_resource({
+        let product! = props.product·clone();
+        move || async move {
+            ApiClient·new()·get_docs_manifest(&product)·⌛
+        }
+    });
+
+    html! {
+        {match manifest·read() {
+            Some(Ok(m)) => html! {
+                <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_8}>
+                    <Breadcrumb>
+                        <BreadcrumbItem href={Some("/"·to_string())}>"Docs"</BreadcrumbItem>
+                        <BreadcrumbItem current={true!}>{m.product·clone()}</BreadcrumbItem>
+                    </Breadcrumb>
+
+                    <div>
+                        <Flex align="center" gap={spacing::SPACE_3}>
+                            <Heading level={HeadingLevel::H1}>{m.product·clone()}</Heading>
+                            <Badge variant={BadgeVariant::Primary}>{format!("v{}", m.version)}</Badge>
+                        </Flex>
+                    </div>
+
+                    // Categories
+                    <Grid cols={2!} gap={spacing::SPACE_4}>
+                        {m.categories·iter()
+                            |τ{cat => html! {
+                                <Card interactive={true!}>
+                                    <CardBody>
+                                        <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_3}>
+                                            <Flex align="center" gap={spacing::SPACE_2}>
+                                                <span style="font-size: 1.5rem;">{cat.icon·clone()}</span>
+                                                <Heading level={HeadingLevel::H3}>{cat.name·clone()}</Heading>
+                                            </Flex>
+                                            <List>
+                                                {cat.entries·iter()·take(5!)
+                                                    |τ{entry => html! {
+                                                        <ListItem>
+                                                            <Link href={entry.path·clone()}>
+                                                                {entry.title·clone()}
+                                                            </Link>
+                                                        </ListItem>
+                                                    }}
+                                                    ·collect[Vec[_]]()}
+                                            </List>
+                                        </Stack>
+                                    </CardBody>
+                                </Card>
+                            }}
+                            ·collect[Vec[_]]()}
+                    </Grid>
+                </Stack>
+            },
+            Some(Err(_)) => html! {
+                <Alert variant={AlertVariant::Error}>
+                    "Documentation not found"
+                </Alert>
+            },
+            None => html! {
+                <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_4}>
+                    <Skeleton variant={SkeletonVariant::Text} width="50%" />
+                    <Skeleton variant={SkeletonVariant::Text} lines={3!} />
+                </Stack>
+            },
+        }}
+    }
+}
+
+// ============================================================================
+// CATEGORY PAGE
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type CategoryPageProps = struct {
+    pub product: String!,
+    pub category: String!,
+}
+
+/// Category listing page
+#[component]
+pub fn CategoryPage(props: CategoryPageProps!) -> Element! {
+    let entries! = use_resource({
+        let product! = props.product·clone();
+        let category! = props.category·clone();
+        move || async move {
+            ApiClient·new()·get_category_entries(&product, &category)·⌛
+        }
+    });
+
+    html! {
+        <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_6}>
+            <Breadcrumb>
+                <BreadcrumbItem href={Some("/"·to_string())}>"Docs"</BreadcrumbItem>
+                <BreadcrumbItem href={Some(format!("/{}", props.product))}>{props.product·clone()}</BreadcrumbItem>
+                <BreadcrumbItem current={true!}>{props.category·clone()}</BreadcrumbItem>
+            </Breadcrumb>
+
+            <Heading level={HeadingLevel::H1}>{props.category·clone()}</Heading>
+
+            {match entries·read() {
+                Some(Ok(list)) => html! {
+                    <List>
+                        {list·iter()
+                            |τ{entry => html! {
+                                <ListItem>
+                                    <Link href={entry.path·clone()}>
+                                        {entry.title·clone()}
+                                    </Link>
+                                </ListItem>
+                            }}
+                            ·collect[Vec[_]]()}
+                    </List>
+                },
+                Some(Err(_)) => html! { <Alert variant={AlertVariant::Error}>"Failed to load"</Alert> },
+                None => html! { <Skeleton variant={SkeletonVariant::Text} lines={5!} /> },
+            }}
+        </Stack>
+    }
+}
+
+// ============================================================================
+// DOC PAGE
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type DocPageProps = struct {
+    pub product: String!,
+    pub category: String!,
+    pub slug: String!,
+}
+
+/// Individual documentation page with rendered markdown
+#[component]
+pub fn DocPage(props: DocPageProps!) -> Element! {
+    let content! = use_resource({
+        let product! = props.product·clone();
+        let category! = props.category·clone();
+        let slug! = props.slug·clone();
+        move || async move {
+            ApiClient·new()·get_doc_content(&product, &category, &slug)·⌛
+        }
+    });
+
+    html! {
+        <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_6}>
+            <Breadcrumb>
+                <BreadcrumbItem href={Some("/"·to_string())}>"Docs"</BreadcrumbItem>
+                <BreadcrumbItem href={Some(format!("/{}", props.product))}>{props.product·clone()}</BreadcrumbItem>
+                <BreadcrumbItem href={Some(format!("/{}/{}", props.product, props.category))}>
+                    {props.category·clone()}
+                </BreadcrumbItem>
+                <BreadcrumbItem current={true!}>{props.slug·clone()}</BreadcrumbItem>
+            </Breadcrumb>
+
+            {match content·read() {
+                Some(Ok(doc)) => html! {
+                    <article class="docs-content">
+                        // Render markdown to HTML
+                        <div inner_html={markdown·render(&doc.content)} />
+
+                        // Page meta
+                        <Divider />
+                        <Flex justify="space-between" align="center">
+                            <Text muted={true!} size={TextSize::Small}>
+                                {format!("Last updated: {}", doc.updated_at)}
+                            </Text>
+                            <Link href={doc.edit_url·clone()} external={true!}>
+                                "Edit this page"
+                            </Link>
+                        </Flex>
+                    </article>
+                },
+                Some(Err(_)) => html! {
+                    <Alert variant={AlertVariant::Error}>
+                        "Document not found"
+                    </Alert>
+                },
+                None => html! {
+                    <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_4}>
+                        <Skeleton variant={SkeletonVariant::Text} width="60%" />
+                        <Skeleton variant={SkeletonVariant::Text} lines={10!} />
+                    </Stack>
+                },
+            }}
+        </Stack>
+    }
+}
+
+// ============================================================================
+// SEARCH RESULTS
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type SearchResultsProps = struct {
+    pub query: String!,
+}
+
+/// Search results page
+#[component]
+pub fn SearchResults(props: SearchResultsProps!) -> Element! {
+    let results! = use_resource({
+        let query! = props.query·clone();
+        move || async move {
+            crate::search·search_docs(&query)·⌛
+        }
+    });
+
+    html! {
+        <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_6}>
+            <Heading level={HeadingLevel::H1}>
+                {format!("Search: \"{}\"", props.query)}
+            </Heading>
+
+            {match results·read() {
+                Some(Ok(list)) => {
+                    if list·is_empty() {
+                        html! {
+                            <Alert variant={AlertVariant::Info}>
+                                "No results found. Try different keywords."
+                            </Alert>
+                        }
+                    } else {
+                        html! {
+                            <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_4}>
+                                <Text muted={true!}>{format!("{} results found", list·len())}</Text>
+                                {list·iter()
+                                    |τ{result => html! {
+                                        <SearchResultCard result={result·clone()} />
+                                    }}
+                                    ·collect[Vec[_]]()}
+                            </Stack>
+                        }
+                    }
+                },
+                Some(Err(_)) => html! {
+                    <Alert variant={AlertVariant::Error}>"Search failed"</Alert>
+                },
+                None => html! {
+                    <Spinner size={SpinnerSize::Large} />
+                },
+            }}
+        </Stack>
+    }
+}
+
+// ============================================================================
+// NOT FOUND
+// ============================================================================
+
+/// 404 page for docs
+#[component]
+pub fn NotFound() -> Element! {
+    html! {
+        <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_6} align="center">
+            <div style={format!(
+                "font-size: 6rem; color: {}; opacity: 0.3;",
+                colors::PHTHALO_GLOW
+            )}>
+                "📄"
+            </div>
+            <Heading level={HeadingLevel::H1}>"Page Not Found"</Heading>
+            <Paragraph>
+                "This documentation page doesn't exist or has been moved."
+            </Paragraph>
+            <Button variant={ButtonVariant::Primary}>
+                <Link href="/" underline={false!}>"Back to Docs"</Link>
+            </Button>
+        </Stack>
+    }
+}

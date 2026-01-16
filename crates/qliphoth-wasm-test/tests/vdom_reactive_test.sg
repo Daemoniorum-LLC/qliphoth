@@ -1,0 +1,45 @@
+// VDOM Reactive Updates Test
+// Demonstrates signal-driven VDOM updates
+
+fn build_counter_ui(count_value: i64) -> i32 {
+    let div = vdom::create_vnode("div");
+    let text = vdom::create_text_vnode(f"Count: {count_value}");
+    vdom::append_vnode_child(div, text);
+    div
+}
+
+pub fn main() -> i64 {
+    console::log_str("=== VDOM Reactive Test ===");
+
+    // Create a counter signal
+    let count = signal::create(0);
+    console::log_str("Created counter signal");
+
+    // Initial render
+    let value0 = signal::get(count);
+    let old_vdom = build_counter_ui(value0);
+    let container = vdom::mount_vnode(old_vdom, "#app");
+    console::log_str("Initial render complete");
+
+    // Simulate state change
+    console::log_str("Incrementing counter...");
+    signal::set(count, 1);
+
+    // Re-render and diff
+    let value1 = signal::get(count);
+    let new_vdom = build_counter_ui(value1);
+    console::log_str("Re-rendered VDOM");
+
+    vdom::diff_and_patch(old_vdom, new_vdom, container);
+    console::log_str("Applied patch");
+
+    // Another update
+    console::log_str("Incrementing counter again...");
+    signal::set(count, 2);
+    let value2 = signal::get(count);
+    let newer_vdom = build_counter_ui(value2);
+    vdom::diff_and_patch(new_vdom, newer_vdom, container);
+    console::log_str("Applied second patch");
+
+    0
+}

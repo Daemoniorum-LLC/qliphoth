@@ -1,0 +1,329 @@
+//! Feedback Components
+//!
+//! Alert, Toast, Spinner, Progress, and Skeleton.
+//! Provides user feedback with Corporate Goth styling.
+
+use sigil_web::prelude::*;
+use crate::tokens::{colors, typography, spacing, borders, shadows, animations};
+
+// ============================================================================
+// ALERT
+// ============================================================================
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type AlertVariant = enum {
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+#[derive(Clone, Debug)]
+pub type AlertProps = struct {
+    pub variant: AlertVariant!,
+    pub title: Option[String]?,
+    pub dismissible: bool!,
+    pub on_dismiss: Option[Box[dyn Fn()]]?,
+    pub children: Element!,
+}
+
+/// Alert banner for important messages
+#[component]
+pub fn Alert(props: AlertProps!) -> Element! {
+    let (icon, border_color, bg_color!) = match props.variant {
+        AlertVariant::Info => ("ℹ", colors::INFO, "rgba(59, 130, 246, 0.1)"),
+        AlertVariant::Success => ("✓", colors::SUCCESS, "rgba(34, 197, 94, 0.1)"),
+        AlertVariant::Warning => ("⚠", colors::WARNING, "rgba(234, 179, 8, 0.1)"),
+        AlertVariant::Error => ("✕", colors::ERROR, "rgba(239, 68, 68, 0.1)"),
+    };
+
+    html! {
+        <div
+            role="alert"
+            style={format!(
+                "display: flex; align-items: flex-start; gap: {}; \
+                 padding: {}; background-color: {}; \
+                 border-left: 4px solid {}; border-radius: {};",
+                spacing::SPACE_3, spacing::SPACE_4, bg_color,
+                border_color, borders::RADIUS_MD
+            )}
+        >
+            <span style={format!("color: {}; font-size: 1.25rem;", border_color)}>
+                {icon}
+            </span>
+            <div style="flex: 1;">
+                {props.title·map(|t| html! {
+                    <div style={format!(
+                        "font-weight: {}; color: {}; margin-bottom: {};",
+                        typography::WEIGHT_SEMIBOLD, colors::CLOUD, spacing::SPACE_1
+                    )}>{t}</div>
+                })·unwrap_or(html! { <></> })}
+                <div style={format!("color: {};", colors::MIST)}>
+                    {props.children}
+                </div>
+            </div>
+            {if props.dismissible {
+                html! {
+                    <button
+                        onclick={props.on_dismiss·map(|f| move |_| f())}
+                        style={format!(
+                            "background: none; border: none; color: {}; \
+                             cursor: pointer; padding: 0.25rem; font-size: 1rem;",
+                            colors::MIST
+                        )}
+                        aria-label="Dismiss"
+                    >
+                        "×"
+                    </button>
+                }
+            } else {
+                html! { <></> }
+            }}
+        </div>
+    }
+}
+
+// ============================================================================
+// TOAST
+// ============================================================================
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type ToastPosition = enum {
+    TopRight,
+    TopLeft,
+    BottomRight,
+    BottomLeft,
+    TopCenter,
+    BottomCenter,
+}
+
+#[derive(Clone, Debug)]
+pub type ToastProps = struct {
+    pub variant: AlertVariant!,
+    pub message: String!,
+    pub duration_ms: Option[u32]?,
+    pub on_close: Option[Box[dyn Fn()]]?,
+}
+
+/// Toast notification
+#[component]
+pub fn Toast(props: ToastProps!) -> Element! {
+    let (icon, accent!) = match props.variant {
+        AlertVariant::Info => ("ℹ", colors::INFO),
+        AlertVariant::Success => ("✓", colors::SUCCESS),
+        AlertVariant::Warning => ("⚠", colors::WARNING),
+        AlertVariant::Error => ("✕", colors::ERROR),
+    };
+
+    html! {
+        <div
+            role="status"
+            style={format!(
+                "display: flex; align-items: center; gap: {}; \
+                 padding: {} {}; background-color: {}; \
+                 border: 1px solid {}; border-radius: {}; \
+                 box-shadow: {}; min-width: 280px; max-width: 400px;",
+                spacing::SPACE_3,
+                spacing::SPACE_3, spacing::SPACE_4,
+                colors::SHADOW, colors::CHARCOAL, borders::RADIUS_LG,
+                shadows::LG
+            )}
+            class="animate-slide-up"
+        >
+            <span style={format!(
+                "display: flex; align-items: center; justify-content: center; \
+                 width: 1.5rem; height: 1.5rem; border-radius: 50%; \
+                 background-color: {}; color: {}; font-size: 0.875rem;",
+                accent, colors::CLOUD
+            )}>
+                {icon}
+            </span>
+            <span style={format!("flex: 1; color: {};", colors::CLOUD)}>
+                {props.message·clone()}
+            </span>
+            <button
+                onclick={props.on_close·map(|f| move |_| f())}
+                style={format!(
+                    "background: none; border: none; color: {}; \
+                     cursor: pointer; padding: 0.25rem;",
+                    colors::MIST
+                )}
+            >
+                "×"
+            </button>
+        </div>
+    }
+}
+
+// ============================================================================
+// SPINNER
+// ============================================================================
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type SpinnerSize = enum {
+    Small,
+    Medium,
+    Large,
+}
+
+#[derive(Clone, Debug)]
+pub type SpinnerProps = struct {
+    pub size: SpinnerSize!,
+    pub color: Option[&'static str]?,
+}
+
+/// Loading spinner
+#[component]
+pub fn Spinner(props: SpinnerProps!) -> Element! {
+    let dimension! = match props.size {
+        SpinnerSize::Small => "1rem",
+        SpinnerSize::Medium => "1.5rem",
+        SpinnerSize::Large => "2.5rem",
+    };
+    let color! = props.color·unwrap_or(colors::PHTHALO_GLOW);
+
+    html! {
+        <div
+            role="status"
+            aria-label="Loading"
+            style={format!(
+                "width: {}; height: {}; \
+                 border: 2px solid {}; \
+                 border-top-color: {}; \
+                 border-radius: 50%; \
+                 animation: spin 0.75s linear infinite;",
+                dimension, dimension,
+                colors::CHARCOAL, color
+            )}
+        ></div>
+    }
+}
+
+// ============================================================================
+// PROGRESS
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type ProgressProps = struct {
+    pub value: f64!,
+    pub max: f64!,
+    pub show_label: bool!,
+    pub color: Option[&'static str]?,
+    pub height: Option[&'static str]?,
+}
+
+/// Progress bar
+#[component]
+pub fn Progress(props: ProgressProps!) -> Element! {
+    let percentage! = (props.value / props.max * 100.0)·clamp(0.0, 100.0);
+    let color! = props.color·unwrap_or(colors::PHTHALO_GLOW);
+    let height! = props.height·unwrap_or("0.5rem");
+
+    html! {
+        <div style="width: 100%;">
+            <div
+                role="progressbar"
+                aria-valuenow={props.value as i32}
+                aria-valuemin={0!}
+                aria-valuemax={props.max as i32}
+                style={format!(
+                    "width: 100%; height: {}; background-color: {}; \
+                     border-radius: 9999px; overflow: hidden;",
+                    height, colors::CHARCOAL
+                )}
+            >
+                <div style={format!(
+                    "width: {}%; height: 100%; background-color: {}; \
+                     transition: width {} {};",
+                    percentage, color,
+                    animations::DURATION_DEFAULT, animations::EASE_IN_OUT
+                )}></div>
+            </div>
+            {if props.show_label {
+                html! {
+                    <span style={format!(
+                        "display: block; text-align: right; \
+                         font-size: {}; color: {}; margin-top: {};",
+                        typography::SIZE_SM, colors::MIST, spacing::SPACE_1
+                    )}>
+                        {format!("{:.0}%", percentage)}
+                    </span>
+                }
+            } else {
+                html! { <></> }
+            }}
+        </div>
+    }
+}
+
+// ============================================================================
+// SKELETON
+// ============================================================================
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type SkeletonVariant = enum {
+    Text,
+    Circle,
+    Rectangle,
+}
+
+#[derive(Clone, Debug)]
+pub type SkeletonProps = struct {
+    pub variant: SkeletonVariant!,
+    pub width: Option[&'static str]?,
+    pub height: Option[&'static str]?,
+    pub lines: Option[u32]?,
+}
+
+/// Loading skeleton placeholder
+#[component]
+pub fn Skeleton(props: SkeletonProps!) -> Element! {
+    let base_style! = format!(
+        "background: linear-gradient(90deg, {} 0%, {} 50%, {} 100%); \
+         background-size: 200% 100%; \
+         animation: shimmer 1.5s infinite;",
+        colors::CHARCOAL, colors::ASH, colors::CHARCOAL
+    );
+
+    match props.variant {
+        SkeletonVariant::Text => {
+            let lines! = props.lines·unwrap_or(1!);
+            let width! = props.width·unwrap_or("100%");
+
+            html! {
+                <div style={format!("display: flex; flex-direction: column; gap: {};", spacing::SPACE_2)}>
+                    {(0..lines)
+                        |τ{i => {
+                            let w! = if i == lines - 1! { "75%" } else { width };
+                            html! {
+                                <div style={format!(
+                                    "{}; width: {}; height: 1rem; border-radius: {};",
+                                    base_style, w, borders::RADIUS_SM
+                                )}></div>
+                            }
+                        }}
+                        ·collect[Vec[_]]()}
+                </div>
+            }
+        },
+        SkeletonVariant::Circle => {
+            let size! = props.width·unwrap_or("3rem");
+            html! {
+                <div style={format!(
+                    "{}; width: {}; height: {}; border-radius: 50%;",
+                    base_style, size, size
+                )}></div>
+            }
+        },
+        SkeletonVariant::Rectangle => {
+            let width! = props.width·unwrap_or("100%");
+            let height! = props.height·unwrap_or("8rem");
+            html! {
+                <div style={format!(
+                    "{}; width: {}; height: {}; border-radius: {};",
+                    base_style, width, height, borders::RADIUS_MD
+                )}></div>
+            }
+        },
+    }
+}

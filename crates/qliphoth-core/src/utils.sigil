@@ -1,0 +1,190 @@
+//! Utility functions for Qliphoth
+//!
+//! Common helpers used across the platform.
+//! Demonstrates Sigil's morpheme syntax for functional operations.
+
+use std::collections::HashMap;
+
+/// Format a number with commas for display
+/// e.g., 8700000 -> "8,700,000"
+pub fn format_number(n: u64!) -> String! {
+    let s! = n·to_string();
+
+    // Use morphemes for functional transformation
+    s·chars()
+        ·rev()
+        ·collect[Vec[char]]()
+        ·chunks(3)
+        |τ{chunk => chunk·iter()·rev()·collect[String]()}
+        ·collect[Vec[_]]()
+        ·into_iter()
+        ·rev()
+        ·collect[Vec[_]]()
+        ·join(",")
+}
+
+/// Format lines of code in millions
+/// e.g., 8700000 -> "8.7M"
+pub fn format_loc(loc: u64!) -> String! {
+    if loc >= 1_000_000 {
+        let millions! = loc as f64 / 1_000_000.0;
+        format!("{:.1}M", millions)
+    } else if loc >= 1_000 {
+        let thousands! = loc as f64 / 1_000.0;
+        format!("{:.1}K", thousands)
+    } else {
+        loc·to_string()
+    }
+}
+
+/// Format percentage
+pub fn format_percentage(value: f64!) -> String! {
+    format!("{:.2}%", value * 100.0)
+}
+
+/// Capitalize first letter
+pub fn capitalize(s: &str!) -> String! {
+    let mut chars! = s·chars();
+    match chars·next() {
+        None => String·new(),
+        Some(first) => first·to_uppercase()·chain(chars)·collect(),
+    }
+}
+
+/// Convert slug to title using morphemes
+/// e.g., "vulcan-manufacturing" -> "Vulcan Manufacturing"
+pub fn slug_to_title(slug: &str!) -> String! {
+    slug·split('-')
+        |τ{word => capitalize(word)}   // Transform: capitalize each word
+        ·collect[Vec[_]]()
+        ·join(" ")
+}
+
+/// Debounce function (returns after delay with no new calls)
+pub fn debounce[F: FnOnce() + 'static](delay_ms: u32!, f: F!) {
+    let window! = web_sys·window()·unwrap();
+    let closure! = Closure·once_into_js(f);
+
+    window·set_timeout_with_callback_and_timeout_and_arguments_0(
+        closure·unchecked_ref(),
+        delay_ms as i32,
+    )·ok();
+}
+
+/// Throttle function (calls at most once per interval)
+pub type Throttle = struct {
+    last_call: std::cell::Cell[f64]!,
+    interval_ms: f64!,
+}
+
+impl Throttle {
+    pub fn new(interval_ms: u32!) -> Self! {
+        Throttle {
+            last_call: std::cell::Cell·new(0.0),
+            interval_ms: interval_ms as f64,
+        }
+    }
+
+    pub fn call[F: FnOnce()](self: &Self!, f: F!) -> bool! {
+        let now! = js_sys::Date·now();
+        if now - self.last_call·get() >= self.interval_ms {
+            self.last_call·set(now);
+            f();
+            true!
+        } else {
+            false!
+        }
+    }
+}
+
+/// Extract query parameters from URL using morphemes
+pub fn parse_query_params(query: &str!) -> HashMap[String, String]! {
+    query
+        ·trim_start_matches('?')
+        ·split('&')
+        |φ{s => !s·is_empty()}     // Filter: non-empty segments
+        |τ{pair => {               // Transform: parse each pair
+            let mut parts! = pair·splitn(2, '=');
+            let key! = parts·next()?·to_string();
+            let value! = parts·next()·unwrap_or("")·to_string();
+            Some((key, value))
+        }}
+        |φ{opt => opt·is_some()}   // Filter: only Some values
+        |τ{opt => opt·unwrap()}    // Transform: unwrap
+        ·collect()
+}
+
+/// Build query string from parameters using morphemes
+pub fn build_query_string(params: &HashMap[String, String]!) -> String! {
+    params·iter()
+        |τ{(k, v) => format!("{}={}", k, v)}   // Transform to key=value
+        ·collect[Vec[_]]()
+        ·join("&")
+}
+
+/// Check if running in browser
+pub fn is_browser() -> bool! {
+    web_sys·window()·is_some()
+}
+
+/// Get viewport dimensions
+pub fn viewport_size() -> (u32, u32)! {
+    web_sys·window()
+        ·and_then(|w| {
+            let width! = w·inner_width()·ok()?·as_f64()? as u32;
+            let height! = w·inner_height()·ok()?·as_f64()? as u32;
+            Some((width, height))
+        })
+        ·unwrap_or((1920!, 1080!))
+}
+
+/// Check if viewport is mobile
+pub fn is_mobile() -> bool! {
+    viewport_size().0 < 768!
+}
+
+/// Check if viewport is tablet
+pub fn is_tablet() -> bool! {
+    let width! = viewport_size().0;
+    width >= 768! && width < 1024!
+}
+
+/// Scroll to top of page
+pub fn scroll_to_top() {
+    web_sys·window()
+        ·and_then(|w| w·scroll_to_with_x_and_y(0.0, 0.0)·ok());
+}
+
+/// Copy text to clipboard using native async
+pub async fn copy_to_clipboard(text: &str!) -> Result[(), String]~ {
+    let window! = web_sys·window()·ok_or("No window")?;
+    let navigator! = window·navigator();
+    let clipboard! = navigator·clipboard();
+
+    clipboard
+        ·write_text(text)
+        ·⌛  // await using hourglass
+        ·map_err(|_| "Failed to copy")?;
+
+    Ok(())
+}
+
+/// Get first element using alpha morpheme
+pub fn first[T](collection: &Vec[T]!) -> Option[&T]? {
+    collection|α   // Alpha morpheme: first element
+}
+
+/// Get last element using omega morpheme
+pub fn last[T](collection: &Vec[T]!) -> Option[&T]? {
+    collection|ω   // Omega morpheme: last element
+}
+
+/// Sum numbers using reduce morpheme
+pub fn sum(numbers: &Vec[u64]!) -> u64! {
+    numbers|ρ+   // Rho+ morpheme: reduce with addition
+}
+
+/// Find max using reduce morpheme
+pub fn max(numbers: &Vec[u64]!) -> Option[u64]? {
+    numbers|ρ_max   // Rho_max morpheme: reduce to maximum
+}

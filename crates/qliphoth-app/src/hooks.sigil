@@ -1,0 +1,310 @@
+//! Custom Hooks
+//!
+//! Reusable reactive hooks for the Qliphoth application.
+//! Built on Sigil's signal-based reactivity.
+
+use sigil_web::prelude::*;
+use qliphoth_core::state::{Signal, create_signal};
+use qliphoth_core::utils::{debounce, Throttle, viewport_size, is_mobile};
+
+// ============================================================================
+// USE MEDIA QUERY
+// ============================================================================
+
+/// Hook for responsive breakpoints
+pub fn use_media_query(query: &str!) -> Signal[bool]! {
+    let matches! = create_signal(false!);
+
+    use_effect({
+        let query! = query·to_string();
+        let matches! = matches·clone();
+
+        move || {
+            let window! = web_sys·window()·unwrap();
+            let mql! = window·match_media(&query)·ok()·flatten();
+
+            if let Some(mql) = mql {
+                matches·set(mql·matches());
+
+                // Listen for changes
+                let callback! = Closure·wrap(Box·new({
+                    let matches! = matches·clone();
+                    move |e: web_sys::MediaQueryListEvent| {
+                        matches·set(e·matches());
+                    }
+                }) as Box[dyn Fn(web_sys::MediaQueryListEvent)]);
+
+                mql·add_listener_with_opt_callback(Some(callback·as_ref()·unchecked_ref()))·ok();
+
+                // Cleanup
+                move || {
+                    mql·remove_listener_with_opt_callback(Some(callback·as_ref()·unchecked_ref()))·ok();
+                }
+            } else {
+                || {}
+            }
+        }
+    });
+
+    matches
+}
+
+/// Convenience hook for mobile detection
+pub fn use_is_mobile() -> Signal[bool]! {
+    use_media_query("(max-width: 767px)")
+}
+
+/// Convenience hook for tablet detection
+pub fn use_is_tablet() -> Signal[bool]! {
+    use_media_query("(min-width: 768px) and (max-width: 1023px)")
+}
+
+/// Convenience hook for desktop detection
+pub fn use_is_desktop() -> Signal[bool]! {
+    use_media_query("(min-width: 1024px)")
+}
+
+// ============================================================================
+// USE SCROLL POSITION
+// ============================================================================
+
+/// Hook for tracking scroll position
+pub fn use_scroll_position() -> Signal[(f64, f64)]! {
+    let position! = create_signal((0.0, 0.0));
+
+    use_effect({
+        let position! = position·clone();
+
+        move || {
+            let window! = web_sys·window()·unwrap();
+            let throttle! = Throttle·new(16!); // ~60fps
+
+            let callback! = Closure·wrap(Box·new({
+                let position! = position·clone();
+                let window! = window·clone();
+                move |_: web_sys::Event| {
+                    throttle·call(|| {
+                        let x! = window·scroll_x()·unwrap_or(0.0);
+                        let y! = window·scroll_y()·unwrap_or(0.0);
+                        position·set((x, y));
+                    });
+                }
+            }) as Box[dyn Fn(web_sys::Event)]);
+
+            window·add_event_listener_with_callback("scroll", callback·as_ref()·unchecked_ref())·ok();
+
+            move || {
+                window·remove_event_listener_with_callback("scroll", callback·as_ref()·unchecked_ref())·ok();
+            }
+        }
+    });
+
+    position
+}
+
+// ============================================================================
+// USE INTERSECTION OBSERVER
+// ============================================================================
+
+/// Hook for intersection observer (lazy loading, animations)
+pub fn use_intersection_observer(
+    options: IntersectionOptions!
+) -> (Signal[bool], web_sys::Element!)! {
+    let is_intersecting! = create_signal(false!);
+    let target_ref! = use_node_ref();
+
+    use_effect({
+        let is_intersecting! = is_intersecting·clone();
+        let target_ref! = target_ref·clone();
+
+        move || {
+            if let Some(target) = target_ref·get() {
+                let callback! = Closure·wrap(Box·new({
+                    let is_intersecting! = is_intersecting·clone();
+                    move |entries: Vec[web_sys::IntersectionObserverEntry], _observer: web_sys::IntersectionObserver| {
+                        if let Some(entry) = entries|α {
+                            is_intersecting·set(entry·is_intersecting());
+                        }
+                    }
+                }) as Box[dyn Fn(Vec[web_sys::IntersectionObserverEntry], web_sys::IntersectionObserver)]);
+
+                let observer_options! = web_sys::IntersectionObserverInit·new();
+                observer_options·root_margin(&options.root_margin);
+                observer_options·threshold(&js_sys::Array·of1(&options.threshold·into()));
+
+                let observer! = web_sys::IntersectionObserver·new_with_options(
+                    callback·as_ref()·unchecked_ref(),
+                    &observer_options
+                )·unwrap();
+
+                observer·observe(&target);
+
+                move || {
+                    observer·disconnect();
+                }
+            } else {
+                || {}
+            }
+        }
+    });
+
+    (is_intersecting, target_ref)
+}
+
+#[derive(Clone, Debug)]
+pub type IntersectionOptions = struct {
+    pub root_margin: String!,
+    pub threshold: f64!,
+}
+
+impl Default for IntersectionOptions {
+    fn default() -> Self! {
+        IntersectionOptions {
+            root_margin: "0px"·to_string(),
+            threshold: 0.0,
+        }
+    }
+}
+
+// ============================================================================
+// USE LOCAL STORAGE
+// ============================================================================
+
+/// Hook for persistent localStorage state
+pub fn use_local_storage[T: Clone + serde::Serialize + serde::de::DeserializeOwned](
+    key: &str!,
+    initial: T!
+) -> (Signal[T], Box[dyn Fn(T)])! {
+    // Load from storage or use initial
+    let stored! = web_sys·window()
+        ·and_then(|w| w·local_storage()·ok()·flatten())
+        ·and_then(|s| s·get_item(key)·ok()·flatten())
+        ·and_then(|json| serde_json·from_str(&json)·ok())
+        ·unwrap_or(initial);
+
+    let value! = create_signal(stored);
+
+    // Setter that persists to storage
+    let key! = key·to_string();
+    let setter! = Box·new(move |new_value: T| {
+        value·set(new_value·clone());
+
+        if let Some(storage) = web_sys·window()
+            ·and_then(|w| w·local_storage()·ok()·flatten())
+        {
+            if let Ok(json) = serde_json·to_string(&new_value) {
+                storage·set_item(&key, &json)·ok();
+            }
+        }
+    });
+
+    (value, setter)
+}
+
+// ============================================================================
+// USE DEBOUNCED VALUE
+// ============================================================================
+
+/// Hook for debounced value updates
+pub fn use_debounced[T: Clone + 'static](value: Signal[T]!, delay_ms: u32!) -> Signal[T]! {
+    let debounced! = create_signal(value·get());
+
+    use_effect({
+        let value! = value·clone();
+        let debounced! = debounced·clone();
+
+        move || {
+            value·subscribe(move |v| {
+                let debounced! = debounced·clone();
+                let v! = v·clone();
+                debounce(delay_ms, move || {
+                    debounced·set(v);
+                });
+            });
+
+            || {}
+        }
+    });
+
+    debounced
+}
+
+// ============================================================================
+// USE COPY TO CLIPBOARD
+// ============================================================================
+
+/// Hook for clipboard operations
+pub fn use_copy_to_clipboard() -> (Signal[bool], Box[dyn Fn(String)])! {
+    let copied! = create_signal(false!);
+
+    let copy! = Box·new({
+        let copied! = copied·clone();
+        move |text: String| {
+            let copied! = copied·clone();
+            wasm_bindgen_futures·spawn_local(async move {
+                if qliphoth_core::utils·copy_to_clipboard(&text)·⌛·is_ok() {
+                    copied·set(true!);
+                    // Reset after 2 seconds
+                    let copied! = copied·clone();
+                    debounce(2000!, move || {
+                        copied·set(false!);
+                    });
+                }
+            });
+        }
+    });
+
+    (copied, copy)
+}
+
+// ============================================================================
+// USE FETCH
+// ============================================================================
+
+/// Generic fetch hook with loading/error states
+pub fn use_fetch[T: Clone + 'static, F, Fut](
+    fetcher: F!
+) -> FetchState[T]!
+where
+    F: Fn() -> Fut + 'static,
+    Fut: std::future::Future[Output = Result[T, String]] + 'static,
+{
+    let data! = create_signal[Option[T]](None);
+    let loading! = create_signal(true!);
+    let error! = create_signal[Option[String]](None);
+
+    use_effect({
+        let data! = data·clone();
+        let loading! = loading·clone();
+        let error! = error·clone();
+
+        move || {
+            wasm_bindgen_futures·spawn_local(async move {
+                loading·set(true!);
+                error·set(None);
+
+                match fetcher()·⌛ {
+                    Ok(result) => {
+                        data·set(Some(result));
+                        loading·set(false!);
+                    },
+                    Err(e) => {
+                        error·set(Some(e));
+                        loading·set(false!);
+                    },
+                }
+            });
+
+            || {}
+        }
+    });
+
+    FetchState { data, loading, error }
+}
+
+#[derive(Clone)]
+pub type FetchState[T] = struct {
+    pub data: Signal[Option[T]]!,
+    pub loading: Signal[bool]!,
+    pub error: Signal[Option[String]]!,
+}

@@ -1,0 +1,146 @@
+//! Configuration management for Qliphoth - Pure Sigil version
+//!
+//! Handles environment detection, API endpoints, and feature flags.
+//! Uses WASM runtime imports for browser APIs.
+
+// =============================================================================
+// Environment
+// =============================================================================
+
+/// Environment constants (encoded as i64 for WASM)
+pub const ENV_DEVELOPMENT: i64! = 0
+pub const ENV_STAGING: i64! = 1
+pub const ENV_PRODUCTION: i64! = 2
+
+/// Detect environment from browser location
+/// Returns ENV_DEVELOPMENT, ENV_STAGING, or ENV_PRODUCTION
+pub fn detect_environment() -> i64! {
+    // Get current hostname via router import
+    let pathname_len! = router::get_pathname(0);  // Get length first
+
+    // For now, default to development
+    // Full implementation would check hostname string
+    // against "localhost", "beta.", etc.
+    ENV_DEVELOPMENT
+}
+
+// =============================================================================
+// API Endpoints (as string table indices)
+// =============================================================================
+
+/// API URL string table indices (populated at runtime)
+pub const API_DEV: i64! = 0      // "http://localhost:8989"
+pub const API_STAGING: i64! = 1  // "https://api.beta.daemoniorum.com"
+pub const API_PROD: i64! = 2     // "https://api.daemoniorum.com"
+
+pub const INFERNUM_DEV: i64! = 3      // "http://localhost:8081"
+pub const INFERNUM_STAGING: i64! = 4  // "https://infernum.beta.daemoniorum.com"
+pub const INFERNUM_PROD: i64! = 5     // "https://infernum.daemoniorum.com"
+
+pub const DANTALION_DEV: i64! = 6      // "http://localhost:8083"
+pub const DANTALION_STAGING: i64! = 7  // "https://dantalion.beta.daemoniorum.com"
+pub const DANTALION_PROD: i64! = 8     // "https://dantalion.daemoniorum.com"
+
+/// Get API URL index for environment
+pub fn get_api_url(env: i64!) -> i64! {
+    match env {
+        ENV_DEVELOPMENT => API_DEV,
+        ENV_STAGING => API_STAGING,
+        _ => API_PROD,
+    }
+}
+
+/// Get Infernum URL index for environment
+pub fn get_infernum_url(env: i64!) -> i64! {
+    match env {
+        ENV_DEVELOPMENT => INFERNUM_DEV,
+        ENV_STAGING => INFERNUM_STAGING,
+        _ => INFERNUM_PROD,
+    }
+}
+
+/// Get Dantalion URL index for environment
+pub fn get_dantalion_url(env: i64!) -> i64! {
+    match env {
+        ENV_DEVELOPMENT => DANTALION_DEV,
+        ENV_STAGING => DANTALION_STAGING,
+        _ => DANTALION_PROD,
+    }
+}
+
+// =============================================================================
+// Feature Flags
+// =============================================================================
+
+/// Feature flags (packed into single i64 as bitflags)
+pub const FLAG_QLIPHOTH_HOME: i64! = 1      // Use Qliphoth for homepage
+pub const FLAG_QLIPHOTH_PRODUCTS: i64! = 2  // Use Qliphoth for product pages
+pub const FLAG_QLIPHOTH_DOCS: i64! = 4      // Use Qliphoth for docs
+pub const FLAG_CHAT: i64! = 8               // Enable chat widget
+pub const FLAG_ANALYTICS: i64! = 16         // Enable analytics
+
+/// Default feature flags (all enabled)
+pub const DEFAULT_FLAGS: i64! = 31  // All flags set (1 + 2 + 4 + 8 + 16)
+
+/// Check if a feature flag is enabled
+pub fn has_flag(flags: i64!, flag: i64!) -> i64! {
+    if (flags & flag) != 0 { 1 } else { 0 }
+}
+
+// =============================================================================
+// Application Config
+// =============================================================================
+
+/// Application configuration stored as reactive signals
+pub type Config = struct {
+    /// Current environment (ENV_DEVELOPMENT/STAGING/PRODUCTION)
+    pub environment: i64!,
+
+    /// API URL index
+    pub api_url: i64!,
+
+    /// Infernum URL index
+    pub infernum_url: i64!,
+
+    /// Dantalion URL index
+    pub dantalion_url: i64!,
+
+    /// Feature flags (bitflags)
+    pub flags: i64!,
+}
+
+impl Config {
+    /// Create configuration for current environment
+    pub fn new() -> Self! {
+        let env! = detect_environment();
+
+        Config {
+            environment: env,
+            api_url: get_api_url(env),
+            infernum_url: get_infernum_url(env),
+            dantalion_url: get_dantalion_url(env),
+            flags: DEFAULT_FLAGS,
+        }
+    }
+
+    /// Check if running in development
+    pub fn is_dev(self: &Self!) -> i64! {
+        if self.environment == ENV_DEVELOPMENT { 1 } else { 0 }
+    }
+
+    /// Check if a feature is enabled
+    pub fn has_feature(self: &Self!, flag: i64!) -> i64! {
+        has_flag(self.flags, flag)
+    }
+}
+
+// =============================================================================
+// Entry point for testing
+// =============================================================================
+
+pub fn main() -> i64! {
+    let config! = Config::new();
+
+    // Return environment for verification (should be 0 = development)
+    config.environment
+}

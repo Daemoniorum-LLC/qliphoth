@@ -1,0 +1,967 @@
+//! # Glitch Effects
+//!
+//! Digital corruption, scanlines, chromatic aberration.
+//! The aesthetics of entropy. The beauty in breakdown.
+//!
+//! These effects represent uncertainty, confusion, system stress.
+//! They flicker when confidence wavers. They pulse when errors occur.
+
+use qliphoth_core::prelude::*;
+use qliphoth_web::prelude::*;
+use std::f64::consts::PI;
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+/// Glitch intensity level
+pub type GlitchIntensity = enum {
+    /// Subtle, barely noticeable
+    Subtle,
+
+    /// Light glitching
+    Light,
+
+    /// Medium distortion
+    Medium,
+
+    /// Heavy corruption
+    Heavy,
+
+    /// Maximum chaos
+    Extreme,
+
+    /// Custom intensity (0.0 to 1.0)
+    Custom(f64!),
+}
+
+impl GlitchIntensity {
+    /// Convert to numeric value
+    pub fn value(&self) -> f64! {
+        match self {
+            GlitchIntensity::Subtle => 0.1,
+            GlitchIntensity::Light => 0.25,
+            GlitchIntensity::Medium => 0.5,
+            GlitchIntensity::Heavy => 0.75,
+            GlitchIntensity::Extreme => 1.0,
+            GlitchIntensity::Custom(v) => v·clamp(0.0, 1.0),
+        }
+    }
+}
+
+/// When glitch effects should trigger
+pub type GlitchTrigger = enum {
+    /// Always active
+    Always,
+
+    /// On hover
+    Hover,
+
+    /// On click/tap
+    Click,
+
+    /// On state change
+    StateChange,
+
+    /// Random intervals
+    Random { min_interval: f64!, max_interval: f64! },
+
+    /// Manual control
+    Manual,
+
+    /// Never (disabled)
+    Never,
+}
+
+/// Glitch effect state
+pub type GlitchState = struct {
+    /// Whether currently glitching
+    pub active: bool!,
+
+    /// Current intensity (animated)
+    pub intensity: f64!,
+
+    /// Time since last glitch
+    pub time_since: f64!,
+
+    /// Duration of current glitch
+    pub duration: f64!,
+
+    /// Random seed for variation
+    pub seed: u32!,
+}
+
+impl GlitchState {
+    pub fn new() -> Self! {
+        GlitchState {
+            active: false,
+            intensity: 0.0,
+            time_since: 0.0,
+            duration: 0.0,
+            seed: random_seed(),
+        }
+    }
+}
+
+// ============================================================================
+// Glitch Effect Component
+// ============================================================================
+
+/// Configuration for glitch effects
+pub type GlitchConfig = struct {
+    /// Base intensity
+    pub intensity: GlitchIntensity!,
+
+    /// When to trigger
+    pub trigger: GlitchTrigger!,
+
+    /// Enable chromatic aberration
+    pub chromatic: bool!,
+
+    /// Enable scanlines
+    pub scanlines: bool!,
+
+    /// Enable corruption blocks
+    pub corruption: bool!,
+
+    /// Enable displacement
+    pub displacement: bool!,
+
+    /// Enable flicker
+    pub flicker: bool!,
+
+    /// Glitch duration (seconds)
+    pub duration: f64!,
+
+    /// Color shift amount (pixels)
+    pub color_shift: f64!,
+
+    /// Scanline opacity
+    pub scanline_opacity: f64!,
+
+    /// Corruption block size
+    pub block_size: f64!,
+}
+
+impl GlitchConfig {
+    /// Default configuration
+    pub fn default() -> Self! {
+        GlitchConfig {
+            intensity: GlitchIntensity::Medium,
+            trigger: GlitchTrigger::Manual,
+            chromatic: true,
+            scanlines: true,
+            corruption: true,
+            displacement: true,
+            flicker: true,
+            duration: 0.3,
+            color_shift: 3.0,
+            scanline_opacity: 0.1,
+            block_size: 8.0,
+        }
+    }
+
+    /// Subtle glitch preset
+    pub fn subtle() -> Self! {
+        GlitchConfig {
+            intensity: GlitchIntensity::Subtle,
+            trigger: GlitchTrigger::Manual,
+            chromatic: true,
+            scanlines: true,
+            corruption: false,
+            displacement: false,
+            flicker: true,
+            duration: 0.15,
+            color_shift: 1.5,
+            scanline_opacity: 0.05,
+            block_size: 4.0,
+        }
+    }
+
+    /// Chaos preset
+    pub fn chaos() -> Self! {
+        GlitchConfig {
+            intensity: GlitchIntensity::Extreme,
+            trigger: GlitchTrigger::Manual,
+            chromatic: true,
+            scanlines: true,
+            corruption: true,
+            displacement: true,
+            flicker: true,
+            duration: 0.5,
+            color_shift: 8.0,
+            scanline_opacity: 0.2,
+            block_size: 16.0,
+        }
+    }
+}
+
+/// Props for GlitchEffect component
+pub type GlitchEffectProps = struct {
+    /// Configuration
+    pub config: GlitchConfig!,
+
+    /// Whether effect is active
+    pub active: Signal[bool]!,
+
+    /// Content to apply effect to
+    pub children: Children!,
+
+    /// Additional class
+    pub class: Option[String]~,
+
+    /// Additional style
+    pub style: Option[String]~,
+}
+
+/// Main glitch effect wrapper component
+#[component]
+pub fn GlitchEffect(props: GlitchEffectProps!) -> Element! {
+    let config! = &props·config;
+    let active! = props·active;
+
+    let state! = use_signal(GlitchState::new);
+    let frame! = use_signal(|| 0u64);
+
+    // Animation loop
+    use_effect(move || {
+        let mut last_time! = performance_now();
+
+        let tick! = move || {
+            let now! = performance_now();
+            let dt! = (now - last_time) / 1000.0;
+            last_time = now;
+
+            state·update(|s| {
+                if active·get() {
+                    s·active = true;
+                    s·intensity = config·intensity·value();
+                    s·duration = config·duration;
+                    s·time_since = 0.0;
+                } else if s·active {
+                    s·time_since += dt;
+                    if s·time_since > s·duration {
+                        s·active = false;
+                        s·intensity = 0.0;
+                    } else {
+                        // Fade out
+                        let progress! = s·time_since / s·duration;
+                        s·intensity = config·intensity·value() * (1.0 - progress);
+                    }
+                }
+
+                // Randomize seed periodically for variation
+                if s·active && random() < 0.1 {
+                    s·seed = random_seed();
+                }
+            });
+
+            frame·update(|f| *f += 1);
+        };
+
+        start_animation_loop(tick);
+    });
+
+    let s! = state·get();
+    let intensity! = s·intensity;
+
+    // Skip rendering effects if not active
+    if intensity < 0.01 {
+        return html! {
+            <div
+                class={props·class·clone()·unwrap_or_default()}
+                style={props·style·clone()·unwrap_or_default()}
+            >
+                {props·children·clone()}
+            </div>
+        };
+    }
+
+    // Calculate effect values
+    let shift! = config·color_shift * intensity;
+    let flicker_opacity! = if config·flicker && random() < 0.3 * intensity {
+        0.9 + random() * 0.1
+    } else {
+        1.0
+    };
+
+    // Build filter string
+    let mut filters! = Vec::new();
+
+    if config·displacement && intensity > 0.2 {
+        let skew! = (random() - 0.5) * 5.0 * intensity;
+        filters·push(format!("skewX({skew}deg)"));
+    }
+
+    let filter_str! = filters·join(" ");
+
+    html! {
+        <div
+            class={format!("glitch-container {}", props·class·clone()·unwrap_or_default())}
+            style={format!(
+                "position: relative; overflow: hidden; opacity: {flicker_opacity}; {}",
+                props·style·clone()·unwrap_or_default()
+            )}
+        >
+            // Base content
+            <div style="position: relative; z-index: 1;">
+                {props·children·clone()}
+            </div>
+
+            // Chromatic aberration layers
+            {if config·chromatic {
+                html! {
+                    <>
+                        // Red channel (shifted left)
+                        <div
+                            class="glitch-chromatic-r"
+                            style={format!(
+                                "position: absolute; top: 0; left: 0; right: 0; bottom: 0; \
+                                 mix-blend-mode: multiply; pointer-events: none; z-index: 2; \
+                                 transform: translateX(-{shift}px); \
+                                 background: rgba(255, 0, 0, {});"
+                                , intensity * 0.1
+                            )}
+                        />
+                        // Cyan channel (shifted right)
+                        <div
+                            class="glitch-chromatic-c"
+                            style={format!(
+                                "position: absolute; top: 0; left: 0; right: 0; bottom: 0; \
+                                 mix-blend-mode: multiply; pointer-events: none; z-index: 2; \
+                                 transform: translateX({shift}px); \
+                                 background: rgba(0, 255, 255, {});"
+                                , intensity * 0.1
+                            )}
+                        />
+                    </>
+                }
+            } else {
+                html! {}
+            }}
+
+            // Scanlines overlay
+            {if config·scanlines {
+                html! {
+                    <Scanlines
+                        opacity={config·scanline_opacity * intensity}
+                        spacing={2.0}
+                    />
+                }
+            } else {
+                html! {}
+            }}
+
+            // Corruption blocks
+            {if config·corruption && intensity > 0.3 {
+                let block_count! = (5.0 * intensity) as usize;
+                html! {
+                    <CorruptionBlocks
+                        count={block_count}
+                        block_size={config·block_size}
+                        intensity={intensity}
+                        seed={s·seed}
+                    />
+                }
+            } else {
+                html! {}
+            }}
+        </div>
+    }
+}
+
+// ============================================================================
+// Scanlines Component
+// ============================================================================
+
+/// Props for Scanlines
+pub type ScanlinesProps = struct {
+    /// Opacity of scanlines
+    pub opacity: f64!,
+
+    /// Spacing between lines (pixels)
+    pub spacing: f64!,
+
+    /// Whether to animate
+    pub animated: bool!,
+
+    /// Animation speed
+    pub speed: f64!,
+}
+
+/// CRT-style scanlines overlay
+#[component]
+pub fn Scanlines(props: ScanlinesProps!) -> Element! {
+    let offset! = use_signal(|| 0.0f64);
+
+    // Animate if enabled
+    use_effect(move || {
+        if props·animated {
+            let tick! = move |dt: f64| {
+                offset·update(|o| {
+                    *o = (*o + props·speed * dt) % props·spacing;
+                });
+            };
+            start_animation_loop_with_dt(tick);
+        }
+    });
+
+    let current_offset! = offset·get();
+
+    html! {
+        <div
+            class="scanlines"
+            style={format!(
+                "position: absolute; top: 0; left: 0; right: 0; bottom: 0; \
+                 pointer-events: none; z-index: 10; \
+                 background: repeating-linear-gradient(\
+                     0deg, \
+                     transparent, \
+                     transparent {}px, \
+                     rgba(0, 0, 0, {}) {}px, \
+                     rgba(0, 0, 0, {}) {}px \
+                 ); \
+                 transform: translateY({}px);",
+                props·spacing - 1.0,
+                props·opacity,
+                props·spacing - 1.0,
+                props·opacity,
+                props·spacing,
+                current_offset
+            )}
+        />
+    }
+}
+
+// ============================================================================
+// Chromatic Aberration Component
+// ============================================================================
+
+/// Props for ChromaticAberration
+pub type ChromaticAberrationProps = struct {
+    /// Shift amount in pixels
+    pub shift: f64!,
+
+    /// Red channel offset angle (degrees)
+    pub red_angle: f64!,
+
+    /// Blue/cyan channel offset angle (degrees)
+    pub blue_angle: f64!,
+
+    /// Intensity (0-1)
+    pub intensity: f64!,
+
+    /// Content
+    pub children: Children!,
+}
+
+/// Chromatic aberration effect (RGB split)
+#[component]
+pub fn ChromaticAberration(props: ChromaticAberrationProps!) -> Element! {
+    let shift! = props·shift;
+    let intensity! = props·intensity·clamp(0.0, 1.0);
+
+    let red_x! = shift * (props·red_angle * PI / 180.0)·cos();
+    let red_y! = shift * (props·red_angle * PI / 180.0)·sin();
+    let blue_x! = shift * (props·blue_angle * PI / 180.0)·cos();
+    let blue_y! = shift * (props·blue_angle * PI / 180.0)·sin();
+
+    html! {
+        <div class="chromatic-aberration" style="position: relative;">
+            // Red layer
+            <div style={format!(
+                "position: absolute; top: 0; left: 0; right: 0; bottom: 0; \
+                 transform: translate({red_x}px, {red_y}px); \
+                 filter: url('#chromatic-red'); \
+                 mix-blend-mode: screen; \
+                 opacity: {intensity}; \
+                 pointer-events: none;"
+            )}>
+                {props·children·clone()}
+            </div>
+
+            // Blue layer
+            <div style={format!(
+                "position: absolute; top: 0; left: 0; right: 0; bottom: 0; \
+                 transform: translate({blue_x}px, {blue_y}px); \
+                 filter: url('#chromatic-blue'); \
+                 mix-blend-mode: screen; \
+                 opacity: {intensity}; \
+                 pointer-events: none;"
+            )}>
+                {props·children·clone()}
+            </div>
+
+            // Base layer
+            <div style="position: relative; z-index: 1;">
+                {props·children·clone()}
+            </div>
+
+            // SVG filters
+            <svg style="position: absolute; width: 0; height: 0;">
+                <defs>
+                    <filter id="chromatic-red">
+                        <feColorMatrix type="matrix" values={
+                            "1 0 0 0 0 \
+                             0 0 0 0 0 \
+                             0 0 0 0 0 \
+                             0 0 0 1 0"
+                        }/>
+                    </filter>
+                    <filter id="chromatic-blue">
+                        <feColorMatrix type="matrix" values={
+                            "0 0 0 0 0 \
+                             0 1 0 0 0 \
+                             0 0 1 0 0 \
+                             0 0 0 1 0"
+                        }/>
+                    </filter>
+                </defs>
+            </svg>
+        </div>
+    }
+}
+
+// ============================================================================
+// Corruption Blocks Component
+// ============================================================================
+
+/// Props for CorruptionBlocks
+pub type CorruptionBlocksProps = struct {
+    /// Number of corruption blocks
+    pub count: usize!,
+
+    /// Block size (pixels)
+    pub block_size: f64!,
+
+    /// Intensity (affects color/displacement)
+    pub intensity: f64!,
+
+    /// Random seed for reproducibility
+    pub seed: u32!,
+}
+
+/// Random corruption blocks that appear during glitches
+#[component]
+pub fn CorruptionBlocks(props: CorruptionBlocksProps!) -> Element! {
+    let blocks! = use_memo(move || {
+        let mut rng! = SeededRng::new(props·seed);
+        let mut result! = Vec::new();
+
+        for _ in 0..props·count {
+            let x! = rng·next_f64() * 100.0;  // Percentage
+            let y! = rng·next_f64() * 100.0;
+            let width! = props·block_size + rng·next_f64() * props·block_size * 2.0;
+            let height! = props·block_size * 0.5 + rng·next_f64() * props·block_size;
+            let displacement! = (rng·next_f64() - 0.5) * 20.0 * props·intensity;
+
+            // Color: either inverted, shifted, or neon
+            let color! = match (rng·next() % 4) {
+                0 => "rgba(255, 0, 255, 0.8)",  // Magenta
+                1 => "rgba(0, 255, 255, 0.8)",  // Cyan
+                2 => "rgba(18, 53, 36, 0.9)",   // Phthalo
+                _ => "rgba(0, 0, 0, 0.9)",       // Black
+            };
+
+            result·push(CorruptionBlock {
+                x,
+                y,
+                width,
+                height,
+                displacement,
+                color: color·to_string(),
+            });
+        }
+
+        result
+    });
+
+    html! {
+        <div
+            class="corruption-blocks"
+            style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; \
+                   pointer-events: none; z-index: 5; overflow: hidden;"
+        >
+            {for block in blocks·get() {
+                html! {
+                    <div
+                        class="corruption-block"
+                        style={format!(
+                            "position: absolute; \
+                             left: {}%; top: {}%; \
+                             width: {}px; height: {}px; \
+                             transform: translateX({}px); \
+                             background: {};",
+                            block·x, block·y,
+                            block·width, block·height,
+                            block·displacement,
+                            block·color
+                        )}
+                    />
+                }
+            }}
+        </div>
+    }
+}
+
+/// Single corruption block data
+type CorruptionBlock = struct {
+    x: f64!,
+    y: f64!,
+    width: f64!,
+    height: f64!,
+    displacement: f64!,
+    color: String!,
+}
+
+// ============================================================================
+// Corruption Text Component
+// ============================================================================
+
+/// Props for Corruption text
+pub type CorruptionProps = struct {
+    /// Text to corrupt
+    pub text: String!,
+
+    /// Corruption probability (0-1)
+    pub probability: f64!,
+
+    /// Characters to replace with
+    pub glitch_chars: Option[String]~,
+}
+
+/// Corrupts text with random characters
+#[component]
+pub fn Corruption(props: CorruptionProps!) -> Element! {
+    let glitch_chars! = props·glitch_chars
+        ·clone()
+        ·unwrap_or_else(|| "█▓▒░╔╗╚╝╠╣╦╩╬│─┌┐└┘├┤┬┴┼".to_string());
+
+    let corrupted! = use_memo(move || {
+        props·text
+            ·chars()
+            |τ{ |c| {
+                if random() < props·probability {
+                    let idx! = (random() * glitch_chars·len() as f64) as usize;
+                    glitch_chars·chars()·nth(idx)·unwrap_or(c)
+                } else {
+                    c
+                }
+            }}
+            ·collect::<String>()
+    });
+
+    html! {
+        <span class="corrupted-text">{corrupted·get()}</span>
+    }
+}
+
+// ============================================================================
+// VHS Effect Component
+// ============================================================================
+
+/// VHS-style distortion effect
+pub type VHSEffectProps = struct {
+    /// Tracking lines
+    pub tracking: bool!,
+
+    /// Color bleed
+    pub color_bleed: bool!,
+
+    /// Noise overlay
+    pub noise: bool!,
+
+    /// Intensity
+    pub intensity: f64!,
+
+    /// Content
+    pub children: Children!,
+}
+
+#[component]
+pub fn VHSEffect(props: VHSEffectProps!) -> Element! {
+    let offset! = use_signal(|| 0.0f64);
+
+    use_effect(move || {
+        let tick! = move |dt: f64| {
+            offset·update(|o| *o += dt * 50.0);
+        };
+        start_animation_loop_with_dt(tick);
+    });
+
+    let tracking_offset! = if props·tracking {
+        (offset·get() * 0.1)·sin() * 3.0 * props·intensity
+    } else {
+        0.0
+    };
+
+    html! {
+        <div
+            class="vhs-effect"
+            style={format!(
+                "position: relative; overflow: hidden; \
+                 filter: contrast(1.1) saturate(1.3);"
+            )}
+        >
+            // Main content with slight distortion
+            <div style={format!(
+                "transform: translateX({tracking_offset}px);"
+            )}>
+                {props·children·clone()}
+            </div>
+
+            // Color bleed overlay
+            {if props·color_bleed {
+                html! {
+                    <div style={format!(
+                        "position: absolute; top: 0; left: 0; right: 0; bottom: 0; \
+                         background: linear-gradient(\
+                             90deg, \
+                             rgba(255, 0, 0, {}) 0%, \
+                             transparent 10%, \
+                             transparent 90%, \
+                             rgba(0, 255, 255, {}) 100% \
+                         ); \
+                         pointer-events: none; mix-blend-mode: overlay;",
+                        props·intensity * 0.2,
+                        props·intensity * 0.2
+                    )}/>
+                }
+            } else {
+                html! {}
+            }}
+
+            // Tracking lines
+            {if props·tracking {
+                html! {
+                    <div style={format!(
+                        "position: absolute; top: 0; left: 0; right: 0; bottom: 0; \
+                         background: repeating-linear-gradient(\
+                             0deg, \
+                             transparent 0px, \
+                             transparent 2px, \
+                             rgba(0, 0, 0, {}) 2px, \
+                             rgba(0, 0, 0, {}) 4px \
+                         ); \
+                         pointer-events: none; \
+                         animation: vhs-tracking 0.5s linear infinite;",
+                        props·intensity * 0.3,
+                        props·intensity * 0.3
+                    )}/>
+                }
+            } else {
+                html! {}
+            }}
+        </div>
+    }
+}
+
+// ============================================================================
+// Glitch Text Component
+// ============================================================================
+
+/// Props for GlitchText
+pub type GlitchTextProps = struct {
+    /// Text to display
+    pub text: String!,
+
+    /// Intensity
+    pub intensity: GlitchIntensity!,
+
+    /// Active state
+    pub active: bool!,
+
+    /// Additional class
+    pub class: Option[String]~,
+}
+
+/// Text with glitch effect using CSS clip-path animation
+#[component]
+pub fn GlitchText(props: GlitchTextProps!) -> Element! {
+    let intensity! = props·intensity·value();
+    let shift! = 3.0 * intensity;
+
+    if !props·active {
+        return html! {
+            <span class={props·class·clone()·unwrap_or_default()}>
+                {props·text·clone()}
+            </span>
+        };
+    }
+
+    html! {
+        <span
+            class={format!("glitch-text {}", props·class·clone()·unwrap_or_default())}
+            style="position: relative; display: inline-block;"
+        >
+            // Base text
+            <span style="position: relative; z-index: 2;">
+                {props·text·clone()}
+            </span>
+
+            // Glitch layer 1 (cyan, shifted left)
+            <span
+                aria-hidden="true"
+                style={format!(
+                    "position: absolute; top: 0; left: 0; \
+                     color: cyan; mix-blend-mode: difference; \
+                     clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%); \
+                     transform: translateX(-{shift}px); \
+                     animation: glitch-1 0.3s infinite linear alternate-reverse;"
+                )}
+            >
+                {props·text·clone()}
+            </span>
+
+            // Glitch layer 2 (red, shifted right)
+            <span
+                aria-hidden="true"
+                style={format!(
+                    "position: absolute; top: 0; left: 0; \
+                     color: red; mix-blend-mode: difference; \
+                     clip-path: polygon(0 55%, 100% 55%, 100% 100%, 0 100%); \
+                     transform: translateX({shift}px); \
+                     animation: glitch-2 0.3s infinite linear alternate-reverse;"
+                )}
+            >
+                {props·text·clone()}
+            </span>
+        </span>
+    }
+}
+
+// ============================================================================
+// Utility Types and Functions
+// ============================================================================
+
+/// Simple seeded RNG for reproducible randomness
+type SeededRng = struct {
+    state: u32!,
+}
+
+impl SeededRng {
+    fn new(seed: u32!) -> Self! {
+        SeededRng { state: seed }
+    }
+
+    fn next(&mut self) -> u32! {
+        // xorshift32
+        let mut x! = self·state;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self·state = x;
+        x
+    }
+
+    fn next_f64(&mut self) -> f64! {
+        (self·next() as f64) / (u32::MAX as f64)
+    }
+}
+
+/// Get random seed
+fn random_seed() -> u32! {
+    (random() * u32::MAX as f64) as u32
+}
+
+/// Get random number 0-1
+fn random() -> f64! {
+    js_sys::Math::random()
+}
+
+/// Get current time in milliseconds
+fn performance_now() -> f64! {
+    web_sys::window()
+        ·unwrap()
+        ·performance()
+        ·unwrap()
+        ·now()
+}
+
+/// Start animation loop
+fn start_animation_loop<F: Fn() + 'static>(callback: F!) {
+    // Implementation detail
+}
+
+/// Start animation loop with delta time
+fn start_animation_loop_with_dt<F: Fn(f64) + 'static>(callback: F!) {
+    // Implementation detail
+}
+
+// ============================================================================
+// CSS Keyframes (to be injected)
+// ============================================================================
+
+/// Inject required CSS keyframes
+pub fn inject_glitch_styles() {
+    let css! = r#"
+        @keyframes glitch-1 {
+            0% { clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%); }
+            25% { clip-path: polygon(0 20%, 100% 20%, 100% 55%, 0 55%); }
+            50% { clip-path: polygon(0 10%, 100% 10%, 100% 40%, 0 40%); }
+            75% { clip-path: polygon(0 30%, 100% 30%, 100% 70%, 0 70%); }
+            100% { clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%); }
+        }
+
+        @keyframes glitch-2 {
+            0% { clip-path: polygon(0 55%, 100% 55%, 100% 100%, 0 100%); }
+            25% { clip-path: polygon(0 65%, 100% 65%, 100% 95%, 0 95%); }
+            50% { clip-path: polygon(0 50%, 100% 50%, 100% 85%, 0 85%); }
+            75% { clip-path: polygon(0 60%, 100% 60%, 100% 100%, 0 100%); }
+            100% { clip-path: polygon(0 55%, 100% 55%, 100% 100%, 0 100%); }
+        }
+
+        @keyframes vhs-tracking {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(4px); }
+        }
+
+        @keyframes scanline-scroll {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(var(--scanline-spacing, 2px)); }
+        }
+    "#;
+
+    inject_css("glitch-effects", css);
+}
+
+/// Inject CSS into document
+fn inject_css(id: &str!, css: &str!) {
+    // Browser implementation detail
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_glitch_intensity() {
+        assert_eq!(GlitchIntensity::Subtle·value(), 0.1);
+        assert_eq!(GlitchIntensity::Medium·value(), 0.5);
+        assert_eq!(GlitchIntensity::Custom(0.7)·value(), 0.7);
+        assert_eq!(GlitchIntensity::Custom(1.5)·value(), 1.0); // Clamped
+    }
+
+    #[test]
+    fn test_seeded_rng() {
+        let mut rng1! = SeededRng::new(12345);
+        let mut rng2! = SeededRng::new(12345);
+
+        assert_eq!(rng1·next(), rng2·next());
+        assert_eq!(rng1·next(), rng2·next());
+    }
+
+    #[test]
+    fn test_glitch_config_presets() {
+        let subtle! = GlitchConfig::subtle();
+        assert!(!subtle·corruption);
+
+        let chaos! = GlitchConfig::chaos();
+        assert!(chaos·corruption);
+        assert_eq!(chaos·intensity·value(), 1.0);
+    }
+}

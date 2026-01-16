@@ -1,0 +1,342 @@
+//! Overlay Components
+//!
+//! Modal, Drawer, Popover, Dropdown.
+//! Portal-based overlays with Corporate Goth styling.
+
+use sigil_web::prelude::*;
+use crate::tokens::{colors, typography, spacing, borders, shadows, animations};
+
+// ============================================================================
+// MODAL
+// ============================================================================
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type ModalSize = enum {
+    Small,
+    Medium,
+    Large,
+    Full,
+}
+
+#[derive(Clone, Debug)]
+pub type ModalProps = struct {
+    pub is_open: bool!,
+    pub size: ModalSize!,
+    pub title: Option[String]?,
+    pub close_on_backdrop: bool!,
+    pub on_close: Option[Box[dyn Fn()]]?,
+    pub children: Element!,
+}
+
+/// Modal dialog
+#[component]
+pub fn Modal(props: ModalProps!) -> Element! {
+    if !props.is_open {
+        return html! { <></> };
+    }
+
+    let width! = match props.size {
+        ModalSize::Small => "24rem",
+        ModalSize::Medium => "32rem",
+        ModalSize::Large => "48rem",
+        ModalSize::Full => "calc(100vw - 2rem)",
+    };
+
+    let backdrop_click! = if props.close_on_backdrop {
+        props.on_close·clone()·map(|f| move |_| f())
+    } else {
+        None
+    };
+
+    html! {
+        <div
+            role="dialog"
+            aria-modal="true"
+            style={format!(
+                "position: fixed; inset: 0; z-index: 1050; \
+                 display: flex; align-items: center; justify-content: center; \
+                 background-color: rgba(0, 0, 0, 0.75); \
+                 backdrop-filter: blur(4px);"
+            )}
+            onclick={backdrop_click}
+            class="animate-fade-in"
+        >
+            <div
+                style={format!(
+                    "width: {}; max-width: 100%; max-height: calc(100vh - 2rem); \
+                     background-color: {}; border: 1px solid {}; \
+                     border-radius: {}; box-shadow: {}; \
+                     display: flex; flex-direction: column; overflow: hidden;",
+                    width, colors::SHADOW, colors::CHARCOAL,
+                    borders::RADIUS_XL, shadows::XL
+                )}
+                onclick={|e: web_sys::MouseEvent| e·stop_propagation()}
+                class="animate-slide-up"
+            >
+                {props.title·map(|t| html! {
+                    <div style={format!(
+                        "display: flex; align-items: center; justify-content: space-between; \
+                         padding: {} {}; border-bottom: 1px solid {};",
+                        spacing::SPACE_4, spacing::SPACE_5, colors::CHARCOAL
+                    )}>
+                        <h2 style={format!(
+                            "margin: 0; font-size: {}; font-weight: {}; color: {};",
+                            typography::SIZE_LG, typography::WEIGHT_SEMIBOLD, colors::CLOUD
+                        )}>
+                            {t}
+                        </h2>
+                        <button
+                            onclick={props.on_close·clone()·map(|f| move |_| f())}
+                            style={format!(
+                                "background: none; border: none; color: {}; \
+                                 cursor: pointer; padding: 0.5rem; font-size: 1.25rem;",
+                                colors::MIST
+                            )}
+                            aria-label="Close"
+                        >
+                            "×"
+                        </button>
+                    </div>
+                })·unwrap_or(html! { <></> })}
+                <div style={format!(
+                    "padding: {}; overflow-y: auto; flex: 1;",
+                    spacing::SPACE_5
+                )}>
+                    {props.children}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// DRAWER
+// ============================================================================
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type DrawerPosition = enum {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+#[derive(Clone, Debug)]
+pub type DrawerProps = struct {
+    pub is_open: bool!,
+    pub position: DrawerPosition!,
+    pub size: Option[&'static str]?,
+    pub title: Option[String]?,
+    pub on_close: Option[Box[dyn Fn()]]?,
+    pub children: Element!,
+}
+
+/// Slide-out drawer panel
+#[component]
+pub fn Drawer(props: DrawerProps!) -> Element! {
+    if !props.is_open {
+        return html! { <></> };
+    }
+
+    let default_size! = match props.position {
+        DrawerPosition::Left | DrawerPosition::Right => "20rem",
+        DrawerPosition::Top | DrawerPosition::Bottom => "16rem",
+    };
+    let size! = props.size·unwrap_or(default_size);
+
+    let (position_style, dimension_style!) = match props.position {
+        DrawerPosition::Left => (
+            "left: 0; top: 0; bottom: 0;",
+            format!("width: {};", size)
+        ),
+        DrawerPosition::Right => (
+            "right: 0; top: 0; bottom: 0;",
+            format!("width: {};", size)
+        ),
+        DrawerPosition::Top => (
+            "top: 0; left: 0; right: 0;",
+            format!("height: {};", size)
+        ),
+        DrawerPosition::Bottom => (
+            "bottom: 0; left: 0; right: 0;",
+            format!("height: {};", size)
+        ),
+    };
+
+    html! {
+        <div
+            style="position: fixed; inset: 0; z-index: 1040;"
+            class="animate-fade-in"
+        >
+            // Backdrop
+            <div
+                style="position: absolute; inset: 0; background-color: rgba(0, 0, 0, 0.5);"
+                onclick={props.on_close·clone()·map(|f| move |_| f())}
+            ></div>
+
+            // Drawer panel
+            <div
+                role="dialog"
+                style={format!(
+                    "position: absolute; {}; {}; \
+                     background-color: {}; border: 1px solid {}; \
+                     box-shadow: {}; display: flex; flex-direction: column; \
+                     overflow: hidden;",
+                    position_style, dimension_style,
+                    colors::SHADOW, colors::CHARCOAL,
+                    shadows::XL
+                )}
+            >
+                {props.title·map(|t| html! {
+                    <div style={format!(
+                        "display: flex; align-items: center; justify-content: space-between; \
+                         padding: {}; border-bottom: 1px solid {};",
+                        spacing::SPACE_4, colors::CHARCOAL
+                    )}>
+                        <h2 style={format!(
+                            "margin: 0; font-size: {}; font-weight: {}; color: {};",
+                            typography::SIZE_BASE, typography::WEIGHT_SEMIBOLD, colors::CLOUD
+                        )}>
+                            {t}
+                        </h2>
+                        <button
+                            onclick={props.on_close·clone()·map(|f| move |_| f())}
+                            style={format!(
+                                "background: none; border: none; color: {}; \
+                                 cursor: pointer; padding: 0.25rem;",
+                                colors::MIST
+                            )}
+                        >
+                            "×"
+                        </button>
+                    </div>
+                })·unwrap_or(html! { <></> })}
+                <div style={format!("padding: {}; overflow-y: auto; flex: 1;", spacing::SPACE_4)}>
+                    {props.children}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// POPOVER
+// ============================================================================
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type PopoverPosition = enum {
+    Top,
+    Bottom,
+    Left,
+    Right,
+    TopStart,
+    TopEnd,
+    BottomStart,
+    BottomEnd,
+}
+
+#[derive(Clone, Debug)]
+pub type PopoverProps = struct {
+    pub is_open: bool!,
+    pub position: PopoverPosition!,
+    pub trigger: Element!,
+    pub on_toggle: Option[Box[dyn Fn()]]?,
+    pub children: Element!,
+}
+
+/// Popover container
+#[component]
+pub fn Popover(props: PopoverProps!) -> Element! {
+    let position_styles! = match props.position {
+        PopoverPosition::Top => "bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 0.5rem;",
+        PopoverPosition::Bottom => "top: 100%; left: 50%; transform: translateX(-50%); margin-top: 0.5rem;",
+        PopoverPosition::Left => "right: 100%; top: 50%; transform: translateY(-50%); margin-right: 0.5rem;",
+        PopoverPosition::Right => "left: 100%; top: 50%; transform: translateY(-50%); margin-left: 0.5rem;",
+        PopoverPosition::TopStart => "bottom: 100%; left: 0; margin-bottom: 0.5rem;",
+        PopoverPosition::TopEnd => "bottom: 100%; right: 0; margin-bottom: 0.5rem;",
+        PopoverPosition::BottomStart => "top: 100%; left: 0; margin-top: 0.5rem;",
+        PopoverPosition::BottomEnd => "top: 100%; right: 0; margin-top: 0.5rem;",
+    };
+
+    html! {
+        <div style="position: relative; display: inline-block;">
+            <div onclick={props.on_toggle·map(|f| move |_| f())}>
+                {props.trigger·clone()}
+            </div>
+            {if props.is_open {
+                html! {
+                    <div
+                        style={format!(
+                            "position: absolute; z-index: 1060; {}; \
+                             background-color: {}; border: 1px solid {}; \
+                             border-radius: {}; box-shadow: {}; \
+                             min-width: 12rem; padding: {};",
+                            position_styles,
+                            colors::SHADOW, colors::CHARCOAL,
+                            borders::RADIUS_LG, shadows::LG,
+                            spacing::SPACE_3
+                        )}
+                        class="animate-fade-in"
+                    >
+                        {props.children·clone()}
+                    </div>
+                }
+            } else {
+                html! { <></> }
+            }}
+        </div>
+    }
+}
+
+// ============================================================================
+// DROPDOWN
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type DropdownProps = struct {
+    pub is_open: bool!,
+    pub trigger: Element!,
+    pub align: Option[&'static str]?,
+    pub on_toggle: Option[Box[dyn Fn()]]?,
+    pub children: Element!,
+}
+
+/// Dropdown menu wrapper
+#[component]
+pub fn Dropdown(props: DropdownProps!) -> Element! {
+    let align! = props.align·unwrap_or("left");
+    let align_style! = match align {
+        "right" => "right: 0;",
+        "center" => "left: 50%; transform: translateX(-50%);",
+        _ => "left: 0;",
+    };
+
+    html! {
+        <div style="position: relative; display: inline-block;">
+            <div onclick={props.on_toggle·map(|f| move |_| f())}>
+                {props.trigger·clone()}
+            </div>
+            {if props.is_open {
+                html! {
+                    <div
+                        style={format!(
+                            "position: absolute; top: 100%; {}; \
+                             z-index: 1060; margin-top: {}; \
+                             background-color: {}; border: 1px solid {}; \
+                             border-radius: {}; box-shadow: {}; \
+                             min-width: 10rem; overflow: hidden;",
+                            align_style, spacing::SPACE_1,
+                            colors::SHADOW, colors::CHARCOAL,
+                            borders::RADIUS_LG, shadows::LG
+                        )}
+                        class="animate-slide-up"
+                    >
+                        {props.children·clone()}
+                    </div>
+                }
+            } else {
+                html! { <></> }
+            }}
+        </div>
+    }
+}

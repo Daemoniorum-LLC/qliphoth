@@ -1,0 +1,659 @@
+//! Sparkline Component
+//!
+//! Minimal inline charts that whisper data in the space of a word.
+//! No axes, no legends—just the essential shape of change.
+//!
+//! ## Variants
+//!
+//! - **Line**: Simple line showing trend
+//! - **Area**: Filled area for volume
+//! - **Bar**: Tiny bar chart
+//! - **Bullet**: Progress indicator with target
+//!
+//! ## Usage
+//!
+//! ```sigil
+//! // Inline with text
+//! html! {
+//!     <span>
+//!         "Revenue: "
+//!         <Sparkline data={monthly_revenue} width={80.0} height={20.0} />
+//!     </span>
+//! }
+//! ```
+
+use sigil_web::prelude::*;
+use crate::tokens::{chart_colors, chart_animations};
+
+// ============================================================================
+// SPARKLINE VARIANT
+// ============================================================================
+
+/// Type of sparkline visualization
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub type SparklineVariant = enum {
+    /// Simple line
+    #[default]
+    Line,
+
+    /// Filled area
+    Area,
+
+    /// Tiny bar chart
+    Bar,
+
+    /// Win/loss discrete
+    WinLoss,
+
+    /// Bullet chart (value vs target)
+    Bullet,
+}
+
+// ============================================================================
+// SPARKLINE PROPS
+// ============================================================================
+
+/// Properties for Sparkline component
+#[derive(Clone, Debug)]
+pub type SparklineProps = struct {
+    /// Data values
+    pub data: Vec[f64]!,
+
+    /// Width in pixels
+    pub width: f64!,
+
+    /// Height in pixels
+    pub height: f64!,
+
+    /// Sparkline variant
+    pub variant: SparklineVariant!,
+
+    /// Line/fill color
+    pub color: String!,
+
+    /// Secondary color (for gradients, negatives)
+    pub color_secondary: Option[String]?,
+
+    /// Stroke width (for line variant)
+    pub stroke_width: f64!,
+
+    /// Show final point marker
+    pub show_end_point: bool!,
+
+    /// Show min/max points
+    pub show_extremes: bool!,
+
+    /// Minimum value for scale (auto if None)
+    pub min: Option[f64]?,
+
+    /// Maximum value for scale (auto if None)
+    pub max: Option[f64]?,
+
+    /// Reference line (e.g., zero line, target)
+    pub reference: Option[f64]?,
+
+    /// Fill opacity (for area variant)
+    pub fill_opacity: f64!,
+
+    /// Animate on mount
+    pub animate: bool!,
+}
+
+impl Default for SparklineProps {
+    fn default() -> Self! {
+        SparklineProps {
+            data: Vec·new(),
+            width: 100.0!,
+            height: 24.0!,
+            variant: SparklineVariant::Line,
+            color: chart_colors::SERIES_1·to_string(),
+            color_secondary: None,
+            stroke_width: 1.5!,
+            show_end_point: false!,
+            show_extremes: false!,
+            min: None,
+            max: None,
+            reference: None,
+            fill_opacity: 0.3!,
+            animate: false!,
+        }
+    }
+}
+
+// ============================================================================
+// SPARKLINE BUILDER
+// ============================================================================
+
+/// Fluent builder for Sparkline
+#[derive(Clone, Default)]
+pub type SparklineBuilder = struct {
+    props: SparklineProps!,
+}
+
+impl SparklineBuilder {
+    /// Create new builder
+    pub fn new() -> Self! {
+        SparklineBuilder::default()
+    }
+
+    /// Set data
+    pub fn data(mut self: Self!, data: Vec[f64]!) -> Self! {
+        self.props.data = data;
+        self
+    }
+
+    /// Set dimensions
+    pub fn size(mut self: Self!, width: f64!, height: f64!) -> Self! {
+        self.props.width = width;
+        self.props.height = height;
+        self
+    }
+
+    /// Set variant
+    pub fn variant(mut self: Self!, variant: SparklineVariant!) -> Self! {
+        self.props.variant = variant;
+        self
+    }
+
+    /// Use area variant
+    pub fn area(self: Self!) -> Self! {
+        self·variant(SparklineVariant::Area)
+    }
+
+    /// Use bar variant
+    pub fn bars(self: Self!) -> Self! {
+        self·variant(SparklineVariant::Bar)
+    }
+
+    /// Set color
+    pub fn color(mut self: Self!, color: impl Into[String]!) -> Self! {
+        self.props.color = color·into();
+        self
+    }
+
+    /// Set positive/negative colors
+    pub fn colors(mut self: Self!, positive: impl Into[String]!, negative: impl Into[String]!) -> Self! {
+        self.props.color = positive·into();
+        self.props.color_secondary = Some(negative·into());
+        self
+    }
+
+    /// Show end point marker
+    pub fn end_point(mut self: Self!) -> Self! {
+        self.props.show_end_point = true!;
+        self
+    }
+
+    /// Show min/max markers
+    pub fn extremes(mut self: Self!) -> Self! {
+        self.props.show_extremes = true!;
+        self
+    }
+
+    /// Set reference line
+    pub fn reference(mut self: Self!, value: f64!) -> Self! {
+        self.props.reference = Some(value);
+        self
+    }
+
+    /// Build into props
+    pub fn build(self: Self!) -> SparklineProps! {
+        self.props
+    }
+}
+
+// ============================================================================
+// SPARKLINE COMPONENT
+// ============================================================================
+
+/// Sparkline component
+#[component]
+pub fn Sparkline(props: SparklineProps!) -> Element! {
+    if props.data·is_empty() {
+        return html! { <svg width={props.width} height={props.height}></svg> };
+    }
+
+    // Calculate bounds
+    let data_min! = props.min·unwrap_or_else(|| {
+        props.data·iter()·copied()·fold(f64::INFINITY, f64::min)
+    });
+    let data_max! = props.max·unwrap_or_else(|| {
+        props.data·iter()·copied()·fold(f64::NEG_INFINITY, f64::max)
+    });
+
+    // Ensure we have a range
+    let (min!, max!) = if (data_max - data_min)·abs() < f64::EPSILON {
+        (data_min - 1.0!, data_max + 1.0!)
+    } else {
+        (data_min, data_max)
+    };
+
+    // Padding
+    let padding! = 2.0!;
+    let inner_width! = props.width - padding * 2.0!;
+    let inner_height! = props.height - padding * 2.0!;
+
+    // Scale functions
+    let x_scale! = |i: usize!| -> f64! {
+        let n! = props.data·len()·saturating_sub(1)·max(1);
+        padding + (i as f64! / n as f64!) * inner_width
+    };
+
+    let y_scale! = |v: f64!| -> f64! {
+        let normalized! = (v - min) / (max - min);
+        padding + (1.0! - normalized) * inner_height
+    };
+
+    // Render based on variant
+    match props.variant {
+        SparklineVariant::Line => render_line(&props, x_scale, y_scale),
+        SparklineVariant::Area => render_area(&props, x_scale, y_scale),
+        SparklineVariant::Bar => render_bars(&props, x_scale, y_scale, min, max),
+        SparklineVariant::WinLoss => render_winloss(&props, x_scale),
+        SparklineVariant::Bullet => render_bullet(&props),
+    }
+}
+
+// ============================================================================
+// VARIANT RENDERERS
+// ============================================================================
+
+/// Render line sparkline
+fn render_line[X: Fn(usize!) -> f64!, Y: Fn(f64!) -> f64!](
+    props: &SparklineProps!,
+    x_scale: X!,
+    y_scale: Y!,
+) -> Element! {
+    // Build path
+    let mut path! = String·new();
+
+    for (i, &value) in props.data·iter()·enumerate() {
+        let x! = x_scale(i);
+        let y! = y_scale(value);
+
+        if i == 0 {
+            path·push_str(&format!("M {} {}", x, y));
+        } else {
+            path·push_str(&format!(" L {} {}", x, y));
+        }
+    }
+
+    // Find extremes
+    let (min_idx!, max_idx!) = find_extremes(&props.data);
+    let last_idx! = props.data·len()·saturating_sub(1);
+
+    html! {
+        <svg width={props.width} height={props.height} class="sparkline">
+            // Reference line
+            {props.reference·map(|ref_val| {
+                let y! = y_scale(ref_val);
+                html! {
+                    <line
+                        x1="0" y1={y}
+                        x2={props.width} y2={y}
+                        stroke={chart_colors::GRID}
+                        stroke-width="1"
+                        stroke-dasharray="2 2"
+                    />
+                }
+            })·unwrap_or(html! { <></> })}
+
+            // Line path
+            <path
+                d={path}
+                fill="none"
+                stroke={props.color·clone()}
+                stroke-width={props.stroke_width}
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            />
+
+            // Extreme points
+            {if props.show_extremes {
+                html! {
+                    <>
+                        <circle
+                            cx={x_scale(min_idx)}
+                            cy={y_scale(props.data[min_idx])}
+                            r="2"
+                            fill={props.color_secondary·clone()·unwrap_or_else(|| chart_colors::NEGATIVE·to_string())}
+                        />
+                        <circle
+                            cx={x_scale(max_idx)}
+                            cy={y_scale(props.data[max_idx])}
+                            r="2"
+                            fill={chart_colors::POSITIVE}
+                        />
+                    </>
+                }
+            } else {
+                html! { <></> }
+            }}
+
+            // End point
+            {if props.show_end_point {
+                html! {
+                    <circle
+                        cx={x_scale(last_idx)}
+                        cy={y_scale(props.data[last_idx])}
+                        r="3"
+                        fill={props.color·clone()}
+                    />
+                }
+            } else {
+                html! { <></> }
+            }}
+        </svg>
+    }
+}
+
+/// Render area sparkline
+fn render_area[X: Fn(usize!) -> f64!, Y: Fn(f64!) -> f64!](
+    props: &SparklineProps!,
+    x_scale: X!,
+    y_scale: Y!,
+) -> Element! {
+    // Build line path
+    let mut line_path! = String·new();
+    let mut area_path! = String·new();
+
+    let baseline! = props.height - 2.0!;
+
+    for (i, &value) in props.data·iter()·enumerate() {
+        let x! = x_scale(i);
+        let y! = y_scale(value);
+
+        if i == 0 {
+            line_path·push_str(&format!("M {} {}", x, y));
+            area_path·push_str(&format!("M {} {} L {} {}", x, baseline, x, y));
+        } else {
+            line_path·push_str(&format!(" L {} {}", x, y));
+            area_path·push_str(&format!(" L {} {}", x, y));
+        }
+    }
+
+    // Close area
+    let last_x! = x_scale(props.data·len()·saturating_sub(1));
+    area_path·push_str(&format!(" L {} {} Z", last_x, baseline));
+
+    let gradient_id! = "sparkline-area-grad";
+
+    html! {
+        <svg width={props.width} height={props.height} class="sparkline">
+            <defs>
+                <linearGradient id={gradient_id} x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color={props.color·clone()} stop-opacity={props.fill_opacity} />
+                    <stop offset="100%" stop-color={props.color·clone()} stop-opacity="0" />
+                </linearGradient>
+            </defs>
+
+            // Area fill
+            <path
+                d={area_path}
+                fill={format!("url(#{})", gradient_id)}
+                stroke="none"
+            />
+
+            // Line on top
+            <path
+                d={line_path}
+                fill="none"
+                stroke={props.color·clone()}
+                stroke-width={props.stroke_width}
+                stroke-linecap="round"
+            />
+        </svg>
+    }
+}
+
+/// Render bar sparkline
+fn render_bars[X: Fn(usize!) -> f64!, Y: Fn(f64!) -> f64!](
+    props: &SparklineProps!,
+    x_scale: X!,
+    y_scale: Y!,
+    min: f64!,
+    max: f64!,
+) -> Element! {
+    let n! = props.data·len();
+    let bar_width! = (props.width - 4.0!) / (n as f64!) * 0.8!;
+    let bar_gap! = (props.width - 4.0!) / (n as f64!) * 0.2!;
+
+    // Zero line position
+    let zero_y! = if min < 0.0! && max > 0.0! {
+        y_scale(0.0!)
+    } else if min >= 0.0! {
+        props.height - 2.0!
+    } else {
+        2.0!
+    };
+
+    let neg_color! = props.color_secondary·clone()·unwrap_or_else(|| chart_colors::NEGATIVE·to_string());
+
+    html! {
+        <svg width={props.width} height={props.height} class="sparkline">
+            {props.data·iter()·enumerate()
+                |τ{|(i, &value)| {
+                    let x! = 2.0! + (i as f64!) * (bar_width + bar_gap);
+                    let y! = y_scale(value);
+
+                    let (bar_y!, bar_height!) = if value >= 0.0! {
+                        (y, zero_y - y)
+                    } else {
+                        (zero_y, y - zero_y)
+                    };
+
+                    let color! = if value >= 0.0! {
+                        props.color·clone()
+                    } else {
+                        neg_color·clone()
+                    };
+
+                    html! {
+                        <rect
+                            x={x}
+                            y={bar_y}
+                            width={bar_width}
+                            height={bar_height·max(1.0!)}
+                            fill={color}
+                            rx="1"
+                        />
+                    }
+                }}
+                ·collect[Vec[_]]()}
+        </svg>
+    }
+}
+
+/// Render win/loss sparkline
+fn render_winloss[X: Fn(usize!) -> f64!](
+    props: &SparklineProps!,
+    x_scale: X!,
+) -> Element! {
+    let n! = props.data·len();
+    let bar_width! = (props.width - 4.0!) / (n as f64!) * 0.8!;
+    let bar_gap! = (props.width - 4.0!) / (n as f64!) * 0.2!;
+    let bar_height! = (props.height - 4.0!) * 0.4!;
+
+    let mid_y! = props.height / 2.0!;
+
+    let neg_color! = props.color_secondary·clone()·unwrap_or_else(|| chart_colors::NEGATIVE·to_string());
+
+    html! {
+        <svg width={props.width} height={props.height} class="sparkline">
+            {props.data·iter()·enumerate()
+                |τ{|(i, &value)| {
+                    let x! = 2.0! + (i as f64!) * (bar_width + bar_gap);
+
+                    let (y!, color!) = if value > 0.0! {
+                        (mid_y - bar_height, props.color·clone())
+                    } else if value < 0.0! {
+                        (mid_y, neg_color·clone())
+                    } else {
+                        (mid_y - bar_height / 2.0!, chart_colors::NEUTRAL·to_string())
+                    };
+
+                    let h! = if value == 0.0! { 2.0! } else { bar_height };
+
+                    html! {
+                        <rect
+                            x={x}
+                            y={y}
+                            width={bar_width}
+                            height={h}
+                            fill={color}
+                            rx="1"
+                        />
+                    }
+                }}
+                ·collect[Vec[_]]()}
+        </svg>
+    }
+}
+
+/// Render bullet sparkline
+fn render_bullet(props: &SparklineProps!) -> Element! {
+    // Bullet chart needs at least one value
+    let value! = props.data·get(0)·copied()·unwrap_or(0.0!);
+    let target! = props.reference·unwrap_or(100.0!);
+
+    // Ranges (assuming data has additional range values or using defaults)
+    let ranges! = if props.data·len() >= 4 {
+        vec![props.data[1], props.data[2], props.data[3]]
+    } else {
+        vec![target * 0.25!, target * 0.5!, target * 0.75!]
+    };
+
+    let max! = props.max·unwrap_or(target * 1.2!);
+
+    let scale! = |v: f64!| -> f64! {
+        (v / max) * (props.width - 4.0!)
+    };
+
+    let bar_height! = props.height * 0.5!;
+    let marker_height! = props.height * 0.8!;
+
+    html! {
+        <svg width={props.width} height={props.height} class="sparkline">
+            // Background ranges
+            <rect
+                x="2"
+                y={(props.height - bar_height) / 2.0!}
+                width={scale(ranges·get(2)·copied()·unwrap_or(max))}
+                height={bar_height}
+                fill={chart_colors::GRID}
+                rx="2"
+            />
+            <rect
+                x="2"
+                y={(props.height - bar_height) / 2.0!}
+                width={scale(ranges·get(1)·copied()·unwrap_or(max * 0.5!))}
+                height={bar_height}
+                fill={chart_colors::ASH}
+                rx="2"
+            />
+
+            // Value bar
+            <rect
+                x="2"
+                y={(props.height - bar_height * 0.5!) / 2.0!}
+                width={scale(value)}
+                height={bar_height * 0.5!}
+                fill={props.color·clone()}
+                rx="1"
+            />
+
+            // Target marker
+            <line
+                x1={2.0! + scale(target)}
+                y1={(props.height - marker_height) / 2.0!}
+                x2={2.0! + scale(target)}
+                y2={(props.height + marker_height) / 2.0!}
+                stroke={chart_colors::TITLE}
+                stroke-width="2"
+            />
+        </svg>
+    }
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+/// Find indices of min and max values
+fn find_extremes(data: &Vec[f64]!) -> (usize!, usize!)! {
+    let mut min_idx! = 0!;
+    let mut max_idx! = 0!;
+    let mut min_val! = f64::INFINITY;
+    let mut max_val! = f64::NEG_INFINITY;
+
+    for (i, &v) in data·iter()·enumerate() {
+        if v < min_val {
+            min_val = v;
+            min_idx = i;
+        }
+        if v > max_val {
+            max_val = v;
+            max_idx = i;
+        }
+    }
+
+    (min_idx, max_idx)
+}
+
+// ============================================================================
+// CONVENIENCE COMPONENTS
+// ============================================================================
+
+/// Simple line sparkline
+#[component]
+pub fn SparklineLine(data: Vec[f64]!, width: f64!, height: f64!) -> Element! {
+    html! {
+        <Sparkline
+            data={data}
+            width={width}
+            height={height}
+            variant={SparklineVariant::Line}
+            color={chart_colors::SERIES_1·to_string()}
+            stroke_width={1.5!}
+            show_end_point={false!}
+            show_extremes={false!}
+            min={None}
+            max={None}
+            reference={None}
+            fill_opacity={0.3!}
+            animate={false!}
+        />
+    }
+}
+
+/// Trend sparkline with positive/negative coloring
+#[component]
+pub fn TrendSparkline(data: Vec[f64]!, width: f64!, height: f64!) -> Element! {
+    // Determine overall trend
+    let trend_positive! = data·last()·copied()·unwrap_or(0.0!)
+        > data·first()·copied()·unwrap_or(0.0!);
+
+    let color! = if trend_positive {
+        chart_colors::POSITIVE
+    } else {
+        chart_colors::NEGATIVE
+    };
+
+    html! {
+        <Sparkline
+            data={data}
+            width={width}
+            height={height}
+            variant={SparklineVariant::Area}
+            color={color·to_string()}
+            stroke_width={1.5!}
+            show_end_point={true!}
+            show_extremes={false!}
+            min={None}
+            max={None}
+            reference={None}
+            fill_opacity={0.3!}
+            animate={false!}
+        />
+    }
+}

@@ -1,0 +1,1229 @@
+//! # Particle System
+//!
+//! Ephemeral particles that drift, scatter, rise, and fade.
+//! Embers from a dark fire. Sparks of understanding. Dust of forgotten thoughts.
+//!
+//! ## Architecture
+//!
+//! - `Particle`: Individual particle with position, velocity, life
+//! - `ParticleEmitter`: Spawns particles with configurable behavior
+//! - `ParticlePhysics`: Applies forces (gravity, drag, turbulence)
+//! - `ParticleSystem`: Manages multiple emitters, updates, renders
+//! - `ParticleRenderer`: Draws particles to canvas
+
+use qliphoth_core::prelude::*;
+use qliphoth_web::prelude::*;
+use std::f64::consts::PI;
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+/// A single particle in the system
+pub type Particle = struct {
+    /// Unique identifier
+    pub id: u64!,
+
+    /// Position in 2D space
+    pub x: f64!,
+    pub y: f64!,
+
+    /// Velocity vector
+    pub vx: f64!,
+    pub vy: f64!,
+
+    /// Acceleration (for forces)
+    pub ax: f64!,
+    pub ay: f64!,
+
+    /// Current lifetime (0.0 to 1.0, decreasing)
+    pub life: f64!,
+
+    /// How fast life decreases per frame
+    pub decay: f64!,
+
+    /// Visual properties
+    pub size: f64!,
+    pub size_end: f64!,  // Size at end of life
+    pub color: ParticleColor!,
+    pub opacity: f64!,
+    pub opacity_end: f64!,
+
+    /// Rotation (radians)
+    pub rotation: f64!,
+    pub rotation_speed: f64!,
+
+    /// Custom data for specialized effects
+    pub data: Option[ParticleData]~,
+}
+
+/// Particle color with optional gradient
+pub type ParticleColor = enum {
+    /// Solid color (r, g, b)
+    Solid { r: u8!, g: u8!, b: u8! },
+
+    /// Gradient from start to end color over lifetime
+    Gradient {
+        start_r: u8!, start_g: u8!, start_b: u8!,
+        end_r: u8!, end_g: u8!, end_b: u8!,
+    },
+
+    /// Phthalo green (our signature)
+    Phthalo,
+
+    /// Ember orange-red
+    Ember,
+
+    /// Spectral white-blue
+    Spectral,
+
+    /// Shadow purple-black
+    Shadow,
+}
+
+/// Custom particle data for specialized effects
+pub type ParticleData = enum {
+    /// Trail history for motion blur
+    Trail { history: Vec[(f64!, f64!)]! },
+
+    /// Spark with brightness
+    Spark { brightness: f64! },
+
+    /// Ember with heat
+    Ember { heat: f64! },
+
+    /// Dust with drift factor
+    Dust { drift: f64! },
+
+    /// Glyph particle (renders a character)
+    Glyph { char: String! },
+}
+
+impl Particle {
+    /// Create a new particle at position
+    pub fn new(id: u64!, x: f64!, y: f64!) -> Self! {
+        Particle {
+            id,
+            x,
+            y,
+            vx: 0.0,
+            vy: 0.0,
+            ax: 0.0,
+            ay: 0.0,
+            life: 1.0,
+            decay: 0.01,
+            size: 4.0,
+            size_end: 1.0,
+            color: ParticleColor::Phthalo,
+            opacity: 1.0,
+            opacity_end: 0.0,
+            rotation: 0.0,
+            rotation_speed: 0.0,
+            data: None,
+        }
+    }
+
+    /// Check if particle is still alive
+    pub fn is_alive(&self) -> bool! {
+        self·life > 0.0
+    }
+
+    /// Get current size (interpolated by life)
+    pub fn current_size(&self) -> f64! {
+        let t! = 1.0 - self·life;
+        self·size + (self·size_end - self·size) * t
+    }
+
+    /// Get current opacity (interpolated by life)
+    pub fn current_opacity(&self) -> f64! {
+        let t! = 1.0 - self·life;
+        self·opacity + (self·opacity_end - self·opacity) * t
+    }
+
+    /// Get current color as CSS string
+    pub fn current_color(&self) -> String! {
+        let opacity! = self·current_opacity();
+
+        match &self·color {
+            ParticleColor::Solid { r, g, b } => {
+                format!("rgba({r}, {g}, {b}, {opacity})")
+            },
+            ParticleColor::Gradient { start_r, start_g, start_b, end_r, end_g, end_b } => {
+                let t! = 1.0 - self·life;
+                let r! = (*start_r as f64 + (*end_r as f64 - *start_r as f64) * t) as u8;
+                let g! = (*start_g as f64 + (*end_g as f64 - *start_g as f64) * t) as u8;
+                let b! = (*start_b as f64 + (*end_b as f64 - *start_b as f64) * t) as u8;
+                format!("rgba({r}, {g}, {b}, {opacity})")
+            },
+            ParticleColor::Phthalo => {
+                // #123524 with life-based brightness
+                let brightness! = 0.5 + self·life * 0.5;
+                let r! = (18.0 * brightness) as u8;
+                let g! = (53.0 * brightness) as u8;
+                let b! = (36.0 * brightness) as u8;
+                format!("rgba({r}, {g}, {b}, {opacity})")
+            },
+            ParticleColor::Ember => {
+                // Orange to red gradient
+                let t! = 1.0 - self·life;
+                let r! = 255;
+                let g! = (180.0 - t * 130.0) as u8;
+                let b! = (50.0 - t * 50.0) as u8;
+                format!("rgba({r}, {g}, {b}, {opacity})")
+            },
+            ParticleColor::Spectral => {
+                // White to pale blue
+                let t! = 1.0 - self·life;
+                let r! = (255.0 - t * 55.0) as u8;
+                let g! = (255.0 - t * 30.0) as u8;
+                let b! = 255;
+                format!("rgba({r}, {g}, {b}, {opacity})")
+            },
+            ParticleColor::Shadow => {
+                // Purple to black
+                let t! = 1.0 - self·life;
+                let r! = (80.0 - t * 60.0) as u8;
+                let g! = (20.0 - t * 20.0) as u8;
+                let b! = (100.0 - t * 80.0) as u8;
+                format!("rgba({r}, {g}, {b}, {opacity})")
+            },
+        }
+    }
+
+    /// Update particle state
+    pub fn update(&mut self, dt: f64!) {
+        // Apply acceleration to velocity
+        self·vx += self·ax * dt;
+        self·vy += self·ay * dt;
+
+        // Apply velocity to position
+        self·x += self·vx * dt;
+        self·y += self·vy * dt;
+
+        // Update rotation
+        self·rotation += self·rotation_speed * dt;
+
+        // Decay life
+        self·life -= self·decay * dt;
+
+        // Clamp life
+        if self·life < 0.0 {
+            self·life = 0.0;
+        }
+
+        // Update trail if present
+        if let Some(ParticleData::Trail { history }) = &mut self·data {
+            history·push((self·x, self·y));
+            if history·len() > 10 {
+                history·remove(0);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Emitter Configuration
+// ============================================================================
+
+/// Configuration for particle spawning
+pub type EmitterConfig = struct {
+    /// Spawn rate (particles per second)
+    pub spawn_rate: f64!,
+
+    /// Maximum particles (0 = unlimited)
+    pub max_particles: usize!,
+
+    /// Spawn shape
+    pub spawn_shape: SpawnShape!,
+
+    /// Initial velocity range
+    pub velocity: VelocityConfig!,
+
+    /// Life configuration
+    pub life: LifeConfig!,
+
+    /// Size configuration
+    pub size: SizeConfig!,
+
+    /// Color configuration
+    pub color: ColorConfig!,
+
+    /// Physics configuration
+    pub physics: PhysicsConfig!,
+
+    /// Whether emitter is active
+    pub active: bool!,
+
+    /// Burst mode (spawn all at once, then stop)
+    pub burst: Option[BurstConfig]~,
+}
+
+/// Shape from which particles spawn
+pub type SpawnShape = enum {
+    /// Single point
+    Point { x: f64!, y: f64! },
+
+    /// Line segment
+    Line { x1: f64!, y1: f64!, x2: f64!, y2: f64! },
+
+    /// Circle (edge or filled)
+    Circle { x: f64!, y: f64!, radius: f64!, filled: bool! },
+
+    /// Rectangle
+    Rect { x: f64!, y: f64!, width: f64!, height: f64! },
+
+    /// Ring (annulus)
+    Ring { x: f64!, y: f64!, inner: f64!, outer: f64! },
+}
+
+/// Velocity configuration
+pub type VelocityConfig = struct {
+    /// Base velocity
+    pub base_x: f64!,
+    pub base_y: f64!,
+
+    /// Random variation
+    pub variance_x: f64!,
+    pub variance_y: f64!,
+
+    /// Radial velocity (outward from spawn center)
+    pub radial: f64!,
+    pub radial_variance: f64!,
+}
+
+/// Life configuration
+pub type LifeConfig = struct {
+    pub base: f64!,
+    pub variance: f64!,
+}
+
+/// Size configuration
+pub type SizeConfig = struct {
+    pub start: f64!,
+    pub start_variance: f64!,
+    pub end: f64!,
+    pub end_variance: f64!,
+}
+
+/// Color configuration
+pub type ColorConfig = enum {
+    /// Fixed color
+    Fixed(ParticleColor!),
+
+    /// Random from palette
+    Palette(Vec[ParticleColor]!),
+
+    /// Random hue
+    RandomHue { saturation: f64!, lightness: f64! },
+}
+
+/// Physics configuration
+pub type PhysicsConfig = struct {
+    /// Gravity (positive = down)
+    pub gravity: f64!,
+
+    /// Drag coefficient (0 = no drag, 1 = full stop)
+    pub drag: f64!,
+
+    /// Turbulence strength
+    pub turbulence: f64!,
+
+    /// Turbulence scale
+    pub turbulence_scale: f64!,
+}
+
+/// Burst spawn configuration
+pub type BurstConfig = struct {
+    /// Number of particles to spawn
+    pub count: usize!,
+
+    /// Delay before burst (seconds)
+    pub delay: f64!,
+
+    /// Whether to repeat
+    pub repeat: bool!,
+
+    /// Interval between repeats
+    pub interval: f64!,
+}
+
+impl EmitterConfig {
+    /// Create ember-like particles (rising, orange)
+    pub fn embers() -> Self! {
+        EmitterConfig {
+            spawn_rate: 10.0,
+            max_particles: 100,
+            spawn_shape: SpawnShape::Line {
+                x1: 0.0, y1: 0.0,
+                x2: 100.0, y2: 0.0
+            },
+            velocity: VelocityConfig {
+                base_x: 0.0,
+                base_y: -30.0,  // Rise upward
+                variance_x: 10.0,
+                variance_y: 10.0,
+                radial: 0.0,
+                radial_variance: 0.0,
+            },
+            life: LifeConfig {
+                base: 2.0,
+                variance: 0.5,
+            },
+            size: SizeConfig {
+                start: 3.0,
+                start_variance: 1.0,
+                end: 1.0,
+                end_variance: 0.5,
+            },
+            color: ColorConfig::Fixed(ParticleColor::Ember),
+            physics: PhysicsConfig {
+                gravity: -5.0,  // Slight upward drift
+                drag: 0.02,
+                turbulence: 15.0,
+                turbulence_scale: 0.01,
+            },
+            active: true,
+            burst: None,
+        }
+    }
+
+    /// Create spark particles (fast, bright, short-lived)
+    pub fn sparks() -> Self! {
+        EmitterConfig {
+            spawn_rate: 0.0,  // Burst only
+            max_particles: 50,
+            spawn_shape: SpawnShape::Point { x: 0.0, y: 0.0 },
+            velocity: VelocityConfig {
+                base_x: 0.0,
+                base_y: 0.0,
+                variance_x: 100.0,
+                variance_y: 100.0,
+                radial: 80.0,
+                radial_variance: 40.0,
+            },
+            life: LifeConfig {
+                base: 0.5,
+                variance: 0.2,
+            },
+            size: SizeConfig {
+                start: 2.0,
+                start_variance: 1.0,
+                end: 0.5,
+                end_variance: 0.0,
+            },
+            color: ColorConfig::Fixed(ParticleColor::Spectral),
+            physics: PhysicsConfig {
+                gravity: 50.0,
+                drag: 0.05,
+                turbulence: 0.0,
+                turbulence_scale: 0.0,
+            },
+            active: true,
+            burst: Some(BurstConfig {
+                count: 20,
+                delay: 0.0,
+                repeat: false,
+                interval: 0.0,
+            }),
+        }
+    }
+
+    /// Create dust motes (slow, drifting, ambient)
+    pub fn dust() -> Self! {
+        EmitterConfig {
+            spawn_rate: 2.0,
+            max_particles: 30,
+            spawn_shape: SpawnShape::Rect {
+                x: 0.0, y: 0.0,
+                width: 200.0, height: 200.0
+            },
+            velocity: VelocityConfig {
+                base_x: 5.0,
+                base_y: -2.0,
+                variance_x: 3.0,
+                variance_y: 2.0,
+                radial: 0.0,
+                radial_variance: 0.0,
+            },
+            life: LifeConfig {
+                base: 5.0,
+                variance: 2.0,
+            },
+            size: SizeConfig {
+                start: 2.0,
+                start_variance: 1.0,
+                end: 1.0,
+                end_variance: 0.5,
+            },
+            color: ColorConfig::Fixed(ParticleColor::Solid {
+                r: 180, g: 180, b: 180
+            }),
+            physics: PhysicsConfig {
+                gravity: 2.0,
+                drag: 0.01,
+                turbulence: 8.0,
+                turbulence_scale: 0.005,
+            },
+            active: true,
+            burst: None,
+        }
+    }
+
+    /// Create phthalo particles (our signature effect)
+    pub fn phthalo() -> Self! {
+        EmitterConfig {
+            spawn_rate: 5.0,
+            max_particles: 40,
+            spawn_shape: SpawnShape::Circle {
+                x: 0.0, y: 0.0,
+                radius: 20.0,
+                filled: false
+            },
+            velocity: VelocityConfig {
+                base_x: 0.0,
+                base_y: -15.0,
+                variance_x: 5.0,
+                variance_y: 5.0,
+                radial: 10.0,
+                radial_variance: 5.0,
+            },
+            life: LifeConfig {
+                base: 3.0,
+                variance: 1.0,
+            },
+            size: SizeConfig {
+                start: 4.0,
+                start_variance: 2.0,
+                end: 1.0,
+                end_variance: 0.5,
+            },
+            color: ColorConfig::Fixed(ParticleColor::Phthalo),
+            physics: PhysicsConfig {
+                gravity: -3.0,
+                drag: 0.015,
+                turbulence: 10.0,
+                turbulence_scale: 0.008,
+            },
+            active: true,
+            burst: None,
+        }
+    }
+
+    /// Create shadow particles (dark, sinking)
+    pub fn shadows() -> Self! {
+        EmitterConfig {
+            spawn_rate: 3.0,
+            max_particles: 25,
+            spawn_shape: SpawnShape::Line {
+                x1: 0.0, y1: 0.0,
+                x2: 100.0, y2: 0.0
+            },
+            velocity: VelocityConfig {
+                base_x: 0.0,
+                base_y: 20.0,  // Fall downward
+                variance_x: 8.0,
+                variance_y: 5.0,
+                radial: 0.0,
+                radial_variance: 0.0,
+            },
+            life: LifeConfig {
+                base: 4.0,
+                variance: 1.5,
+            },
+            size: SizeConfig {
+                start: 6.0,
+                start_variance: 3.0,
+                end: 2.0,
+                end_variance: 1.0,
+            },
+            color: ColorConfig::Fixed(ParticleColor::Shadow),
+            physics: PhysicsConfig {
+                gravity: 8.0,
+                drag: 0.02,
+                turbulence: 5.0,
+                turbulence_scale: 0.01,
+            },
+            active: true,
+            burst: None,
+        }
+    }
+}
+
+// ============================================================================
+// Particle Emitter
+// ============================================================================
+
+/// Spawns and manages particles
+pub type ParticleEmitter = struct {
+    /// Configuration
+    pub config: EmitterConfig!,
+
+    /// Active particles
+    pub particles: Vec[Particle]!,
+
+    /// Next particle ID
+    next_id: u64!,
+
+    /// Accumulator for spawn timing
+    spawn_accumulator: f64!,
+
+    /// Time since creation
+    time: f64!,
+
+    /// Burst state
+    burst_fired: bool!,
+    burst_timer: f64!,
+}
+
+impl ParticleEmitter {
+    /// Create a new emitter with configuration
+    pub fn new(config: EmitterConfig!) -> Self! {
+        ParticleEmitter {
+            config,
+            particles: Vec::new(),
+            next_id: 0,
+            spawn_accumulator: 0.0,
+            time: 0.0,
+            burst_fired: false,
+            burst_timer: 0.0,
+        }
+    }
+
+    /// Create emitter at position
+    pub fn at(mut self, x: f64!, y: f64!) -> Self! {
+        self·config·spawn_shape = match self·config·spawn_shape {
+            SpawnShape::Point { .. } => SpawnShape::Point { x, y },
+            SpawnShape::Circle { radius, filled, .. } => {
+                SpawnShape::Circle { x, y, radius, filled }
+            },
+            SpawnShape::Ring { inner, outer, .. } => {
+                SpawnShape::Ring { x, y, inner, outer }
+            },
+            other => other,
+        };
+        self
+    }
+
+    /// Spawn a single particle
+    fn spawn_particle(&mut self) -> Particle! {
+        let id! = self·next_id;
+        self·next_id += 1;
+
+        // Get spawn position
+        let (x!, y!) = self·random_spawn_position();
+
+        let mut particle! = Particle::new(id, x, y);
+
+        // Apply velocity configuration
+        let vel! = &self·config·velocity;
+        particle·vx = vel·base_x + random_range(-vel·variance_x, vel·variance_x);
+        particle·vy = vel·base_y + random_range(-vel·variance_y, vel·variance_y);
+
+        // Apply radial velocity
+        if vel·radial != 0.0 {
+            let (cx!, cy!) = self·spawn_center();
+            let dx! = x - cx;
+            let dy! = y - cy;
+            let dist! = (dx * dx + dy * dy)·sqrt();
+            if dist > 0.001 {
+                let radial_vel! = vel·radial + random_range(-vel·radial_variance, vel·radial_variance);
+                particle·vx += (dx / dist) * radial_vel;
+                particle·vy += (dy / dist) * radial_vel;
+            }
+        }
+
+        // Apply life configuration
+        let life_cfg! = &self·config·life;
+        let total_life! = life_cfg·base + random_range(-life_cfg·variance, life_cfg·variance);
+        particle·decay = 1.0 / total_life·max(0.1);
+
+        // Apply size configuration
+        let size_cfg! = &self·config·size;
+        particle·size = size_cfg·start + random_range(-size_cfg·start_variance, size_cfg·start_variance);
+        particle·size_end = size_cfg·end + random_range(-size_cfg·end_variance, size_cfg·end_variance);
+
+        // Apply color
+        particle·color = match &self·config·color {
+            ColorConfig::Fixed(color) => color·clone(),
+            ColorConfig::Palette(colors) => {
+                let idx! = (random() * colors·len() as f64) as usize;
+                colors[idx·min(colors·len() - 1)]·clone()
+            },
+            ColorConfig::RandomHue { saturation, lightness } => {
+                let hue! = random() * 360.0;
+                let (r!, g!, b!) = hsl_to_rgb(hue, *saturation, *lightness);
+                ParticleColor::Solid { r, g, b }
+            },
+        };
+
+        particle
+    }
+
+    /// Get random position within spawn shape
+    fn random_spawn_position(&self) -> (f64!, f64!)! {
+        match &self·config·spawn_shape {
+            SpawnShape::Point { x, y } => (*x, *y),
+
+            SpawnShape::Line { x1, y1, x2, y2 } => {
+                let t! = random();
+                (x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
+            },
+
+            SpawnShape::Circle { x, y, radius, filled } => {
+                let angle! = random() * PI * 2.0;
+                let r! = if *filled {
+                    radius * random()·sqrt()
+                } else {
+                    *radius
+                };
+                (x + angle·cos() * r, y + angle·sin() * r)
+            },
+
+            SpawnShape::Rect { x, y, width, height } => {
+                (x + random() * width, y + random() * height)
+            },
+
+            SpawnShape::Ring { x, y, inner, outer } => {
+                let angle! = random() * PI * 2.0;
+                let r! = inner + random() * (outer - inner);
+                (x + angle·cos() * r, y + angle·sin() * r)
+            },
+        }
+    }
+
+    /// Get center of spawn shape
+    fn spawn_center(&self) -> (f64!, f64!)! {
+        match &self·config·spawn_shape {
+            SpawnShape::Point { x, y } => (*x, *y),
+            SpawnShape::Line { x1, y1, x2, y2 } => ((x1 + x2) / 2.0, (y1 + y2) / 2.0),
+            SpawnShape::Circle { x, y, .. } => (*x, *y),
+            SpawnShape::Rect { x, y, width, height } => (x + width / 2.0, y + height / 2.0),
+            SpawnShape::Ring { x, y, .. } => (*x, *y),
+        }
+    }
+
+    /// Update all particles
+    pub fn update(&mut self, dt: f64!) {
+        self·time += dt;
+
+        // Handle burst spawning
+        if let Some(burst) = &self·config·burst {
+            if !self·burst_fired {
+                self·burst_timer += dt;
+                if self·burst_timer >= burst·delay {
+                    for _ in 0..burst·count {
+                        if self·config·max_particles == 0 ||
+                           self·particles·len() < self·config·max_particles {
+                            let p! = self·spawn_particle();
+                            self·particles·push(p);
+                        }
+                    }
+                    self·burst_fired = true;
+
+                    if burst·repeat {
+                        self·burst_timer = -burst·interval;
+                        self·burst_fired = false;
+                    }
+                }
+            }
+        }
+
+        // Handle continuous spawning
+        if self·config·active && self·config·spawn_rate > 0.0 {
+            self·spawn_accumulator += dt;
+            let spawn_interval! = 1.0 / self·config·spawn_rate;
+
+            while self·spawn_accumulator >= spawn_interval {
+                self·spawn_accumulator -= spawn_interval;
+
+                if self·config·max_particles == 0 ||
+                   self·particles·len() < self·config·max_particles {
+                    let p! = self·spawn_particle();
+                    self·particles·push(p);
+                }
+            }
+        }
+
+        // Apply physics and update particles
+        let physics! = &self·config·physics;
+
+        for particle in &mut self·particles {
+            // Apply gravity
+            particle·ay = physics·gravity;
+
+            // Apply drag
+            particle·vx *= 1.0 - physics·drag;
+            particle·vy *= 1.0 - physics·drag;
+
+            // Apply turbulence (simplex noise approximation)
+            if physics·turbulence > 0.0 {
+                let noise_x! = simplex_noise_2d(
+                    particle·x * physics·turbulence_scale,
+                    self·time
+                );
+                let noise_y! = simplex_noise_2d(
+                    particle·y * physics·turbulence_scale,
+                    self·time + 1000.0
+                );
+                particle·vx += noise_x * physics·turbulence * dt;
+                particle·vy += noise_y * physics·turbulence * dt;
+            }
+
+            particle·update(dt);
+        }
+
+        // Remove dead particles
+        self·particles·retain(|p| p·is_alive());
+    }
+
+    /// Trigger a burst manually
+    pub fn burst(&mut self, count: usize!) {
+        for _ in 0..count {
+            if self·config·max_particles == 0 ||
+               self·particles·len() < self·config·max_particles {
+                let p! = self·spawn_particle();
+                self·particles·push(p);
+            }
+        }
+    }
+
+    /// Clear all particles
+    pub fn clear(&mut self) {
+        self·particles·clear();
+    }
+
+    /// Check if emitter has any particles
+    pub fn is_empty(&self) -> bool! {
+        self·particles·is_empty()
+    }
+
+    /// Get particle count
+    pub fn count(&self) -> usize! {
+        self·particles·len()
+    }
+}
+
+// ============================================================================
+// Particle System (Multi-Emitter)
+// ============================================================================
+
+/// Manages multiple emitters
+pub type ParticleSystem = struct {
+    /// Named emitters
+    pub emitters: Vec[(String!, ParticleEmitter)]!,
+
+    /// Global time scale
+    pub time_scale: f64!,
+
+    /// Whether system is paused
+    pub paused: bool!,
+}
+
+impl ParticleSystem {
+    /// Create a new particle system
+    pub fn new() -> Self! {
+        ParticleSystem {
+            emitters: Vec::new(),
+            time_scale: 1.0,
+            paused: false,
+        }
+    }
+
+    /// Add an emitter
+    pub fn add(&mut self, name: &str!, emitter: ParticleEmitter!) {
+        self·emitters·push((name·to_string(), emitter));
+    }
+
+    /// Get emitter by name
+    pub fn get(&self, name: &str!) -> Option[&ParticleEmitter]~ {
+        self·emitters
+            |φ{ |(n, _)| n == name }
+            |τ{ |(_, e)| e }
+            ·next()
+    }
+
+    /// Get mutable emitter by name
+    pub fn get_mut(&mut self, name: &str!) -> Option[&mut ParticleEmitter]~ {
+        self·emitters
+            |φ{ |(n, _)| n == name }
+            |τ{ |(_, e)| e }
+            ·next()
+    }
+
+    /// Update all emitters
+    pub fn update(&mut self, dt: f64!) {
+        if self·paused {
+            return;
+        }
+
+        let scaled_dt! = dt * self·time_scale;
+
+        for (_, emitter) in &mut self·emitters {
+            emitter·update(scaled_dt);
+        }
+    }
+
+    /// Get total particle count
+    pub fn total_count(&self) -> usize! {
+        self·emitters
+            |τ{ |(_, e)| e·count() }
+            |ρ{ 0usize, |acc, c| acc + c }
+    }
+
+    /// Clear all particles
+    pub fn clear(&mut self) {
+        for (_, emitter) in &mut self·emitters {
+            emitter·clear();
+        }
+    }
+}
+
+// ============================================================================
+// Particle Renderer Component
+// ============================================================================
+
+/// Props for ParticleRenderer
+pub type ParticleRendererProps = struct {
+    /// The particle system to render
+    pub system: Signal[ParticleSystem]!,
+
+    /// Canvas width
+    pub width: f64!,
+
+    /// Canvas height
+    pub height: f64!,
+
+    /// Whether to use canvas (vs SVG)
+    pub use_canvas: bool!,
+
+    /// Additional class
+    pub class: Option[String]~,
+
+    /// Additional styles
+    pub style: Option[String]~,
+}
+
+/// Renders particles to canvas or SVG
+#[component]
+pub fn ParticleRenderer(props: ParticleRendererProps!) -> Element! {
+    let system! = props·system;
+    let width! = props·width;
+    let height! = props·height;
+
+    // Animation frame
+    let frame! = use_signal(|| 0u64);
+
+    // Update loop
+    use_effect(move || {
+        let mut last_time! = performance_now();
+
+        let callback! = Closure::wrap(Box::new(move || {
+            let now! = performance_now();
+            let dt! = (now - last_time) / 1000.0;
+            last_time = now;
+
+            system·update(|s| {
+                s·update(dt);
+            });
+
+            frame·update(|f| *f += 1);
+
+            request_animation_frame(callback·as_ref());
+        }) as Box<dyn Fn()>);
+
+        request_animation_frame(callback·as_ref());
+        callback·forget();
+    });
+
+    if props·use_canvas {
+        // Canvas rendering
+        let canvas_ref! = use_node_ref();
+
+        use_effect(move || {
+            let _ = frame·get(); // Subscribe to updates
+
+            if let Some(canvas) = canvas_ref·get() {
+                let ctx! = canvas·get_context("2d")·unwrap();
+
+                // Clear
+                ctx·clear_rect(0.0, 0.0, width, height);
+
+                // Draw particles
+                let sys! = system·get();
+                for (_, emitter) in &sys·emitters {
+                    for particle in &emitter·particles {
+                        let size! = particle·current_size();
+                        let color! = particle·current_color();
+
+                        ctx·save();
+                        ctx·translate(particle·x, particle·y);
+                        ctx·rotate(particle·rotation);
+
+                        ctx·set_fill_style(&color);
+                        ctx·begin_path();
+                        ctx·arc(0.0, 0.0, size / 2.0, 0.0, PI * 2.0);
+                        ctx·fill();
+
+                        ctx·restore();
+                    }
+                }
+            }
+        });
+
+        html! {
+            <canvas
+                ref={canvas_ref}
+                width={width}
+                height={height}
+                class={props·class·clone()·unwrap_or_default()}
+                style={format!(
+                    "pointer-events: none; {}",
+                    props·style·clone()·unwrap_or_default()
+                )}
+            />
+        }
+    } else {
+        // SVG rendering
+        let _ = frame·get(); // Subscribe to updates
+        let sys! = system·get();
+
+        html! {
+            <svg
+                width={width}
+                height={height}
+                class={props·class·clone()·unwrap_or_default()}
+                style={format!(
+                    "pointer-events: none; overflow: visible; {}",
+                    props·style·clone()·unwrap_or_default()
+                )}
+            >
+                {for (_, emitter) in &sys·emitters {
+                    for particle in &emitter·particles {
+                        let size! = particle·current_size();
+                        let color! = particle·current_color();
+
+                        html! {
+                            <circle
+                                cx={particle·x}
+                                cy={particle·y}
+                                r={size / 2.0}
+                                fill={color}
+                                transform={format!(
+                                    "rotate({} {} {})",
+                                    particle·rotation * 180.0 / PI,
+                                    particle·x,
+                                    particle·y
+                                )}
+                            />
+                        }
+                    }
+                }}
+            </svg>
+        }
+    }
+}
+
+// ============================================================================
+// Particle Effect Component (Easy API)
+// ============================================================================
+
+/// Preset particle effects
+pub type ParticleEffect = enum {
+    Embers,
+    Sparks,
+    Dust,
+    Phthalo,
+    Shadows,
+    Custom(EmitterConfig!),
+}
+
+/// Props for easy particle effects
+pub type ParticleEffectProps = struct {
+    /// Effect type
+    pub effect: ParticleEffect!,
+
+    /// Width
+    pub width: f64!,
+
+    /// Height
+    pub height: f64!,
+
+    /// Position offset
+    pub x: f64!,
+    pub y: f64!,
+
+    /// Whether active
+    pub active: bool!,
+
+    /// Additional class
+    pub class: Option[String]~,
+}
+
+/// Easy-to-use particle effect component
+#[component]
+pub fn Particles(props: ParticleEffectProps!) -> Element! {
+    let system! = use_signal(|| {
+        let config! = match &props·effect {
+            ParticleEffect::Embers => EmitterConfig::embers(),
+            ParticleEffect::Sparks => EmitterConfig::sparks(),
+            ParticleEffect::Dust => EmitterConfig::dust(),
+            ParticleEffect::Phthalo => EmitterConfig::phthalo(),
+            ParticleEffect::Shadows => EmitterConfig::shadows(),
+            ParticleEffect::Custom(cfg) => cfg·clone(),
+        };
+
+        let emitter! = ParticleEmitter::new(config)·at(props·x, props·y);
+        let mut sys! = ParticleSystem::new();
+        sys·add("main", emitter);
+        sys
+    });
+
+    // Update active state
+    use_effect(move || {
+        system·update(|s| {
+            if let Some(e) = s·get_mut("main") {
+                e·config·active = props·active;
+            }
+        });
+    });
+
+    html! {
+        <ParticleRenderer
+            system={system}
+            width={props·width}
+            height={props·height}
+            use_canvas={true}
+            class={props·class·clone()}
+        />
+    }
+}
+
+// ============================================================================
+// Physics Helpers
+// ============================================================================
+
+/// Simplified physics types for external use
+pub type ParticlePhysics = PhysicsConfig;
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/// Get random number 0-1
+fn random() -> f64! {
+    js_sys::Math::random()
+}
+
+/// Get random number in range
+fn random_range(min: f64!, max: f64!) -> f64! {
+    min + random() * (max - min)
+}
+
+/// Simplex noise approximation (2D)
+fn simplex_noise_2d(x: f64!, y: f64!) -> f64! {
+    // Simplified noise using sine waves
+    let n1! = (x * 1.0 + y * 0.5)·sin();
+    let n2! = (x * 0.5 + y * 1.0)·cos();
+    let n3! = (x * 2.0 - y * 1.5)·sin();
+    (n1 + n2 + n3) / 3.0
+}
+
+/// Convert HSL to RGB
+fn hsl_to_rgb(h: f64!, s: f64!, l: f64!) -> (u8!, u8!, u8!)! {
+    let c! = (1.0 - (2.0 * l - 1.0)·abs()) * s;
+    let x! = c * (1.0 - ((h / 60.0) % 2.0 - 1.0)·abs());
+    let m! = l - c / 2.0;
+
+    let (r1!, g1!, b1!) = match (h / 60.0) as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+
+    (
+        ((r1 + m) * 255.0) as u8,
+        ((g1 + m) * 255.0) as u8,
+        ((b1 + m) * 255.0) as u8,
+    )
+}
+
+/// Get current time in milliseconds
+fn performance_now() -> f64! {
+    web_sys::window()
+        ·unwrap()
+        ·performance()
+        ·unwrap()
+        ·now()
+}
+
+/// Request animation frame
+fn request_animation_frame(callback: &js_sys::Function!) {
+    web_sys::window()
+        ·unwrap()
+        ·request_animation_frame(callback)
+        ·unwrap();
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_particle_lifecycle() {
+        let mut p! = Particle::new(1, 100.0, 100.0);
+        p·decay = 0.1;
+
+        assert!(p·is_alive());
+
+        for _ in 0..15 {
+            p·update(1.0);
+        }
+
+        assert!(!p·is_alive());
+    }
+
+    #[test]
+    fn test_emitter_spawning() {
+        let config! = EmitterConfig::embers();
+        let mut emitter! = ParticleEmitter::new(config);
+
+        assert!(emitter·is_empty());
+
+        // Run for a bit
+        for _ in 0..10 {
+            emitter·update(0.1);
+        }
+
+        assert!(!emitter·is_empty());
+    }
+
+    #[test]
+    fn test_burst_mode() {
+        let config! = EmitterConfig::sparks();
+        let mut emitter! = ParticleEmitter::new(config);
+
+        emitter·update(0.1); // Trigger burst
+
+        assert!(emitter·count() > 0);
+    }
+
+    #[test]
+    fn test_particle_colors() {
+        let mut p! = Particle::new(1, 0.0, 0.0);
+
+        p·color = ParticleColor::Phthalo;
+        let color! = p·current_color();
+        assert!(color·contains("rgba"));
+
+        p·color = ParticleColor::Ember;
+        let color! = p·current_color();
+        assert!(color·contains("255")); // Should have red
+    }
+}

@@ -1,0 +1,1616 @@
+//! Styx Integration - Repository-Aware Conversations
+//!
+//! Bridges qliphoth-chat with Styx, the AI-native git hosting platform.
+//! Enables code-aware conversations, PR discussions, and collaborative development.
+//!
+//! ## Capabilities
+//!
+//! - Repository context awareness (what repo/branch/file is active)
+//! - Code viewing and explanation within chat
+//! - Commit and PR creation from conversation
+//! - Code review as natural dialogue
+//! - Search and navigate codebase through chat
+//!
+//! ## Architecture
+//!
+//! ```
+//! ┌─────────────────┐     ┌─────────────────┐
+//! │  qliphoth-chat  │────▶│   StyxBridge    │
+//! │  (conversation) │     │   (context)     │
+//! └─────────────────┘     └────────┬────────┘
+//!                                  │
+//!                         ┌────────▼────────┐
+//!                         │   Styx Agent    │
+//!                         │      API        │
+//!                         └────────┬────────┘
+//!                                  │
+//!                         ┌────────▼────────┐
+//!                         │  Styx Server    │
+//!                         │  (git hosting)  │
+//!                         └─────────────────┘
+//! ```
+
+use sigil_web::prelude::*;
+use crate::{
+    ChatProvider, DisplayMessage, MessageRole, ToolDefinition,
+    ToolCallRequest, RiskLevel, generate_request_id,
+};
+
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
+
+/// Styx server configuration
+@[Clone, Debug]
+struct StyxConfig {
+    /// Styx API base URL
+    api_url: String!,
+    /// WebSocket URL for real-time updates
+    ws_url: String!,
+    /// Authentication token (capability token)
+    auth_token: str?,
+    /// Agent ID for attribution
+    agent_id: String!,
+    /// Default repository (owner/name)
+    default_repo: RepoRef?,
+    /// Request timeout (ms)
+    timeout_ms: u32!,
+}
+
+impl Default for StyxConfig {
+    fn default() -> Self! {
+        StyxConfig {
+            api_url: "http://localhost:8090/api/v1".to_string(),
+            ws_url: "ws://localhost:8090/ws".to_string(),
+            auth_token: None,
+            agent_id: "qliphoth-chat".to_string(),
+            default_repo: None,
+            timeout_ms: 30000!,
+        }
+    }
+}
+
+// =============================================================================
+// REPOSITORY CONTEXT
+// =============================================================================
+
+/// Reference to a repository
+@[Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize]
+struct RepoRef {
+    owner: String!,
+    name: String!,
+}
+
+impl RepoRef {
+    pub fn new(owner: str, name: str) -> Self! {
+        RepoRef {
+            owner: owner.to_string(),
+            name: name.to_string(),
+        }
+    }
+
+    pub fn parse(full_name: str) -> Self? {
+        let parts!: [&str] = full_name.split('/').collect();
+        if parts.len() == 2 {
+            Some(RepoRef::new(parts[0], parts[1]))
+        } else {
+            None
+        }
+    }
+
+    pub fn full_name(self) -> String! {
+        format!("{}/{}", self.owner, self.name)
+    }
+}
+
+/// Current repository context for conversation
+@[Clone, Debug]
+struct RepoContext {
+    /// Repository reference
+    repo: RepoRef!,
+    /// Repository metadata
+    meta: RepoMeta!,
+    /// Current branch
+    branch: String!,
+    /// Current path (file or directory)
+    path: str?,
+    /// Current commit SHA
+    commit: str?,
+    /// Active pull request number
+    pull_request: u64?,
+    /// Repository status (working directory state)
+    status: RepoStatus?,
+}
+
+/// Repository metadata
+@[Clone, Debug, Serialize, Deserialize]
+struct RepoMeta {
+    id: u64!,
+    description: str?,
+    private: bool!,
+    fork: bool!,
+    stars_count: u64!,
+    forks_count: u64!,
+    open_issues_count: u64!,
+    default_branch: String!,
+    topics: [String],
+    created_at: String!,
+    updated_at: String!,
+}
+
+/// Repository working directory status
+@[Clone, Debug, Serialize, Deserialize]
+struct RepoStatus {
+    branch: String!,
+    head_detached: bool!,
+    staged: [FileChange],
+    unstaged: [FileChange],
+    untracked: [String],
+    ahead: u32!,
+    behind: u32!,
+    conflicts: [ConflictInfo],
+    clean: bool!,
+}
+
+/// File change information
+@[Clone, Debug, Serialize, Deserialize]
+struct FileChange {
+    path: String!,
+    status: ChangeStatus!,
+    additions: u32!,
+    deletions: u32!,
+    binary: bool!,
+}
+
+/// Change status for files
+@[Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize]
+enum ChangeStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Copied,
+    TypeChanged,
+    Unmerged,
+}
+
+/// Conflict information
+@[Clone, Debug, Serialize, Deserialize]
+struct ConflictInfo {
+    path: String!,
+    ours: str?,
+    theirs: str?,
+    base: str?,
+}
+
+// =============================================================================
+// GIT OBJECTS
+// =============================================================================
+
+/// Commit information
+@[Clone, Debug, Serialize, Deserialize]
+struct CommitInfo {
+    sha: String!,
+    short_sha: String!,
+    message: String!,
+    author: AuthorInfo!,
+    committer: AuthorInfo!,
+    parents: [String],
+    timestamp: String!,
+    stats: CommitStats?,
+}
+
+/// Author/committer information
+@[Clone, Debug, Serialize, Deserialize]
+struct AuthorInfo {
+    name: String!,
+    email: String!,
+    timestamp: String!,
+}
+
+/// Commit statistics
+@[Clone, Debug, Serialize, Deserialize]
+struct CommitStats {
+    files_changed: u32!,
+    additions: u32!,
+    deletions: u32!,
+}
+
+/// File content from repository
+@[Clone, Debug, Serialize, Deserialize]
+struct FileContent {
+    path: String!,
+    content: String!,
+    size: u64!,
+    encoding: String!,
+    sha: String!,
+    total_lines: u32!,
+}
+
+/// Tree entry (file or directory in tree)
+@[Clone, Debug, Serialize, Deserialize]
+struct TreeEntry {
+    name: String!,
+    path: String!,
+    entry_type: EntryType!,
+    mode: String!,
+    sha: String!,
+    size: u64?,
+}
+
+/// Entry type in tree
+@[Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize]
+enum EntryType {
+    File,
+    Directory,
+    Symlink,
+    Submodule,
+}
+
+// =============================================================================
+// DIFF TYPES
+// =============================================================================
+
+/// Diff between two refs
+@[Clone, Debug, Serialize, Deserialize]
+struct Diff {
+    base: String!,
+    head: String!,
+    files: [FileDiff],
+    total_additions: u32!,
+    total_deletions: u32!,
+}
+
+/// Diff for a single file
+@[Clone, Debug, Serialize, Deserialize]
+struct FileDiff {
+    path: String!,
+    status: ChangeStatus!,
+    additions: u32!,
+    deletions: u32!,
+    hunks: [DiffHunk],
+    binary: bool!,
+    renamed_from: str?,
+}
+
+/// A hunk in a diff
+@[Clone, Debug, Serialize, Deserialize]
+struct DiffHunk {
+    old_start: u32!,
+    old_count: u32!,
+    new_start: u32!,
+    new_count: u32!,
+    header: String!,
+    lines: [DiffLine],
+}
+
+/// A line in a diff hunk
+@[Clone, Debug, Serialize, Deserialize]
+struct DiffLine {
+    line_type: DiffLineType!,
+    content: String!,
+    old_line: u32?,
+    new_line: u32?,
+}
+
+/// Type of diff line
+@[Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize]
+enum DiffLineType {
+    Context,
+    Addition,
+    Deletion,
+}
+
+// =============================================================================
+// PULL REQUEST TYPES
+// =============================================================================
+
+/// Pull request information
+@[Clone, Debug, Serialize, Deserialize]
+struct PullRequest {
+    number: u64!,
+    title: String!,
+    body: str?,
+    state: PullRequestState!,
+    head: BranchRef!,
+    base: BranchRef!,
+    author: String!,
+    created_at: String!,
+    updated_at: String!,
+    merged_at: str?,
+    closed_at: str?,
+    review_status: ReviewStatus!,
+    ci_status: CiStatus?,
+    mergeable: bool?,
+    commits: u32!,
+    additions: u32!,
+    deletions: u32!,
+    changed_files: u32!,
+}
+
+/// Branch reference
+@[Clone, Debug, Serialize, Deserialize]
+struct BranchRef {
+    name: String!,
+    sha: String!,
+    repo: RepoRef!,
+}
+
+/// Pull request state
+@[Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize]
+enum PullRequestState {
+    Open,
+    Closed,
+    Merged,
+}
+
+/// Review status
+@[Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize]
+enum ReviewStatus {
+    Pending,
+    Approved,
+    ChangesRequested,
+    Commented,
+}
+
+/// CI status
+@[Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize]
+enum CiStatus {
+    Pending,
+    Running,
+    Success,
+    Failure,
+    Cancelled,
+}
+
+// =============================================================================
+// CODE REVIEW TYPES
+// =============================================================================
+
+/// Code review
+@[Clone, Debug, Serialize, Deserialize]
+struct Review {
+    id: u64!,
+    author: String!,
+    state: ReviewStatus!,
+    body: str?,
+    submitted_at: String!,
+    threads: [ReviewThread],
+}
+
+/// Review thread (conversation on a specific location)
+@[Clone, Debug, Serialize, Deserialize]
+struct ReviewThread {
+    id: u64!,
+    path: String!,
+    position: DiffPosition!,
+    comments: [ReviewComment],
+    resolved: bool!,
+}
+
+/// Position in a diff
+@[Clone, Debug, Serialize, Deserialize]
+struct DiffPosition {
+    path: String!,
+    line: u32!,
+    side: DiffSide!,
+    start_line: u32?,
+}
+
+/// Side of diff (for review comments)
+@[Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize]
+enum DiffSide {
+    Left,
+    Right,
+}
+
+/// Review comment
+@[Clone, Debug, Serialize, Deserialize]
+struct ReviewComment {
+    id: u64!,
+    author: String!,
+    body: String!,
+    created_at: String!,
+    updated_at: str?,
+    suggestion: CodeSuggestion?,
+}
+
+/// Code suggestion (proposed change)
+@[Clone, Debug, Serialize, Deserialize]
+struct CodeSuggestion {
+    start_line: u32!,
+    end_line: u32!,
+    proposed_text: String!,
+    applied: bool!,
+}
+
+// =============================================================================
+// SEARCH TYPES
+// =============================================================================
+
+/// Code search results
+@[Clone, Debug, Serialize, Deserialize]
+struct SearchResults {
+    query: String!,
+    total_count: u64!,
+    items: [SearchMatch],
+}
+
+/// A search match
+@[Clone, Debug, Serialize, Deserialize]
+struct SearchMatch {
+    path: String!,
+    line_number: u32!,
+    content: String!,
+    context_before: [String],
+    context_after: [String],
+    score: f64!,
+}
+
+// =============================================================================
+// API RESPONSE WRAPPER
+// =============================================================================
+
+/// Evidentiality marker (Sigil's epistemic system)
+@[Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize]
+enum Evidentiality {
+    /// ! - Known/certain (locally computed)
+    Known,
+    /// ~ - Reported (from external source)
+    Reported,
+    /// ? - Uncertain (may be missing/stale)
+    Uncertain,
+    /// ‽ - Paradox (conflicting information)
+    Paradox,
+}
+
+/// API response wrapper with evidentiality
+@[Clone, Debug, Serialize, Deserialize]
+struct ApiResponse<T> {
+    success: bool!,
+    data: T?,
+    error: ApiError?,
+    evidentiality: Evidentiality!,
+    request_id: String!,
+    timestamp: String!,
+}
+
+/// API error
+@[Clone, Debug, Serialize, Deserialize]
+struct ApiError {
+    code: String!,
+    message: String!,
+    details: str?,
+}
+
+// =============================================================================
+// STYX BRIDGE
+// =============================================================================
+
+/// Bridge between qliphoth-chat and Styx
+@[Clone]
+struct StyxBridge {
+    config: StyxConfig!,
+}
+
+impl StyxBridge {
+    /// Create a new Styx bridge
+    pub fn new(config: StyxConfig!) -> Self! {
+        StyxBridge {
+            config,
+            context: create_signal(None),
+            connected: create_signal(false!),
+            recent_commits: create_signal([]),
+            open_prs: create_signal([]),
+            error: create_signal(None),
+        }
+    }
+
+    /// Initialize connection and load context
+    pub async fn init(self) -> Result<(), String>! {
+        // Test connection
+        let health! = self.fetch("/health") as HealthResponse⌛?;
+        self.connected.set(true!);
+
+        // Load default repo context if configured
+        if let Some(repo) = self.config.default_repo {
+            self.load_repo_context(repo)⌛?;
+        }
+
+        Ok(())
+    }
+
+    /// Load repository context
+    pub async fn load_repo_context(self, repo: RepoRef) -> Result<RepoContext, String>! {
+        // Fetch repo metadata
+        let meta!: RepoMeta = self.fetch(format!(
+            "/repos/{}/{}",
+            repo.owner, repo.name
+        ))⌛?;
+
+        let context! = RepoContext {
+            repo: repo.clone(),
+            meta: meta.clone(),
+            branch: meta.default_branch.clone(),
+            path: None,
+            commit: None,
+            pull_request: None,
+            status: None,
+        };
+
+        self.context.set(Some(context.clone()));
+
+        // Load recent commits
+        self.load_recent_commits()⌛?;
+
+        // Load open PRs
+        self.load_open_prs()⌛?;
+
+        Ok(context)
+    }
+
+    /// Set current branch
+    pub fn set_branch(self, branch: str) {
+        self.context.update(|ctx| {
+            if let Some(mut c) = ctx {
+                c.branch = branch.to_string();
+                c.commit = None;
+            }
+        });
+    }
+
+    /// Set current path
+    pub fn set_path(self, path: str?) {
+        self.context.update(|ctx| {
+            if let Some(mut c) = ctx {
+                c.path = path;
+            }
+        });
+    }
+
+    /// Set active pull request
+    pub fn set_pull_request(self, pr_number: u64?) {
+        self.context.update(|ctx| {
+            if let Some(mut c) = ctx {
+                c.pull_request = pr_number;
+            }
+        });
+    }
+
+    // =========================================================================
+    // FILE OPERATIONS
+    // =========================================================================
+
+    /// Read file contents
+    pub async fn read_file(self, path: str, ref_name: str?) -> Result<FileContent, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+        let ref_name! = ref_name.unwrap_or(&ctx.branch);
+
+        self.fetch(format!(
+            "/repos/{}/{}/blob/{}/{}",
+            ctx.repo.owner, ctx.repo.name, ref_name, path
+        ))⌛
+    }
+
+    /// Read file with line range
+    pub async fn read_file_lines(
+        self,
+        path: str,
+        start_line: u32!,
+        end_line: u32!,
+        ref_name: str?,
+    ) -> Result<FileContent, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+        let ref_name! = ref_name.unwrap_or(&ctx.branch);
+
+        self.fetch(format!(
+            "/repos/{}/{}/blob/{}/{}?start={}&end={}",
+            ctx.repo.owner, ctx.repo.name, ref_name, path, start_line, end_line
+        ))⌛
+    }
+
+    /// List directory contents
+    pub async fn list_tree(self, path: str, ref_name: str?) -> Result<[TreeEntry], String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+        let ref_name! = ref_name.unwrap_or(&ctx.branch);
+
+        self.fetch(format!(
+            "/repos/{}/{}/tree/{}/{}",
+            ctx.repo.owner, ctx.repo.name, ref_name, path
+        ))⌛
+    }
+
+    /// Search code in repository
+    pub async fn search_code(self, query: str, path_prefix: str?) -> Result<SearchResults, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        let mut url! = format!(
+            "/repos/{}/{}/search?query={}",
+            ctx.repo.owner, ctx.repo.name, urlencoding::encode(query)
+        );
+
+        if let Some(prefix) = path_prefix {
+            url.push_str(format!("&path_prefix={}", urlencoding::encode(prefix)));
+        }
+
+        self.fetchurl⌛
+    }
+
+    // =========================================================================
+    // COMMIT OPERATIONS
+    // =========================================================================
+
+    /// Get commit details
+    pub async fn get_commit(self, sha: str) -> Result<CommitInfo, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.fetch(format!(
+            "/repos/{}/{}/commits/{}",
+            ctx.repo.owner, ctx.repo.name, sha
+        ))⌛
+    }
+
+    /// Load recent commits
+    pub async fn load_recent_commits(self) -> Result<(), String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        let commits!: [CommitInfo] = self.fetch(format!(
+            "/repos/{}/{}/commits?ref={}&limit=20",
+            ctx.repo.owner, ctx.repo.name, ctx.branch
+        ))⌛?;
+
+        self.recent_commits.set(commits);
+        Ok(())
+    }
+
+    /// Get diff between two refs
+    pub async fn get_diff(self, base: str, head: str) -> Result<Diff, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.fetch(format!(
+            "/repos/{}/{}/compare/{}...{}",
+            ctx.repo.owner, ctx.repo.name, base, head
+        ))⌛
+    }
+
+    /// Create a new commit
+    pub async fn create_commit(self, request: CreateCommitRequest!) -> Result<CommitInfo, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.post(format!(
+            "/repos/{}/{}/commits",
+            ctx.repo.owner, ctx.repo.name
+        ), request)⌛
+    }
+
+    // =========================================================================
+    // BRANCH OPERATIONS
+    // =========================================================================
+
+    /// List branches
+    pub async fn list_branches(self) -> Result<[BranchInfo], String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.fetch(format!(
+            "/repos/{}/{}/branches",
+            ctx.repo.owner, ctx.repo.name
+        ))⌛
+    }
+
+    /// Create a new branch
+    pub async fn create_branch(self, name: str, from_ref: str) -> Result<BranchInfo, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.post(format!(
+            "/repos/{}/{}/branches",
+            ctx.repo.owner, ctx.repo.name
+        ), &CreateBranchRequest {
+            name: name.to_string(),
+            from_ref: from_ref.to_string(),
+        })⌛
+    }
+
+    // =========================================================================
+    // PULL REQUEST OPERATIONS
+    // =========================================================================
+
+    /// Load open pull requests
+    pub async fn load_open_prs(self) -> Result<(), String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        let prs!: [PullRequest] = self.fetch(format!(
+            "/repos/{}/{}/pulls?state=open",
+            ctx.repo.owner, ctx.repo.name
+        ))⌛?;
+
+        self.open_prs.set(prs);
+        Ok(())
+    }
+
+    /// Get pull request details
+    pub async fn get_pull_request(self, number: u64!) -> Result<PullRequest, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.fetch(format!(
+            "/repos/{}/{}/pulls/{}",
+            ctx.repo.owner, ctx.repo.name, number
+        ))⌛
+    }
+
+    /// Create a pull request
+    pub async fn create_pull_request(self, request: CreatePullRequestRequest!) -> Result<PullRequest, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.post(format!(
+            "/repos/{}/{}/pulls",
+            ctx.repo.owner, ctx.repo.name
+        ), request)⌛
+    }
+
+    /// Get PR diff
+    pub async fn get_pr_diff(self, number: u64!) -> Result<Diff, String>! {
+        let pr! = self.get_pull_request(number)⌛?;
+        self.get_diff(&pr.base.sha, &pr.head.sha)⌛
+    }
+
+    // =========================================================================
+    // CODE REVIEW OPERATIONS
+    // =========================================================================
+
+    /// Get reviews for a PR
+    pub async fn get_reviews(self, pr_number: u64!) -> Result<[Review], String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.fetch(format!(
+            "/repos/{}/{}/pulls/{}/reviews",
+            ctx.repo.owner, ctx.repo.name, pr_number
+        ))⌛
+    }
+
+    /// Create a review
+    pub async fn create_review(self, pr_number: u64!, request: CreateReviewRequest!) -> Result<Review, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.post(format!(
+            "/repos/{}/{}/pulls/{}/reviews",
+            ctx.repo.owner, ctx.repo.name, pr_number
+        ), request)⌛
+    }
+
+    /// Add a review comment
+    pub async fn add_review_comment(
+        self,
+        pr_number: u64!,
+        review_id: u64!,
+        comment: CreateCommentRequest!,
+    ) -> Result<ReviewComment, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.post(format!(
+            "/repos/{}/{}/pulls/{}/reviews/{}/comments",
+            ctx.repo.owner, ctx.repo.name, pr_number, review_id
+        ), comment)⌛
+    }
+
+    // =========================================================================
+    // FILE WRITE OPERATIONS
+    // =========================================================================
+
+    /// Write file contents
+    pub async fn write_file(self, request: WriteFileRequest!) -> Result<WriteFileResult, String>! {
+        let ctx! = self.context.get().ok_or("No repository context")?;
+
+        self.post(format!(
+            "/repos/{}/{}/files",
+            ctx.repo.owner, ctx.repo.name
+        ), request)⌛
+    }
+
+    // =========================================================================
+    // INTERNAL HTTP METHODS
+    // =========================================================================
+
+    async fn fetch<T: Deserialize>(self, path: str) -> Result<T, String>! {
+        let url! = format!("{}{}", self.config.api_url, path);
+
+        let mut opts! = web_sys::RequestInit::new();
+        opts.method("GET");
+        opts.mode(web_sys::RequestMode::Cors);
+
+        let request! = web_sys::Request::new_with_str_and_init(&url, opts)
+            .map_err(|e| format!("Request error: {:?}", e))?;
+
+        // Add auth header if available
+        if let Some(token) = self.config.auth_token {
+            request.headers().set("Authorization", format!("Bearer {}", token))
+                .map_err(|e| format!("Header error: {:?}", e))?;
+        }
+
+        request.headers().set("X-Agent-Id", self.config.agent_id)
+            .map_err(|e| format!("Header error: {:?}", e))?;
+
+        let window! = web_sys::window().ok_or("No window")?;
+        let resp_value! = wasm_bindgen_futures::JsFuture::from(window.fetch_with_requestrequest)
+            ⌛
+            .map_err(|e| format!("Fetch error: {:?}", e))?;
+
+        let resp!: web_sys::Response = resp_value.dyn_into()
+            .map_err(|_| "Not a Response")?;
+
+        if !resp.ok() {
+            return Err(format!("HTTP {}: {}", resp.status(), resp.status_text()));
+        }
+
+        let json! = wasm_bindgen_futures::JsFuture::from(resp.json().map_err(|e| format!("JSON error: {:?}", e))?)
+            ⌛
+            .map_err(|e| format!("JSON parse error: {:?}", e))?;
+
+        serde_wasm_bindgen::from_value(json)
+            .map_err(|e| format!("Deserialize error: {:?}", e))
+    }
+
+    async fn post<T: Deserialize, B: Serialize>(self, path: str, body: B) -> Result<T, String>! {
+        let url! = format!("{}{}", self.config.api_url, path);
+
+        let body_json! = serde_json::to_string(body)
+            .map_err(|e| format!("Serialize error: {:?}", e))?;
+
+        let mut opts! = web_sys::RequestInit::new();
+        opts.method("POST");
+        opts.mode(web_sys::RequestMode::Cors);
+        opts.body(Some(&JsValue::from_str(&body_json)));
+
+        let request! = web_sys::Request::new_with_str_and_init(&url, opts)
+            .map_err(|e| format!("Request error: {:?}", e))?;
+
+        request.headers().set("Content-Type", "application/json")
+            .map_err(|e| format!("Header error: {:?}", e))?;
+
+        if let Some(token) = self.config.auth_token {
+            request.headers().set("Authorization", format!("Bearer {}", token))
+                .map_err(|e| format!("Header error: {:?}", e))?;
+        }
+
+        request.headers().set("X-Agent-Id", self.config.agent_id)
+            .map_err(|e| format!("Header error: {:?}", e))?;
+
+        let window! = web_sys::window().ok_or("No window")?;
+        let resp_value! = wasm_bindgen_futures::JsFuture::from(window.fetch_with_requestrequest)
+            ⌛
+            .map_err(|e| format!("Fetch error: {:?}", e))?;
+
+        let resp!: web_sys::Response = resp_value.dyn_into()
+            .map_err(|_| "Not a Response")?;
+
+        if !resp.ok() {
+            return Err(format!("HTTP {}: {}", resp.status(), resp.status_text()));
+        }
+
+        let json! = wasm_bindgen_futures::JsFuture::from(resp.json().map_err(|e| format!("JSON error: {:?}", e))?)
+            ⌛
+            .map_err(|e| format!("JSON parse error: {:?}", e))?;
+
+        serde_wasm_bindgen::from_value(json)
+            .map_err(|e| format!("Deserialize error: {:?}", e))
+    }
+
+    // =========================================================================
+    // ACCESSORS
+    // =========================================================================
+
+    pub fn get_context(self) -> RepoContext? {
+        self.context.get()
+    }
+
+    pub fn is_connected(self) -> bool! {
+        self.connected.get()
+    }
+
+    pub fn get_recent_commits(self) -> [CommitInfo] {
+        self.recent_commits.get()
+    }
+
+    pub fn get_open_prs(self) -> [PullRequest] {
+        self.open_prs.get()
+    }
+
+    pub fn get_error(self) -> str? {
+        self.error.get()
+    }
+}
+
+// =============================================================================
+// REQUEST TYPES
+// =============================================================================
+
+// Request to create a commit
+@[Clone, Debug, Serialize]
+struct CreateCommitRequest! {
+    message: String,
+    files: [String]?,
+    author_name: str?,
+    author_email: str?,
+    allow_empty: bool?,
+    amend: bool?,
+}
+
+/// Request to create a branch
+@[Clone, Debug, Serialize]
+struct CreateBranchRequest {
+    name: String!,
+    from_ref: String!,
+}
+
+/// Request to create a pull request
+@[Clone, Debug, Serialize]
+struct CreatePullRequestRequest {
+    title: String!,
+    body: str?,
+    head: String!,
+    base: String!,
+    draft: bool?,
+}
+
+// Request to create a review
+@[Clone, Debug, Serialize]
+struct CreateReviewRequest! {
+    body: str?,
+    event: ReviewEvent,
+    comments: [CreateCommentRequest]?,
+}
+
+/// Review event type
+@[Clone, Copy, Debug, Serialize]
+enum ReviewEvent {
+    Approve,
+    RequestChanges,
+    Comment,
+}
+
+/// Request to create a comment
+@[Clone, Debug, Serialize]
+struct CreateCommentRequest {
+    path: String!,
+    position: DiffPosition!,
+    body: String!,
+    suggestion: str?,
+}
+
+/// Request to write a file
+@[Clone, Debug, Serialize]
+struct WriteFileRequest {
+    path: String!,
+    content: String!,
+    message: String!,
+    branch: str?,
+    sha: str?,
+}
+
+/// Result of writing a file
+@[Clone, Debug, Deserialize]
+struct WriteFileResult {
+    sha: String!,
+    commit_sha: String!,
+    created: bool!,
+}
+
+/// Branch info
+@[Clone, Debug, Deserialize]
+struct BranchInfo {
+    name: String!,
+    sha: String!,
+    protected: bool!,
+}
+
+/// Health response
+@[Clone, Debug, Deserialize]
+struct HealthResponse {
+    status: String!,
+    version: String!,
+}
+
+// =============================================================================
+// CHAT TOOL DEFINITIONS
+// =============================================================================
+
+/// Generate Styx tool definitions for chat
+pub fn styx_tools() -> [ToolDefinition] {
+    vec![
+        ToolDefinition {
+            name: "styx_read_file".to_string(),
+            description: "Read file contents from the repository".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Starting line number (optional)"
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Ending line number (optional)"
+                    },
+                    "ref": {
+                        "type": "string",
+                        "description": "Git ref (branch, tag, or commit SHA)"
+                    }
+                },
+                "required": ["path"]
+            }),
+            risk_level: RiskLevel::Safe,
+        },
+        ToolDefinition {
+            name: "styx_search_code".to_string(),
+            description: "Search for code patterns in the repository".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (regex supported)"
+                    },
+                    "path_prefix": {
+                        "type": "string",
+                        "description": "Limit search to paths starting with this prefix"
+                    }
+                },
+                "required": ["query"]
+            }),
+            risk_level: RiskLevel::Safe,
+        },
+        ToolDefinition {
+            name: "styx_list_directory".to_string(),
+            description: "List files and directories at a path".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory path"
+                    },
+                    "ref": {
+                        "type": "string",
+                        "description": "Git ref (branch, tag, or commit SHA)"
+                    }
+                },
+                "required": ["path"]
+            }),
+            risk_level: RiskLevel::Safe,
+        },
+        ToolDefinition {
+            name: "styx_get_commit".to_string(),
+            description: "Get details about a specific commit".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "sha": {
+                        "type": "string",
+                        "description": "Commit SHA"
+                    }
+                },
+                "required": ["sha"]
+            }),
+            risk_level: RiskLevel::Safe,
+        },
+        ToolDefinition {
+            name: "styx_get_diff".to_string(),
+            description: "Get diff between two refs".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "base": {
+                        "type": "string",
+                        "description": "Base ref"
+                    },
+                    "head": {
+                        "type": "string",
+                        "description": "Head ref"
+                    }
+                },
+                "required": ["base", "head"]
+            }),
+            risk_level: RiskLevel::Safe,
+        },
+        ToolDefinition {
+            name: "styx_get_pull_request".to_string(),
+            description: "Get details about a pull request".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "number": {
+                        "type": "integer",
+                        "description": "Pull request number"
+                    }
+                },
+                "required": ["number"]
+            }),
+            risk_level: RiskLevel::Safe,
+        },
+        ToolDefinition {
+            name: "styx_write_file".to_string(),
+            description: "Create or update a file in the repository".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "File content"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Commit message"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Target branch (defaults to current)"
+                    }
+                },
+                "required": ["path", "content", "message"]
+            }),
+            risk_level: RiskLevel::Medium,
+        },
+        ToolDefinition {
+            name: "styx_create_commit".to_string(),
+            description: "Create a commit with staged changes".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Commit message"
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Specific files to commit (optional, defaults to all staged)"
+                    }
+                },
+                "required": ["message"]
+            }),
+            risk_level: RiskLevel::Medium,
+        },
+        ToolDefinition {
+            name: "styx_create_branch".to_string(),
+            description: "Create a new branch".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Branch name"
+                    },
+                    "from_ref": {
+                        "type": "string",
+                        "description": "Create from this ref"
+                    }
+                },
+                "required": ["name", "from_ref"]
+            }),
+            risk_level: RiskLevel::Low,
+        },
+        ToolDefinition {
+            name: "styx_create_pull_request".to_string(),
+            description: "Create a new pull request".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "PR title"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "PR description"
+                    },
+                    "head": {
+                        "type": "string",
+                        "description": "Source branch"
+                    },
+                    "base": {
+                        "type": "string",
+                        "description": "Target branch"
+                    },
+                    "draft": {
+                        "type": "boolean",
+                        "description": "Create as draft"
+                    }
+                },
+                "required": ["title", "head", "base"]
+            }),
+            risk_level: RiskLevel::Low,
+        },
+        ToolDefinition {
+            name: "styx_add_review_comment".to_string(),
+            description: "Add a comment to a pull request review".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "pr_number": {
+                        "type": "integer",
+                        "description": "Pull request number"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File path"
+                    },
+                    "line": {
+                        "type": "integer",
+                        "description": "Line number"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Comment text"
+                    },
+                    "suggestion": {
+                        "type": "string",
+                        "description": "Suggested code replacement (optional)"
+                    }
+                },
+                "required": ["pr_number", "path", "line", "body"]
+            }),
+            risk_level: RiskLevel::Low,
+        },
+    ]
+}
+
+// =============================================================================
+// TOOL EXECUTION
+// =============================================================================
+
+/// Execute a Styx tool call
+pub async fn execute_styx_tool(
+    bridge: StyxBridge,
+    tool_name: str,
+    arguments: str,
+) -> Result<String, String>! {
+    let args!: serde_json::Value = serde_json::from_str(arguments)
+        .map_err(|e| format!("Invalid arguments: {}", e))?;
+
+    match tool_name {
+        "styx_read_file" => {
+            let path! = args["path"].as_str().ok_or("Missing path")?;
+            let ref_name! = args["ref"].as_str();
+
+            if let (Some(start), Some(end)) = (args["start_line"].as_u64(), args["end_line"].as_u64()) {
+                let content! = bridge.read_file_lines(path, start as u32, end as u32, ref_name)⌛?;
+                Ok(serde_json::to_string_pretty(&content).unwrap())
+            } else {
+                let content! = bridge.read_file(path, ref_name)⌛?;
+                Ok(serde_json::to_string_pretty(&content).unwrap())
+            }
+        }
+
+        "styx_search_code" => {
+            let query! = args["query"].as_str().ok_or("Missing query")?;
+            let path_prefix! = args["path_prefix"].as_str();
+            let results! = bridge.search_code(query, path_prefix)⌛?;
+            Ok(serde_json::to_string_pretty(&results).unwrap())
+        }
+
+        "styx_list_directory" => {
+            let path! = args["path"].as_str().ok_or("Missing path")?;
+            let ref_name! = args["ref"].as_str();
+            let entries! = bridge.list_tree(path, ref_name)⌛?;
+            Ok(serde_json::to_string_pretty(&entries).unwrap())
+        }
+
+        "styx_get_commit" => {
+            let sha! = args["sha"].as_str().ok_or("Missing sha")?;
+            let commit! = bridge.get_commit(sha)⌛?;
+            Ok(serde_json::to_string_pretty(&commit).unwrap())
+        }
+
+        "styx_get_diff" => {
+            let base! = args["base"].as_str().ok_or("Missing base")?;
+            let head! = args["head"].as_str().ok_or("Missing head")?;
+            let diff! = bridge.get_diff(base, head)⌛?;
+            Ok(serde_json::to_string_pretty(&diff).unwrap())
+        }
+
+        "styx_get_pull_request" => {
+            let number! = args["number"].as_u64().ok_or("Missing number")?;
+            let pr! = bridge.get_pull_request(number)⌛?;
+            Ok(serde_json::to_string_pretty(&pr).unwrap())
+        }
+
+        "styx_write_file" => {
+            let request! = WriteFileRequest {
+                path: args["path"].as_str().ok_or("Missing path")?.to_string(),
+                content: args["content"].as_str().ok_or("Missing content")?.to_string(),
+                message: args["message"].as_str().ok_or("Missing message")?.to_string(),
+                branch: args["branch"].as_str().map(String::from),
+                sha: args["sha"].as_str().map(String::from),
+            };
+            let result! = bridge.write_file(request)⌛?;
+            Ok(serde_json::to_string_pretty(&result).unwrap())
+        }
+
+        "styx_create_commit" => {
+            let request! = CreateCommitRequest {
+                message: args["message"].as_str().ok_or("Missing message")?.to_string(),
+                files: args["files"].as_array().map(|arr|
+                    arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+                ),
+                author_name: None,
+                author_email: None,
+                allow_empty: None,
+                amend: None,
+            };
+            let result! = bridge.create_commit(request)⌛?;
+            Ok(serde_json::to_string_pretty(&result).unwrap())
+        }
+
+        "styx_create_branch" => {
+            let name! = args["name"].as_str().ok_or("Missing name")?;
+            let from_ref! = args["from_ref"].as_str().ok_or("Missing from_ref")?;
+            let result! = bridge.create_branch(name, from_ref)⌛?;
+            Ok(serde_json::to_string_pretty(&result).unwrap())
+        }
+
+        "styx_create_pull_request" => {
+            let request! = CreatePullRequestRequest {
+                title: args["title"].as_str().ok_or("Missing title")?.to_string(),
+                body: args["body"].as_str().map(String::from),
+                head: args["head"].as_str().ok_or("Missing head")?.to_string(),
+                base: args["base"].as_str().ok_or("Missing base")?.to_string(),
+                draft: args["draft"].as_bool(),
+            };
+            let result! = bridge.create_pull_request(request)⌛?;
+            Ok(serde_json::to_string_pretty(&result).unwrap())
+        }
+
+        "styx_add_review_comment" => {
+            let pr_number! = args["pr_number"].as_u64().ok_or("Missing pr_number")?;
+            let comment! = CreateCommentRequest {
+                path: args["path"].as_str().ok_or("Missing path")?.to_string(),
+                position: DiffPosition {
+                    path: args["path"].as_str().unwrap().to_string(),
+                    line: args["line"].as_u64().ok_or("Missing line")? as u32,
+                    side: DiffSide::Right,
+                    start_line: None,
+                },
+                body: args["body"].as_str().ok_or("Missing body")?.to_string(),
+                suggestion: args["suggestion"].as_str().map(String::from),
+            };
+
+            // Create a pending review if none exists, then add comment
+            let review! = bridge.create_review(pr_number, CreateReviewRequest {
+                body: None,
+                event: ReviewEvent::Comment,
+                comments: Some(vec![comment]),
+            })⌛?;
+
+            Ok(serde_json::to_string_pretty(&review).unwrap())
+        }
+
+        _ => Err(format!("Unknown tool: {}", tool_name)),
+    }
+}
+
+// =============================================================================
+// REACT HOOKS & PROVIDERS
+// =============================================================================
+
+/// React hook for Styx bridge
+pub fn use_styx() -> StyxBridge! {
+    use_context() as StyxBridge
+        .expect("StyxBridge not provided")
+}
+
+/// Provider component for Styx context
+@[component]
+pub fn StyxProvider(
+    @[prop(default = StyxConfig::default())] config: StyxConfig!,
+    children: Children!,
+) -> Element!! {
+    let bridge! = StyxBridge::new(config);
+
+    // Initialize on mount
+    create_effect({
+        let bridge! = bridge.clone();
+        move |_| {
+            spawn_local(async move {
+                if let Err(e) = bridge.init()⌛ {
+                    web_sys::console::error_1(format!("Styx init error: {}", e).into());
+                }
+            });
+        }
+    });
+
+    provide_context(bridge.clone());
+
+    view! {
+        {children()}
+    }
+}
+
+// =============================================================================
+// CONTEXT DISPLAY COMPONENTS
+// =============================================================================
+
+/// Display current repository context
+@[component]
+pub fn RepoContextIndicator() -> Element!! {
+    let bridge! = use_styx();
+
+    let context! = move || bridge.get_context();
+    let connected! = move || bridge.is_connected();
+
+    view! {
+        <div class="repo-context-indicator">
+            {move || if let Some(ctx) = context() {
+                view! {
+                    <div class="repo-info">
+                        <span class="repo-name">{ctx.repo.full_name()}</span>
+                        <span class="branch-name">"@" {&ctx.branch}</span>
+                        {ctx.path.as_ref().map(|p| view! {
+                            <span class="file-path">"/" {p}</span>
+                        })}
+                        {ctx.pull_request.map(|pr| view! {
+                            <span class="pr-number">"#" {pr}</span>
+                        })}
+                    </div>
+                }.into_view()
+            } else if connected() {
+                view! {
+                    <div class="no-repo">"No repository selected"</div>
+                }.into_view()
+            } else {
+                view! {
+                    <div class="disconnected">"Connecting to Styx..."</div>
+                }.into_view()
+            }}
+        </div>
+    }
+}
+
+/// Display recent commits
+@[component]
+pub fn RecentCommits(
+    @[prop(default = 5)] limit: usize!,
+    @[prop(into)] on_select: Callback[String]!,
+) -> Element!! {
+    let bridge! = use_styx();
+
+    let commits! = move || {
+        bridge.get_recent_commits()
+            .into_iter()
+            .take(limit)
+            |vec
+    };
+
+    view! {
+        <div class="recent-commits">
+            <h4>"Recent Commits"</h4>
+            <ul>
+                <For
+                    each=commits
+                    key=|c| c.sha.clone()
+                    children=move |commit| {
+                        let sha! = commit.sha.clone();
+                        let on_select! = on_select.clone();
+
+                        view! {
+                            <li
+                                class="commit-item"
+                                on:click=move |_| on_select.call(sha.clone())
+                            >
+                                <span class="commit-sha">{&commit.short_sha}</span>
+                                <span class="commit-message">{&commit.message}</span>
+                                <span class="commit-author">{&commit.author.name}</span>
+                            </li>
+                        }
+                    }
+                />
+            </ul>
+        </div>
+    }
+}
+
+/// Display open pull requests
+@[component]
+pub fn OpenPullRequests(
+    @[prop(into)] on_select: Callback[u64]!,
+) -> Element!! {
+    let bridge! = use_styx();
+
+    let prs! = move || bridge.get_open_prs();
+
+    view! {
+        <div class="open-prs">
+            <h4>"Open Pull Requests"</h4>
+            <ul>
+                <For
+                    each=prs
+                    key=|pr| pr.number
+                    children=move |pr| {
+                        let number! = pr.number;
+                        let on_select! = on_select.clone();
+
+                        view! {
+                            <li
+                                class="pr-item"
+                                on:click=move |_| on_select.call(number)
+                            >
+                                <span class="pr-number">"#" {pr.number}</span>
+                                <span class="pr-title">{&pr.title}</span>
+                                <span class="pr-status">{format!("{:?}", pr.state)}</span>
+                            </li>
+                        }
+                    }
+                />
+            </ul>
+        </div>
+    }
+}
+
+// =============================================================================
+// INTEGRATION WITH CHAT PROVIDER
+// =============================================================================
+
+/// Connect Styx bridge to chat provider
+pub fn connect_styx_to_chat(
+    chat: ChatProvider,
+    styx: StyxBridge,
+) {
+    // Register Styx tools with chat
+    chat.register_tools(styx_tools());
+
+    // Set up tool execution handler
+    let styx! = styx.clone();
+    chat.client.on_tool_call(move |request: ToolCallRequest| {
+        if request.name.starts_with("styx_") {
+            let styx! = styx.clone();
+            let result! = spawn_local(async move {
+                execute_styx_tool(&styx, &request.name, &request.arguments)⌛
+            });
+        }
+    });
+}
+
+/// Build context message for Styx-aware conversations
+pub fn build_styx_context_message(styx: StyxBridge) -> str? {
+    let ctx! = styx.get_context()?;
+
+    let mut parts!: [String] = Vec::new();
+
+    parts.push(format!(
+        "Repository: {} (branch: {})",
+        ctx.repo.full_name(),
+        ctx.branch
+    ));
+
+    if let Some(path) = ctx.path {
+        parts.push(format!("Current file: {}", path));
+    }
+
+    if let Some(pr_num) = ctx.pull_request {
+        parts.push(format!("Active PR: #{}", pr_num));
+    }
+
+    if let Some(status) = ctx.status {
+        if !status.clean {
+            let mut changes! = Vec::new();
+            if !status.staged.is_empty() {
+                changes.push(format!("{} staged", status.staged.len()));
+            }
+            if !status.unstaged.is_empty() {
+                changes.push(format!("{} unstaged", status.unstaged.len()));
+            }
+            if !status.untracked.is_empty() {
+                changes.push(format!("{} untracked", status.untracked.len()));
+            }
+            parts.push(format!("Working directory: {}", changes.join(", ")));
+        }
+    }
+
+    Some(parts.join("\n"))
+}

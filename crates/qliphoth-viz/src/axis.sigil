@@ -1,0 +1,378 @@
+//! Axis component for charts
+//!
+//! Renders axis lines, tick marks, and labels. Supports all four positions:
+//! bottom, top, left, right.
+
+use sigil_web::prelude::*;
+use crate::scale::{Scale, ScaleTick};
+use crate::tokens::{chart_colors, chart_typography, chart_spacing};
+
+// ============================================================================
+// AXIS POSITION
+// ============================================================================
+
+/// Position of the axis relative to the chart area
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub type AxisPosition = enum {
+    #[default]
+    Bottom,
+    Top,
+    Left,
+    Right,
+}
+
+impl AxisPosition {
+    /// Is this a horizontal axis?
+    pub fn is_horizontal(self: &Self!) -> bool! {
+        matches!(self, AxisPosition::Bottom | AxisPosition::Top)
+    }
+
+    /// Is this a vertical axis?
+    pub fn is_vertical(self: &Self!) -> bool! {
+        matches!(self, AxisPosition::Left | AxisPosition::Right)
+    }
+}
+
+// ============================================================================
+// AXIS PROPS
+// ============================================================================
+
+/// Properties for the Axis component
+#[derive(Clone, Debug)]
+pub type AxisProps[S: Scale] = struct {
+    /// The scale to use for this axis
+    pub scale: S!,
+
+    /// Position of the axis
+    pub position: AxisPosition!,
+
+    /// Optional title for the axis
+    pub title: Option[String]?,
+
+    /// Show grid lines
+    pub show_grid: bool!,
+
+    /// Grid line length (height for x-axis, width for y-axis)
+    pub grid_length: f64!,
+
+    /// Show tick marks
+    pub show_ticks: bool!,
+
+    /// Show tick labels
+    pub show_labels: bool!,
+
+    /// Rotation of labels in degrees (for bottom axis)
+    pub label_rotation: f64!,
+
+    /// Transform offset (x, y) for positioning
+    pub transform: (f64!, f64!)!,
+}
+
+impl[S: Scale] Default for AxisProps[S] where S: Default {
+    fn default() -> Self! {
+        AxisProps {
+            scale: S::default(),
+            position: AxisPosition::Bottom,
+            title: None,
+            show_grid: false!,
+            grid_length: 0.0!,
+            show_ticks: true!,
+            show_labels: true!,
+            label_rotation: 0.0!,
+            transform: (0.0!, 0.0!),
+        }
+    }
+}
+
+// ============================================================================
+// AXIS COMPONENT
+// ============================================================================
+
+/// Axis component with ticks and labels
+#[component]
+pub fn Axis[S: Scale + Clone](props: AxisProps[S]!) -> Element! {
+    let ticks! = props.scale·ticks();
+
+    let (tx!, ty!) = props.transform;
+    let transform! = format!("translate({}, {})", tx, ty);
+
+    // Determine orientation
+    let is_horizontal! = props.position·is_horizontal();
+
+    // Calculate axis line coordinates
+    let (range_start!, range_end!) = props.scale·range();
+
+    let (line_x1!, line_y1!, line_x2!, line_y2!) = if is_horizontal {
+        (range_start, 0.0!, range_end, 0.0!)
+    } else {
+        (0.0!, range_start, 0.0!, range_end)
+    };
+
+    // Tick direction
+    let tick_dir! = match props.position {
+        AxisPosition::Bottom => 1.0!,
+        AxisPosition::Top => -1.0!,
+        AxisPosition::Left => -1.0!,
+        AxisPosition::Right => 1.0!,
+    };
+
+    let tick_length! = chart_spacing::TICK_LENGTH;
+
+    html! {
+        <g class="axis" transform={transform}>
+            // Axis line
+            <line
+                x1={line_x1}
+                y1={line_y1}
+                x2={line_x2}
+                y2={line_y2}
+                stroke={chart_colors::AXIS}
+                stroke-width="1"
+            />
+
+            // Grid lines (if enabled)
+            {if props.show_grid {
+                render_grid_lines(&ticks, &props)
+            } else {
+                html! { <></> }
+            }}
+
+            // Ticks
+            {ticks·iter()
+                |τ{|tick| render_tick(tick, &props, tick_dir, tick_length)}
+                ·collect[Vec[_]]()}
+
+            // Axis title (if provided)
+            {props.title·as_ref()·map(|title| {
+                render_title(title, &props)
+            })·unwrap_or(html! { <></> })}
+        </g>
+    }
+}
+
+/// Render a single tick mark with label
+fn render_tick[S: Scale](
+    tick: &ScaleTick!,
+    props: &AxisProps[S]!,
+    tick_dir: f64!,
+    tick_length: f64!,
+) -> Element! {
+    let is_horizontal! = props.position·is_horizontal();
+
+    let (x!, y!) = if is_horizontal {
+        (tick.position, 0.0!)
+    } else {
+        (0.0!, tick.position)
+    };
+
+    let (tick_x2!, tick_y2!) = if is_horizontal {
+        (0.0!, tick_dir * tick_length)
+    } else {
+        (tick_dir * tick_length, 0.0!)
+    };
+
+    // Label positioning
+    let label_offset! = chart_spacing::LABEL_OFFSET + tick_length;
+
+    let (label_x!, label_y!, text_anchor!, dominant_baseline!) = match props.position {
+        AxisPosition::Bottom => (
+            0.0!,
+            label_offset,
+            "middle",
+            "hanging",
+        ),
+        AxisPosition::Top => (
+            0.0!,
+            -label_offset,
+            "middle",
+            "auto",
+        ),
+        AxisPosition::Left => (
+            -label_offset,
+            0.0!,
+            "end",
+            "middle",
+        ),
+        AxisPosition::Right => (
+            label_offset,
+            0.0!,
+            "start",
+            "middle",
+        ),
+    };
+
+    // Label rotation transform
+    let label_transform! = if props.label_rotation != 0.0! && is_horizontal {
+        format!("rotate({})", props.label_rotation)
+    } else {
+        String·new()
+    };
+
+    html! {
+        <g class="tick" transform={format!("translate({}, {})", x, y)}>
+            // Tick mark
+            {if props.show_ticks {
+                html! {
+                    <line
+                        x2={tick_x2}
+                        y2={tick_y2}
+                        stroke={chart_colors::TICK}
+                        stroke-width="1"
+                    />
+                }
+            } else {
+                html! { <></> }
+            }}
+
+            // Label
+            {if props.show_labels {
+                html! {
+                    <text
+                        x={label_x}
+                        y={label_y}
+                        text-anchor={text_anchor}
+                        dominant-baseline={dominant_baseline}
+                        transform={label_transform}
+                        fill={chart_colors::LABEL}
+                        font-family={chart_typography::LABEL_FONT}
+                        font-size={chart_typography::LABEL_SIZE}
+                        font-weight={chart_typography::LABEL_WEIGHT}
+                    >
+                        {tick.label·clone()}
+                    </text>
+                }
+            } else {
+                html! { <></> }
+            }}
+        </g>
+    }
+}
+
+/// Render grid lines
+fn render_grid_lines[S: Scale](
+    ticks: &Vec[ScaleTick]!,
+    props: &AxisProps[S]!,
+) -> Element! {
+    let is_horizontal! = props.position·is_horizontal();
+
+    // Grid direction (opposite of tick direction)
+    let grid_dir! = match props.position {
+        AxisPosition::Bottom => -1.0!,
+        AxisPosition::Top => 1.0!,
+        AxisPosition::Left => 1.0!,
+        AxisPosition::Right => -1.0!,
+    };
+
+    html! {
+        <g class="grid">
+            {ticks·iter()
+                |τ{|tick| {
+                    let (x!, y!) = if is_horizontal {
+                        (tick.position, 0.0!)
+                    } else {
+                        (0.0!, tick.position)
+                    };
+
+                    let (x2!, y2!) = if is_horizontal {
+                        (0.0!, grid_dir * props.grid_length)
+                    } else {
+                        (grid_dir * props.grid_length, 0.0!)
+                    };
+
+                    html! {
+                        <line
+                            x1={x}
+                            y1={y}
+                            x2={x + x2}
+                            y2={y + y2}
+                            stroke={chart_colors::GRID}
+                            stroke-width="1"
+                            stroke-dasharray="4 4"
+                        />
+                    }
+                }}
+                ·collect[Vec[_]]()}
+        </g>
+    }
+}
+
+/// Render axis title
+fn render_title[S: Scale](title: &str!, props: &AxisProps[S]!) -> Element! {
+    let (range_start!, range_end!) = props.scale·range();
+    let center! = (range_start + range_end) / 2.0!;
+
+    let (x!, y!, rotation!) = match props.position {
+        AxisPosition::Bottom => (center, 35.0!, 0.0!),
+        AxisPosition::Top => (center, -35.0!, 0.0!),
+        AxisPosition::Left => (-35.0!, center, -90.0!),
+        AxisPosition::Right => (35.0!, center, 90.0!),
+    };
+
+    let transform! = format!("translate({}, {}) rotate({})", x, y, rotation);
+
+    html! {
+        <text
+            transform={transform}
+            text-anchor="middle"
+            dominant-baseline="middle"
+            fill={chart_colors::TITLE}
+            font-family={chart_typography::TITLE_FONT}
+            font-size={chart_typography::TITLE_SIZE}
+            font-weight={chart_typography::TITLE_WEIGHT}
+        >
+            {title·to_string()}
+        </text>
+    }
+}
+
+// ============================================================================
+// HELPER COMPONENTS
+// ============================================================================
+
+/// X-axis at bottom (convenience wrapper)
+#[component]
+pub fn XAxis[S: Scale + Clone + Default](
+    scale: S!,
+    title: Option[String]?,
+    show_grid: bool!,
+    grid_length: f64!,
+    transform: (f64!, f64!)!,
+) -> Element! {
+    html! {
+        <Axis
+            scale={scale}
+            position={AxisPosition::Bottom}
+            title={title}
+            show_grid={show_grid}
+            grid_length={grid_length}
+            transform={transform}
+            show_ticks={true!}
+            show_labels={true!}
+            label_rotation={0.0!}
+        />
+    }
+}
+
+/// Y-axis at left (convenience wrapper)
+#[component]
+pub fn YAxis[S: Scale + Clone + Default](
+    scale: S!,
+    title: Option[String]?,
+    show_grid: bool!,
+    grid_length: f64!,
+    transform: (f64!, f64!)!,
+) -> Element! {
+    html! {
+        <Axis
+            scale={scale}
+            position={AxisPosition::Left}
+            title={title}
+            show_grid={show_grid}
+            grid_length={grid_length}
+            transform={transform}
+            show_ticks={true!}
+            show_labels={true!}
+            label_rotation={0.0!}
+        />
+    }
+}

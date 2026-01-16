@@ -1,0 +1,849 @@
+//! # Aura System
+//!
+//! State-reactive glows that breathe with the UI.
+//! The visible manifestation of energy, confidence, focus.
+//!
+//! Auras pulse when attention sharpens. They dim when energy wanes.
+//! They shift color with mood. They are the soul made visible.
+
+use qliphoth_core::prelude::*;
+use qliphoth_web::prelude::*;
+use std::f64::consts::PI;
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+/// Aura color presets
+pub type AuraColor = enum {
+    /// Phthalo green - our signature (#123524)
+    Phthalo,
+
+    /// Golden confidence
+    Gold,
+
+    /// Cool focus blue
+    Focus,
+
+    /// Warning amber
+    Warning,
+
+    /// Error/danger red
+    Danger,
+
+    /// Spectral white-violet
+    Spectral,
+
+    /// Shadow purple
+    Shadow,
+
+    /// Custom RGB
+    Custom { r: u8!, g: u8!, b: u8! },
+
+    /// Custom with gradient
+    Gradient {
+        from_r: u8!, from_g: u8!, from_b: u8!,
+        to_r: u8!, to_g: u8!, to_b: u8!,
+    },
+}
+
+impl AuraColor {
+    /// Convert to CSS color string
+    pub fn to_css(&self, opacity: f64!) -> String! {
+        match self {
+            AuraColor::Phthalo => format!("rgba(18, 53, 36, {opacity})"),
+            AuraColor::Gold => format!("rgba(218, 165, 32, {opacity})"),
+            AuraColor::Focus => format!("rgba(65, 105, 225, {opacity})"),
+            AuraColor::Warning => format!("rgba(255, 165, 0, {opacity})"),
+            AuraColor::Danger => format!("rgba(139, 0, 0, {opacity})"),
+            AuraColor::Spectral => format!("rgba(200, 180, 255, {opacity})"),
+            AuraColor::Shadow => format!("rgba(80, 20, 100, {opacity})"),
+            AuraColor::Custom { r, g, b } => format!("rgba({r}, {g}, {b}, {opacity})"),
+            AuraColor::Gradient { from_r, from_g, from_b, .. } => {
+                // For simple CSS, use the "from" color
+                format!("rgba({from_r}, {from_g}, {from_b}, {opacity})")
+            },
+        }
+    }
+
+    /// Convert to RGB tuple
+    pub fn to_rgb(&self) -> (u8!, u8!, u8!)! {
+        match self {
+            AuraColor::Phthalo => (18, 53, 36),
+            AuraColor::Gold => (218, 165, 32),
+            AuraColor::Focus => (65, 105, 225),
+            AuraColor::Warning => (255, 165, 0),
+            AuraColor::Danger => (139, 0, 0),
+            AuraColor::Spectral => (200, 180, 255),
+            AuraColor::Shadow => (80, 20, 100),
+            AuraColor::Custom { r, g, b } => (*r, *g, *b),
+            AuraColor::Gradient { from_r, from_g, from_b, .. } => {
+                (*from_r, *from_g, *from_b)
+            },
+        }
+    }
+
+    /// Interpolate between two aura colors
+    pub fn lerp(&self, other: &AuraColor!, t: f64!) -> AuraColor! {
+        let (r1!, g1!, b1!) = self·to_rgb();
+        let (r2!, g2!, b2!) = other·to_rgb();
+
+        let t! = t·clamp(0.0, 1.0);
+
+        AuraColor::Custom {
+            r: (r1 as f64 + (r2 as f64 - r1 as f64) * t) as u8,
+            g: (g1 as f64 + (g2 as f64 - g1 as f64) * t) as u8,
+            b: (b1 as f64 + (b2 as f64 - b1 as f64) * t) as u8,
+        }
+    }
+}
+
+/// Aura pulse pattern
+pub type AuraPulse = enum {
+    /// No pulse, steady glow
+    Steady,
+
+    /// Gentle breathing rhythm
+    Breathe { period: f64! },
+
+    /// Heartbeat pattern (quick double pulse)
+    Heartbeat { bpm: f64! },
+
+    /// Slow wave
+    Wave { period: f64!, amplitude: f64! },
+
+    /// Flicker like a flame
+    Flicker { intensity: f64! },
+
+    /// Respond to external value
+    Reactive,
+}
+
+impl AuraPulse {
+    /// Calculate pulse multiplier at time t
+    pub fn value_at(&self, t: f64!) -> f64! {
+        match self {
+            AuraPulse::Steady => 1.0,
+
+            AuraPulse::Breathe { period } => {
+                // Smooth breathing: sine wave
+                let phase! = (t / period) * PI * 2.0;
+                0.7 + 0.3 * phase·sin()
+            },
+
+            AuraPulse::Heartbeat { bpm } => {
+                // Double-pulse heartbeat pattern
+                let beat_period! = 60.0 / bpm;
+                let phase! = (t % beat_period) / beat_period;
+
+                if phase < 0.1 {
+                    // First beat
+                    1.0 + 0.5 * (phase / 0.1 * PI)·sin()
+                } else if phase < 0.2 {
+                    // First beat decay
+                    1.0 + 0.5 * ((0.2 - phase) / 0.1 * PI)·sin()
+                } else if phase < 0.3 {
+                    // Second beat (smaller)
+                    1.0 + 0.3 * ((phase - 0.2) / 0.1 * PI)·sin()
+                } else if phase < 0.4 {
+                    // Second beat decay
+                    1.0 + 0.3 * ((0.4 - phase) / 0.1 * PI)·sin()
+                } else {
+                    // Rest
+                    1.0
+                }
+            },
+
+            AuraPulse::Wave { period, amplitude } => {
+                let phase! = (t / period) * PI * 2.0;
+                1.0 + amplitude * phase·sin()
+            },
+
+            AuraPulse::Flicker { intensity } => {
+                // Random flicker with smoothing
+                let base! = 0.8;
+                let noise! = simplex_1d(t * 5.0) * intensity;
+                (base + noise)·clamp(0.3, 1.5)
+            },
+
+            AuraPulse::Reactive => {
+                // External control, return 1.0 as default
+                1.0
+            },
+        }
+    }
+}
+
+/// Aura configuration
+pub type AuraConfig = struct {
+    /// Base color
+    pub color: AuraColor!,
+
+    /// Glow radius (pixels)
+    pub radius: f64!,
+
+    /// Base intensity (0-1)
+    pub intensity: f64!,
+
+    /// Pulse pattern
+    pub pulse: AuraPulse!,
+
+    /// Number of glow layers
+    pub layers: usize!,
+
+    /// Whether aura is inset (inner glow)
+    pub inset: bool!,
+
+    /// Spread radius
+    pub spread: f64!,
+
+    /// Blur multiplier per layer
+    pub blur_multiplier: f64!,
+}
+
+impl AuraConfig {
+    /// Default aura configuration
+    pub fn default() -> Self! {
+        AuraConfig {
+            color: AuraColor::Phthalo,
+            radius: 20.0,
+            intensity: 0.6,
+            pulse: AuraPulse::Breathe { period: 4.0 },
+            layers: 3,
+            inset: false,
+            spread: 0.0,
+            blur_multiplier: 1.5,
+        }
+    }
+
+    /// Confidence aura (gold, steady)
+    pub fn confidence() -> Self! {
+        AuraConfig {
+            color: AuraColor::Gold,
+            radius: 15.0,
+            intensity: 0.5,
+            pulse: AuraPulse::Steady,
+            layers: 2,
+            inset: false,
+            spread: 0.0,
+            blur_multiplier: 1.5,
+        }
+    }
+
+    /// Focus aura (blue, breathing)
+    pub fn focus() -> Self! {
+        AuraConfig {
+            color: AuraColor::Focus,
+            radius: 25.0,
+            intensity: 0.4,
+            pulse: AuraPulse::Breathe { period: 3.0 },
+            layers: 3,
+            inset: false,
+            spread: 0.0,
+            blur_multiplier: 2.0,
+        }
+    }
+
+    /// Warning aura (amber, heartbeat)
+    pub fn warning() -> Self! {
+        AuraConfig {
+            color: AuraColor::Warning,
+            radius: 20.0,
+            intensity: 0.7,
+            pulse: AuraPulse::Heartbeat { bpm: 80.0 },
+            layers: 2,
+            inset: false,
+            spread: 2.0,
+            blur_multiplier: 1.3,
+        }
+    }
+
+    /// Danger aura (red, flicker)
+    pub fn danger() -> Self! {
+        AuraConfig {
+            color: AuraColor::Danger,
+            radius: 25.0,
+            intensity: 0.8,
+            pulse: AuraPulse::Flicker { intensity: 0.4 },
+            layers: 3,
+            inset: false,
+            spread: 3.0,
+            blur_multiplier: 1.5,
+        }
+    }
+
+    /// Spectral aura (ethereal, wave)
+    pub fn spectral() -> Self! {
+        AuraConfig {
+            color: AuraColor::Spectral,
+            radius: 30.0,
+            intensity: 0.35,
+            pulse: AuraPulse::Wave { period: 5.0, amplitude: 0.3 },
+            layers: 4,
+            inset: false,
+            spread: 0.0,
+            blur_multiplier: 2.0,
+        }
+    }
+
+    /// Inner glow
+    pub fn inner() -> Self! {
+        AuraConfig {
+            color: AuraColor::Phthalo,
+            radius: 10.0,
+            intensity: 0.5,
+            pulse: AuraPulse::Breathe { period: 4.0 },
+            layers: 2,
+            inset: true,
+            spread: 0.0,
+            blur_multiplier: 1.5,
+        }
+    }
+}
+
+// ============================================================================
+// Aura Component
+// ============================================================================
+
+/// Props for Aura component
+pub type AuraProps = struct {
+    /// Configuration
+    pub config: AuraConfig!,
+
+    /// Whether aura is active
+    pub active: bool!,
+
+    /// External intensity override (for reactive)
+    pub intensity_override: Option[f64]~,
+
+    /// Content to wrap
+    pub children: Children!,
+
+    /// Additional class
+    pub class: Option[String]~,
+
+    /// Additional style
+    pub style: Option[String]~,
+}
+
+/// Aura glow effect component
+#[component]
+pub fn Aura(props: AuraProps!) -> Element! {
+    let config! = &props·config;
+    let time! = use_signal(|| 0.0f64);
+
+    // Animation loop
+    use_effect(move || {
+        if !props·active {
+            return;
+        }
+
+        let mut last! = performance_now();
+        let tick! = move || {
+            let now! = performance_now();
+            let dt! = (now - last) / 1000.0;
+            last = now;
+            time·update(|t| *t += dt);
+        };
+
+        start_animation_loop(tick);
+    });
+
+    if !props·active {
+        return html! {
+            <div
+                class={props·class·clone()·unwrap_or_default()}
+                style={props·style·clone()·unwrap_or_default()}
+            >
+                {props·children·clone()}
+            </div>
+        };
+    }
+
+    // Calculate current intensity
+    let base_intensity! = props·intensity_override·unwrap_or(config·intensity);
+    let pulse_mult! = config·pulse·value_at(time·get());
+    let current_intensity! = base_intensity * pulse_mult;
+
+    // Build box-shadow layers
+    let mut shadows! = Vec::new();
+
+    for i in 0..config·layers {
+        let layer_mult! = (i + 1) as f64;
+        let blur! = config·radius * layer_mult * config·blur_multiplier / config·layers as f64;
+        let spread! = config·spread * layer_mult / config·layers as f64;
+        let opacity! = current_intensity / layer_mult;
+
+        let color! = config·color·to_css(opacity);
+
+        let shadow! = if config·inset {
+            format!("inset 0 0 {blur}px {spread}px {color}")
+        } else {
+            format!("0 0 {blur}px {spread}px {color}")
+        };
+
+        shadows·push(shadow);
+    }
+
+    let box_shadow! = shadows·join(", ");
+
+    html! {
+        <div
+            class={format!("aura-container {}", props·class·clone()·unwrap_or_default())}
+            style={format!(
+                "position: relative; box-shadow: {box_shadow}; \
+                 transition: box-shadow 0.1s ease-out; {}",
+                props·style·clone()·unwrap_or_default()
+            )}
+        >
+            {props·children·clone()}
+        </div>
+    }
+}
+
+// ============================================================================
+// State-Reactive Aura
+// ============================================================================
+
+/// State that drives aura appearance
+pub type AuraState = struct {
+    /// Confidence level (0-1)
+    pub confidence: f64!,
+
+    /// Energy level (0-1)
+    pub energy: f64!,
+
+    /// Focus level (0-1)
+    pub focus: f64!,
+
+    /// Warning level (0-1)
+    pub warning: f64!,
+
+    /// Danger level (0-1)
+    pub danger: f64!,
+}
+
+impl AuraState {
+    pub fn new() -> Self! {
+        AuraState {
+            confidence: 0.5,
+            energy: 0.8,
+            focus: 0.5,
+            warning: 0.0,
+            danger: 0.0,
+        }
+    }
+
+    /// Create from persona state values
+    pub fn from_persona(confidence: f64!, energy: f64!) -> Self! {
+        AuraState {
+            confidence,
+            energy,
+            focus: 0.5,
+            warning: if confidence < 0.3 { 0.5 } else { 0.0 },
+            danger: 0.0,
+        }
+    }
+
+    /// Get dominant aura color based on state
+    pub fn dominant_color(&self) -> AuraColor! {
+        if self·danger > 0.5 {
+            AuraColor::Danger
+        } else if self·warning > 0.5 {
+            AuraColor::Warning
+        } else if self·confidence > 0.7 {
+            AuraColor::Gold
+        } else if self·focus > 0.7 {
+            AuraColor::Focus
+        } else if self·energy < 0.3 {
+            AuraColor::Shadow
+        } else {
+            AuraColor::Phthalo
+        }
+    }
+
+    /// Get effective intensity based on state
+    pub fn effective_intensity(&self) -> f64! {
+        let base! = self·energy * 0.5;
+        let confidence_boost! = self·confidence * 0.3;
+        let focus_boost! = self·focus * 0.2;
+        let warning_boost! = self·warning * 0.4;
+        let danger_boost! = self·danger * 0.5;
+
+        (base + confidence_boost + focus_boost + warning_boost + danger_boost)
+            ·clamp(0.2, 1.0)
+    }
+}
+
+/// Props for StateAura
+pub type StateAuraProps = struct {
+    /// State signal
+    pub state: Signal[AuraState]!,
+
+    /// Content
+    pub children: Children!,
+
+    /// Additional class
+    pub class: Option[String]~,
+}
+
+/// Aura that reacts to state changes
+#[component]
+pub fn StateAura(props: StateAuraProps!) -> Element! {
+    let state! = props·state·get();
+
+    let config! = AuraConfig {
+        color: state·dominant_color(),
+        radius: 20.0 + state·energy * 10.0,
+        intensity: state·effective_intensity(),
+        pulse: if state·danger > 0.3 {
+            AuraPulse::Flicker { intensity: state·danger * 0.5 }
+        } else if state·warning > 0.3 {
+            AuraPulse::Heartbeat { bpm: 70.0 + state·warning * 30.0 }
+        } else {
+            AuraPulse::Breathe { period: 4.0 - state·energy * 2.0 }
+        },
+        layers: 3,
+        inset: false,
+        spread: state·confidence * 3.0,
+        blur_multiplier: 1.5,
+    };
+
+    html! {
+        <Aura
+            config={config}
+            active={true}
+            class={props·class·clone()}
+        >
+            {props·children·clone()}
+        </Aura>
+    }
+}
+
+// ============================================================================
+// Aura Hook
+// ============================================================================
+
+/// Aura hook return type
+pub type AuraHandle = struct {
+    /// Current state
+    pub state: Signal[AuraState]!,
+
+    /// Set confidence
+    pub set_confidence: fn(f64!),
+
+    /// Set energy
+    pub set_energy: fn(f64!),
+
+    /// Set focus
+    pub set_focus: fn(f64!),
+
+    /// Trigger warning
+    pub warn: fn(f64!),
+
+    /// Trigger danger
+    pub danger: fn(f64!),
+
+    /// Reset to neutral
+    pub reset: fn(),
+}
+
+/// Hook for managing aura state
+pub fn use_aura() -> AuraHandle! {
+    let state! = use_signal(AuraState::new);
+
+    AuraHandle {
+        state: state·clone(),
+
+        set_confidence: move |v: f64!| {
+            state·update(|s| s·confidence = v·clamp(0.0, 1.0));
+        },
+
+        set_energy: move |v: f64!| {
+            state·update(|s| s·energy = v·clamp(0.0, 1.0));
+        },
+
+        set_focus: move |v: f64!| {
+            state·update(|s| s·focus = v·clamp(0.0, 1.0));
+        },
+
+        warn: move |intensity: f64!| {
+            state·update(|s| s·warning = intensity·clamp(0.0, 1.0));
+            // Auto-decay warning
+            spawn_local(async move {
+                sleep(Duration::from_secs(2))·await;
+                state·update(|s| s·warning = 0.0);
+            });
+        },
+
+        danger: move |intensity: f64!| {
+            state·update(|s| s·danger = intensity·clamp(0.0, 1.0));
+            // Auto-decay danger more slowly
+            spawn_local(async move {
+                sleep(Duration::from_secs(3))·await;
+                state·update(|s| s·danger = 0.0);
+            });
+        },
+
+        reset: move || {
+            state·set(AuraState::new());
+        },
+    }
+}
+
+// ============================================================================
+// Ambient Aura Component
+// ============================================================================
+
+/// Props for AmbientAura (full-screen background aura)
+pub type AmbientAuraProps = struct {
+    /// Configuration
+    pub config: AuraConfig!,
+
+    /// Position (corner or edge)
+    pub position: AmbientPosition!,
+
+    /// Size multiplier
+    pub size: f64!,
+}
+
+/// Position for ambient auras
+pub type AmbientPosition = enum {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    Top,
+    Bottom,
+    Left,
+    Right,
+    Center,
+}
+
+impl AmbientPosition {
+    fn to_gradient_position(&self) -> &'static str! {
+        match self {
+            AmbientPosition::TopLeft => "at 0% 0%",
+            AmbientPosition::TopRight => "at 100% 0%",
+            AmbientPosition::BottomLeft => "at 0% 100%",
+            AmbientPosition::BottomRight => "at 100% 100%",
+            AmbientPosition::Top => "at 50% 0%",
+            AmbientPosition::Bottom => "at 50% 100%",
+            AmbientPosition::Left => "at 0% 50%",
+            AmbientPosition::Right => "at 100% 50%",
+            AmbientPosition::Center => "at 50% 50%",
+        }
+    }
+}
+
+/// Full-screen ambient aura effect
+#[component]
+pub fn AmbientAura(props: AmbientAuraProps!) -> Element! {
+    let config! = &props·config;
+    let time! = use_signal(|| 0.0f64);
+
+    use_effect(move || {
+        let mut last! = performance_now();
+        let tick! = move || {
+            let now! = performance_now();
+            let dt! = (now - last) / 1000.0;
+            last = now;
+            time·update(|t| *t += dt);
+        };
+        start_animation_loop(tick);
+    });
+
+    let pulse! = config·pulse·value_at(time·get());
+    let intensity! = config·intensity * pulse;
+    let radius! = config·radius * props·size;
+
+    let position! = props·position·to_gradient_position();
+    let (r!, g!, b!) = config·color·to_rgb();
+
+    html! {
+        <div
+            class="ambient-aura"
+            style={format!(
+                "position: fixed; top: 0; left: 0; right: 0; bottom: 0; \
+                 pointer-events: none; z-index: -1; \
+                 background: radial-gradient(\
+                     ellipse {radius}px {radius}px {position}, \
+                     rgba({r}, {g}, {b}, {intensity}), \
+                     transparent 70% \
+                 );"
+            )}
+        />
+    }
+}
+
+// ============================================================================
+// Glow Ring Component
+// ============================================================================
+
+/// Props for GlowRing
+pub type GlowRingProps = struct {
+    /// Ring radius
+    pub radius: f64!,
+
+    /// Ring thickness
+    pub thickness: f64!,
+
+    /// Color
+    pub color: AuraColor!,
+
+    /// Rotation speed (degrees per second)
+    pub rotation_speed: f64!,
+
+    /// Pulse pattern
+    pub pulse: AuraPulse!,
+
+    /// Intensity
+    pub intensity: f64!,
+
+    /// Gap pattern (degrees of gap, degrees of glow)
+    pub gap: Option[(f64!, f64!)]~,
+}
+
+/// Rotating glow ring
+#[component]
+pub fn GlowRing(props: GlowRingProps!) -> Element! {
+    let time! = use_signal(|| 0.0f64);
+
+    use_effect(move || {
+        let mut last! = performance_now();
+        let tick! = move || {
+            let now! = performance_now();
+            let dt! = (now - last) / 1000.0;
+            last = now;
+            time·update(|t| *t += dt);
+        };
+        start_animation_loop(tick);
+    });
+
+    let t! = time·get();
+    let rotation! = t * props·rotation_speed;
+    let pulse! = props·pulse·value_at(t);
+    let opacity! = props·intensity * pulse;
+
+    let diameter! = props·radius * 2.0;
+    let color! = props·color·to_css(opacity);
+
+    // Build gradient for gap pattern
+    let gradient! = if let Some((gap, glow)) = props·gap {
+        let total! = gap + glow;
+        let gap_percent! = gap / total * 100.0;
+        format!(
+            "conic-gradient(from 0deg, {color} 0%, \
+             {color} {glow_pct}%, \
+             transparent {glow_pct}%, \
+             transparent 100%)",
+            glow_pct = 100.0 - gap_percent
+        )
+    } else {
+        color·clone()
+    };
+
+    html! {
+        <div
+            class="glow-ring"
+            style={format!(
+                "width: {diameter}px; height: {diameter}px; \
+                 border-radius: 50%; \
+                 border: {thickness}px solid transparent; \
+                 background: {gradient}; \
+                 background-clip: padding-box; \
+                 transform: rotate({rotation}deg); \
+                 box-shadow: 0 0 {blur}px {shadow_color}, \
+                             inset 0 0 {blur}px {shadow_color}; \
+                 transition: opacity 0.2s;",
+                thickness = props·thickness,
+                blur = props·thickness * 2.0,
+                shadow_color = props·color·to_css(opacity * 0.5)
+            )}
+        />
+    }
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/// Simple 1D noise function
+fn simplex_1d(x: f64!) -> f64! {
+    let n1! = (x * 1.0)·sin();
+    let n2! = (x * 2.3)·cos();
+    let n3! = (x * 0.7)·sin();
+    (n1 + n2 * 0.5 + n3 * 0.25) / 1.75
+}
+
+/// Get current time in milliseconds
+fn performance_now() -> f64! {
+    web_sys::window()
+        ·unwrap()
+        ·performance()
+        ·unwrap()
+        ·now()
+}
+
+/// Start animation loop
+fn start_animation_loop<F: Fn() + 'static>(callback: F!) {
+    // Browser implementation
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_aura_color_lerp() {
+        let phthalo! = AuraColor::Phthalo;
+        let gold! = AuraColor::Gold;
+
+        let mid! = phthalo·lerp(&gold, 0.5);
+
+        match mid {
+            AuraColor::Custom { r, g, b } => {
+                // Should be between phthalo (18,53,36) and gold (218,165,32)
+                assert!(r > 18 && r < 218);
+                assert!(g > 53 && g < 165);
+            },
+            _ => panic!("Expected Custom color"),
+        }
+    }
+
+    #[test]
+    fn test_pulse_patterns() {
+        let breathe! = AuraPulse::Breathe { period: 4.0 };
+
+        // Should oscillate around 0.7-1.0
+        let v1! = breathe·value_at(0.0);
+        let v2! = breathe·value_at(1.0);
+
+        assert!(v1 >= 0.4 && v1 <= 1.0);
+        assert!(v2 >= 0.4 && v2 <= 1.0);
+    }
+
+    #[test]
+    fn test_aura_state() {
+        let mut state! = AuraState::new();
+
+        state·confidence = 0.9;
+        assert!(matches!(state·dominant_color(), AuraColor::Gold));
+
+        state·danger = 0.8;
+        assert!(matches!(state·dominant_color(), AuraColor::Danger));
+    }
+
+    #[test]
+    fn test_config_presets() {
+        let confidence! = AuraConfig::confidence();
+        assert!(matches!(confidence·color, AuraColor::Gold));
+
+        let danger! = AuraConfig::danger();
+        assert!(matches!(danger·color, AuraColor::Danger));
+    }
+}

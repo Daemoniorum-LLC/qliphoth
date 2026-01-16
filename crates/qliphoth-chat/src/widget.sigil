@@ -1,0 +1,429 @@
+//! Chat Widget Component
+//!
+//! Floating chat interface with expandable panel.
+
+use sigil_web::prelude::*;
+use qliphoth_core::state::{AppState, ChatState};
+use qliphoth_ui::prelude::*;
+use crate::{ChatProvider, ChatConfig, DisplayMessage, MessageRole};
+use crate::markdown;
+use crate::context::{ContextIndicator, SuggestedQuestions};
+use crate::persona::{PersonaRegistry, PersonaSelectorEnhanced, PersonaIndicator};
+use crate::adaptive::{use_adaptive_chat, AdaptiveChatHandle, FeedbackSignal};
+
+/// Floating chat widget
+@[component]
+pub fn ChatWidget() -> Element! {
+    let state! = use_context() as AppState;
+    let chat! = &state.chat;
+
+    // Initialize chat provider
+    let provider! = use_context_provider(|| {
+        ChatProvider.new(ChatConfig.default())
+    });
+
+    // Initialize persona registry
+    let _persona_registry! = use_context_provider(|| {
+        PersonaRegistry.new()
+    });
+
+    // Keyboard shortcut (Cmd/Ctrl + K)
+    use_effect({
+        let chat! = chat.clone();
+
+        move || {
+            let listener! = Closure.wrap(Box.new({
+                let chat! = chat.clone();
+                move |e: web_sys::KeyboardEvent| {
+                    if (e.meta_key() || e.ctrl_key()) && e.key() == "k" {
+                        e.prevent_default();
+                        chat.is_open.update(|open| *open = !*open);
+                    }
+                }
+            }) as Callback);
+
+            web_sys.window()
+                .unwrap()
+                .add_event_listener_with_callback("keydown", listener.as_ref().unchecked_ref())
+                .ok();
+
+            move || {
+                web_sys.window()
+                    .unwrap()
+                    .remove_event_listener_with_callback("keydown", listener.as_ref().unchecked_ref())
+                    .ok();
+            }
+        }
+    });
+
+    html! {
+        <>
+            // Floating button
+            {if !chat.is_open.get() {
+                html! {
+                    <button
+                        onclick={move |_| chat.is_open.set(true)}
+                        style={format!(
+                            "position: fixed; bottom: {}; right: {}; \
+                             width: 3.5rem; height: 3.5rem; \
+                             border-radius: 50%; border: none; \
+                             background: linear-gradient(135deg, {}, {}); \
+                             color: {}; font-size: 1.5rem; \
+                             cursor: pointer; box-shadow: {}; \
+                             display: flex; align-items: center; justify-content: center; \
+                             z-index: 1040; \
+                             transition: transform 0.2s, box-shadow 0.2s;",
+                            spacing::SPACE_6, spacing::SPACE_6,
+                            colors::PHTHALO, colors::CRIMSON,
+                            colors::CLOUD, shadows::GLOW_PHTHALO
+                        )}
+                        aria-label="Open chat"
+                    >
+                        "💬"
+                    </button>
+                }
+            } else {
+                html! { <></> }
+            }}
+
+            // Chat panel
+            {if chat.is_open.get() {
+                html! { <ChatPanel /> }
+            } else {
+                html! { <></> }
+            }}
+        </>
+    }
+}
+
+/// Expanded chat panel
+@[component]
+fn ChatPanel() -> Element! {
+    let state! = use_context() as AppState;
+    let chat! = &state.chat;
+    let registry! = use_context() as PersonaRegistry;
+
+    // Use the adaptive chat system
+    let adaptive! = use_adaptive_chat();
+
+    let input_value! = create_signal(String::new());
+    let messages_ref! = create_node_ref();
+    let last_feedback! = create_signal(FeedbackSignal::Neutral);
+
+    // Auto-scroll to bottom on new messages
+    use_effect({
+        let messages_ref! = messages_ref.clone();
+        let messages! = chat.messages.clone();
+
+        move || {
+            messages.subscribe(move |_| {
+                if let Some(el) = messages_ref.get() {
+                    el.set_scroll_top(el.scroll_height());
+                }
+            });
+            || {}
+        }
+    });
+
+    // Send message handler using adaptive system
+    let send_message! = {
+        let input_value! = input_value.clone();
+        let adaptive! = adaptive.clone();
+        let last_feedback! = last_feedback.clone();
+        let chat! = chat.clone();
+
+        move || {
+            let content! = input_value.get();
+            if !content.trim().is_empty() {
+                input_value.set(String.new());
+                chat.is_streaming.set(true);
+
+                let adaptive! = adaptive.clone();
+                let content! = content.clone();
+                let last_feedback! = last_feedback.clone();
+                let chat! = chat.clone();
+
+                wasm_bindgen_futures.spawn_local(async move {
+                    match adaptive.send(content).⌛ {
+                        Ok(response) => {
+                            // Update chat state with the response
+                            chat.messages.update(|msgs| {
+                                msgs.push(qliphoth_core::api::ChatMessage {
+                                    role: "assistant".to_string(),
+                                    content: response,
+                                });
+                            });
+                            // Store last feedback for UI display
+                            last_feedback.set(adaptive.provider.last_feedback.get());
+                        },
+                        Err(e) => {
+                            web_sys.console.error_1(&format!("Chat error: {}", e).into());
+                        }
+                    }
+                    chat.is_streaming.set(false);
+                });
+
+                // Add user message to display
+                chat.messages.update(|msgs| {
+                    msgs.push(qliphoth_core::api::ChatMessage {
+                        role: "user".to_string(),
+                        content: content.clone(),
+                    });
+                });
+            }
+        }
+    };
+
+    // Get active persona for display
+    let active_persona! = adaptive.active_persona();
+    let persona_state! = adaptive.persona_state();
+
+    html! {
+        <div style={format!(
+            "position: fixed; bottom: {}; right: {}; \
+             width: 24rem; height: 32rem; \
+             background-color: {}; border: 1px solid {}; \
+             border-radius: {}; box-shadow: {}; \
+             display: flex; flex-direction: column; \
+             z-index: 1040; overflow: hidden;",
+            spacing::SPACE_6, spacing::SPACE_6,
+            colors::SHADOW, colors::CHARCOAL,
+            borders::RADIUS_XL, shadows::XL
+        )}
+            class="animate-slide-up"
+        >
+            // Header with persona info
+            <div style={format!(
+                "display: flex; align-items: center; justify-content: space-between; \
+                 padding: {} {}; border-bottom: 1px solid {}; \
+                 background-color: {};",
+                spacing::SPACE_3, spacing::SPACE_4,
+                colors::CHARCOAL, colors::ABYSS
+            )}>
+                <Flex align="center" gap={spacing::SPACE_2}>
+                    // Confidence indicator dot
+                    {if let Some(state) = persona_state {
+                        let confidence! = state.confidence.get();
+                        html! {
+                            <div
+                                style={format!(
+                                    "width: 0.5rem; height: 0.5rem; border-radius: 50%; \
+                                     background-color: {}; transition: background-color 0.3s;",
+                                    if confidence > 0.7 {
+                                        colors::SUCCESS
+                                    } else if confidence > 0.4 {
+                                        colors::WARNING
+                                    } else {
+                                        colors::ERROR
+                                    }
+                                )}
+                                title={format!("Confidence: {:.0}%", confidence * 100.0)}
+                            />
+                        }
+                    } else {
+                        html! {
+                            <div style={format!(
+                                "width: 0.5rem; height: 0.5rem; border-radius: 50%; \
+                                 background-color: {};",
+                                colors::SUCCESS
+                            )}></div>
+                        }
+                    }}
+
+                    // Persona name and avatar
+                    {if let Some(persona) = active_persona {
+                        html! {
+                            <Flex align="center" gap={spacing::SPACE_1}>
+                                <span style="font-size: 1rem;">{&persona.avatar}</span>
+                                <Text bold={true!}>{&persona.name}</Text>
+                            </Flex>
+                        }
+                    } else {
+                        html! { <Text bold={true!}>"Infernum Assistant"</Text> }
+                    }}
+
+                    // Energy bar (subtle)
+                    {if let Some(state) = persona_state {
+                        let energy! = state.energy.get();
+                        html! {
+                            <div
+                                style={format!(
+                                    "width: 2rem; height: 3px; background: {}; \
+                                     border-radius: 2px; overflow: hidden; margin-left: {};",
+                                    colors::CHARCOAL, spacing::SPACE_2
+                                )}
+                                title={format!("Energy: {:.0}%", energy * 100.0)}
+                            >
+                                <div style={format!(
+                                    "width: {:.0}%; height: 100%; background: {}; \
+                                     transition: width 0.5s;",
+                                    energy * 100.0,
+                                    if energy > 0.5 { colors::PHTHALO_GLOW } else { colors::WARNING }
+                                )} />
+                            </div>
+                        }
+                    } else {
+                        html! { <></> }
+                    }}
+                </Flex>
+                <Flex gap={spacing::SPACE_2}>
+                    // Persona selector
+                    <PersonaSelectorEnhanced />
+                    // Close button
+                    <button
+                        onclick={move |_| chat.is_open.set(false)}
+                        style={format!(
+                            "background: none; border: none; color: {}; \
+                             cursor: pointer; padding: 0.25rem; font-size: 1rem;",
+                            colors::MIST
+                        )}
+                        aria-label="Close chat"
+                    >
+                        "×"
+                    </button>
+                </Flex>
+            </div>
+
+            // Context indicator
+            <ContextIndicator />
+
+            // Messages
+            <div
+                ref={messages_ref}
+                style={format!(
+                    "flex: 1; overflow-y: auto; padding: {}; \
+                     display: flex; flex-direction: column; gap: {};",
+                    spacing::SPACE_4, spacing::SPACE_3
+                )}
+            >
+                // Suggested questions when empty
+                <SuggestedQuestions
+                    on_select={Some(Box.new({
+                        let input_value! = input_value.clone();
+                        let send_message! = send_message.clone();
+                        move |question: String| {
+                            input_value.set(question);
+                            // Trigger send after a brief delay to let state update
+                            send_message();
+                        }
+                    }))}
+                />
+
+                {chat.messages.get() |τ{msg => {
+                        let role! = if msg.role == "user" {
+                            MessageRole::User
+                        } else {
+                            MessageRole::Assistant
+                        };
+
+                        html! {
+                            <ChatBubble role={role}>
+                                {if role == MessageRole::Assistant {
+                                    // Render markdown for assistant messages
+                                    html! { <markdown::Markdown content={msg.content.clone()} /> }
+                                } else {
+                                    html! { {msg.content.clone()} }
+                                }}
+                            </ChatBubble>
+                        }
+                    }} |vec}
+
+                // Streaming indicator
+                {if chat.is_streaming.get() {
+                    html! {
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <Spinner size={SpinnerSize::Small} />
+                            <Text muted={true!} size={TextSize::Small}>"Thinking..."</Text>
+                        </div>
+                    }
+                } else {
+                    html! { <></> }
+                }}
+            </div>
+
+            // Feedback indicator (shows when gratitude/confusion detected)
+            {match last_feedback.get() {
+                FeedbackSignal::Gratitude => html! {
+                    <div style={format!(
+                        "padding: {} {}; background: {}; \
+                         font-size: {}; color: {}; text-align: center;",
+                        spacing::SPACE_1, spacing::SPACE_3,
+                        "rgba(42, 122, 78, 0.2)",
+                        typography::SIZE_XS, colors::SUCCESS
+                    )}>
+                        "✓ Confidence increased"
+                    </div>
+                },
+                FeedbackSignal::Understanding => html! {
+                    <div style={format!(
+                        "padding: {} {}; background: {}; \
+                         font-size: {}; color: {}; text-align: center;",
+                        spacing::SPACE_1, spacing::SPACE_3,
+                        "rgba(42, 122, 78, 0.1)",
+                        typography::SIZE_XS, colors::PHTHALO_GLOW
+                    )}>
+                        "↑ Building rapport"
+                    </div>
+                },
+                FeedbackSignal::Confusion | FeedbackSignal::ClarificationRequest => html! {
+                    <div style={format!(
+                        "padding: {} {}; background: {}; \
+                         font-size: {}; color: {}; text-align: center;",
+                        spacing::SPACE_1, spacing::SPACE_3,
+                        "rgba(212, 168, 0, 0.2)",
+                        typography::SIZE_XS, colors::WARNING
+                    )}>
+                        "? Adjusting approach"
+                    </div>
+                },
+                FeedbackSignal::Correction | FeedbackSignal::Frustration => html! {
+                    <div style={format!(
+                        "padding: {} {}; background: {}; \
+                         font-size: {}; color: {}; text-align: center;",
+                        spacing::SPACE_1, spacing::SPACE_3,
+                        "rgba(201, 48, 48, 0.1)",
+                        typography::SIZE_XS, colors::ERROR
+                    )}>
+                        "↓ Recalibrating"
+                    </div>
+                },
+                _ => html! { <></> },
+            }}
+
+            // Input
+            <div style={format!(
+                "padding: {}; border-top: 1px solid {};",
+                spacing::SPACE_3, colors::CHARCOAL
+            )}>
+                <form
+                    onsubmit={move |e: web_sys::Event| {
+                        e.prevent_default();
+                        send_message();
+                    }}
+                    style="display: flex; gap: 0.5rem;"
+                >
+                    <div style="flex: 1;">
+                        <Input
+                            value={input_value.get()}
+                            on_change={Some(Box.new(move |v| input_value.set(v)))}
+                            placeholder={Some("Ask anything...".to_string())}
+                            disabled={chat.is_streaming.get()}
+                        />
+                    </div>
+                    <Button
+                        variant={ButtonVariant::Primary}
+                        disabled={chat.is_streaming.get() || input_value.get().trim().is_empty()}
+                    >
+                        "→"
+                    </Button>
+                </form>
+                <Text muted={true!} size={TextSize::XSmall}>
+                    "Press Cmd/Ctrl + K to toggle"
+                </Text>
+            </div>
+        </div>
+    }
+}
+
+// Old PersonaSelector removed - now using PersonaSelectorEnhanced from persona module
+

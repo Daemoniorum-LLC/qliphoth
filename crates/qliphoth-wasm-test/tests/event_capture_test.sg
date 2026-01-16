@@ -1,0 +1,28 @@
+// Event System Test with Closure Captures
+
+pub fn main() -> i64 {
+    console::log_str("=== Event Capture Test ===");
+
+    // Create a counter signal
+    let counter = signal::create(0);
+
+    // Create button
+    let button = dom::create_element("button");
+    console::log_str("Created button");
+
+    // Add event listener that captures the counter signal
+    let listener = events::add_listener(button, "click", || {
+        let current = signal::get(counter);
+        let new_val = current + 1;
+        signal::set(counter, new_val);
+        console::log_str("Counter incremented!");
+    }, 0);
+
+    console::log_str("Listener registered with capture");
+
+    // Log initial counter value
+    let val = signal::get(counter);
+    console::log_str(f"Initial counter: {val}");
+
+    0
+}

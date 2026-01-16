@@ -1,0 +1,32 @@
+// VDOM Diff and Patch Test
+
+pub fn main() -> i64 {
+    console::log_str("=== VDOM Diff Test ===");
+
+    // Create initial tree: <div><span>Hello</span></div>
+    let old_div = vdom::create_vnode("div");
+    let old_span = vdom::create_vnode("span");
+    let old_text = vdom::create_text_vnode("Hello");
+    vdom::append_vnode_child(old_span, old_text);
+    vdom::append_vnode_child(old_div, old_span);
+    console::log_str("Created old tree: <div><span>Hello</span></div>");
+
+    // Mount old tree
+    let container = vdom::mount_vnode(old_div, "#app");
+    console::log_str("Mounted old tree");
+
+    // Create new tree: <div><span>World</span></div>
+    let new_div = vdom::create_vnode("div");
+    let new_span = vdom::create_vnode("span");
+    let new_text = vdom::create_text_vnode("World");
+    vdom::append_vnode_child(new_span, new_text);
+    vdom::append_vnode_child(new_div, new_span);
+    console::log_str("Created new tree: <div><span>World</span></div>");
+
+    // Diff and patch
+    console::log_str("Running diff_and_patch...");
+    vdom::diff_and_patch(old_div, new_div, container);
+    console::log_str("Diff complete!");
+
+    0
+}

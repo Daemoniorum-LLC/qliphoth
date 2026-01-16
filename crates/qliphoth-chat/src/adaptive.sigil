@@ -1,0 +1,585 @@
+//! Adaptive Chat Integration
+//!
+//! The integration layer that weaves persona, context, and chat
+//! into a living, responsive system. This module is the nervous system
+//! connecting all the pieces.
+//!
+//! ## Design Philosophy
+//!
+//! The chat doesn't just respond - it adapts. The persona's voice
+//! shapes responses. The page context provides grounding. User feedback
+//! updates the persona's internal state. Everything flows together.
+
+use sigil_web::prelude::*;
+use qliphoth_core::api::ChatMessage;
+use qliphoth_core::state::{AppState, Signal, create_signal};
+
+use crate::{ChatConfig, ChatRequest, InfernumClient, ConnectionState};
+use crate::context::{ContextScope, EnhancedContext, build_context_message};
+use crate::persona::{PersonaRegistry, PersonaDefinition, PersonaState};
+use crate::streaming::StreamHandler;
+
+// ============================================================================
+// FEEDBACK DETECTION
+// ============================================================================
+
+/// Signals detected in user messages that affect persona state
+@[Clone, Debug, PartialEq, Eq]
+enum FeedbackSignal {
+    /// User expressed gratitude ("thanks", "that helped")
+    Gratitude,
+    /// User expressed confusion ("I don't understand", "what?")
+    Confusion,
+    /// User asked for clarification ("can you explain", "what do you mean")
+    ClarificationRequest,
+    /// User corrected the assistant ("no, that's wrong", "actually")
+    Correction,
+    /// User expressed frustration ("this isn't working", "ugh")
+    Frustration,
+    /// User is following along ("okay", "got it", "makes sense")
+    Understanding,
+    /// No clear signal detected
+    Neutral,
+}
+
+impl FeedbackSignal {
+    /// Analyze a message for feedback signals
+    pub fn detect(content: &str!) -> Self! {
+        let lower! = content.to_lowercase();
+
+        // Gratitude patterns
+        if contains_any(&lower, &[
+            "thanks", "thank you", "that helped", "perfect", "exactly",
+            "great", "awesome", "brilliant", "nice", "love it"
+        ]) {
+            return FeedbackSignal::Gratitude;
+        }
+
+        // Confusion patterns
+        if contains_any(&lower, &[
+            "i don't understand", "what?", "huh?", "confused",
+            "makes no sense", "lost me", "what does that mean"
+        ]) {
+            return FeedbackSignal::Confusion;
+        }
+
+        // Clarification request patterns
+        if contains_any(&lower, &[
+            "can you explain", "what do you mean", "elaborate",
+            "more detail", "break it down", "simpler", "example"
+        ]) {
+            return FeedbackSignal::ClarificationRequest;
+        }
+
+        // Correction patterns
+        if contains_any(&lower, &[
+            "no,", "that's wrong", "actually,", "incorrect",
+            "not quite", "that's not right", "you're wrong"
+        ]) {
+            return FeedbackSignal::Correction;
+        }
+
+        // Frustration patterns
+        if contains_any(&lower, &[
+            "ugh", "frustrated", "this isn't working", "annoying",
+            "waste of time", "useless", "terrible"
+        ]) {
+            return FeedbackSignal::Frustration;
+        }
+
+        // Understanding patterns
+        if contains_any(&lower, &[
+            "okay", "ok", "got it", "makes sense", "i see",
+            "understood", "right", "ah,", "aha"
+        ]) {
+            return FeedbackSignal::Understanding;
+        }
+
+        FeedbackSignal::Neutral
+    }
+
+    /// How this signal affects persona confidence
+    pub fn confidence_delta(self: &Self!) -> f64! {
+        match self {
+            FeedbackSignal::Gratitude => 0.08,
+            FeedbackSignal::Understanding => 0.04,
+            FeedbackSignal::Neutral => 0.0,
+            FeedbackSignal::ClarificationRequest => -0.03,
+            FeedbackSignal::Confusion => -0.08,
+            FeedbackSignal::Correction => -0.12,
+            FeedbackSignal::Frustration => -0.15,
+        }
+    }
+
+    /// How this signal affects persona uncertainty
+    pub fn uncertainty_delta(self: &Self!) -> f64! {
+        match self {
+            FeedbackSignal::Gratitude => -0.1,
+            FeedbackSignal::Understanding => -0.05,
+            FeedbackSignal::Neutral => 0.0,
+            FeedbackSignal::ClarificationRequest => 0.1,
+            FeedbackSignal::Confusion => 0.15,
+            FeedbackSignal::Correction => 0.1,
+            FeedbackSignal::Frustration => 0.05,
+        }
+    }
+
+    /// How this signal affects rapport
+    pub fn rapport_delta(self: &Self!) -> f64! {
+        match self {
+            FeedbackSignal::Gratitude => 0.1,
+            FeedbackSignal::Understanding => 0.03,
+            FeedbackSignal::Neutral => 0.0,
+            FeedbackSignal::ClarificationRequest => 0.0,
+            FeedbackSignal::Confusion => -0.02,
+            FeedbackSignal::Correction => -0.05,
+            FeedbackSignal::Frustration => -0.1,
+        }
+    }
+}
+
+fn contains_any(text: &str!, patterns: &[&str]!) -> bool! {
+    patterns.iter().any(|p| text.contains(p))
+}
+
+// ============================================================================
+// ADAPTIVE CHAT PROVIDER
+// ============================================================================
+
+/// An adaptive chat provider that integrates persona and context
+@[Clone]
+struct AdaptiveChatProvider! {
+    config: ChatConfig,                  // Base configuration
+    client: InfernumClient,               // WebSocket client
+    messages: RwSignal,                   // Message history
+    is_streaming: RwSignal,               // Is currently streaming
+    context: RwSignal?,                   // Current page context
+    last_feedback: RwSignal,              // Last detected feedback signal
+    turn_count: RwSignal,                 // Turn counter for energy decay
+}
+
+impl AdaptiveChatProvider {
+    /// Create a new adaptive chat provider
+    pub fn new(config: ChatConfig!) -> Self! {
+        let client! = InfernumClient.new(&config.infernum_url);
+
+        AdaptiveChatProvider {
+            config,
+            client,
+            messages: create_signal([]),
+            is_streaming: create_signal(false),
+            context: create_signal(None),
+            last_feedback: create_signal(FeedbackSignal::Neutral),
+            turn_count: create_signal(0),
+        }
+    }
+
+    /// Set the current page context
+    pub fn set_context(self: &Self!, context: EnhancedContext!) {
+        self.context.set(Some(context));
+    }
+
+    /// Clear the current context
+    pub fn clear_context(self: &Self!) {
+        self.context.set(None);
+    }
+
+    /// Send a message with full persona + context integration
+    pub async fn send_adaptive(
+        self: &Self!,
+        content: String!,
+        persona: &PersonaDefinition!,
+        persona_state: &PersonaState!,
+    ) -> Result<String, String>~ {
+        // Detect feedback signals in user message
+        let signal! = FeedbackSignal.detect(&content);
+        self.last_feedback.set(signal.clone());
+
+        // Update persona state based on feedback
+        apply_feedback_to_state(&signal, persona_state);
+
+        // Increment turn count for energy decay
+        self.turn_count.update(|c| *c += 1);
+        if self.turn_count.get() % 5 == 0 {
+            persona_state.tick_energy();
+        }
+
+        // Add user message to history
+        self.messages.update(|msgs| {
+            msgs.push(ChatMessage {
+                role: "user".to_string(),
+                content: content.clone(),
+            });
+        });
+
+        self.is_streaming.set(true);
+
+        // Build adaptive system prompt
+        let system_prompt! = self.build_system_prompt(persona, persona_state);
+
+        // Build messages with system prompt prepended
+        let mut all_messages! = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: system_prompt,
+            },
+        ];
+        all_messages.extend(self.messages.get());
+
+        // Prepare request
+        let request! = ChatRequest {
+            model: self.config.default_model.clone(),
+            messages: all_messages,
+            stream: self.config.streaming,
+            max_tokens: Some(2048),
+            temperature: Some(self.derive_temperature(persona, persona_state)),
+        };
+
+        // Send and collect response
+        let response! = self.client.send(request).⌛?;
+
+        let full_content! = if self.config.streaming {
+            let mut content! = String.new();
+
+            while let Some(chunk) = response.next().⌛ {
+                content.push_str(&chunk);
+            }
+
+            content
+        } else {
+            response.content.clone()
+        };
+
+        // Add assistant response to history
+        self.messages.update(|msgs| {
+            msgs.push(ChatMessage {
+                role: "assistant".to_string(),
+                content: full_content.clone(),
+            });
+        });
+
+        self.is_streaming.set(false);
+
+        // Record success (user got a response)
+        // Actual success/failure is determined by next user message feedback
+        persona_state.successes.update(|s| *s += 1);
+
+        Ok(full_content)
+    }
+
+    /// Build system prompt integrating persona + context
+    fn build_system_prompt(
+        self: &Self!,
+        persona: &PersonaDefinition!,
+        state: &PersonaState!,
+    ) -> String! {
+        let mut prompt! = persona.build_system_prompt(state);
+
+        // Add page context if available
+        if let Some(ctx) = self.context.get() {
+            prompt.push_str("\n\n## Current Page Context\n\n");
+            prompt.push_str(&ctx.to_system_prompt());
+        }
+
+        // Add conversation context
+        let turn_count! = self.turn_count.get();
+        if turn_count > 0 {
+            prompt.push_str(&format!(
+                "\n\n## Conversation State\n\
+                 - Turn: {}\n\
+                 - Your confidence: {:.0}%\n\
+                 - Your energy: {:.0}%\n",
+                turn_count,
+                state.confidence.get() * 100.0,
+                state.energy.get() * 100.0
+            ));
+        }
+
+        prompt
+    }
+
+    /// Derive temperature from persona + state
+    fn derive_temperature(
+        self: &Self!,
+        persona: &PersonaDefinition!,
+        state: &PersonaState!,
+    ) -> f64! {
+        let base! = match persona.voice.tone {
+            crate::persona::VoiceTone::Formal => 0.5,
+            crate::persona::VoiceTone::Technical => 0.6,
+            crate::persona::VoiceTone::Educational => 0.65,
+            crate::persona::VoiceTone::Casual => 0.7,
+            crate::persona::VoiceTone::Playful => 0.8,
+        };
+
+        // High uncertainty = lower temperature (more focused)
+        // High confidence = slightly higher temperature (more creative)
+        let uncertainty! = state.uncertainty.get().unwrap_or(0.3);
+        let confidence! = state.confidence.get();
+
+        let adjusted! = base - (uncertainty * 0.1) + (confidence * 0.05);
+
+        adjusted.clamp(0.3, 1.0)
+    }
+
+    /// Clear conversation history
+    pub fn clear(self: &Self!) {
+        self.messages.set([]);
+        self.turn_count.set(0);
+    }
+
+    /// Get message history
+    pub fn messages(self: &Self!) -> [ChatMessage]! {
+        self.messages.get()
+    }
+
+    /// Check if streaming
+    pub fn is_streaming(self: &Self!) -> bool! {
+        self.is_streaming.get()
+    }
+
+    /// Get last feedback signal
+    pub fn last_feedback(self: &Self!) -> FeedbackSignal! {
+        self.last_feedback.get()
+    }
+}
+
+/// Apply feedback signal to persona state
+fn apply_feedback_to_state(signal: &FeedbackSignal!, state: &PersonaState!) {
+    let conf_delta! = signal.confidence_delta();
+    let uncert_delta! = signal.uncertainty_delta();
+    let rapport_delta! = signal.rapport_delta();
+
+    if conf_delta != 0.0 {
+        state.confidence.update(|c| {
+            *c = (*c + conf_delta).clamp(0.2, 1.0)
+        });
+    }
+
+    if uncert_delta != 0.0 {
+        state.uncertainty.update(|u| {
+            *u = (*u + uncert_delta).clamp(0.0, 1.0)
+        });
+    }
+
+    if rapport_delta != 0.0 {
+        state.rapport.update(|r| {
+            *r = (*r + rapport_delta).clamp(0.0, 1.0)
+        });
+    }
+
+    // Track clarifications
+    if *signal == FeedbackSignal::ClarificationRequest {
+        state.record_clarification();
+    }
+}
+
+// ============================================================================
+// CONVERSATION ANALYZER
+// ============================================================================
+
+/// Analyzes conversation patterns to derive insights
+@[Clone]
+struct ConversationAnalyzer! {
+    topics: [String],                     // Topic keywords detected
+    question_count: u32,                  // Question count from user
+    code_count: u32,                      // Code block count in responses
+    avg_response_length: f64,             // Average response length
+}
+
+impl ConversationAnalyzer {
+    pub fn new() -> Self! {
+        ConversationAnalyzer {
+            topics: [],
+            question_count: 0,
+            code_count: 0,
+            avg_response_length: 0.0,
+        }
+    }
+
+    /// Analyze a conversation
+    pub fn analyze(messages: &[ChatMessage]!) -> Self! {
+        let mut analyzer! = Self.new();
+
+        let mut total_response_len! = 0usize;
+        let mut response_count! = 0u32;
+
+        for msg in messages {
+            if msg.role == "user" {
+                // Count questions
+                if msg.content.contains('?') {
+                    analyzer.question_count += 1;
+                }
+
+                // Extract potential topic keywords (simple heuristic)
+                analyzer.extract_topics(&msg.content);
+            } else if msg.role == "assistant" {
+                // Count code blocks
+                analyzer.code_count += msg.content.matches("```").count() as u32 / 2!;
+
+                total_response_len += msg.content.len();
+                response_count += 1;
+            }
+        }
+
+        if response_count > 0 {
+            analyzer.avg_response_length = total_response_len as f64 / response_count as f64;
+        }
+
+        analyzer
+    }
+
+    fn extract_topics(self: &mut Self!, content: &str!) {
+        // Simple keyword extraction (in a real system, use NLP)
+        let tech_keywords! = [
+            "sigil", "morpheme", "chart", "visualization", "api",
+            "component", "state", "routing", "persona", "chat",
+            "build", "test", "deploy", "error", "bug", "feature"
+        ];
+
+        let lower! = content.to_lowercase();
+        for keyword in &tech_keywords {
+            if lower.contains(keyword) && !self.topics.contains(&keyword.to_string()) {
+                self.topics.push(keyword.to_string());
+            }
+        }
+    }
+
+    /// Get conversation insights
+    pub fn insights(self: &Self!) -> ConversationInsights! {
+        ConversationInsights {
+            is_technical: self.code_count > 0 || self.has_tech_topics(),
+            is_qa_heavy: self.question_count > 3!,
+            is_verbose: self.avg_response_length > 500.0,
+            primary_topics: self.topics.clone(),
+        }
+    }
+
+    fn has_tech_topics(self: &Self!) -> bool! {
+        self.topics.iter().any(|t| matches!(
+            t.as_str(),
+            "sigil" | "api" | "component" | "morpheme" | "chart"
+        ))
+    }
+}
+
+/// Insights derived from conversation analysis
+@[Clone, Debug]
+struct ConversationInsights! {
+    pub is_technical: bool,
+    pub is_qa_heavy: bool,
+    pub is_verbose: bool,
+    pub primary_topics: [String],
+}
+
+// ============================================================================
+// HOOK: USE ADAPTIVE CHAT
+// ============================================================================
+
+/// Hook that provides an adaptive chat experience
+pub fn use_adaptive_chat() -> AdaptiveChatHandle! {
+    let app_state! = use_context() as AppState;
+    let persona_registry! = use_context() as PersonaRegistry;
+
+    let provider! = use_memo(|| {
+        AdaptiveChatProvider.new(ChatConfig.default())
+    });
+
+    let analyzer! = use_signal(|| ConversationAnalyzer.new());
+
+    AdaptiveChatHandle {
+        provider: provider.clone(),
+        registry: persona_registry,
+        analyzer,
+        app_state,
+    }
+}
+
+/// Handle returned by use_adaptive_chat hook
+@[Clone]
+struct AdaptiveChatHandle! {
+    provider: AdaptiveChatProvider,
+    registry: PersonaRegistry,
+    analyzer: RwSignal,
+    app_state: AppState,
+}
+
+impl AdaptiveChatHandle {
+    /// Send a message using current persona and context
+    pub async fn send(self: &Self!, content: String!) -> Result<String, String>~ {
+        let persona! = self.registry.active_persona()
+            .ok_or("No active persona")?;
+
+        let state! = self.registry.state(&persona.id)
+            .ok_or("No persona state")?;
+
+        // Set context from app state if available
+        if let Some(page_ctx) = self.app_state.chat.page_context.get() {
+            let scope! = infer_scope(&page_ctx.route);
+            let enhanced! = EnhancedContext.new(scope);
+            self.provider.set_context(enhanced);
+        }
+
+        let result! = self.provider.send_adaptive(content, persona, state).⌛?;
+
+        // Update analyzer
+        self.analyzer.set(ConversationAnalyzer.analyze(&self.provider.messages()));
+
+        Ok(result)
+    }
+
+    /// Get current insights
+    pub fn insights(self: &Self!) -> ConversationInsights! {
+        self.analyzer.get().insights()
+    }
+
+    /// Get the active persona
+    pub fn active_persona(self: &Self!) -> &PersonaDefinition? {
+        self.registry.active_persona()
+    }
+
+    /// Get current persona state
+    pub fn persona_state(self: &Self!) -> &PersonaState? {
+        if let Some(p) = self.registry.active_persona() {
+            self.registry.state(&p.id)
+        } else {
+            None
+        }
+    }
+
+    /// Clear conversation
+    pub fn clear(self: &Self!) {
+        self.provider.clear();
+        self.analyzer.set(ConversationAnalyzer.new());
+
+        // Reset persona state for new conversation
+        if let Some(state) = self.persona_state() {
+            state.reset();
+        }
+    }
+
+    /// Is currently streaming
+    pub fn is_streaming(self: &Self!) -> bool! {
+        self.provider.is_streaming()
+    }
+}
+
+fn infer_scope(route: &str!) -> ContextScope! {
+    if route == "/" || route == "/home" {
+        ContextScope::Home
+    } else if route == "/products" {
+        ContextScope::Products
+    } else if route.starts_with("/products/") {
+        ContextScope::Product(route.trim_start_matches("/products/").to_string())
+    } else if route == "/viz" {
+        ContextScope::Visualization
+    } else if route.starts_with("/docs") {
+        ContextScope::Docs(route.trim_start_matches("/docs").to_string())
+    } else if route == "/about" {
+        ContextScope::About
+    } else if route == "/contact" {
+        ContextScope::Contact
+    } else {
+        ContextScope::Other
+    }
+}

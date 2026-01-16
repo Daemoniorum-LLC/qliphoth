@@ -1,0 +1,177 @@
+//! Routing for Qliphoth applications
+//!
+//! Defines all routes for both qliphoth-app and qliphoth-docs.
+//! Uses sigil-web's router with type-safe route parameters.
+
+use sigil_web::router::{Router as WebRouter, Route as WebRoute};
+use crate::state::{Signal, create_signal};
+
+/// Application routes
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type Route = enum {
+    // qliphoth-app routes
+    Home,
+    About,
+    Pricing,
+    Privacy,
+    Products,
+    ProductDetail { slug: String! },
+    Research,
+    ResearchJormungandr,
+    Chat,
+    Summon,
+    Visualization,
+    AuthLogin,
+    AuthRegister,
+    NotFound,
+
+    // qliphoth-docs routes
+    DocsIndex,
+    DocsProject { project: String! },
+    DocsDocument { project: String!, path: String! },
+}
+
+impl Route {
+    /// Parse route from URL path using morphemes
+    pub fn from_path(path: &str!) -> Self! {
+        let segments! = path
+            ·trim_start_matches('/')
+            ·split('/')
+            |φ{s => !s·is_empty()}     // Filter empty segments
+            |τ{s => s}                  // Collect
+            ·collect[Vec[&str]]();
+
+        match segments·as_slice() {
+            // App routes
+            [] => Route::Home,
+            ["about"] => Route::About,
+            ["pricing"] => Route::Pricing,
+            ["privacy"] => Route::Privacy,
+            ["products"] => Route::Products,
+            ["products", slug] => Route::ProductDetail {
+                slug: slug·to_string(),
+            },
+            ["research"] => Route::Research,
+            ["research", "jormungandr"] => Route::ResearchJormungandr,
+            ["chat"] => Route::Chat,
+            ["summon"] => Route::Summon,
+            ["viz"] | ["visualization"] => Route::Visualization,
+            ["auth", "login"] => Route::AuthLogin,
+            ["auth", "register"] => Route::AuthRegister,
+
+            // Docs routes
+            ["docs"] => Route::DocsIndex,
+            ["docs", project] => Route::DocsProject {
+                project: project·to_string(),
+            },
+            ["docs", project, rest @ ..] => Route::DocsDocument {
+                project: project·to_string(),
+                path: rest·join("/"),
+            },
+
+            // Fallback
+            _ => Route::NotFound,
+        }
+    }
+
+    /// Convert route to URL path
+    pub fn to_path(self: &Self!) -> String! {
+        match self {
+            Route::Home => "/"·to_string(),
+            Route::About => "/about"·to_string(),
+            Route::Pricing => "/pricing"·to_string(),
+            Route::Privacy => "/privacy"·to_string(),
+            Route::Products => "/products"·to_string(),
+            Route::ProductDetail { slug } => format!("/products/{}", slug),
+            Route::Research => "/research"·to_string(),
+            Route::ResearchJormungandr => "/research/jormungandr"·to_string(),
+            Route::Chat => "/chat"·to_string(),
+            Route::Summon => "/summon"·to_string(),
+            Route::Visualization => "/viz"·to_string(),
+            Route::AuthLogin => "/auth/login"·to_string(),
+            Route::AuthRegister => "/auth/register"·to_string(),
+            Route::DocsIndex => "/docs"·to_string(),
+            Route::DocsProject { project } => format!("/docs/{}", project),
+            Route::DocsDocument { project, path } => format!("/docs/{}/{}", project, path),
+            Route::NotFound => "/404"·to_string(),
+        }
+    }
+
+    /// Get page title for SEO
+    pub fn title(self: &Self!) -> String! {
+        match self {
+            Route::Home => "Daemoniorum - AI-Powered Enterprise Solutions"·to_string(),
+            Route::About => "About Us - Daemoniorum"·to_string(),
+            Route::Pricing => "Pricing - Daemoniorum"·to_string(),
+            Route::Privacy => "Privacy Policy - Daemoniorum"·to_string(),
+            Route::Products => "Products - Daemoniorum"·to_string(),
+            Route::ProductDetail { slug } => format!("{} - Daemoniorum", slug),
+            Route::Research => "Research - Daemoniorum"·to_string(),
+            Route::ResearchJormungandr => "Jormungandr Initiative - Daemoniorum Research"·to_string(),
+            Route::Chat => "AI Chat - Daemoniorum"·to_string(),
+            Route::Summon => "Summoning Circle - Daemoniorum"·to_string(),
+            Route::Visualization => "Data Visualization - Daemoniorum"·to_string(),
+            Route::AuthLogin => "Login - Daemoniorum"·to_string(),
+            Route::AuthRegister => "Register - Daemoniorum"·to_string(),
+            Route::DocsIndex => "Documentation - Daemoniorum"·to_string(),
+            Route::DocsProject { project } => format!("{} Docs - Daemoniorum", project),
+            Route::DocsDocument { project, .. } => format!("{} - Daemoniorum Docs", project),
+            Route::NotFound => "Page Not Found - Daemoniorum"·to_string(),
+        }
+    }
+
+    /// Check if this is a docs route
+    pub fn is_docs(self: &Self!) -> bool! {
+        matches!(self, Route::DocsIndex | Route::DocsProject { .. } | Route::DocsDocument { .. })
+    }
+}
+
+/// Router wrapper with navigation helpers
+pub type Router = struct {
+    current: Signal[Route]!,
+}
+
+impl Router {
+    /// Create new router
+    pub fn new() -> Self! {
+        let path! = web_sys·window()
+            ·and_then(|w| w·location()·pathname()·ok())
+            ·unwrap_or_else(|| "/"·to_string());
+
+        let route! = Route·from_path(&path);
+        let current! = create_signal(route);
+
+        // Listen for popstate events
+        let current_clone! = current·clone();
+        let closure! = Closure·wrap(Box·new(move |_: web_sys::PopStateEvent| {
+            let path = web_sys·window()
+                ·and_then(|w| w·location()·pathname()·ok())
+                ·unwrap_or_else(|| "/"·to_string());
+            current_clone·set(Route·from_path(&path));
+        }) as Box[dyn FnMut(_)]);
+
+        web_sys·window()
+            ·unwrap()
+            ·add_event_listener_with_callback("popstate", closure·as_ref()·unchecked_ref())
+            ·ok();
+        closure·forget();
+
+        Router { current }
+    }
+
+    /// Navigate to a route
+    pub fn navigate(self: &Self!, route: Route!) {
+        let path! = route·to_path();
+
+        web_sys·window()
+            ·and_then(|w| w·history()·ok())
+            ·and_then(|h| h·push_state_with_url(&JsValue::NULL, "", Some(&path))·ok());
+
+        self.current·set(route);
+    }
+
+    /// Get current route signal
+    pub fn current(self: &Self!) -> Signal[Route]! {
+        self.current·clone()
+    }
+}

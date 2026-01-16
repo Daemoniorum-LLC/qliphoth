@@ -1,0 +1,74 @@
+//! Qliphoth Viz - Data Visualization with Morphemes
+//!
+//! A visualization library where data flows through transformations
+//! and becomes visual truth. Built on Sigil's morpheme operators.
+//!
+//! ## Philosophy
+//!
+//! In Qliphoth Viz, charts are not static renderings—they are
+//! **transformation pipelines** expressed through morphemes:
+//!
+//! ```sigil
+//! let chart! = data
+//!     |φ{d => d.value > 0}           // Filter: keep positive
+//!     |τ{d => DataPoint::new(d)}     // Transform: to chart points
+//!     |σ{a, b => a.x·cmp(&b.x)}      // Sort: by x-axis
+//!     |ρ{BarChart::render};          // Reduce: into visualization
+//! ```
+//!
+//! Each morpheme is a semantic operation, not just syntax sugar.
+//! The pipeline reads as intention, not instruction.
+
+pub mod core;
+pub mod scale;
+pub mod axis;
+pub mod bar;
+pub mod line;
+pub mod area;
+pub mod pie;
+pub mod sparkline;
+pub mod legend;
+pub mod tooltip;
+pub mod tokens;
+pub mod interaction;
+
+// Re-export core types
+pub use core::{
+    DataPoint, DataSeries, ChartDimensions, ChartMargins,
+    ChartConfig, ChartBuilder, Orientation,
+};
+
+// Re-export scales
+pub use scale::{Scale, LinearScale, CategoryScale, TimeScale};
+
+// Re-export components
+pub use axis::{Axis, AxisPosition, AxisProps};
+pub use bar::{BarChart, BarChartProps, Bar};
+pub use line::{LineChart, LineChartProps, LinePath};
+pub use area::{AreaChart, AreaChartProps};
+pub use pie::{PieChart, PieChartProps, DonutChart, PieSlice};
+pub use sparkline::{Sparkline, SparklineProps, SparklineVariant};
+pub use legend::{Legend, LegendProps, LegendPosition};
+pub use tooltip::{Tooltip, TooltipProps};
+pub use tokens::{chart_colors, chart_typography};
+
+// Re-export interaction system
+pub use interaction::{
+    InteractionState, HoverTarget, SelectionTarget, ElementType,
+    ViewportState, AnimationState, BrushState,
+    use_chart_interaction, ChartEventHandlers,
+    Interactive, Crosshair, Brush, InteractiveLegend,
+};
+
+/// Prelude for common imports
+pub mod prelude {
+    pub use super::{
+        DataPoint, DataSeries, ChartConfig, ChartBuilder,
+        Scale, LinearScale, CategoryScale,
+        BarChart, LineChart, AreaChart, PieChart, Sparkline,
+        Axis, Legend, Tooltip,
+        // Interaction
+        InteractionState, HoverTarget, SelectionTarget,
+        use_chart_interaction, Interactive, Crosshair, InteractiveLegend,
+    };
+}

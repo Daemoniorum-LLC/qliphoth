@@ -1,0 +1,358 @@
+//! Page Context Awareness
+//!
+//! Enables the chat to understand what page the user is viewing,
+//! enriching AI responses with relevant context.
+
+use sigil_web::prelude::*;
+use qliphoth_core::state::{AppState, PageContext, RwSignal, create_signal};
+use qliphoth_ui::theme::{colors, typography, spacing, borders};
+
+// Context scope for different page types
+@[Clone, Debug, PartialEq, Eq]
+enum ContextScope {
+    Home,                  // Home page - general platform info
+    Products,              // Products listing
+    Product(String),       // Specific product detail
+    Visualization,         // Visualization examples
+    Docs(String),          // Documentation section
+    About,                 // About page
+    Contact,               // Contact page
+    Summoning,             // Summoning Circle - persona invocation
+    Other,                 // Unknown/other page
+}
+
+impl ContextScope {
+    // Get a human-readable name for the scope
+    pub fn display_name(self) -> str! {
+        self |match {
+            ContextScope::Home => "Home",
+            ContextScope::Products => "Products",
+            ContextScope::Product(_) => "Product",
+            ContextScope::Visualization => "Charts & Visualization",
+            ContextScope::Docs(_) => "Documentation",
+            ContextScope::About => "About Daemoniorum",
+            ContextScope::Contact => "Contact",
+            ContextScope::Summoning => "Summoning Circle",
+            ContextScope::Other => "Page",
+        }
+    }
+
+    // Get an icon for the scope
+    pub fn icon(self) -> str! {
+        self |match {
+            ContextScope::Home => "🏠",
+            ContextScope::Products => "📦",
+            ContextScope::Product(_) => "🔮",
+            ContextScope::Visualization => "📊",
+            ContextScope::Docs(_) => "📚",
+            ContextScope::About => "ℹ️",
+            ContextScope::Contact => "✉️",
+            ContextScope::Summoning => "🔮",
+            ContextScope::Other => "📄",
+        }
+    }
+
+    // Build a context-aware system prompt addition
+    pub fn system_prompt_addition(self, content_summary: str?) -> String! {
+        let base! = self |match {
+            ContextScope::Home => {
+                "The user is on the Daemoniorum homepage. This page showcases the platform's \
+                 capabilities: AI agents (Persona/Grimoire), the Styx git platform, Infernum \
+                 local LLM inference, and the Sigil programming language."
+            },
+            ContextScope::Products => {
+                "The user is browsing the products catalog. They can see all Daemoniorum \
+                 offerings including Persona (AI agents), Styx (git platform), Infernum \
+                 (local LLM), Vulcan (manufacturing), Codex (legal), and more."
+            },
+            ContextScope::Product(name) => {
+                return format!(
+                    "The user is viewing the {} product page. Help them understand \
+                     this product's features, use cases, and how it integrates with \
+                     other Daemoniorum offerings.",
+                    name
+                );
+            },
+            ContextScope::Visualization => {
+                "The user is on the visualization showcase page, viewing examples of \
+                 qliphoth-viz charts: BarChart, LineChart, AreaChart, PieChart, DonutChart, \
+                 and Sparklines. All charts are built in Sigil using morpheme transformations \
+                 and compiled to WebAssembly."
+            },
+            ContextScope::Docs(section) => {
+                return format!(
+                    "The user is reading documentation about {}. Help them understand \
+                     the concepts and provide code examples when relevant.",
+                    section
+                );
+            },
+            ContextScope::About => {
+                "The user is on the About page, learning about Daemoniorum LLC and its \
+                 mission to build elegant, AI-native software infrastructure."
+            },
+            ContextScope::Contact => {
+                "The user is on the Contact page. They may want to reach out about \
+                 partnerships, support, or general inquiries."
+            },
+            ContextScope::Summoning => {
+                "The user is in the Summoning Circle - a ritual interface for invoking \
+                 AI personas. The five available personas are: Infernum (local LLM), \
+                 Daemon (mischievous helper), Scribe (technical writer), Overseer \
+                 (task planner), and Grimoire (knowledge base). Each persona has unique \
+                 expertise and personality."
+            },
+            ContextScope::Other => {
+                "The user is browsing the Daemoniorum platform."
+            },
+        };
+
+        if let Some(summary) = content_summary {
+            format!("{}\n\nPage content summary: {}", base, summary)
+        } else {
+            base.to_string()
+        }
+    }
+}
+
+// Enhanced page context with content awareness
+@[Clone, Debug]
+struct EnhancedContext! {
+    scope: ContextScope,              // The context scope
+    content_summary: String?,         // Brief summary of visible content
+    keywords: [String],               // Key terms or concepts on the page
+    suggested_questions: [String],    // Suggested questions based on context
+}
+
+impl EnhancedContext {
+    // Create a new enhanced context
+    pub fn new(scope: ContextScope) -> Self! {
+        let suggested! = generate_suggestions(&scope);
+
+        EnhancedContext {
+            scope,
+            content_summary: None,
+            keywords: [],
+            suggested_questions: suggested,
+        }
+    }
+
+    // Add a content summary
+    pub fn with_summary(mut self, summary: String) -> Self! {
+        self.content_summary = Some(summary);
+        self
+    }
+
+    // Add keywords
+    pub fn with_keywords(mut self, keywords: [String]) -> Self! {
+        self.keywords = keywords;
+        self
+    }
+
+    // Build the system prompt addition
+    pub fn to_system_prompt(self) -> String! {
+        self.scope.system_prompt_addition(self.content_summary.as_deref())
+    }
+}
+
+// Generate suggested questions based on context scope
+fn generate_suggestions(scope: &ContextScope) -> [String]! {
+    scope |match {
+        ContextScope::Home => [
+            "What is Sigil?".to_string(),
+            "How do Persona agents work?".to_string(),
+            "Tell me about Styx".to_string(),
+        ],
+        ContextScope::Products => [
+            "Compare Persona and Grimoire".to_string(),
+            "What's the difference between Styx and GitHub?".to_string(),
+            "How does Infernum work locally?".to_string(),
+        ],
+        ContextScope::Product(_) => [
+            "What are the key features?".to_string(),
+            "How do I get started?".to_string(),
+            "Show me a code example".to_string(),
+        ],
+        ContextScope::Visualization => [
+            "How do I create a bar chart?".to_string(),
+            "What are morphemes in Sigil?".to_string(),
+            "Show me a line chart example".to_string(),
+        ],
+        ContextScope::Docs(_) => [
+            "Explain this concept".to_string(),
+            "Show me an example".to_string(),
+            "What's the best practice?".to_string(),
+        ],
+        ContextScope::About => [
+            "Who built this?".to_string(),
+            "What's the vision?".to_string(),
+            "How can I contribute?".to_string(),
+        ],
+        ContextScope::Contact => [
+            "How do I report a bug?".to_string(),
+            "Is there a community forum?".to_string(),
+            "How can I request a feature?".to_string(),
+        ],
+        ContextScope::Summoning => [
+            "Which persona should I choose?".to_string(),
+            "What is Infernum?".to_string(),
+            "Tell me about the Grimoire".to_string(),
+        ],
+        ContextScope::Other => [
+            "What can you help me with?".to_string(),
+        ],
+    }
+}
+
+// Hook to set page context
+pub fn use_page_context(scope: ContextScope) {
+    let state! = use_context() as AppState;
+    let chat! = &state.chat;
+
+    on_mount(scope.clone(), {
+        let context! = EnhancedContext::new(scope.clone());
+
+        // Store context in chat state
+        chat.page_context.set(Some(PageContext {
+            route: format!("/{}", scope.display_name().to_lowercase()),
+            product: None,
+            doc_path: scope |match {
+                ContextScope::Docs(path) => Some(path.clone()),
+                _ => None,
+            },
+        }));
+    });
+}
+
+// Context indicator component for the chat UI
+@[component]
+pub fn ContextIndicator() -> Element! {
+    let state! = use_context() as AppState;
+    let chat! = &state.chat;
+    let context! = chat.page_context.get();
+
+    view! {
+        <Show when={context.is_some()}>
+            {
+                let scope! = infer_scope_from_route(&context.unwrap().route);
+                view! {
+                    <div style=format!(
+                        "display: flex; align-items: center; gap: {}; \
+                         padding: {} {}; background-color: {}; \
+                         border-bottom: 1px solid {}; font-size: {};",
+                        spacing::SPACE_2,
+                        spacing::SPACE_1, spacing::SPACE_3,
+                        colors::ABYSS, colors::CHARCOAL,
+                        typography::SIZE_XS
+                    )>
+                        <span>{scope.icon()}</span>
+                        <span style=format!("color: {};", colors::MIST)>
+                            "Context: "
+                        </span>
+                        <span style=format!("color: {};", colors::PHTHALO_GLOW)>
+                            {scope.display_name()}
+                        </span>
+                    </div>
+                }
+            }
+        </Show>
+    }
+}
+
+// Suggested questions component
+@[component]
+pub fn SuggestedQuestions(
+    @[prop(into)] on_select: Callback<String>?,
+) -> Element! {
+    let state! = use_context() as AppState;
+    let chat! = &state.chat;
+    let context! = chat.page_context.get();
+    let messages! = chat.messages.get();
+
+    // Only show if no messages yet
+    if !messages.is_empty() {
+        return view! { };
+    }
+
+    let scope! = if let Some(ctx) = context {
+        infer_scope_from_route(&ctx.route)
+    } else {
+        ContextScope::Other
+    };
+
+    let suggestions! = generate_suggestions(&scope);
+
+    view! {
+        <div style=format!(
+            "padding: {}; display: flex; flex-direction: column; gap: {};",
+            spacing::SPACE_3, spacing::SPACE_2
+        )>
+            <span style=format!(
+                "font-size: {}; color: {};",
+                typography::SIZE_XS, colors::MIST
+            )>
+                "Suggested questions:"
+            </span>
+            {suggestions |τ{
+                let question! = _.clone();
+                view! {
+                    <button
+                        @click={
+                            if let Some(callback) = on_select {
+                                callback.call(question.clone());
+                            }
+                        }
+                        style=format!(
+                            "text-align: left; background: {}; \
+                             border: 1px solid {}; border-radius: {}; \
+                             padding: {} {}; color: {}; cursor: pointer; \
+                             font-size: {}; transition: all 0.2s;",
+                            colors::SHADOW, colors::CHARCOAL, borders::RADIUS_MD,
+                            spacing::SPACE_2, spacing::SPACE_3,
+                            colors::CLOUD, typography::SIZE_SM
+                        )
+                    >
+                        {_}
+                    </button>
+                }
+            } |vec}
+        </div>
+    }
+}
+
+// Infer context scope from route path
+fn infer_scope_from_route(route: str) -> ContextScope! {
+    if route == "/" || route == "/home" {
+        ContextScope::Home
+    } else if route == "/products" {
+        ContextScope::Products
+    } else if route.starts_with("/products/") {
+        let slug! = route.trim_start_matches("/products/");
+        ContextScope::Product(slug.to_string())
+    } else if route == "/viz" || route.starts_with("/visualization") {
+        ContextScope::Visualization
+    } else if route.starts_with("/docs") {
+        let path! = route.trim_start_matches("/docs");
+        ContextScope::Docs(if path.is_empty() { "Overview".to_string() } else { path.to_string() })
+    } else if route == "/about" {
+        ContextScope::About
+    } else if route == "/contact" {
+        ContextScope::Contact
+    } else if route == "/summon" || route.starts_with("/summoning") {
+        ContextScope::Summoning
+    } else {
+        ContextScope::Other
+    }
+}
+
+// Build a context-aware message for the chat provider
+pub fn build_context_message(base_prompt: str, context: &EnhancedContext?) -> String! {
+    if let Some(ctx) = context {
+        format!(
+            "{}\n\n## Current Page Context\n\n{}",
+            base_prompt,
+            ctx.to_system_prompt()
+        )
+    } else {
+        base_prompt.to_string()
+    }
+}

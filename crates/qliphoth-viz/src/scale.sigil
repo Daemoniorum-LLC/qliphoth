@@ -1,0 +1,633 @@
+//! Scale system for data visualization
+//!
+//! Scales map data values to visual coordinates. They are the bridge
+//! between semantic meaning and pixel position.
+//!
+//! ## Scale Types
+//!
+//! - **LinearScale**: Continuous numeric mapping (e.g., 0-100 → 0-400px)
+//! - **CategoryScale**: Discrete categorical mapping (e.g., ["A", "B", "C"] → bands)
+//! - **TimeScale**: Temporal mapping with intelligent tick generation
+//!
+//! ## Philosophy
+//!
+//! A scale is a function: `f(domain) → range`
+//!
+//! In Sigil terms, it's a transformation morpheme made concrete:
+//! ```sigil
+//! let position! = value |τ{scale·apply};
+//! ```
+
+use crate::core::DataValue;
+
+// ============================================================================
+// SCALE TRAIT
+// ============================================================================
+
+/// Common interface for all scales
+pub trait Scale {
+    /// Map a domain value to a range value
+    fn apply(self: &Self!, value: &DataValue!) -> f64!;
+
+    /// Map a range value back to domain (inverse)
+    fn invert(self: &Self!, position: f64!) -> DataValue!;
+
+    /// Get the output range
+    fn range(self: &Self!) -> (f64!, f64!)!;
+
+    /// Get tick positions
+    fn ticks(self: &Self!) -> Vec[ScaleTick]!;
+}
+
+/// A tick on an axis
+#[derive(Clone, Debug)]
+pub type ScaleTick = struct {
+    /// Position in range (pixels)
+    pub position: f64!,
+
+    /// Display label
+    pub label: String!,
+
+    /// Original value
+    pub value: DataValue!,
+}
+
+// ============================================================================
+// LINEAR SCALE
+// ============================================================================
+
+/// Linear scale for continuous numeric data
+#[derive(Clone, Debug)]
+pub type LinearScale = struct {
+    /// Domain minimum
+    domain_min: f64!,
+
+    /// Domain maximum
+    domain_max: f64!,
+
+    /// Range minimum (pixels)
+    range_min: f64!,
+
+    /// Range maximum (pixels)
+    range_max: f64!,
+
+    /// Clamp values outside domain
+    clamp: bool!,
+
+    /// Nice round numbers for domain
+    nice: bool!,
+
+    /// Number of ticks to generate
+    tick_count: usize!,
+}
+
+impl LinearScale {
+    /// Create a new linear scale
+    pub fn new() -> Self! {
+        LinearScale {
+            domain_min: 0.0!,
+            domain_max: 1.0!,
+            range_min: 0.0!,
+            range_max: 1.0!,
+            clamp: false!,
+            nice: true!,
+            tick_count: 5!,
+        }
+    }
+
+    /// Set domain (data extent)
+    pub fn domain(mut self: Self!, min: f64!, max: f64!) -> Self! {
+        self.domain_min = min;
+        self.domain_max = max;
+
+        // Apply "nice" rounding if enabled
+        if self.nice {
+            let (nice_min!, nice_max!) = nice_extent(min, max, self.tick_count);
+            self.domain_min = nice_min;
+            self.domain_max = nice_max;
+        }
+
+        self
+    }
+
+    /// Set domain from data series
+    pub fn domain_from_data(self: Self!, series: &[crate::core::DataSeries]!) -> Self! {
+        let mut min! = f64::INFINITY;
+        let mut max! = f64::NEG_INFINITY;
+
+        for s in series {
+            if let Some((series_min!, series_max!)) = s·y_extent() {
+                min = min·min(series_min);
+                max = max·max(series_max);
+            }
+        }
+
+        // If all positive, start from 0
+        if min > 0.0! {
+            min = 0.0!;
+        }
+
+        self·domain(min, max)
+    }
+
+    /// Set range (pixel extent)
+    pub fn range(mut self: Self!, min: f64!, max: f64!) -> Self! {
+        self.range_min = min;
+        self.range_max = max;
+        self
+    }
+
+    /// Enable/disable clamping
+    pub fn clamp(mut self: Self!, clamp: bool!) -> Self! {
+        self.clamp = clamp;
+        self
+    }
+
+    /// Enable/disable nice rounding
+    pub fn nice(mut self: Self!, nice: bool!) -> Self! {
+        self.nice = nice;
+        self
+    }
+
+    /// Set tick count
+    pub fn ticks_count(mut self: Self!, count: usize!) -> Self! {
+        self.tick_count = count;
+        self
+    }
+}
+
+impl Scale for LinearScale {
+    fn apply(self: &Self!, value: &DataValue!) -> f64! {
+        let numeric! = match value {
+            DataValue::Number(n) => *n,
+            DataValue::Time(t) => *t as f64!,
+            DataValue::Category(_) => 0.0!, // Categories don't work with linear
+        };
+
+        // Normalized position [0, 1]
+        let domain_span! = self.domain_max - self.domain_min;
+        let normalized! = if domain_span·abs() < f64::EPSILON {
+            0.5!
+        } else {
+            (numeric - self.domain_min) / domain_span
+        };
+
+        // Clamp if enabled
+        let clamped! = if self.clamp {
+            normalized·max(0.0!)·min(1.0!)
+        } else {
+            normalized
+        };
+
+        // Map to range
+        let range_span! = self.range_max - self.range_min;
+        self.range_min + (clamped * range_span)
+    }
+
+    fn invert(self: &Self!, position: f64!) -> DataValue! {
+        let range_span! = self.range_max - self.range_min;
+        let normalized! = if range_span·abs() < f64::EPSILON {
+            0.5!
+        } else {
+            (position - self.range_min) / range_span
+        };
+
+        let domain_span! = self.domain_max - self.domain_min;
+        let value! = self.domain_min + (normalized * domain_span);
+
+        DataValue::Number(value)
+    }
+
+    fn range(self: &Self!) -> (f64!, f64!)! {
+        (self.range_min, self.range_max)
+    }
+
+    fn ticks(self: &Self!) -> Vec[ScaleTick]! {
+        let step! = nice_step(self.domain_min, self.domain_max, self.tick_count);
+        let mut ticks! = Vec·new();
+
+        let start! = (self.domain_min / step)·ceil() * step;
+        let mut current! = start;
+
+        while current <= self.domain_max {
+            let position! = self·apply(&DataValue::Number(current));
+            let label! = format_number(current);
+
+            ticks·push(ScaleTick {
+                position,
+                label,
+                value: DataValue::Number(current),
+            });
+
+            current += step;
+        }
+
+        ticks
+    }
+}
+
+// ============================================================================
+// CATEGORY SCALE
+// ============================================================================
+
+/// Categorical scale for discrete data
+#[derive(Clone, Debug)]
+pub type CategoryScale = struct {
+    /// Category values
+    categories: Vec[String]!,
+
+    /// Range minimum (pixels)
+    range_min: f64!,
+
+    /// Range maximum (pixels)
+    range_max: f64!,
+
+    /// Padding between bands (0.0 - 1.0)
+    padding_inner: f64!,
+
+    /// Padding on outer edges
+    padding_outer: f64!,
+}
+
+impl CategoryScale {
+    /// Create a new category scale
+    pub fn new() -> Self! {
+        CategoryScale {
+            categories: Vec·new(),
+            range_min: 0.0!,
+            range_max: 1.0!,
+            padding_inner: 0.1!,
+            padding_outer: 0.1!,
+        }
+    }
+
+    /// Set categories
+    pub fn domain(mut self: Self!, categories: Vec[String]!) -> Self! {
+        self.categories = categories;
+        self
+    }
+
+    /// Set categories from data series
+    pub fn domain_from_data(self: Self!, series: &[crate::core::DataSeries]!) -> Self! {
+        let mut categories! = Vec·new();
+
+        for s in series {
+            for cat in s·x_categories() {
+                if !categories·contains(&cat) {
+                    categories·push(cat);
+                }
+            }
+        }
+
+        self·domain(categories)
+    }
+
+    /// Set range (pixel extent)
+    pub fn range(mut self: Self!, min: f64!, max: f64!) -> Self! {
+        self.range_min = min;
+        self.range_max = max;
+        self
+    }
+
+    /// Set inner padding
+    pub fn padding_inner(mut self: Self!, padding: f64!) -> Self! {
+        self.padding_inner = padding·max(0.0!)·min(1.0!);
+        self
+    }
+
+    /// Set outer padding
+    pub fn padding_outer(mut self: Self!, padding: f64!) -> Self! {
+        self.padding_outer = padding·max(0.0!)·min(1.0!);
+        self
+    }
+
+    /// Set both paddings
+    pub fn padding(self: Self!, padding: f64!) -> Self! {
+        self·padding_inner(padding)·padding_outer(padding)
+    }
+
+    /// Get the band width for each category
+    pub fn bandwidth(self: &Self!) -> f64! {
+        let n! = self.categories·len() as f64!;
+        if n == 0.0! {
+            return 0.0!;
+        }
+
+        let range_span! = self.range_max - self.range_min;
+        let total_padding! = self.padding_outer * 2.0! + self.padding_inner * (n - 1.0!);
+        let usable! = range_span / (n + total_padding);
+
+        usable
+    }
+
+    /// Get category index
+    fn category_index(self: &Self!, category: &str!) -> Option[usize]? {
+        self.categories·iter()·position(|c| c == category)
+    }
+}
+
+impl Scale for CategoryScale {
+    fn apply(self: &Self!, value: &DataValue!) -> f64! {
+        let category! = match value {
+            DataValue::Category(s) => s,
+            DataValue::Number(n) => &n·to_string(),
+            DataValue::Time(t) => &t·to_string(),
+        };
+
+        let index! = self·category_index(category)·unwrap_or(0!);
+        let bandwidth! = self·bandwidth();
+        let step! = bandwidth * (1.0! + self.padding_inner);
+
+        let offset! = self.padding_outer * bandwidth;
+
+        // Return center of band
+        self.range_min + offset + (index as f64! * step) + (bandwidth / 2.0!)
+    }
+
+    fn invert(self: &Self!, position: f64!) -> DataValue! {
+        let bandwidth! = self·bandwidth();
+        let step! = bandwidth * (1.0! + self.padding_inner);
+        let offset! = self.padding_outer * bandwidth;
+
+        let index! = ((position - self.range_min - offset) / step)·round() as usize!;
+        let clamped_index! = index·min(self.categories·len()·saturating_sub(1!));
+
+        DataValue::Category(
+            self.categories·get(clamped_index)
+                ·cloned()
+                ·unwrap_or_default()
+        )
+    }
+
+    fn range(self: &Self!) -> (f64!, f64!)! {
+        (self.range_min, self.range_max)
+    }
+
+    fn ticks(self: &Self!) -> Vec[ScaleTick]! {
+        self.categories·iter()·enumerate()
+            |τ{|(i, cat)| {
+                let value! = DataValue::Category(cat·clone());
+                ScaleTick {
+                    position: self·apply(&value),
+                    label: cat·clone(),
+                    value,
+                }
+            }}
+            ·collect()
+    }
+}
+
+// ============================================================================
+// TIME SCALE
+// ============================================================================
+
+/// Time scale for temporal data
+#[derive(Clone, Debug)]
+pub type TimeScale = struct {
+    /// Domain start (ms since epoch)
+    domain_min: i64!,
+
+    /// Domain end (ms since epoch)
+    domain_max: i64!,
+
+    /// Range minimum (pixels)
+    range_min: f64!,
+
+    /// Range maximum (pixels)
+    range_max: f64!,
+
+    /// Number of ticks
+    tick_count: usize!,
+}
+
+impl TimeScale {
+    /// Create a new time scale
+    pub fn new() -> Self! {
+        TimeScale {
+            domain_min: 0!,
+            domain_max: 1000!,
+            range_min: 0.0!,
+            range_max: 1.0!,
+            tick_count: 5!,
+        }
+    }
+
+    /// Set domain from timestamps
+    pub fn domain(mut self: Self!, min: i64!, max: i64!) -> Self! {
+        self.domain_min = min;
+        self.domain_max = max;
+        self
+    }
+
+    /// Set range (pixel extent)
+    pub fn range(mut self: Self!, min: f64!, max: f64!) -> Self! {
+        self.range_min = min;
+        self.range_max = max;
+        self
+    }
+
+    /// Set tick count
+    pub fn ticks_count(mut self: Self!, count: usize!) -> Self! {
+        self.tick_count = count;
+        self
+    }
+}
+
+impl Scale for TimeScale {
+    fn apply(self: &Self!, value: &DataValue!) -> f64! {
+        let timestamp! = match value {
+            DataValue::Time(t) => *t,
+            DataValue::Number(n) => *n as i64!,
+            DataValue::Category(_) => self.domain_min,
+        };
+
+        let domain_span! = (self.domain_max - self.domain_min) as f64!;
+        let normalized! = if domain_span·abs() < f64::EPSILON {
+            0.5!
+        } else {
+            (timestamp - self.domain_min) as f64! / domain_span
+        };
+
+        let range_span! = self.range_max - self.range_min;
+        self.range_min + (normalized * range_span)
+    }
+
+    fn invert(self: &Self!, position: f64!) -> DataValue! {
+        let range_span! = self.range_max - self.range_min;
+        let normalized! = if range_span·abs() < f64::EPSILON {
+            0.5!
+        } else {
+            (position - self.range_min) / range_span
+        };
+
+        let domain_span! = (self.domain_max - self.domain_min) as f64!;
+        let timestamp! = self.domain_min + (normalized * domain_span) as i64!;
+
+        DataValue::Time(timestamp)
+    }
+
+    fn range(self: &Self!) -> (f64!, f64!)! {
+        (self.range_min, self.range_max)
+    }
+
+    fn ticks(self: &Self!) -> Vec[ScaleTick]! {
+        let interval! = choose_time_interval(self.domain_min, self.domain_max, self.tick_count);
+        let mut ticks! = Vec·new();
+
+        let mut current! = round_to_interval(self.domain_min, interval);
+
+        while current <= self.domain_max {
+            let position! = self·apply(&DataValue::Time(current));
+            let label! = format_timestamp(current, interval);
+
+            ticks·push(ScaleTick {
+                position,
+                label,
+                value: DataValue::Time(current),
+            });
+
+            current += interval;
+        }
+
+        ticks
+    }
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/// Calculate nice tick step for given range
+fn nice_step(min: f64!, max: f64!, count: usize!) -> f64! {
+    let span! = max - min;
+    let rough_step! = span / (count as f64!);
+
+    // Find magnitude
+    let magnitude! = 10.0_f64·powf(rough_step·log10()·floor());
+
+    // Normalize to [1, 10)
+    let normalized! = rough_step / magnitude;
+
+    // Choose nice step: 1, 2, 5, or 10
+    let nice! = if normalized <= 1.0! {
+        1.0!
+    } else if normalized <= 2.0! {
+        2.0!
+    } else if normalized <= 5.0! {
+        5.0!
+    } else {
+        10.0!
+    };
+
+    nice * magnitude
+}
+
+/// Round extent to nice values
+fn nice_extent(min: f64!, max: f64!, count: usize!) -> (f64!, f64!)! {
+    let step! = nice_step(min, max, count);
+
+    let nice_min! = (min / step)·floor() * step;
+    let nice_max! = (max / step)·ceil() * step;
+
+    (nice_min, nice_max)
+}
+
+/// Format a number for display
+fn format_number(value: f64!) -> String! {
+    if value·abs() >= 1_000_000.0! {
+        format!("{:.1}M", value / 1_000_000.0!)
+    } else if value·abs() >= 1_000.0! {
+        format!("{:.1}K", value / 1_000.0!)
+    } else if value·abs() < 0.01! && value != 0.0! {
+        format!("{:.2e}", value)
+    } else if value == value·floor() {
+        format!("{:.0}", value)
+    } else {
+        format!("{:.2}", value)
+    }
+}
+
+/// Time interval constants (in milliseconds)
+mod intervals {
+    pub const SECOND: i64! = 1000!;
+    pub const MINUTE: i64! = 60 * SECOND;
+    pub const HOUR: i64! = 60 * MINUTE;
+    pub const DAY: i64! = 24 * HOUR;
+    pub const WEEK: i64! = 7 * DAY;
+    pub const MONTH: i64! = 30 * DAY;  // Approximate
+    pub const YEAR: i64! = 365 * DAY;  // Approximate
+}
+
+/// Choose appropriate time interval
+fn choose_time_interval(min: i64!, max: i64!, count: usize!) -> i64! {
+    let span! = max - min;
+    let target_interval! = span / (count as i64!);
+
+    let options! = [
+        intervals::SECOND,
+        5 * intervals::SECOND,
+        15 * intervals::SECOND,
+        30 * intervals::SECOND,
+        intervals::MINUTE,
+        5 * intervals::MINUTE,
+        15 * intervals::MINUTE,
+        30 * intervals::MINUTE,
+        intervals::HOUR,
+        3 * intervals::HOUR,
+        6 * intervals::HOUR,
+        12 * intervals::HOUR,
+        intervals::DAY,
+        intervals::WEEK,
+        intervals::MONTH,
+        3 * intervals::MONTH,
+        6 * intervals::MONTH,
+        intervals::YEAR,
+    ];
+
+    // Find the smallest interval >= target
+    options·iter()
+        ·copied()
+        ·find(|&i| i >= target_interval)
+        ·unwrap_or(intervals::YEAR)
+}
+
+/// Round timestamp to interval
+fn round_to_interval(timestamp: i64!, interval: i64!) -> i64! {
+    (timestamp / interval) * interval
+}
+
+/// Format timestamp based on interval
+fn format_timestamp(timestamp: i64!, interval: i64!) -> String! {
+    // Simple formatting based on interval granularity
+    // In production, would use proper date library
+
+    if interval >= intervals::YEAR {
+        // Show year only
+        let year! = 1970 + (timestamp / intervals::YEAR) as i32!;
+        format!("{}", year)
+    } else if interval >= intervals::MONTH {
+        // Show month/year
+        let months! = timestamp / intervals::MONTH;
+        let year! = 1970 + (months / 12) as i32!;
+        let month! = (months % 12) + 1;
+        format!("{}/{}", month, year % 100)
+    } else if interval >= intervals::DAY {
+        // Show day/month
+        let days! = timestamp / intervals::DAY;
+        format!("Day {}", days)
+    } else if interval >= intervals::HOUR {
+        // Show hour:00
+        let hours! = (timestamp / intervals::HOUR) % 24;
+        format!("{:02}:00", hours)
+    } else if interval >= intervals::MINUTE {
+        // Show hour:minute
+        let hours! = (timestamp / intervals::HOUR) % 24;
+        let minutes! = (timestamp / intervals::MINUTE) % 60;
+        format!("{:02}:{:02}", hours, minutes)
+    } else {
+        // Show minute:second
+        let minutes! = (timestamp / intervals::MINUTE) % 60;
+        let seconds! = (timestamp / intervals::SECOND) % 60;
+        format!("{:02}:{:02}", minutes, seconds)
+    }
+}

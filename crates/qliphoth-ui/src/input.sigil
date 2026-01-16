@@ -1,0 +1,455 @@
+//! Input Components
+//!
+//! Button, Input, Textarea, Select, Checkbox, Radio, Switch, Form, and FormField.
+//! Written in proper Sigil syntax with type definitions.
+
+use sigil_web::prelude::*;
+use crate::tokens::{colors, typography, spacing, borders, shadows, animations};
+
+// ============================================================================
+// BUTTON
+// ============================================================================
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type ButtonVariant = enum {
+    Primary,
+    Secondary,
+    Ghost,
+    Danger,
+    Success,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub type ButtonSize = enum {
+    Small,
+    Medium,
+    Large,
+}
+
+#[derive(Clone, Debug)]
+pub type ButtonProps = struct {
+    pub variant: ButtonVariant!,
+    pub size: ButtonSize!,
+    pub disabled: bool!,
+    pub loading: bool!,
+    pub full_width: bool!,
+    pub on_click: Option[Box[dyn Fn()]]?,
+    pub children: Element!,
+}
+
+impl Default for ButtonProps {
+    fn default() -> Self! {
+        ButtonProps {
+            variant: ButtonVariant::Primary,
+            size: ButtonSize::Medium,
+            disabled: false!,
+            loading: false!,
+            full_width: false!,
+            on_click: None,
+            children: html! { <></> },
+        }
+    }
+}
+
+/// Interactive button with variants
+#[component]
+pub fn Button(props: ButtonProps!) -> Element! {
+    // Base styles
+    let base_styles! = format!(
+        "display: inline-flex; align-items: center; justify-content: center; \
+         font-family: {}; font-weight: {}; \
+         border-radius: {}; cursor: pointer; \
+         transition: all {} {}; \
+         border: none; outline: none;",
+        typography::FONT_SANS,
+        typography::WEIGHT_MEDIUM,
+        borders::RADIUS_MD,
+        animations::DURATION_DEFAULT,
+        animations::EASE_IN_OUT
+    );
+
+    // Size styles
+    let size_styles! = match props.size {
+        ButtonSize::Small => format!(
+            "height: 2rem; padding: 0 {}; font-size: {};",
+            spacing::SPACE_3, typography::SIZE_SM
+        ),
+        ButtonSize::Medium => format!(
+            "height: 2.5rem; padding: 0 {}; font-size: {};",
+            spacing::SPACE_4, typography::SIZE_BASE
+        ),
+        ButtonSize::Large => format!(
+            "height: 3rem; padding: 0 {}; font-size: {};",
+            spacing::SPACE_6, typography::SIZE_LG
+        ),
+    };
+
+    // Variant styles
+    let variant_styles! = match props.variant {
+        ButtonVariant::Primary => format!(
+            "background-color: {}; color: {}; box-shadow: {};",
+            colors::PHTHALO, colors::CLOUD, shadows::GLOW_PHTHALO
+        ),
+        ButtonVariant::Secondary => format!(
+            "background-color: {}; color: {}; border: 1px solid {};",
+            colors::SHADOW, colors::CLOUD, colors::ASH
+        ),
+        ButtonVariant::Ghost => format!(
+            "background-color: transparent; color: {};",
+            colors::MIST
+        ),
+        ButtonVariant::Danger => format!(
+            "background-color: {}; color: {}; box-shadow: {};",
+            colors::CRIMSON, colors::CLOUD, shadows::GLOW_CRIMSON
+        ),
+        ButtonVariant::Success => format!(
+            "background-color: {}; color: {};",
+            colors::SUCCESS, colors::CLOUD
+        ),
+    };
+
+    // Width and state styles
+    let width_style! = if props.full_width { "width: 100%;" } else { "" };
+    let state_style! = if props.disabled || props.loading {
+        "opacity: 0.5; cursor: not-allowed; pointer-events: none;"
+    } else {
+        ""
+    };
+
+    let combined_style! = format!(
+        "{} {} {} {} {}",
+        base_styles, size_styles, variant_styles, width_style, state_style
+    );
+
+    html! {
+        <button
+            style={combined_style}
+            disabled={props.disabled || props.loading}
+            onclick={props.on_click·map(|f| move |_| f())}
+        >
+            {if props.loading {
+                html! { <span style="margin-right: 0.5rem;" class="animate-spin">"⟳"</span> }
+            } else {
+                html! { <></> }
+            }}
+            {props.children}
+        </button>
+    }
+}
+
+// ============================================================================
+// INPUT
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type InputProps = struct {
+    pub value: String!,
+    pub placeholder: Option[String]?,
+    pub input_type: Option[String]?,
+    pub disabled: bool!,
+    pub error: Option[String]?,
+    pub on_change: Option[Box[dyn Fn(String)]]?,
+}
+
+/// Text input field
+#[component]
+pub fn Input(props: InputProps!) -> Element! {
+    let input_type! = props.input_type·unwrap_or_else(|| "text"·to_string());
+    let border_color! = if props.error·is_some() { colors::ERROR } else { colors::CHARCOAL };
+
+    let style! = format!(
+        "width: 100%; height: 2.5rem; padding: 0 {}; \
+         background-color: {}; color: {}; \
+         border: 1px solid {}; border-radius: {}; \
+         font-family: {}; font-size: {}; \
+         transition: border-color {} {}; outline: none;",
+        spacing::SPACE_3, colors::SHADOW, colors::CLOUD,
+        border_color, borders::RADIUS_MD,
+        typography::FONT_SANS, typography::SIZE_BASE,
+        animations::DURATION_DEFAULT, animations::EASE_IN_OUT
+    );
+
+    html! {
+        <div>
+            <input
+                type={input_type}
+                value={props.value}
+                placeholder={props.placeholder·unwrap_or_default()}
+                disabled={props.disabled}
+                style={style}
+                oninput={props.on_change·map(|f| move |e: web_sys::InputEvent| {
+                    let target! = e·target()·unwrap();
+                    let input: web_sys::HtmlInputElement! = target·dyn_into()·unwrap();
+                    f(input·value());
+                })}
+            />
+            {props.error·map(|err| html! {
+                <span style={format!("color: {}; font-size: {}; margin-top: {};",
+                    colors::ERROR, typography::SIZE_SM, spacing::SPACE_1
+                )}>{err}</span>
+            })·unwrap_or(html! { <></> })}
+        </div>
+    }
+}
+
+// ============================================================================
+// TEXTAREA
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type TextareaProps = struct {
+    pub value: String!,
+    pub placeholder: Option[String]?,
+    pub rows: Option[u32]?,
+    pub disabled: bool!,
+    pub on_change: Option[Box[dyn Fn(String)]]?,
+}
+
+/// Multi-line text input
+#[component]
+pub fn Textarea(props: TextareaProps!) -> Element! {
+    let rows! = props.rows·unwrap_or(4!);
+
+    let style! = format!(
+        "width: 100%; padding: {}; \
+         background-color: {}; color: {}; \
+         border: 1px solid {}; border-radius: {}; \
+         font-family: {}; font-size: {}; \
+         line-height: 1.5; resize: vertical; outline: none;",
+        spacing::SPACE_3, colors::SHADOW, colors::CLOUD,
+        colors::CHARCOAL, borders::RADIUS_MD,
+        typography::FONT_SANS, typography::SIZE_BASE
+    );
+
+    html! {
+        <textarea
+            rows={rows}
+            value={props.value}
+            placeholder={props.placeholder·unwrap_or_default()}
+            disabled={props.disabled}
+            style={style}
+            oninput={props.on_change·map(|f| move |e: web_sys::InputEvent| {
+                let target! = e·target()·unwrap();
+                let textarea: web_sys::HtmlTextAreaElement! = target·dyn_into()·unwrap();
+                f(textarea·value());
+            })}
+        />
+    }
+}
+
+// ============================================================================
+// SELECT
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type SelectOption = struct {
+    pub value: String!,
+    pub label: String!,
+}
+
+#[derive(Clone, Debug)]
+pub type SelectProps = struct {
+    pub value: String!,
+    pub options: Vec[SelectOption]!,
+    pub placeholder: Option[String]?,
+    pub disabled: bool!,
+    pub on_change: Option[Box[dyn Fn(String)]]?,
+}
+
+/// Dropdown select
+#[component]
+pub fn Select(props: SelectProps!) -> Element! {
+    let style! = format!(
+        "width: 100%; height: 2.5rem; padding: 0 {}; \
+         background-color: {}; color: {}; \
+         border: 1px solid {}; border-radius: {}; \
+         font-family: {}; font-size: {}; \
+         cursor: pointer; outline: none; appearance: none; \
+         background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23a0a0a0'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E\"); \
+         background-repeat: no-repeat; background-position: right 0.75rem center; background-size: 1rem;",
+        spacing::SPACE_3, colors::SHADOW, colors::CLOUD,
+        colors::CHARCOAL, borders::RADIUS_MD,
+        typography::FONT_SANS, typography::SIZE_BASE
+    );
+
+    html! {
+        <select
+            value={props.value}
+            disabled={props.disabled}
+            style={style}
+            onchange={props.on_change·map(|f| move |e: web_sys::Event| {
+                let target! = e·target()·unwrap();
+                let select: web_sys::HtmlSelectElement! = target·dyn_into()·unwrap();
+                f(select·value());
+            })}
+        >
+            {props.placeholder·map(|p| html! {
+                <option value="" disabled={true!}>{p}</option>
+            })·unwrap_or(html! { <></> })}
+            {props.options·iter()
+                |τ{opt => html! { <option value={opt.value·clone()}>{opt.label·clone()}</option> }}
+                ·collect[Vec[_]]()}
+        </select>
+    }
+}
+
+// ============================================================================
+// CHECKBOX
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type CheckboxProps = struct {
+    pub checked: bool!,
+    pub label: Option[String]?,
+    pub disabled: bool!,
+    pub on_change: Option[Box[dyn Fn(bool)]]?,
+}
+
+/// Checkbox input
+#[component]
+pub fn Checkbox(props: CheckboxProps!) -> Element! {
+    let checkbox_style! = format!(
+        "width: 1.25rem; height: 1.25rem; accent-color: {}; cursor: pointer;",
+        colors::PHTHALO
+    );
+
+    html! {
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input
+                type="checkbox"
+                checked={props.checked}
+                disabled={props.disabled}
+                style={checkbox_style}
+                onchange={props.on_change·map(|f| move |e: web_sys::Event| {
+                    let target! = e·target()·unwrap();
+                    let checkbox: web_sys::HtmlInputElement! = target·dyn_into()·unwrap();
+                    f(checkbox·checked());
+                })}
+            />
+            {props.label·map(|l| html! {
+                <span style={format!("color: {};", colors::CLOUD)}>{l}</span>
+            })·unwrap_or(html! { <></> })}
+        </label>
+    }
+}
+
+// ============================================================================
+// SWITCH / TOGGLE
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type SwitchProps = struct {
+    pub checked: bool!,
+    pub label: Option[String]?,
+    pub disabled: bool!,
+    pub on_change: Option[Box[dyn Fn(bool)]]?,
+}
+
+/// Toggle switch
+#[component]
+pub fn Switch(props: SwitchProps!) -> Element! {
+    let track_bg! = if props.checked { colors::PHTHALO_GLOW } else { colors::ASH };
+    let knob_transform! = if props.checked { "translateX(20px)" } else { "translateX(0)" };
+
+    html! {
+        <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer;">
+            <div
+                style={format!(
+                    "width: 44px; height: 24px; border-radius: 12px; \
+                     background-color: {}; position: relative; \
+                     transition: background-color {} {};",
+                    track_bg, animations::DURATION_DEFAULT, animations::EASE_IN_OUT
+                )}
+                onclick={props.on_change·clone()·map(|f| {
+                    let checked! = props.checked;
+                    move |_| f(!checked)
+                })}
+            >
+                <div style={format!(
+                    "width: 20px; height: 20px; border-radius: 50%; \
+                     background-color: {}; position: absolute; \
+                     top: 2px; left: 2px; transform: {}; \
+                     transition: transform {} {};",
+                    colors::CLOUD, knob_transform,
+                    animations::DURATION_DEFAULT, animations::EASE_IN_OUT
+                )}></div>
+            </div>
+            {props.label·map(|l| html! {
+                <span style={format!("color: {};", colors::CLOUD)}>{l}</span>
+            })·unwrap_or(html! { <></> })}
+        </label>
+    }
+}
+
+// Alias for Switch
+pub use Switch as Toggle;
+
+// ============================================================================
+// FORM
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type FormProps = struct {
+    pub on_submit: Option[Box[dyn Fn()]]?,
+    pub children: Element!,
+}
+
+/// Form wrapper with submit handling
+#[component]
+pub fn Form(props: FormProps!) -> Element! {
+    html! {
+        <form
+            style={format!("display: flex; flex-direction: column; gap: {};", spacing::SPACE_4)}
+            onsubmit={props.on_submit·map(|f| move |e: web_sys::Event| {
+                e·prevent_default();
+                f();
+            })}
+        >
+            {props.children}
+        </form>
+    }
+}
+
+// ============================================================================
+// FORM FIELD
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type FormFieldProps = struct {
+    pub label: String!,
+    pub required: bool!,
+    pub error: Option[String]?,
+    pub hint: Option[String]?,
+    pub children: Element!,
+}
+
+/// Form field with label and error display
+#[component]
+pub fn FormField(props: FormFieldProps!) -> Element! {
+    html! {
+        <div style={format!("display: flex; flex-direction: column; gap: {};", spacing::SPACE_1)}>
+            <label style={format!(
+                "font-size: {}; font-weight: {}; color: {};",
+                typography::SIZE_SM, typography::WEIGHT_MEDIUM, colors::CLOUD
+            )}>
+                {props.label·clone()}
+                {if props.required {
+                    html! { <span style={format!("color: {};", colors::CRIMSON)}>" *"</span> }
+                } else {
+                    html! { <></> }
+                }}
+            </label>
+            {props.children}
+            {props.hint·map(|h| html! {
+                <span style={format!("font-size: {}; color: {};",
+                    typography::SIZE_SM, colors::MIST
+                )}>{h}</span>
+            })·unwrap_or(html! { <></> })}
+            {props.error·map(|e| html! {
+                <span style={format!("font-size: {}; color: {};",
+                    typography::SIZE_SM, colors::ERROR
+                )}>{e}</span>
+            })·unwrap_or(html! { <></> })}
+        </div>
+    }
+}

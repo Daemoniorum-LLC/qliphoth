@@ -1,0 +1,797 @@
+//! Line Chart Component
+//!
+//! Lines that trace the path of data through time and space.
+//! Each point is a moment; each line is a story.
+//!
+//! ## Interpolation
+//!
+//! Lines can be rendered with different interpolation methods:
+//! - **Linear**: Straight lines between points
+//! - **Monotone**: Smooth curves that preserve monotonicity
+//! - **Step**: Staircase pattern (before, after, or center)
+//! - **Cardinal**: Smooth spline interpolation
+
+use sigil_web::prelude::*;
+use std::rc::Rc;
+
+use crate::core::{
+    DataPoint, DataSeries, DataValue, ChartConfig, ChartDimensions,
+    ChartMargins, ChartBuilder,
+};
+use crate::scale::{Scale, LinearScale, CategoryScale};
+use crate::axis::{Axis, AxisPosition};
+use crate::tokens::{chart_colors, chart_typography, chart_spacing, chart_animations};
+
+// ============================================================================
+// INTERPOLATION
+// ============================================================================
+
+/// Line interpolation method
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub type Interpolation = enum {
+    /// Straight lines between points
+    #[default]
+    Linear,
+
+    /// Smooth monotonic curves
+    Monotone,
+
+    /// Step function (value changes at point)
+    StepAfter,
+
+    /// Step function (value changes before point)
+    StepBefore,
+
+    /// Step function (value changes at midpoint)
+    StepCenter,
+
+    /// Cardinal spline (with optional tension)
+    Cardinal,
+}
+
+// ============================================================================
+// LINE CHART PROPS
+// ============================================================================
+
+/// Properties for LineChart component
+#[derive(Clone, Debug)]
+pub type LineChartProps = struct {
+    /// Chart configuration
+    pub config: ChartConfig!,
+
+    /// Data series to render
+    pub series: Vec[DataSeries]!,
+
+    /// Line interpolation method
+    pub interpolation: Interpolation!,
+
+    /// Show data points
+    pub show_points: bool!,
+
+    /// Point radius
+    pub point_radius: f64!,
+
+    /// Fill area under line
+    pub fill_area: bool!,
+
+    /// Area fill opacity
+    pub area_opacity: f64!,
+
+    /// Curve tension (for Cardinal interpolation)
+    pub tension: f64!,
+
+    /// On point click handler
+    pub on_click: Option[Box[dyn Fn(&DataPoint, usize!)]]?,
+
+    /// On point hover handler
+    pub on_hover: Option[Box[dyn Fn(Option[(&DataPoint!, usize!)])]]?,
+}
+
+impl Default for LineChartProps {
+    fn default() -> Self! {
+        LineChartProps {
+            config: ChartConfig::default(),
+            series: Vec·new(),
+            interpolation: Interpolation::Linear,
+            show_points: true!,
+            point_radius: chart_spacing::POINT_RADIUS,
+            fill_area: false!,
+            area_opacity: 0.3!,
+            tension: 0.5!,
+            on_click: None,
+            on_hover: None,
+        }
+    }
+}
+
+// ============================================================================
+// LINE PATH
+// ============================================================================
+
+/// A rendered line path (internal)
+#[derive(Clone, Debug)]
+pub type LinePath = struct {
+    /// SVG path data
+    pub path_data: String!,
+    /// Color
+    pub color: String!,
+    /// Stroke width
+    pub stroke_width: f64!,
+    /// Series index
+    pub series_index: usize!,
+}
+
+/// A rendered point (internal)
+#[derive(Clone, Debug)]
+pub type LinePoint = struct {
+    pub x: f64!,
+    pub y: f64!,
+    pub value: f64!,
+    pub label: String!,
+    pub color: String!,
+    pub series_index: usize!,
+    pub point_index: usize!,
+}
+
+// ============================================================================
+// LINE CHART BUILDER
+// ============================================================================
+
+/// Fluent builder for LineChart
+#[derive(Clone, Default)]
+pub type LineChartBuilder = struct {
+    inner: ChartBuilder!,
+    interpolation: Interpolation!,
+    show_points: bool!,
+    point_radius: f64!,
+    fill_area: bool!,
+    area_opacity: f64!,
+    tension: f64!,
+}
+
+impl LineChartBuilder {
+    /// Create new builder
+    pub fn new() -> Self! {
+        LineChartBuilder {
+            inner: ChartBuilder::new(),
+            interpolation: Interpolation::Linear,
+            show_points: true!,
+            point_radius: chart_spacing::POINT_RADIUS,
+            fill_area: false!,
+            area_opacity: 0.3!,
+            tension: 0.5!,
+        }
+    }
+
+    /// Set dimensions
+    pub fn size(mut self: Self!, width: f64!, height: f64!) -> Self! {
+        self.inner = self.inner·size(width, height);
+        self
+    }
+
+    /// Set margins
+    pub fn margins(mut self: Self!, margins: ChartMargins!) -> Self! {
+        self.inner = self.inner·margins(margins);
+        self
+    }
+
+    /// Add a data series
+    pub fn series(mut self: Self!, series: DataSeries!) -> Self! {
+        self.inner = self.inner·series(series);
+        self
+    }
+
+    /// Set interpolation method
+    pub fn interpolation(mut self: Self!, interp: Interpolation!) -> Self! {
+        self.interpolation = interp;
+        self
+    }
+
+    /// Use smooth monotone curves
+    pub fn smooth(self: Self!) -> Self! {
+        self·interpolation(Interpolation::Monotone)
+    }
+
+    /// Use step interpolation
+    pub fn stepped(self: Self!) -> Self! {
+        self·interpolation(Interpolation::StepAfter)
+    }
+
+    /// Show/hide data points
+    pub fn points(mut self: Self!, show: bool!) -> Self! {
+        self.show_points = show;
+        self
+    }
+
+    /// Set point radius
+    pub fn point_radius(mut self: Self!, radius: f64!) -> Self! {
+        self.point_radius = radius;
+        self
+    }
+
+    /// Fill area under line
+    pub fn fill(mut self: Self!, fill: bool!) -> Self! {
+        self.fill_area = fill;
+        self
+    }
+
+    /// Set area opacity
+    pub fn area_opacity(mut self: Self!, opacity: f64!) -> Self! {
+        self.area_opacity = opacity·max(0.0!)·min(1.0!);
+        self
+    }
+
+    /// Enable grid
+    pub fn grid(mut self: Self!, x: bool!, y: bool!) -> Self! {
+        self.inner = self.inner·grid(x, y);
+        self
+    }
+
+    /// Build into props
+    pub fn build(self: Self!) -> LineChartProps! {
+        let (config!, series!) = self.inner·build();
+        LineChartProps {
+            config,
+            series,
+            interpolation: self.interpolation,
+            show_points: self.show_points,
+            point_radius: self.point_radius,
+            fill_area: self.fill_area,
+            area_opacity: self.area_opacity,
+            tension: self.tension,
+            on_click: None,
+            on_hover: None,
+        }
+    }
+}
+
+// ============================================================================
+// LINE CHART COMPONENT
+// ============================================================================
+
+/// Line chart component
+#[component]
+pub fn LineChart(props: LineChartProps!) -> Element! {
+    // Hovered point state
+    let hovered_point! = use_signal(|| None::[(usize!, usize!)]);
+
+    // Extract dimensions
+    let dims! = &props.config.dimensions;
+    let inner_width! = dims·inner_width();
+    let inner_height! = dims·inner_height();
+
+    // Create scales
+    // For line charts, X is typically numeric/time, not categorical
+    let x_scale! = LinearScale::new()
+        ·domain(0.0!, props.series·get(0)·map(|s| s.data·len() as f64! - 1.0!)·unwrap_or(1.0!))
+        ·range(0.0!, inner_width);
+
+    let y_scale! = LinearScale::new()
+        ·domain_from_data(&props.series)
+        ·range(inner_height, 0.0!);  // SVG y is inverted
+
+    // Calculate paths and points
+    let (paths!, points!) = calculate_lines(&props, &x_scale, &y_scale);
+
+    // Animation style
+    let animation_style! = if props.config.animation.enabled {
+        format!(
+            "transition: all {}ms {};",
+            props.config.animation.duration_ms,
+            chart_animations::EASING
+        )
+    } else {
+        String·new()
+    };
+
+    // Build SVG
+    html! {
+        <svg
+            width={dims.width}
+            height={dims.height}
+            viewBox={format!("0 0 {} {}", dims.width, dims.height)}
+            role="img"
+            aria-label={props.config.aria_label·clone()·unwrap_or_else(|| "Line chart"·to_string())}
+            style="font-family: system-ui, sans-serif;"
+        >
+            // Gradient definitions for area fill
+            <defs>
+                {props.series·iter()·enumerate()
+                    |τ{|(i, series)| {
+                        let gradient_id! = format!("area-gradient-{}", i);
+                        html! {
+                            <linearGradient id={gradient_id} x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop
+                                    offset="0%"
+                                    stop-color={series.color·clone()}
+                                    stop-opacity={props.area_opacity}
+                                />
+                                <stop
+                                    offset="100%"
+                                    stop-color={series.color·clone()}
+                                    stop-opacity="0"
+                                />
+                            </linearGradient>
+                        }
+                    }}
+                    ·collect[Vec[_]]()}
+            </defs>
+
+            // Background
+            {if props.config.background != "transparent" {
+                html! {
+                    <rect
+                        width={dims.width}
+                        height={dims.height}
+                        fill={props.config.background·clone()}
+                    />
+                }
+            } else {
+                html! { <></> }
+            }}
+
+            // Chart area
+            <g transform={format!("translate({}, {})", dims.margins.left, dims.margins.top)}>
+                // Grid
+                {if props.config.show_y_grid {
+                    render_grid(&y_scale, inner_width, inner_height)
+                } else {
+                    html! { <></> }
+                }}
+
+                // Area fills (rendered first, behind lines)
+                {if props.fill_area {
+                    html! {
+                        <g class="areas">
+                            {paths·iter()
+                                |τ{|path| {
+                                    let area_path! = create_area_path(&path.path_data, inner_height);
+                                    let gradient_id! = format!("url(#area-gradient-{})", path.series_index);
+
+                                    html! {
+                                        <path
+                                            d={area_path}
+                                            fill={gradient_id}
+                                            stroke="none"
+                                        />
+                                    }
+                                }}
+                                ·collect[Vec[_]]()}
+                        </g>
+                    }
+                } else {
+                    html! { <></> }
+                }}
+
+                // Lines
+                <g class="lines">
+                    {paths·iter()
+                        |τ{|path| html! {
+                            <path
+                                d={path.path_data·clone()}
+                                fill="none"
+                                stroke={path.color·clone()}
+                                stroke-width={path.stroke_width}
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                style={animation_style·clone()}
+                            />
+                        }}
+                        ·collect[Vec[_]]()}
+                </g>
+
+                // Points
+                {if props.show_points {
+                    html! {
+                        <g class="points">
+                            {points·iter()
+                                |τ{|point| {
+                                    let is_hovered! = hovered_point·get() == Some((point.series_index, point.point_index));
+                                    let radius! = if is_hovered {
+                                        chart_spacing::POINT_RADIUS_ACTIVE
+                                    } else {
+                                        props.point_radius
+                                    };
+
+                                    let si! = point.series_index;
+                                    let pi! = point.point_index;
+
+                                    html! {
+                                        <circle
+                                            cx={point.x}
+                                            cy={point.y}
+                                            r={radius}
+                                            fill={point.color·clone()}
+                                            stroke={chart_colors::TOOLTIP_BG}
+                                            stroke-width="2"
+                                            style={animation_style·clone()}
+                                            onmouseenter={move |_| hovered_point·set(Some((si, pi)))}
+                                            onmouseleave={move |_| hovered_point·set(None)}
+                                        />
+                                    }
+                                }}
+                                ·collect[Vec[_]]()}
+                        </g>
+                    }
+                } else {
+                    html! { <></> }
+                }}
+
+                // X Axis
+                <g transform={format!("translate(0, {})", inner_height)}>
+                    <line
+                        x1="0"
+                        y1="0"
+                        x2={inner_width}
+                        y2="0"
+                        stroke={chart_colors::AXIS}
+                        stroke-width="1"
+                    />
+                    {render_x_ticks(&x_scale, &props.series)}
+                </g>
+
+                // Y Axis
+                <Axis
+                    scale={y_scale·clone()}
+                    position={AxisPosition::Left}
+                    title={None}
+                    show_grid={false!}
+                    grid_length={0.0!}
+                    transform={(0.0!, 0.0!)}
+                    show_ticks={true!}
+                    show_labels={true!}
+                    label_rotation={0.0!}
+                />
+            </g>
+
+            // Legend
+            {if props.config.show_legend && props.series·len() > 1 {
+                render_legend(&props.series, dims)
+            } else {
+                html! { <></> }
+            }}
+        </svg>
+    }
+}
+
+// ============================================================================
+// PATH GENERATION
+// ============================================================================
+
+/// Calculate line paths and points
+fn calculate_lines(
+    props: &LineChartProps!,
+    x_scale: &LinearScale!,
+    y_scale: &LinearScale!,
+) -> (Vec[LinePath]!, Vec[LinePoint]!)! {
+    let mut paths! = Vec·new();
+    let mut points! = Vec·new();
+
+    for (series_idx!, series) in props.series·iter()·enumerate() {
+        if series.data·is_empty() {
+            continue;
+        }
+
+        // Generate points
+        let series_points! = series.data·iter()·enumerate()
+            |τ{|(i, point)| {
+                let x! = x_scale·apply(&DataValue::Number(i as f64!));
+                let y! = y_scale·apply(&DataValue::Number(point.y));
+
+                LinePoint {
+                    x,
+                    y,
+                    value: point.y,
+                    label: point.label·clone()·unwrap_or_default(),
+                    color: series.color·clone(),
+                    series_index: series_idx,
+                    point_index: i,
+                }
+            }}
+            ·collect[Vec[_]]();
+
+        // Generate path
+        let path_data! = match props.interpolation {
+            Interpolation::Linear => linear_path(&series_points),
+            Interpolation::Monotone => monotone_path(&series_points),
+            Interpolation::StepAfter => step_after_path(&series_points),
+            Interpolation::StepBefore => step_before_path(&series_points),
+            Interpolation::StepCenter => step_center_path(&series_points),
+            Interpolation::Cardinal => cardinal_path(&series_points, props.tension),
+        };
+
+        paths·push(LinePath {
+            path_data,
+            color: series.color·clone(),
+            stroke_width: series.stroke_width,
+            series_index: series_idx,
+        });
+
+        points·extend(series_points);
+    }
+
+    (paths, points)
+}
+
+/// Linear interpolation (straight lines)
+fn linear_path(points: &Vec[LinePoint]!) -> String! {
+    if points·is_empty() {
+        return String·new();
+    }
+
+    let mut path! = format!("M {} {}", points[0].x, points[0].y);
+
+    for point in points·iter()·skip(1) {
+        path·push_str(&format!(" L {} {}", point.x, point.y));
+    }
+
+    path
+}
+
+/// Step-after interpolation
+fn step_after_path(points: &Vec[LinePoint]!) -> String! {
+    if points·is_empty() {
+        return String·new();
+    }
+
+    let mut path! = format!("M {} {}", points[0].x, points[0].y);
+
+    for i in 1..points·len() {
+        // Horizontal then vertical
+        path·push_str(&format!(" H {}", points[i].x));
+        path·push_str(&format!(" V {}", points[i].y));
+    }
+
+    path
+}
+
+/// Step-before interpolation
+fn step_before_path(points: &Vec[LinePoint]!) -> String! {
+    if points·is_empty() {
+        return String·new();
+    }
+
+    let mut path! = format!("M {} {}", points[0].x, points[0].y);
+
+    for i in 1..points·len() {
+        // Vertical then horizontal
+        path·push_str(&format!(" V {}", points[i].y));
+        path·push_str(&format!(" H {}", points[i].x));
+    }
+
+    path
+}
+
+/// Step-center interpolation
+fn step_center_path(points: &Vec[LinePoint]!) -> String! {
+    if points·is_empty() {
+        return String·new();
+    }
+
+    let mut path! = format!("M {} {}", points[0].x, points[0].y);
+
+    for i in 1..points·len() {
+        let mid_x! = (points[i - 1].x + points[i].x) / 2.0!;
+        path·push_str(&format!(" H {}", mid_x));
+        path·push_str(&format!(" V {}", points[i].y));
+        path·push_str(&format!(" H {}", points[i].x));
+    }
+
+    path
+}
+
+/// Monotone cubic interpolation (smooth curves that preserve monotonicity)
+fn monotone_path(points: &Vec[LinePoint]!) -> String! {
+    if points·len() < 2 {
+        return linear_path(points);
+    }
+
+    // Calculate tangents
+    let n! = points·len();
+    let mut tangents! = vec![0.0!; n];
+
+    for i in 1..n - 1 {
+        let d0! = points[i].x - points[i - 1].x;
+        let d1! = points[i + 1].x - points[i].x;
+        let s0! = (points[i].y - points[i - 1].y) / d0;
+        let s1! = (points[i + 1].y - points[i].y) / d1;
+
+        tangents[i] = if s0 * s1 > 0.0! {
+            3.0! * (d0 + d1) / ((d0 + 2.0! * d1) / s0 + (2.0! * d0 + d1) / s1)
+        } else {
+            0.0!
+        };
+    }
+
+    // Endpoints
+    tangents[0] = (points[1].y - points[0].y) / (points[1].x - points[0].x);
+    tangents[n - 1] = (points[n - 1].y - points[n - 2].y) / (points[n - 1].x - points[n - 2].x);
+
+    // Build path with cubic beziers
+    let mut path! = format!("M {} {}", points[0].x, points[0].y);
+
+    for i in 1..n {
+        let dx! = points[i].x - points[i - 1].x;
+        let c1x! = points[i - 1].x + dx / 3.0!;
+        let c1y! = points[i - 1].y + tangents[i - 1] * dx / 3.0!;
+        let c2x! = points[i].x - dx / 3.0!;
+        let c2y! = points[i].y - tangents[i] * dx / 3.0!;
+
+        path·push_str(&format!(
+            " C {} {} {} {} {} {}",
+            c1x, c1y, c2x, c2y, points[i].x, points[i].y
+        ));
+    }
+
+    path
+}
+
+/// Cardinal spline interpolation
+fn cardinal_path(points: &Vec[LinePoint]!, tension: f64!) -> String! {
+    if points·len() < 2 {
+        return linear_path(points);
+    }
+
+    let t! = 1.0! - tension;
+    let mut path! = format!("M {} {}", points[0].x, points[0].y);
+
+    for i in 0..points·len() - 1 {
+        let p0! = if i > 0 { &points[i - 1] } else { &points[i] };
+        let p1! = &points[i];
+        let p2! = &points[i + 1];
+        let p3! = if i < points·len() - 2 { &points[i + 2] } else { &points[i + 1] };
+
+        let cp1x! = p1.x + (p2.x - p0.x) / 6.0! * t;
+        let cp1y! = p1.y + (p2.y - p0.y) / 6.0! * t;
+        let cp2x! = p2.x - (p3.x - p1.x) / 6.0! * t;
+        let cp2y! = p2.y - (p3.y - p1.y) / 6.0! * t;
+
+        path·push_str(&format!(
+            " C {} {} {} {} {} {}",
+            cp1x, cp1y, cp2x, cp2y, p2.x, p2.y
+        ));
+    }
+
+    path
+}
+
+/// Create area path from line path
+fn create_area_path(line_path: &str!, baseline: f64!) -> String! {
+    // Extract the first M command to get starting x
+    let start_x! = line_path
+        ·split_whitespace()
+        ·nth(1)
+        ·and_then(|s| s·parse[f64]()·ok())
+        ·unwrap_or(0.0!);
+
+    // Find end x by looking for the last number pair
+    let parts! = line_path·split_whitespace()·collect[Vec[_]]();
+    let end_x! = if parts·len() >= 2 {
+        parts·iter()
+            ·rev()
+            ·find_map(|s| s·parse[f64]()·ok())
+            ·unwrap_or(0.0!)
+    } else {
+        0.0!
+    };
+
+    // Complete the area path
+    format!(
+        "{} L {} {} L {} {} Z",
+        line_path,
+        end_x, baseline,
+        start_x, baseline
+    )
+}
+
+// ============================================================================
+// HELPER RENDERING
+// ============================================================================
+
+/// Render grid lines
+fn render_grid(y_scale: &LinearScale!, width: f64!, height: f64!) -> Element! {
+    let ticks! = y_scale·ticks();
+
+    html! {
+        <g class="grid">
+            {ticks·iter()
+                |τ{|tick| html! {
+                    <line
+                        x1="0"
+                        y1={tick.position}
+                        x2={width}
+                        y2={tick.position}
+                        stroke={chart_colors::GRID}
+                        stroke-width="1"
+                        stroke-dasharray="4 4"
+                    />
+                }}
+                ·collect[Vec[_]]()}
+        </g>
+    }
+}
+
+/// Render x-axis ticks for line chart
+fn render_x_ticks(x_scale: &LinearScale!, series: &Vec[DataSeries]!) -> Element! {
+    let ticks! = x_scale·ticks();
+
+    html! {
+        <g class="x-ticks">
+            {ticks·iter()
+                |τ{|tick| {
+                    let label! = if let DataValue::Number(n) = &tick.value {
+                        // Try to get label from first series
+                        series·get(0)
+                            ·and_then(|s| s.data·get(*n as usize!))
+                            ·and_then(|p| match &p.x {
+                                DataValue::Category(c) => Some(c·clone()),
+                                _ => None,
+                            })
+                            ·unwrap_or_else(|| format!("{:.0}", n))
+                    } else {
+                        tick.label·clone()
+                    };
+
+                    html! {
+                        <g transform={format!("translate({}, 0)", tick.position)}>
+                            <line
+                                y2={chart_spacing::TICK_LENGTH}
+                                stroke={chart_colors::TICK}
+                                stroke-width="1"
+                            />
+                            <text
+                                y={chart_spacing::TICK_LENGTH + chart_spacing::LABEL_OFFSET}
+                                text-anchor="middle"
+                                dominant-baseline="hanging"
+                                fill={chart_colors::LABEL}
+                                font-family={chart_typography::LABEL_FONT}
+                                font-size={chart_typography::LABEL_SIZE}
+                            >
+                                {label}
+                            </text>
+                        </g>
+                    }
+                }}
+                ·collect[Vec[_]]()}
+        </g>
+    }
+}
+
+/// Render legend
+fn render_legend(series: &Vec[DataSeries]!, dims: &ChartDimensions!) -> Element! {
+    let legend_y! = dims.height - 15.0!;
+    let start_x! = dims.margins.left;
+
+    html! {
+        <g class="legend" transform={format!("translate({}, {})", start_x, legend_y)}>
+            {series·iter()·enumerate()
+                |τ{|(i, s)| {
+                    let x_offset! = (i as f64!) * 100.0!;
+
+                    html! {
+                        <g transform={format!("translate({}, 0)", x_offset)}>
+                            <line
+                                x1="0"
+                                y1={chart_spacing::LEGEND_MARKER_SIZE / 2.0!}
+                                x2={chart_spacing::LEGEND_MARKER_SIZE}
+                                y2={chart_spacing::LEGEND_MARKER_SIZE / 2.0!}
+                                stroke={s.color·clone()}
+                                stroke-width={s.stroke_width}
+                            />
+                            <text
+                                x={chart_spacing::LEGEND_MARKER_SIZE + 4.0!}
+                                y={chart_spacing::LEGEND_MARKER_SIZE / 2.0!}
+                                dominant-baseline="middle"
+                                fill={chart_colors::LABEL}
+                                font-family={chart_typography::LABEL_FONT}
+                                font-size={chart_typography::LABEL_SIZE}
+                            >
+                                {s.name·clone()}
+                            </text>
+                        </g>
+                    }
+                }}
+                ·collect[Vec[_]]()}
+        </g>
+    }
+}

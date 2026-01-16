@@ -1,0 +1,82 @@
+# Qliphoth - Sigil Web Platform for Daemoniorum
+# The website that proves the stack works
+# Copyright © 2025 Daemoniorum, LLC. All rights reserved.
+
+[project]
+name = "qliphoth"
+version = "0.1.0"
+edition = "2025"
+description = "Daemoniorum web platform built entirely in Sigil - the meta-statement"
+license = "MIT OR Apache-2.0"
+sigil-version = "0.2.0"
+authors = ["Daemoniorum, LLC"]
+repository = "https://github.com/Daemoniorum-LLC/qliphoth"
+
+[workspace]
+members = [
+    # Core Infrastructure
+    "crates/qliphoth-core",     # Routing, state, utilities, API client
+
+    # Design System
+    "crates/qliphoth-ui",       # 40+ component library (Corporate Goth)
+
+    # Data Visualization
+    "crates/qliphoth-viz",      # SVG charts with morpheme-driven data flow
+
+    # Applications
+    "crates/qliphoth-app",      # Main marketing site (replaces React)
+    "crates/qliphoth-docs",     # Documentation portal (replaces Vue)
+
+    # Features
+    "crates/qliphoth-chat",     # Infernum chat widget with streaming
+]
+
+[dependencies]
+# sigil-web framework (local development)
+sigil-web = { path = "../sigil/sigil-lang/sigil-web", version = "0.2.0", features = ["ssr", "hydration", "router"] }
+sigil-web-sys = { path = "../sigil/sigil-lang/sigil-web-sys", version = "0.2.0", features = ["full"] }
+sigil-web-router = { path = "../sigil/sigil-lang/sigil-web-router", version = "0.2.0" }
+
+# Arcanum FFI for cryptography
+arcanum = { path = "../nyx/arcanum", features = ["sha3", "hmac"] }
+
+[dev-dependencies]
+# Testing
+qliphoth-test = { path = "crates/qliphoth-test", optional = true }
+
+[features]
+default = ["full"]
+full = ["app", "docs", "chat", "viz"]
+app = []                    # Main marketing site
+docs = []                   # Documentation portal
+chat = []                   # Chat widget integration
+viz = []                    # Data visualization with morphemes
+ssr = []                    # Server-side rendering
+hydration = []              # Client-side hydration
+analytics = []              # A/B testing and analytics
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[compile]
+backend = "llvm"
+target = "wasm32-unknown-unknown"
+
+[compile.wasm]
+opt-level = "z"             # Optimize for size
+debug-info = false
+strip = true
+features = ["+simd128"]     # Enable SIMD for performance
+
+[build]
+# WASM output configuration
+out-dir = "dist"
+wasm-bindgen = true
+wasm-opt = true

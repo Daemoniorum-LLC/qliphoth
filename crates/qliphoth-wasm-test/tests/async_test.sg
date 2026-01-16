@@ -1,0 +1,41 @@
+// Async/Promise System Test
+// Tests promise creation, resolution, and chaining
+
+pub fn main() -> i64 {
+    console::log_str("=== Promise Test ===");
+
+    // Create a promise
+    console::log_str("Creating promise 1...");
+    let p1 = promise::new();
+    console::print(p1 as i64);
+
+    // Create another promise
+    console::log_str("Creating promise 2...");
+    let p2 = promise::new();
+    console::print(p2 as i64);
+
+    // Resolve promise 1 with a value
+    console::log_str("Resolving promise 1 with value 42...");
+    promise::resolve(p1, 42);
+
+    // Try to await resolved promise
+    console::log_str("Awaiting resolved promise 1...");
+    let result = promise::await(p1);
+    console::print(result);
+
+    // Reject promise 2
+    console::log_str("Rejecting promise 2...");
+    promise::reject(p2, 0, 0);
+
+    // Spawn a task
+    console::log_str("Spawning task...");
+    let task = promise::spawn(0);
+    console::print(task as i64);
+
+    // Yield execution
+    console::log_str("Yielding...");
+    promise::yield_now();
+
+    console::log_str("Promise test complete!");
+    0
+}

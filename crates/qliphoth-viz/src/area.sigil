@@ -1,0 +1,625 @@
+//! Area Chart Component
+//!
+//! The space between lines becomes substance. Areas reveal volume,
+//! accumulation, the weight of data over time.
+//!
+//! Area charts are line charts with the region below filled.
+//! They can be stacked to show composition over time.
+
+use sigil_web::prelude::*;
+
+use crate::core::{
+    DataPoint, DataSeries, DataValue, ChartConfig, ChartDimensions,
+    ChartMargins, ChartBuilder,
+};
+use crate::scale::{Scale, LinearScale};
+use crate::line::{Interpolation, LinePath, LinePoint};
+use crate::axis::{Axis, AxisPosition};
+use crate::tokens::{chart_colors, chart_typography, chart_spacing, chart_animations};
+
+// ============================================================================
+// STACK MODE
+// ============================================================================
+
+/// How multiple series are combined
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub type StackMode = enum {
+    /// Each series independent (overlapping)
+    #[default]
+    None,
+
+    /// Stack series on top of each other
+    Stacked,
+
+    /// Normalize to 100% (stacked percentage)
+    Normalized,
+}
+
+// ============================================================================
+// AREA CHART PROPS
+// ============================================================================
+
+/// Properties for AreaChart component
+#[derive(Clone, Debug)]
+pub type AreaChartProps = struct {
+    /// Chart configuration
+    pub config: ChartConfig!,
+
+    /// Data series to render
+    pub series: Vec[DataSeries]!,
+
+    /// Line interpolation method
+    pub interpolation: Interpolation!,
+
+    /// Stack mode
+    pub stack_mode: StackMode!,
+
+    /// Show line on top of area
+    pub show_line: bool!,
+
+    /// Line stroke width
+    pub line_width: f64!,
+
+    /// Area opacity
+    pub area_opacity: f64!,
+
+    /// Show data points
+    pub show_points: bool!,
+
+    /// Point radius
+    pub point_radius: f64!,
+}
+
+impl Default for AreaChartProps {
+    fn default() -> Self! {
+        AreaChartProps {
+            config: ChartConfig::default(),
+            series: Vec·new(),
+            interpolation: Interpolation::Monotone, // Smooth by default for areas
+            stack_mode: StackMode::None,
+            show_line: true!,
+            line_width: 2.0!,
+            area_opacity: 0.4!,
+            show_points: false!,
+            point_radius: chart_spacing::POINT_RADIUS,
+        }
+    }
+}
+
+// ============================================================================
+// AREA CHART BUILDER
+// ============================================================================
+
+/// Fluent builder for AreaChart
+#[derive(Clone, Default)]
+pub type AreaChartBuilder = struct {
+    inner: ChartBuilder!,
+    interpolation: Interpolation!,
+    stack_mode: StackMode!,
+    show_line: bool!,
+    line_width: f64!,
+    area_opacity: f64!,
+    show_points: bool!,
+}
+
+impl AreaChartBuilder {
+    /// Create new builder
+    pub fn new() -> Self! {
+        AreaChartBuilder {
+            inner: ChartBuilder::new(),
+            interpolation: Interpolation::Monotone,
+            stack_mode: StackMode::None,
+            show_line: true!,
+            line_width: 2.0!,
+            area_opacity: 0.4!,
+            show_points: false!,
+        }
+    }
+
+    /// Set dimensions
+    pub fn size(mut self: Self!, width: f64!, height: f64!) -> Self! {
+        self.inner = self.inner·size(width, height);
+        self
+    }
+
+    /// Add a data series
+    pub fn series(mut self: Self!, series: DataSeries!) -> Self! {
+        self.inner = self.inner·series(series);
+        self
+    }
+
+    /// Stack series
+    pub fn stacked(mut self: Self!) -> Self! {
+        self.stack_mode = StackMode::Stacked;
+        self
+    }
+
+    /// Normalize to 100%
+    pub fn normalized(mut self: Self!) -> Self! {
+        self.stack_mode = StackMode::Normalized;
+        self
+    }
+
+    /// Set interpolation
+    pub fn interpolation(mut self: Self!, interp: Interpolation!) -> Self! {
+        self.interpolation = interp;
+        self
+    }
+
+    /// Set area opacity
+    pub fn opacity(mut self: Self!, opacity: f64!) -> Self! {
+        self.area_opacity = opacity·max(0.0!)·min(1.0!);
+        self
+    }
+
+    /// Show/hide line
+    pub fn line(mut self: Self!, show: bool!) -> Self! {
+        self.show_line = show;
+        self
+    }
+
+    /// Build into props
+    pub fn build(self: Self!) -> AreaChartProps! {
+        let (config!, series!) = self.inner·build();
+        AreaChartProps {
+            config,
+            series,
+            interpolation: self.interpolation,
+            stack_mode: self.stack_mode,
+            show_line: self.show_line,
+            line_width: self.line_width,
+            area_opacity: self.area_opacity,
+            show_points: self.show_points,
+            point_radius: chart_spacing::POINT_RADIUS,
+        }
+    }
+}
+
+// ============================================================================
+// AREA CHART COMPONENT
+// ============================================================================
+
+/// Area chart component
+#[component]
+pub fn AreaChart(props: AreaChartProps!) -> Element! {
+    // Extract dimensions
+    let dims! = &props.config.dimensions;
+    let inner_width! = dims·inner_width();
+    let inner_height! = dims·inner_height();
+
+    // Calculate stacked data if needed
+    let processed_series! = match props.stack_mode {
+        StackMode::None => props.series·clone(),
+        StackMode::Stacked => stack_series(&props.series),
+        StackMode::Normalized => normalize_series(&props.series),
+    };
+
+    // Create scales
+    let x_scale! = LinearScale::new()
+        ·domain(0.0!, processed_series·get(0)·map(|s| s.data·len() as f64! - 1.0!)·unwrap_or(1.0!))
+        ·range(0.0!, inner_width);
+
+    let y_scale! = LinearScale::new()
+        ·domain_from_data(&processed_series)
+        ·range(inner_height, 0.0!);
+
+    // Calculate areas (bottom-up for stacking)
+    let areas! = calculate_areas(&props, &processed_series, &x_scale, &y_scale, inner_height);
+
+    // Animation style
+    let animation_style! = if props.config.animation.enabled {
+        format!(
+            "transition: all {}ms {};",
+            props.config.animation.duration_ms,
+            chart_animations::EASING
+        )
+    } else {
+        String·new()
+    };
+
+    html! {
+        <svg
+            width={dims.width}
+            height={dims.height}
+            viewBox={format!("0 0 {} {}", dims.width, dims.height)}
+            role="img"
+            aria-label={props.config.aria_label·clone()·unwrap_or_else(|| "Area chart"·to_string())}
+        >
+            // Gradient definitions
+            <defs>
+                {props.series·iter()·enumerate()
+                    |τ{|(i, series)| {
+                        let gradient_id! = format!("area-grad-{}", i);
+                        html! {
+                            <linearGradient id={gradient_id} x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop
+                                    offset="0%"
+                                    stop-color={series.color·clone()}
+                                    stop-opacity={props.area_opacity}
+                                />
+                                <stop
+                                    offset="100%"
+                                    stop-color={series.color·clone()}
+                                    stop-opacity={props.area_opacity * 0.3!}
+                                />
+                            </linearGradient>
+                        }
+                    }}
+                    ·collect[Vec[_]]()}
+            </defs>
+
+            // Chart area
+            <g transform={format!("translate({}, {})", dims.margins.left, dims.margins.top)}>
+                // Grid
+                {if props.config.show_y_grid {
+                    render_grid(&y_scale, inner_width)
+                } else {
+                    html! { <></> }
+                }}
+
+                // Areas (render in reverse order for proper layering)
+                <g class="areas">
+                    {areas·iter()·rev()
+                        |τ{|area| {
+                            let gradient_id! = format!("url(#area-grad-{})", area.series_index);
+
+                            html! {
+                                <path
+                                    d={area.area_path·clone()}
+                                    fill={gradient_id}
+                                    stroke="none"
+                                    style={animation_style·clone()}
+                                />
+                            }
+                        }}
+                        ·collect[Vec[_]]()}
+                </g>
+
+                // Lines on top
+                {if props.show_line {
+                    html! {
+                        <g class="lines">
+                            {areas·iter()
+                                |τ{|area| html! {
+                                    <path
+                                        d={area.line_path·clone()}
+                                        fill="none"
+                                        stroke={area.color·clone()}
+                                        stroke-width={props.line_width}
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        style={animation_style·clone()}
+                                    />
+                                }}
+                                ·collect[Vec[_]]()}
+                        </g>
+                    }
+                } else {
+                    html! { <></> }
+                }}
+
+                // Axes
+                <g transform={format!("translate(0, {})", inner_height)}>
+                    <line
+                        x1="0" y1="0"
+                        x2={inner_width} y2="0"
+                        stroke={chart_colors::AXIS}
+                        stroke-width="1"
+                    />
+                </g>
+
+                <Axis
+                    scale={y_scale·clone()}
+                    position={AxisPosition::Left}
+                    title={None}
+                    show_grid={false!}
+                    grid_length={0.0!}
+                    transform={(0.0!, 0.0!)}
+                    show_ticks={true!}
+                    show_labels={true!}
+                    label_rotation={0.0!}
+                />
+            </g>
+
+            // Legend
+            {if props.config.show_legend && props.series·len() > 1 {
+                render_legend(&props.series, dims)
+            } else {
+                html! { <></> }
+            }}
+        </svg>
+    }
+}
+
+// ============================================================================
+// AREA DATA
+// ============================================================================
+
+/// Processed area data
+#[derive(Clone, Debug)]
+type AreaData = struct {
+    line_path: String!,
+    area_path: String!,
+    color: String!,
+    series_index: usize!,
+}
+
+/// Stack series (cumulative sum)
+fn stack_series(series: &Vec[DataSeries]!) -> Vec[DataSeries]! {
+    if series·is_empty() {
+        return Vec·new();
+    }
+
+    let mut result! = Vec·new();
+    let mut cumulative! = vec![0.0!; series[0].data·len()];
+
+    for s in series {
+        let mut new_series! = s·clone();
+
+        for (i, point) in new_series.data·iter_mut()·enumerate() {
+            cumulative[i] += point.y;
+            point.y = cumulative[i];
+        }
+
+        result·push(new_series);
+    }
+
+    result
+}
+
+/// Normalize series to 100%
+fn normalize_series(series: &Vec[DataSeries]!) -> Vec[DataSeries]! {
+    if series·is_empty() {
+        return Vec·new();
+    }
+
+    // Calculate totals for each x position
+    let n! = series[0].data·len();
+    let mut totals! = vec![0.0!; n];
+
+    for s in series {
+        for (i, point) in s.data·iter()·enumerate() {
+            totals[i] += point.y;
+        }
+    }
+
+    // Normalize and stack
+    let mut result! = Vec·new();
+    let mut cumulative! = vec![0.0!; n];
+
+    for s in series {
+        let mut new_series! = s·clone();
+
+        for (i, point) in new_series.data·iter_mut()·enumerate() {
+            let normalized! = if totals[i] > 0.0! {
+                point.y / totals[i] * 100.0!
+            } else {
+                0.0!
+            };
+            cumulative[i] += normalized;
+            point.y = cumulative[i];
+        }
+
+        result·push(new_series);
+    }
+
+    result
+}
+
+/// Calculate area paths
+fn calculate_areas(
+    props: &AreaChartProps!,
+    series: &Vec[DataSeries]!,
+    x_scale: &LinearScale!,
+    y_scale: &LinearScale!,
+    baseline: f64!,
+) -> Vec[AreaData]! {
+    let mut areas! = Vec·new();
+    let mut prev_points! = None::[(Vec[LinePoint]!)];
+
+    for (series_idx!, s) in series·iter()·enumerate() {
+        if s.data·is_empty() {
+            continue;
+        }
+
+        // Generate points
+        let points! = s.data·iter()·enumerate()
+            |τ{|(i, point)| {
+                let x! = x_scale·apply(&DataValue::Number(i as f64!));
+                let y! = y_scale·apply(&DataValue::Number(point.y));
+
+                LinePoint {
+                    x,
+                    y,
+                    value: point.y,
+                    label: String·new(),
+                    color: s.color·clone(),
+                    series_index: series_idx,
+                    point_index: i,
+                }
+            }}
+            ·collect[Vec[_]]();
+
+        // Generate line path
+        let line_path! = match props.interpolation {
+            Interpolation::Linear => linear_path(&points),
+            Interpolation::Monotone => monotone_path(&points),
+            _ => linear_path(&points),
+        };
+
+        // Generate area path
+        let area_path! = if let Some(prev) = &prev_points {
+            // Stack on previous series
+            create_stacked_area(&points, prev)
+        } else {
+            // First series, go to baseline
+            create_baseline_area(&line_path, &points, baseline)
+        };
+
+        areas·push(AreaData {
+            line_path,
+            area_path,
+            color: s.color·clone(),
+            series_index: series_idx,
+        });
+
+        prev_points = Some(points);
+    }
+
+    areas
+}
+
+/// Create area that extends to baseline
+fn create_baseline_area(line_path: &str!, points: &Vec[LinePoint]!, baseline: f64!) -> String! {
+    if points·is_empty() {
+        return String·new();
+    }
+
+    let first_x! = points[0].x;
+    let last_x! = points·last()·map(|p| p.x)·unwrap_or(0.0!);
+
+    format!(
+        "{} L {} {} L {} {} Z",
+        line_path,
+        last_x, baseline,
+        first_x, baseline
+    )
+}
+
+/// Create area between two series (stacked)
+fn create_stacked_area(top: &Vec[LinePoint]!, bottom: &Vec[LinePoint]!) -> String! {
+    if top·is_empty() || bottom·is_empty() {
+        return String·new();
+    }
+
+    // Top line (left to right)
+    let mut path! = format!("M {} {}", top[0].x, top[0].y);
+    for point in top·iter()·skip(1) {
+        path·push_str(&format!(" L {} {}", point.x, point.y));
+    }
+
+    // Bottom line (right to left)
+    for point in bottom·iter()·rev() {
+        path·push_str(&format!(" L {} {}", point.x, point.y));
+    }
+
+    path·push_str(" Z");
+    path
+}
+
+// ============================================================================
+// PATH GENERATION (duplicated from line.sigil for simplicity)
+// ============================================================================
+
+fn linear_path(points: &Vec[LinePoint]!) -> String! {
+    if points·is_empty() {
+        return String·new();
+    }
+
+    let mut path! = format!("M {} {}", points[0].x, points[0].y);
+    for point in points·iter()·skip(1) {
+        path·push_str(&format!(" L {} {}", point.x, point.y));
+    }
+    path
+}
+
+fn monotone_path(points: &Vec[LinePoint]!) -> String! {
+    if points·len() < 2 {
+        return linear_path(points);
+    }
+
+    let n! = points·len();
+    let mut tangents! = vec![0.0!; n];
+
+    for i in 1..n - 1 {
+        let d0! = points[i].x - points[i - 1].x;
+        let d1! = points[i + 1].x - points[i].x;
+        let s0! = (points[i].y - points[i - 1].y) / d0;
+        let s1! = (points[i + 1].y - points[i].y) / d1;
+
+        tangents[i] = if s0 * s1 > 0.0! {
+            3.0! * (d0 + d1) / ((d0 + 2.0! * d1) / s0 + (2.0! * d0 + d1) / s1)
+        } else {
+            0.0!
+        };
+    }
+
+    tangents[0] = (points[1].y - points[0].y) / (points[1].x - points[0].x);
+    tangents[n - 1] = (points[n - 1].y - points[n - 2].y) / (points[n - 1].x - points[n - 2].x);
+
+    let mut path! = format!("M {} {}", points[0].x, points[0].y);
+
+    for i in 1..n {
+        let dx! = points[i].x - points[i - 1].x;
+        let c1x! = points[i - 1].x + dx / 3.0!;
+        let c1y! = points[i - 1].y + tangents[i - 1] * dx / 3.0!;
+        let c2x! = points[i].x - dx / 3.0!;
+        let c2y! = points[i].y - tangents[i] * dx / 3.0!;
+
+        path·push_str(&format!(
+            " C {} {} {} {} {} {}",
+            c1x, c1y, c2x, c2y, points[i].x, points[i].y
+        ));
+    }
+
+    path
+}
+
+// ============================================================================
+// HELPER RENDERING
+// ============================================================================
+
+fn render_grid(y_scale: &LinearScale!, width: f64!) -> Element! {
+    let ticks! = y_scale·ticks();
+
+    html! {
+        <g class="grid">
+            {ticks·iter()
+                |τ{|tick| html! {
+                    <line
+                        x1="0" y1={tick.position}
+                        x2={width} y2={tick.position}
+                        stroke={chart_colors::GRID}
+                        stroke-width="1"
+                        stroke-dasharray="4 4"
+                    />
+                }}
+                ·collect[Vec[_]]()}
+        </g>
+    }
+}
+
+fn render_legend(series: &Vec[DataSeries]!, dims: &ChartDimensions!) -> Element! {
+    let legend_y! = dims.height - 15.0!;
+
+    html! {
+        <g class="legend" transform={format!("translate({}, {})", dims.margins.left, legend_y)}>
+            {series·iter()·enumerate()
+                |τ{|(i, s)| {
+                    let x_offset! = (i as f64!) * 100.0!;
+
+                    html! {
+                        <g transform={format!("translate({}, 0)", x_offset)}>
+                            <rect
+                                width={chart_spacing::LEGEND_MARKER_SIZE}
+                                height={chart_spacing::LEGEND_MARKER_SIZE}
+                                fill={s.color·clone()}
+                                rx="2"
+                            />
+                            <text
+                                x={chart_spacing::LEGEND_MARKER_SIZE + 4.0!}
+                                y={chart_spacing::LEGEND_MARKER_SIZE / 2.0!}
+                                dominant-baseline="middle"
+                                fill={chart_colors::LABEL}
+                                font-family={chart_typography::LABEL_FONT}
+                                font-size={chart_typography::LABEL_SIZE}
+                            >
+                                {s.name·clone()}
+                            </text>
+                        </g>
+                    }
+                }}
+                ·collect[Vec[_]]()}
+        </g>
+    }
+}

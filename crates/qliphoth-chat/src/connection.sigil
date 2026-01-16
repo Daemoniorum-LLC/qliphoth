@@ -1,0 +1,948 @@
+//! Full-Featured WebSocket Connection to Infernum
+//!
+//! Implements the complete Infernum protocol with:
+//! - Request ID correlation
+//! - Cancel support
+//! - Ping/pong keepalive
+//! - Tool calling support
+//! - Thinking blocks
+//! - Metrics tracking
+//!
+//! This is a Tier 5 (Autonomous Agent) capable client.
+
+use sigil_web::prelude::*;
+use qliphoth_core::state::{Signal, create_signal};
+use crate::protocol::{
+    ClientMessage, ServerMessage, ChatCompletionRequest, RequestMessage,
+    TokenUsage, RiskLevel, ToolDefinition, generate_request_id,
+};
+use std::collections::HashMap;
+
+// ============================================================================
+// Connection State
+// ============================================================================
+
+/// WebSocket connection state
+@[Clone, Debug, PartialEq, Eq]
+enum ConnectionState {
+    /// Not connected
+    Disconnected,
+    /// Connecting to server
+    Connecting,
+    /// Connected and ready
+    Connected { connection_id: String! },
+    /// Reconnecting after disconnect
+    Reconnecting { attempt: u32! },
+    /// Connection error
+    Error(String!),
+}
+
+impl ConnectionState {
+    pub fn is_connected(self: &Self!) -> bool! {
+        matches!(self, ConnectionState::Connected { .. })
+    }
+
+    pub fn is_error(self: &Self!) -> bool! {
+        matches!(self, ConnectionState::Error(_))
+    }
+}
+
+// ============================================================================
+// Pending Request Tracking
+// ============================================================================
+
+/// Tracks an in-flight request
+@[Clone, Debug]
+struct PendingRequest! {
+    /// Request ID
+    pub id: String!,
+    /// When the request was sent
+    pub sent_at: u64!,
+    /// Accumulated content
+    pub content: String!,
+    /// Thinking blocks received
+    pub thinking: [String]!,
+    /// Tool calls received
+    pub tool_calls: [PendingToolCall]!,
+    /// Token usage (updated on completion)
+    pub usage: TokenUsage?,
+    /// Request status
+    pub status: RequestStatus!,
+    /// First token latency (ms)
+    pub first_token_latency: u64?,
+}
+
+/// Status of a pending request
+@[Clone, Debug, PartialEq, Eq]
+enum RequestStatus {
+    /// Waiting to send
+    Pending,
+    /// Sent to server
+    Sent,
+    /// Receiving streaming response
+    Streaming,
+    /// Awaiting tool approval
+    AwaitingApproval { tool_call_id: String! },
+    /// Completed successfully
+    Completed { finish_reason: String! },
+    /// Error occurred
+    Error { message: String! },
+    /// Cancelled by user
+    Cancelled,
+}
+
+/// Pending tool call awaiting execution or approval
+@[Clone, Debug]
+struct PendingToolCall! {
+    pub id: String!,
+    pub name: String!,
+    pub arguments: String!,
+    pub requires_approval: bool!,
+    pub approved: bool?,
+    pub result: String?,
+    pub is_error: bool!,
+}
+
+// ============================================================================
+// Connection Events
+// ============================================================================
+
+/// Events emitted by the connection
+@[Clone, Debug]
+enum ConnectionEvent {
+    /// Connection established
+    Connected { connection_id: String! },
+    /// Connection lost
+    Disconnected { reason: String! },
+    /// Reconnection started
+    Reconnecting { attempt: u32!, max_attempts: u32! },
+    /// Stream content delta
+    Delta { request_id: String!, content: String! },
+    /// Thinking block received
+    Thinking { request_id: String!, content: String! },
+    /// Tool call received
+    ToolCall {
+        request_id: String!,
+        tool_call_id: String!,
+        name: String!,
+        arguments: String!,
+        requires_approval: bool!,
+    },
+    /// Tool result received
+    ToolResult { request_id: String!, tool_call_id: String!, result: String!, is_error: bool! },
+    /// Request completed
+    Done { request_id: String!, finish_reason: String!, usage: TokenUsage? },
+    /// Error occurred
+    Error { request_id: String?, code: String!, message: String! },
+    /// Request cancelled
+    Cancelled { request_id: String! },
+    /// Pong received
+    Pong { latency_ms: u64! },
+    /// Progress update
+    Progress { request_id: String!, step: u32!, total: u32!, description: String? },
+}
+
+// ============================================================================
+// Client Configuration
+// ============================================================================
+
+/// Client configuration
+@[Clone, Debug]
+struct ClientConfig! {
+    /// WebSocket URL
+    pub url: String!,
+    /// Auto-reconnect on disconnect
+    pub auto_reconnect: bool!,
+    /// Max reconnect attempts
+    pub max_reconnect_attempts: u32!,
+    /// Base reconnect delay (ms)
+    pub reconnect_delay_ms: u32!,
+    /// Ping interval (ms), 0 to disable
+    pub ping_interval_ms: u32!,
+    /// Request timeout (ms)
+    pub request_timeout_ms: u32!,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self! {
+        ClientConfig {
+            url: "ws://localhost:8081/ws/chat".to_string(),
+            auto_reconnect: true,
+            max_reconnect_attempts: 5,
+            reconnect_delay_ms: 1000!,
+            ping_interval_ms: 30000!,
+            request_timeout_ms: 300000!, // 5 minutes
+        }
+    }
+}
+
+// ============================================================================
+// Full-Featured Infernum Client
+// ============================================================================
+
+/// Full-featured Infernum WebSocket client
+///
+/// Implements the complete Infernum protocol with:
+/// - Request ID correlation and tracking
+/// - Cancel support
+/// - Ping/pong keepalive
+/// - Tool calling with approval workflow
+/// - Thinking block support
+/// - Automatic reconnection
+/// - Metrics collection
+@[Clone]
+struct InfernumClient! {
+    /// Configuration
+    config: ClientConfig!,
+    /// Connection state
+    state: RwSignal!,
+    /// WebSocket instance
+    socket: RwSignal!,
+    /// Pending requests by ID
+    pending_requests: RwSignal!,
+    /// Event callbacks
+    on_event: RwSignal!,
+    /// Connection ID from server
+    connection_id: RwSignal!,
+    /// Ping timer handle
+    ping_timer: RwSignal!,
+    /// Last pong timestamp
+    last_pong: RwSignal!,
+    /// Metrics
+    metrics: RwSignal!,
+}
+
+/// Client metrics
+@[Clone, Debug, Default]
+struct ClientMetrics! {
+    /// Total requests sent
+    pub requests_total: u64!,
+    /// Successful completions
+    pub completions_total: u64!,
+    /// Errors encountered
+    pub errors_total: u64!,
+    /// Cancelled requests
+    pub cancellations_total: u64!,
+    /// Total tokens used
+    pub tokens: TokenUsage!,
+    /// Average first-token latency (ms)
+    pub avg_latency_ms: f64!,
+    /// Connection events
+    pub connection_events: u64!,
+    /// Tool calls made
+    pub tool_calls_total: u64!,
+    /// Tool approvals
+    pub tool_approvals_total: u64!,
+    /// Tool rejections
+    pub tool_rejections_total: u64!,
+}
+
+impl InfernumClient {
+    /// Create new client with default config
+    pub fn new(url: &str!) -> Self! {
+        Self.with_config(ClientConfig {
+            url: url.to_string(),
+            ..ClientConfig::default()
+        })
+    }
+
+    /// Create new client with custom config
+    pub fn with_config(config: ClientConfig!) -> Self! {
+        InfernumClient {
+            config,
+            state: create_signal(ConnectionState::Disconnected),
+            socket: create_signal(None),
+            pending_requests: create_signal(HashMap.new()),
+            on_event: create_signal(None),
+            connection_id: create_signal(None),
+            ping_timer: create_signal(None),
+            last_pong: create_signal(0),
+            metrics: create_signal(ClientMetrics::default()),
+        }
+    }
+
+    /// Set event callback
+    pub fn on_event[F: Fn(ConnectionEvent) + 'static](self: &Self!, callback: F!) {
+        self.on_event.set(Some(Box.new(callback)));
+    }
+
+    /// Get current connection state
+    pub fn connection_state(self: &Self!) -> RwSignal! {
+        self.state.clone()
+    }
+
+    /// Get current metrics
+    pub fn metrics(self: &Self!) -> ClientMetrics! {
+        self.metrics.get()
+    }
+
+    /// Get pending request by ID
+    pub fn get_request(self: &Self!, request_id: &str!) -> Option[PendingRequest]? {
+        self.pending_requests.get().get(request_id).cloned()
+    }
+
+    /// Check if connected
+    pub fn is_connected(self: &Self!) -> bool! {
+        self.state.get().is_connected()
+    }
+
+    // ========================================================================
+    // Connection Management
+    // ========================================================================
+
+    /// Connect to Infernum server
+    pub async fn connect(self: &Self!) -> Result[(), String]~ {
+        // Don't reconnect if already connected
+        if self.is_connected() {
+            return Ok(());
+        }
+
+        self.state.set(ConnectionState::Connecting);
+        self.metrics.update(|m| m.connection_events += 1);
+
+        let ws! = web_sys::WebSocket.new(&self.config.url)
+            .map_err(|e| format!("Failed to create WebSocket: {:?}", e))?;
+
+        // Clone signals for closures
+        let state! = self.state.clone();
+        let socket_signal! = self.socket.clone();
+        let connection_id! = self.connection_id.clone();
+        let pending! = self.pending_requests.clone();
+        let on_event! = self.on_event.clone();
+        let metrics! = self.metrics.clone();
+        let last_pong! = self.last_pong.clone();
+        let config! = self.config.clone();
+
+        // On open handler
+        let onopen! = Closure.wrap(Box.new({
+            let state! = state.clone();
+            let socket_signal! = socket_signal.clone();
+            let ws! = ws.clone();
+            move |_: web_sys::Event| {
+                // Wait for Connected message from server before marking connected
+                socket_signal.set(Some(ws.clone()));
+            }
+        }) as Box[dyn Fn(web_sys::Event)]);
+        ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
+        onopen.forget();
+
+        // On message handler - this is where the protocol parsing happens
+        let onmessage! = Closure.wrap(Box.new({
+            let state! = state.clone();
+            let connection_id! = connection_id.clone();
+            let pending! = pending.clone();
+            let on_event! = on_event.clone();
+            let metrics! = metrics.clone();
+            let last_pong! = last_pong.clone();
+            move |e: web_sys::MessageEvent| {
+                if let Some(text) = e.data().as_string() {
+                    Self.handle_message(
+                        &text,
+                        &state,
+                        &connection_id,
+                        &pending,
+                        &on_event,
+                        &metrics,
+                        &last_pong,
+                    );
+                }
+            }
+        }) as Box[dyn Fn(web_sys::MessageEvent)]);
+        ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+        onmessage.forget();
+
+        // On close handler
+        let onclose! = Closure.wrap(Box.new({
+            let state! = state.clone();
+            let socket_signal! = socket_signal.clone();
+            let on_event! = on_event.clone();
+            let config! = config.clone();
+            move |e: web_sys::CloseEvent| {
+                let reason! = e.reason();
+                state.set(ConnectionState::Disconnected);
+                socket_signal.set(None);
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::Disconnected {
+                        reason: if reason.is_empty() { "Connection closed".to_string() } else { reason }
+                    });
+                }
+
+                // Auto-reconnect if enabled
+                if config.auto_reconnect {
+                    // Schedule reconnection (handled separately)
+                }
+            }
+        }) as Box[dyn Fn(web_sys::CloseEvent)]);
+        ws.set_onclose(Some(onclose.as_ref().unchecked_ref()));
+        onclose.forget();
+
+        // On error handler
+        let onerror! = Closure.wrap(Box.new({
+            let state! = state.clone();
+            let on_event! = on_event.clone();
+            let metrics! = metrics.clone();
+            move |e: web_sys::ErrorEvent| {
+                let msg! = e.message();
+                state.set(ConnectionState::Error(msg.clone()));
+                metrics.update(|m| m.errors_total += 1);
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::Error {
+                        request_id: None,
+                        code: "connection_error".to_string(),
+                        message: msg,
+                    });
+                }
+            }
+        }) as Box[dyn Fn(web_sys::ErrorEvent)]);
+        ws.set_onerror(Some(onerror.as_ref().unchecked_ref()));
+        onerror.forget();
+
+        // Start ping timer if enabled
+        if self.config.ping_interval_ms > 0 {
+            self.start_ping_timer();
+        }
+
+        Ok(())
+    }
+
+    /// Disconnect from server
+    pub fn disconnect(self: &Self!) {
+        // Stop ping timer
+        self.stop_ping_timer();
+
+        // Close socket
+        if let Some(ws) = self.socket.get() {
+            ws.close().ok();
+        }
+
+        self.socket.set(None);
+        self.connection_id.set(None);
+        self.state.set(ConnectionState::Disconnected);
+
+        // Emit event
+        if let Some(ref callback) = self.on_event.get() {
+            callback(ConnectionEvent::Disconnected {
+                reason: "Client disconnected".to_string(),
+            });
+        }
+    }
+
+    /// Reconnect with exponential backoff
+    pub async fn reconnect(self: &Self!) -> Result[(), String]~ {
+        for attempt in 1..=self.config.max_reconnect_attempts {
+            self.state.set(ConnectionState::Reconnecting { attempt });
+
+            if let Some(ref callback) = self.on_event.get() {
+                callback(ConnectionEvent::Reconnecting {
+                    attempt,
+                    max_attempts: self.config.max_reconnect_attempts,
+                });
+            }
+
+            // Exponential backoff
+            let delay! = self.config.reconnect_delay_ms * 2u32.pow(attempt - 1);
+            gloo_timers::future::TimeoutFuture.new(delay).⌛;
+
+            match self.connect().⌛ {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    web_sys.console.warn_1(&format!(
+                        "Reconnection attempt {} failed: {}",
+                        attempt, e
+                    ).into());
+                }
+            }
+        }
+
+        self.state.set(ConnectionState::Error(
+            "Max reconnection attempts exceeded".to_string()
+        ));
+        Err("Failed to reconnect".to_string())
+    }
+
+    // ========================================================================
+    // Message Handling
+    // ========================================================================
+
+    /// Handle incoming server message
+    fn handle_message(
+        json: &str!,
+        state: &RwSignal!,
+        connection_id: &RwSignal!,
+        pending: &RwSignal!,
+        on_event: &RwSignal!,
+        metrics: &RwSignal!,
+        last_pong: &RwSignal!,
+    ) {
+        // Parse server message
+        let msg! = match ServerMessage.from_json(json) {
+            Ok(m) => m,
+            Err(e) => {
+                web_sys.console.error_1(&format!("Failed to parse message: {}", e).into());
+                return;
+            }
+        };
+
+        // Dispatch by message type
+        match msg {
+            ServerMessage::Connected { connection_id: id, timestamp } => {
+                connection_id.set(Some(id.clone()));
+                state.set(ConnectionState::Connected { connection_id: id.clone() });
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::Connected { connection_id: id });
+                }
+            }
+
+            ServerMessage::Delta { request_id, content, .. } => {
+                if let Some(content) = content {
+                    // Update pending request
+                    pending.update(|reqs| {
+                        if let Some(req) = reqs.get_mut(&request_id) {
+                            // Track first token latency
+                            if req.content.is_empty() && req.first_token_latency.is_none() {
+                                let now! = js_sys::Date.now() as u64;
+                                req.first_token_latency = Some(now - req.sent_at);
+                            }
+                            req.content.push_str(&content);
+                            req.status = RequestStatus::Streaming;
+                        }
+                    });
+
+                    if let Some(ref callback) = on_event.get() {
+                        callback(ConnectionEvent::Delta { request_id, content });
+                    }
+                }
+            }
+
+            ServerMessage::Thinking { request_id, content } => {
+                pending.update(|reqs| {
+                    if let Some(req) = reqs.get_mut(&request_id) {
+                        req.thinking.push(content.clone());
+                    }
+                });
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::Thinking { request_id, content });
+                }
+            }
+
+            ServerMessage::ToolCall { request_id, tool_call_id, name, arguments, requires_approval } => {
+                pending.update(|reqs| {
+                    if let Some(req) = reqs.get_mut(&request_id) {
+                        req.tool_calls.push(PendingToolCall {
+                            id: tool_call_id.clone(),
+                            name: name.clone(),
+                            arguments: arguments.clone(),
+                            requires_approval,
+                            approved: None,
+                            result: None,
+                            is_error: false,
+                        });
+                        if requires_approval {
+                            req.status = RequestStatus::AwaitingApproval {
+                                tool_call_id: tool_call_id.clone()
+                            };
+                        }
+                    }
+                });
+
+                metrics.update(|m| m.tool_calls_total += 1);
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::ToolCall {
+                        request_id,
+                        tool_call_id,
+                        name,
+                        arguments,
+                        requires_approval,
+                    });
+                }
+            }
+
+            ServerMessage::ToolResult { request_id, tool_call_id, result, is_error } => {
+                pending.update(|reqs| {
+                    if let Some(req) = reqs.get_mut(&request_id) {
+                        if let Some(tc) = req.tool_calls.iter_mut().find(|t| t.id == tool_call_id) {
+                            tc.result = Some(result.clone());
+                            tc.is_error = is_error;
+                        }
+                        req.status = RequestStatus::Streaming;
+                    }
+                });
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::ToolResult {
+                        request_id,
+                        tool_call_id,
+                        result,
+                        is_error,
+                    });
+                }
+            }
+
+            ServerMessage::Done { request_id, finish_reason, usage } => {
+                pending.update(|reqs| {
+                    if let Some(req) = reqs.get_mut(&request_id) {
+                        req.status = RequestStatus::Completed { finish_reason: finish_reason.clone() };
+                        req.usage = usage.clone();
+                    }
+                });
+
+                metrics.update(|m| {
+                    m.completions_total += 1;
+                    if let Some(ref u) = usage {
+                        m.tokens.add(u);
+                    }
+                });
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::Done {
+                        request_id,
+                        finish_reason,
+                        usage,
+                    });
+                }
+            }
+
+            ServerMessage::Error { request_id, code, message } => {
+                if let Some(ref rid) = request_id {
+                    pending.update(|reqs| {
+                        if let Some(req) = reqs.get_mut(rid) {
+                            req.status = RequestStatus::Error { message: message.clone() };
+                        }
+                    });
+                }
+
+                metrics.update(|m| m.errors_total += 1);
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::Error { request_id, code, message });
+                }
+            }
+
+            ServerMessage::Cancelled { request_id } => {
+                pending.update(|reqs| {
+                    if let Some(req) = reqs.get_mut(&request_id) {
+                        req.status = RequestStatus::Cancelled;
+                    }
+                });
+
+                metrics.update(|m| m.cancellations_total += 1);
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::Cancelled { request_id });
+                }
+            }
+
+            ServerMessage::Pong { client_timestamp, server_timestamp } => {
+                last_pong.set(server_timestamp);
+
+                if let Some(ct) = client_timestamp {
+                    let now! = js_sys::Date.now() as u64;
+                    let latency! = now - ct;
+
+                    if let Some(ref callback) = on_event.get() {
+                        callback(ConnectionEvent::Pong { latency_ms: latency });
+                    }
+                }
+            }
+
+            ServerMessage::AwaitingApproval { request_id, tool_call_id, tool_name, arguments, risk_level } => {
+                pending.update(|reqs| {
+                    if let Some(req) = reqs.get_mut(&request_id) {
+                        req.status = RequestStatus::AwaitingApproval {
+                            tool_call_id: tool_call_id.clone()
+                        };
+                    }
+                });
+
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::ToolCall {
+                        request_id,
+                        tool_call_id,
+                        name: tool_name,
+                        arguments,
+                        requires_approval: true,
+                    });
+                }
+            }
+
+            ServerMessage::Progress { request_id, step, total, description } => {
+                if let Some(ref callback) = on_event.get() {
+                    callback(ConnectionEvent::Progress {
+                        request_id,
+                        step,
+                        total,
+                        description,
+                    });
+                }
+            }
+        }
+    }
+
+    // ========================================================================
+    // Sending Messages
+    // ========================================================================
+
+    /// Send a chat message and return request ID
+    pub async fn send_chat(self: &Self!, request: ChatCompletionRequest!) -> Result<String, String>~ {
+        // Ensure connected
+        if !self.is_connected() {
+            self.connect().⌛?;
+
+            // Wait for connection
+            let mut attempts! = 0u32;
+            while !self.is_connected() && attempts < 50 {
+                gloo_timers::future::TimeoutFuture.new(100).⌛;
+                attempts += 1;
+            }
+
+            if !self.is_connected() {
+                return Err("Failed to connect to Infernum".to_string());
+            }
+        }
+
+        let ws! = self.socket.get()
+            .ok_or("No WebSocket connection")?;
+
+        // Generate request ID
+        let request_id! = generate_request_id();
+        let now! = js_sys::Date.now() as u64;
+
+        // Create pending request
+        self.pending_requests.update(|reqs| {
+            reqs.insert(request_id.clone(), PendingRequest {
+                id: request_id.clone(),
+                sent_at: now,
+                content: String.new(),
+                thinking: [],
+                tool_calls: [],
+                usage: None,
+                status: RequestStatus::Sent,
+                first_token_latency: None,
+            });
+        });
+
+        // Create and send message
+        let msg! = ClientMessage.chat(request, request_id.clone());
+        let json! = msg.to_json()
+            .map_err(|e| format!("Serialization error: {}", e))?;
+
+        ws.send_with_str(&json)
+            .map_err(|e| format!("Send error: {:?}", e))?;
+
+        self.metrics.update(|m| m.requests_total += 1);
+
+        Ok(request_id)
+    }
+
+    /// Cancel an in-flight request
+    pub fn cancel(self: &Self!, request_id: &str!) -> Result[(), String]! {
+        let ws! = self.socket.get()
+            .ok_or("No WebSocket connection")?;
+
+        let msg! = ClientMessage.cancel(request_id.to_string());
+        let json! = msg.to_json()
+            .map_err(|e| format!("Serialization error: {}", e))?;
+
+        ws.send_with_str(&json)
+            .map_err(|e| format!("Send error: {:?}", e))?;
+
+        Ok(())
+    }
+
+    /// Approve a tool call
+    pub fn approve_tool(self: &Self!, request_id: &str!, tool_call_id: &str!) -> Result[(), String]! {
+        let ws! = self.socket.get()
+            .ok_or("No WebSocket connection")?;
+
+        let msg! = ClientMessage.approve_tool(
+            request_id.to_string(),
+            tool_call_id.to_string(),
+        );
+        let json! = msg.to_json()
+            .map_err(|e| format!("Serialization error: {}", e))?;
+
+        ws.send_with_str(&json)
+            .map_err(|e| format!("Send error: {:?}", e))?;
+
+        self.metrics.update(|m| m.tool_approvals_total += 1);
+
+        Ok(())
+    }
+
+    /// Reject a tool call
+    pub fn reject_tool(self: &Self!, request_id: &str!, tool_call_id: &str!, reason: &str!) -> Result[(), String]! {
+        let ws! = self.socket.get()
+            .ok_or("No WebSocket connection")?;
+
+        let msg! = ClientMessage.reject_tool(
+            request_id.to_string(),
+            tool_call_id.to_string(),
+            reason.to_string(),
+        );
+        let json! = msg.to_json()
+            .map_err(|e| format!("Serialization error: {}", e))?;
+
+        ws.send_with_str(&json)
+            .map_err(|e| format!("Send error: {:?}", e))?;
+
+        self.metrics.update(|m| m.tool_rejections_total += 1);
+
+        Ok(())
+    }
+
+    /// Send a ping
+    pub fn ping(self: &Self!) -> Result[(), String]! {
+        let ws! = self.socket.get()
+            .ok_or("No WebSocket connection")?;
+
+        let msg! = ClientMessage.ping();
+        let json! = msg.to_json()
+            .map_err(|e| format!("Serialization error: {}", e))?;
+
+        ws.send_with_str(&json)
+            .map_err(|e| format!("Send error: {:?}", e))?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Ping Timer
+    // ========================================================================
+
+    fn start_ping_timer(self: &Self!) {
+        let client! = self.clone();
+        let interval! = self.config.ping_interval_ms;
+
+        let callback! = Closure.wrap(Box.new(move || {
+            if client.is_connected() {
+                client.ping().ok();
+            }
+        }) as Box[dyn Fn()]);
+
+        let handle! = web_sys::window()
+            .expect("window")
+            .set_interval_with_callback_and_timeout_and_arguments_0(
+                callback.as_ref().unchecked_ref(),
+                interval as i32,
+            )
+            .expect("set_interval");
+
+        callback.forget();
+        self.ping_timer.set(Some(handle));
+    }
+
+    fn stop_ping_timer(self: &Self!) {
+        if let Some(handle) = self.ping_timer.get() {
+            web_sys::window()
+                .expect("window")
+                .clear_interval_with_handle(handle);
+            self.ping_timer.set(None);
+        }
+    }
+
+    // ========================================================================
+    // Request Management
+    // ========================================================================
+
+    /// Get content for a request
+    pub fn get_content(self: &Self!, request_id: &str!) -> String? {
+        self.pending_requests.get()
+            .get(request_id)
+            .map(|r| r.content.clone())
+    }
+
+    /// Get thinking blocks for a request
+    pub fn get_thinking(self: &Self!, request_id: &str!) -> [String]! {
+        self.pending_requests.get()
+            .get(request_id)
+            .map(|r| r.thinking.clone())
+            .unwrap_or_default()
+    }
+
+    /// Get tool calls for a request
+    pub fn get_tool_calls(self: &Self!, request_id: &str!) -> [PendingToolCall]! {
+        self.pending_requests.get()
+            .get(request_id)
+            .map(|r| r.tool_calls.clone())
+            .unwrap_or_default()
+    }
+
+    /// Check if a request is complete
+    pub fn is_complete(self: &Self!, request_id: &str!) -> bool! {
+        self.pending_requests.get()
+            .get(request_id)
+            .map(|r| matches!(r.status,
+                RequestStatus::Completed { .. } |
+                RequestStatus::Error { .. } |
+                RequestStatus::Cancelled
+            ))
+            .unwrap_or(false)
+    }
+
+    /// Clean up old completed requests
+    pub fn cleanup_requests(self: &Self!, max_age_ms: u64!) {
+        let now! = js_sys::Date.now() as u64;
+
+        self.pending_requests.update(|reqs| {
+            reqs.retain(|_, r| {
+                let age! = now - r.sent_at;
+                age < max_age_ms || !matches!(r.status,
+                    RequestStatus::Completed { .. } |
+                    RequestStatus::Error { .. } |
+                    RequestStatus::Cancelled
+                )
+            });
+        });
+    }
+}
+
+// ============================================================================
+// Legacy Compatibility
+// ============================================================================
+
+/// Streaming response wrapper for legacy API compatibility
+@[Clone]
+struct StreamingResponse! {
+    client: InfernumClient!,
+    request_id: String!,
+    content: String!,
+}
+
+impl StreamingResponse {
+    pub fn new(client: InfernumClient!, request_id: String!) -> Self! {
+        StreamingResponse {
+            client,
+            request_id,
+            content: String.new(),
+        }
+    }
+
+    /// Get next chunk of streaming response (legacy API)
+    pub async fn next(self: &mut Self!) -> String? {
+        loop {
+            // Get current content from request
+            let current! = self.client.get_content(&self.request_id)
+                .unwrap_or_default();
+
+            // Check for new content
+            if current.len() > self.content.len() {
+                let new_content! = current[self.content.len()..].to_string();
+                self.content = current;
+                return Some(new_content);
+            }
+
+            // Check if complete
+            if self.client.is_complete(&self.request_id) {
+                return None;
+            }
+
+            // Wait before checking again
+            gloo_timers::future::TimeoutFuture.new(16).⌛;
+        }
+    }
+}

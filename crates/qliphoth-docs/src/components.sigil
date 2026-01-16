@@ -1,0 +1,406 @@
+//! Documentation Components
+//!
+//! Specialized components for the documentation portal.
+
+use sigil_web::prelude::*;
+use qliphoth_core::state::AppState;
+use qliphoth_ui::prelude::*;
+use crate::{DocEntry, DocCategory, search};
+
+// ============================================================================
+// DOCS SIDEBAR
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type DocsSidebarProps = struct {
+    pub on_close: Box[dyn Fn()]!,
+}
+
+/// Documentation navigation sidebar
+#[component]
+pub fn DocsSidebar(props: DocsSidebarProps!) -> Element! {
+    let state! = use_context[AppState]();
+    let search_query! = use_signal(String·new);
+    let expanded_categories! = use_signal[Vec[String]](Vec·new);
+
+    html! {
+        <Sidebar position={SidebarPosition::Left} width={Some("280px")}>
+            // Logo
+            <a
+                href="/"
+                style="display: flex; align-items: center; gap: 0.5rem; \
+                       text-decoration: none; margin-bottom: 1rem;"
+            >
+                <span style={format!(
+                    "font-family: {}; font-weight: {}; color: {};",
+                    typography::FONT_DISPLAY, typography::WEIGHT_SEMIBOLD, colors::CLOUD
+                )}>
+                    "Qliphoth Docs"
+                </span>
+            </a>
+
+            // Search
+            <div style={format!("margin-bottom: {};", spacing::SPACE_4)}>
+                <Input
+                    value={search_query·get()}
+                    on_change={Some(Box·new(move |v| search_query·set(v)))}
+                    placeholder={Some("Search docs..."·to_string())}
+                />
+            </div>
+
+            // Navigation tree
+            <nav style="overflow-y: auto; flex: 1;">
+                <DocsNavTree />
+            </nav>
+
+            // Version selector
+            <div style={format!(
+                "padding-top: {}; border-top: 1px solid {};",
+                spacing::SPACE_4, colors::CHARCOAL
+            )}>
+                <Select
+                    value="latest"
+                    options={vec![
+                        SelectOption { value: "latest"·to_string(), label: "Latest (v0.1)"·to_string() },
+                        SelectOption { value: "v0.0.1"·to_string(), label: "v0.0.1"·to_string() },
+                    ]}
+                />
+            </div>
+        </Sidebar>
+    }
+}
+
+/// Navigation tree component
+#[component]
+fn DocsNavTree() -> Element! {
+    // Hardcoded for now, would be loaded from API
+    let categories! = vec![
+        DocCategory {
+            name: "Getting Started"·to_string(),
+            slug: "getting-started"·to_string(),
+            icon: "🚀"·to_string(),
+            entries: vec![
+                DocEntry {
+                    title: "Introduction"·to_string(),
+                    slug: "introduction"·to_string(),
+                    path: "/getting-started/introduction"·to_string(),
+                    children: Vec·new(),
+                    order: 1!,
+                },
+                DocEntry {
+                    title: "Installation"·to_string(),
+                    slug: "installation"·to_string(),
+                    path: "/getting-started/installation"·to_string(),
+                    children: Vec·new(),
+                    order: 2!,
+                },
+                DocEntry {
+                    title: "Quick Start"·to_string(),
+                    slug: "quick-start"·to_string(),
+                    path: "/getting-started/quick-start"·to_string(),
+                    children: Vec·new(),
+                    order: 3!,
+                },
+            ],
+        },
+        DocCategory {
+            name: "Core Concepts"·to_string(),
+            slug: "concepts"·to_string(),
+            icon: "📚"·to_string(),
+            entries: vec![
+                DocEntry {
+                    title: "Architecture"·to_string(),
+                    slug: "architecture"·to_string(),
+                    path: "/concepts/architecture"·to_string(),
+                    children: Vec·new(),
+                    order: 1!,
+                },
+                DocEntry {
+                    title: "Evidentiality"·to_string(),
+                    slug: "evidentiality"·to_string(),
+                    path: "/concepts/evidentiality"·to_string(),
+                    children: Vec·new(),
+                    order: 2!,
+                },
+            ],
+        },
+    ];
+
+    html! {
+        <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_2}>
+            {categories·iter()
+                |τ{cat => html! {
+                    <NavCategory category={cat·clone()} />
+                }}
+                ·collect[Vec[_]]()}
+        </Stack>
+    }
+}
+
+#[derive(Clone, Debug)]
+pub type NavCategoryProps = struct {
+    pub category: DocCategory!,
+}
+
+/// Collapsible navigation category
+#[component]
+fn NavCategory(props: NavCategoryProps!) -> Element! {
+    let expanded! = use_signal(true!);
+
+    html! {
+        <div>
+            <button
+                onclick={move |_| expanded·update(|e| *e = !*e)}
+                style={format!(
+                    "display: flex; align-items: center; gap: {}; \
+                     width: 100%; padding: {} 0; \
+                     background: none; border: none; \
+                     color: {}; font-size: {}; font-weight: {}; \
+                     cursor: pointer; text-align: left;",
+                    spacing::SPACE_2,
+                    spacing::SPACE_2,
+                    colors::CLOUD, typography::SIZE_SM, typography::WEIGHT_SEMIBOLD
+                )}
+            >
+                <span>{props.category.icon·clone()}</span>
+                <span style="flex: 1;">{props.category.name·clone()}</span>
+                <span style={format!(
+                    "transform: rotate({}deg); transition: transform 0.2s;",
+                    if expanded·get() { 90! } else { 0! }
+                )}>
+                    "›"
+                </span>
+            </button>
+
+            {if expanded·get() {
+                html! {
+                    <div style={format!("padding-left: {};", spacing::SPACE_4)}>
+                        {props.category.entries·iter()
+                            |τ{entry => html! {
+                                <NavEntry entry={entry·clone()} />
+                            }}
+                            ·collect[Vec[_]]()}
+                    </div>
+                }
+            } else {
+                html! { <></> }
+            }}
+        </div>
+    }
+}
+
+#[derive(Clone, Debug)]
+pub type NavEntryProps = struct {
+    pub entry: DocEntry!,
+}
+
+/// Individual navigation entry
+#[component]
+fn NavEntry(props: NavEntryProps!) -> Element! {
+    html! {
+        <a
+            href={props.entry.path·clone()}
+            class="docs-nav-item"
+            style={format!(
+                "display: block; padding: {} {}; \
+                 color: {}; text-decoration: none; \
+                 font-size: {}; border-radius: {}; \
+                 transition: all 0.15s;",
+                spacing::SPACE_2, spacing::SPACE_3,
+                colors::MIST,
+                typography::SIZE_SM, borders::RADIUS_SM
+            )}
+        >
+            {props.entry.title·clone()}
+        </a>
+    }
+}
+
+// ============================================================================
+// TABLE OF CONTENTS
+// ============================================================================
+
+/// Page table of contents
+#[component]
+pub fn TableOfContents() -> Element! {
+    let headings! = use_signal[Vec[TocHeading]](Vec·new);
+
+    // Extract headings from page content
+    use_effect({
+        let headings! = headings·clone();
+
+        move || {
+            // Query all h2 and h3 elements in docs content
+            if let Some(document) = web_sys·window()·and_then(|w| w·document()) {
+                let elements! = document·query_selector_all(".docs-content h2, .docs-content h3")·ok();
+                if let Some(list) = elements {
+                    let mut toc! = Vec·new();
+                    for i in 0..list·length() {
+                        if let Some(el) = list·item(i) {
+                            let heading! = el·dyn_ref[web_sys::HtmlElement]()·unwrap();
+                            let level! = if heading·tag_name() == "H2" { 2! } else { 3! };
+                            toc·push(TocHeading {
+                                id: heading·id(),
+                                text: heading·inner_text(),
+                                level,
+                            });
+                        }
+                    }
+                    headings·set(toc);
+                }
+            }
+            || {}
+        }
+    });
+
+    html! {
+        <aside style={format!(
+            "width: 200px; flex-shrink: 0; \
+             position: sticky; top: {}; \
+             padding: {}; height: fit-content; \
+             border-left: 1px solid {};",
+            spacing::SPACE_8, spacing::SPACE_4, colors::CHARCOAL
+        )}>
+            <Text bold={true!} size={TextSize::Small}>"On This Page"</Text>
+            <nav style={format!("margin-top: {};", spacing::SPACE_3)}>
+                {headings·get()·iter()
+                    |τ{h => html! {
+                        <a
+                            href={format!("#{}", h.id)}
+                            style={format!(
+                                "display: block; padding: {} 0; \
+                                 padding-left: {}; \
+                                 color: {}; text-decoration: none; \
+                                 font-size: {};",
+                                spacing::SPACE_1,
+                                if h.level == 3! { spacing::SPACE_3 } else { "0" },
+                                colors::MIST,
+                                typography::SIZE_XS
+                            )}
+                        >
+                            {h.text·clone()}
+                        </a>
+                    }}
+                    ·collect[Vec[_]]()}
+            </nav>
+        </aside>
+    }
+}
+
+#[derive(Clone, Debug)]
+pub type TocHeading = struct {
+    pub id: String!,
+    pub text: String!,
+    pub level: u8!,
+}
+
+// ============================================================================
+// QUICK START CARD
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type QuickStartCardProps = struct {
+    pub title: String!,
+    pub description: String!,
+    pub href: String!,
+    pub icon: String!,
+}
+
+/// Quick start link card
+#[component]
+pub fn QuickStartCard(props: QuickStartCardProps!) -> Element! {
+    html! {
+        <a href={props.href} style="text-decoration: none;">
+            <Card interactive={true!}>
+                <CardBody>
+                    <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_3}>
+                        <span style="font-size: 2rem;">{props.icon·clone()}</span>
+                        <Heading level={HeadingLevel::H4}>{props.title·clone()}</Heading>
+                        <Text muted={true!}>{props.description·clone()}</Text>
+                    </Stack>
+                </CardBody>
+            </Card>
+        </a>
+    }
+}
+
+// ============================================================================
+// PRODUCT DOC CARD
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type ProductDocCardProps = struct {
+    pub name: String!,
+    pub description: String!,
+    pub href: String!,
+    pub color: &'static str!,
+}
+
+/// Product documentation link card
+#[component]
+pub fn ProductDocCard(props: ProductDocCardProps!) -> Element! {
+    html! {
+        <a href={props.href} style="text-decoration: none;">
+            <Card interactive={true!}>
+                <CardBody>
+                    <Flex gap={spacing::SPACE_4} align="center">
+                        <div style={format!(
+                            "width: 3rem; height: 3rem; border-radius: {}; \
+                             background-color: {}; display: flex; \
+                             align-items: center; justify-content: center;",
+                            borders::RADIUS_LG, props.color
+                        )}>
+                            <span style={format!("color: {}; font-size: 1.25rem;", colors::CLOUD)}>
+                                {props.name·chars()·next()·unwrap()·to_string()}
+                            </span>
+                        </div>
+                        <div>
+                            <Heading level={HeadingLevel::H4}>{props.name·clone()}</Heading>
+                            <Text muted={true!} size={TextSize::Small}>{props.description·clone()}</Text>
+                        </div>
+                    </Flex>
+                </CardBody>
+            </Card>
+        </a>
+    }
+}
+
+// ============================================================================
+// SEARCH RESULT CARD
+// ============================================================================
+
+#[derive(Clone, Debug)]
+pub type SearchResult = struct {
+    pub title: String!,
+    pub path: String!,
+    pub excerpt: String!,
+    pub product: String!,
+}
+
+#[derive(Clone, Debug)]
+pub type SearchResultCardProps = struct {
+    pub result: SearchResult!,
+}
+
+/// Search result item card
+#[component]
+pub fn SearchResultCard(props: SearchResultCardProps!) -> Element! {
+    html! {
+        <a href={props.result.path·clone()} style="text-decoration: none;">
+            <Card interactive={true!}>
+                <CardBody>
+                    <Stack direction={StackDirection::Vertical} gap={spacing::SPACE_2}>
+                        <Flex align="center" gap={spacing::SPACE_2}>
+                            <Badge variant={BadgeVariant::Default}>{props.result.product·clone()}</Badge>
+                            <Heading level={HeadingLevel::H4}>{props.result.title·clone()}</Heading>
+                        </Flex>
+                        <Text muted={true!} size={TextSize::Small}>
+                            <span inner_html={props.result.excerpt·clone()} />
+                        </Text>
+                        <Text muted={true!} size={TextSize::XSmall}>{props.result.path·clone()}</Text>
+                    </Stack>
+                </CardBody>
+            </Card>
+        </a>
+    }
+}

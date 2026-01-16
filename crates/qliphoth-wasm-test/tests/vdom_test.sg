@@ -1,0 +1,35 @@
+// VDOM System Test
+
+pub fn main() -> i64 {
+    console::log_str("=== VDOM Test ===");
+
+    // Create a div element vnode
+    let div = vdom::create_vnode("div");
+    console::log_str("Created div vnode");
+
+    // Set some properties
+    vdom::set_vnode_str_prop(div, "class", "container");
+    vdom::set_vnode_str_prop(div, "id", "main");
+
+    // Create child text node
+    let text = vdom::create_text_vnode("Hello, VDOM!");
+    console::log_str("Created text vnode");
+
+    // Append text to div
+    vdom::append_vnode_child(div, text);
+    console::log_str("Appended text to div");
+
+    // Create a button child
+    let button = vdom::create_vnode("button");
+    vdom::set_vnode_str_prop(button, "type", "submit");
+    let btn_text = vdom::create_text_vnode("Click me");
+    vdom::append_vnode_child(button, btn_text);
+    vdom::append_vnode_child(div, button);
+    console::log_str("Created and appended button");
+
+    // Mount to DOM
+    let dom_id = vdom::mount_vnode(div, "#app");
+    console::log_str(f"Mounted to DOM, id: {dom_id}");
+
+    0
+}

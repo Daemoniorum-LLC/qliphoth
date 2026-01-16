@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qliphoth Theme Demo</title>
+    <style>
+        :root {
+            --void: #0a0a0a;
+            --phthalo: #123524;
+            --crimson: #8b0000;
+            --bone: #f8f8f8;
+            --obsidian: #1a1a1a;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            min-height: 100vh;
+            padding: 2rem;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Dark theme (default) */
+        body[data-theme="dark"], body:not([data-theme]) {
+            background: var(--void);
+            color: var(--bone);
+        }
+
+        /* Light theme */
+        body[data-theme="light"] {
+            background: var(--bone);
+            color: var(--void);
+        }
+
+        h1 {
+            color: var(--phthalo);
+            margin-bottom: 1rem;
+            font-size: 2rem;
+        }
+
+        .status {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            background: var(--obsidian);
+        }
+
+        body[data-theme="light"] .status {
+            background: #e0e0e0;
+        }
+
+        .status.loading { border-left: 4px solid orange; }
+        .status.success { border-left: 4px solid var(--phthalo); }
+        .status.error { border-left: 4px solid var(--crimson); }
+
+        #output {
+            background: var(--obsidian);
+            padding: 1rem;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-size: 0.875rem;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+        }
+
+        body[data-theme="light"] #output {
+            background: #e0e0e0;
+        }
+
+        .qliphoth-demo {
+            padding: 2rem;
+            margin-top: 1rem;
+            border-radius: 8px;
+            background: var(--phthalo);
+            color: var(--bone);
+            font-size: 1.25rem;
+            text-align: center;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        button {
+            background: var(--phthalo);
+            color: var(--bone);
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 1rem;
+        }
+
+        button:hover { background: #1a4a2e; }
+
+        .theme-indicator {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            background: var(--phthalo);
+            color: var(--bone);
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>Qliphoth Theme Demo</h1>
+
+    <div id="status" class="status loading">Loading WASM module...</div>
+
+    <div id="output"></div>
+
+    <div class="controls">
+        <button onclick="toggleTheme()">Toggle Theme</button>
+        <button onclick="runTests()">Run WASM Again</button>
+    </div>
+
+    <div class="theme-indicator">
+        Current Theme: <span id="theme-value">Loading...</span>
+    </div>
+
+    <script type="module">
+        import { loadWasm, createImports } from './sigil_runtime.js';
+
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+        const themeValue = document.getElementById('theme-value');
+
+        let wasmInstance = null;
+
+        function log(msg) {
+            output.textContent += msg + '\n';
+            console.log(msg);
+        }
+
+        function clearOutput() {
+            output.textContent = '';
+        }
+
+        function updateThemeIndicator() {
+            const theme = document.body.getAttribute('data-theme') || 'dark';
+            themeValue.textContent = theme.toUpperCase();
+        }
+
+        async function runTests() {
+            clearOutput();
+            status.className = 'status loading';
+            status.textContent = 'Loading WASM module...';
+
+            try {
+                log('=== Qliphoth Theme Demo ===\n');
+
+                // Load the WASM module
+                log('Loading theme_demo.wasm...');
+                wasmInstance = await loadWasm('../crates/qliphoth-core/src/theme_demo.wasm');
+
+                log('✓ WASM module loaded\n');
+
+                // List exports
+                log('Exported functions:');
+                const exports = Object.keys(wasmInstance.exports).filter(k => typeof wasmInstance.exports[k] === 'function');
+                exports.forEach(name => log(`  - ${name}`));
+                log('');
+
+                // Call main
+                if (wasmInstance.exports.main) {
+                    log('Calling main()...\n');
+                    const result = wasmInstance.exports.main();
+                    log(`\nmain() returned: ${result}`);
+                    log(`Theme: ${result === 1n ? 'LIGHT' : 'DARK'}`);
+                }
+
+                updateThemeIndicator();
+
+                status.className = 'status success';
+                status.textContent = 'WASM executed successfully!';
+
+            } catch (error) {
+                log(`✗ Error: ${error.message}`);
+                log(error.stack);
+                status.className = 'status error';
+                status.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        window.toggleTheme = function() {
+            if (wasmInstance && wasmInstance.exports.AppState_toggle_theme) {
+                // For now, just toggle via DOM directly
+                const current = document.body.getAttribute('data-theme') || 'dark';
+                document.body.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+                updateThemeIndicator();
+                log(`[JS] Theme toggled to: ${document.body.getAttribute('data-theme')}`);
+            }
+        };
+
+        window.runTests = runTests;
+
+        // Run on load
+        runTests();
+    </script>
+</body>
+</html>
