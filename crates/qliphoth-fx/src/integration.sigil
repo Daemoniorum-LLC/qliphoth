@@ -9,14 +9,14 @@
 //! This module bridges the adaptive chat system with the FX library,
 //! allowing the UI to *feel* what the AI is experiencing.
 
-use qliphoth_core::prelude::*;
-use qliphoth_web::prelude::*;
+invoke qliphoth_core::prelude::*;
+invoke qliphoth_web::prelude::*;
 
-use crate::particles::{ParticleSystem, ParticleEmitter, EmitterConfig, ParticleEffect};
-use crate::glitch::{GlitchConfig, GlitchIntensity, GlitchTrigger};
-use crate::aura::{AuraConfig, AuraState, AuraColor, AuraPulse};
-use crate::noise::NoiseConfig;
-use crate::sigils::{SigilConfig, SigilPulse};
+invoke crate::particles::{ParticleSystem, ParticleEmitter, EmitterConfig, ParticleEffect};
+invoke crate::glitch::{GlitchConfig, GlitchIntensity, GlitchTrigger};
+invoke crate::aura::{AuraConfig, AuraState, AuraColor, AuraPulse};
+invoke crate::noise::NoiseConfig;
+invoke crate::sigils::{SigilConfig, SigilPulse};
 
 // ============================================================================
 // Core Types
@@ -68,7 +68,7 @@ pub type EffectTrigger = enum {
 }
 
 /// Reactive effect configuration
-pub type ReactiveEffect = struct {
+pub sigil ReactiveEffect {
     /// Which trigger activates this effect
     pub trigger: EffectTrigger!,
 
@@ -124,7 +124,7 @@ pub type ParticlePreset = enum {
 // ============================================================================
 
 /// Global FX context provided to the application
-pub type FxContext = struct {
+pub sigil FxContext {
     /// Active particle systems
     pub particles: Signal[ParticleSystem]!,
 
@@ -151,7 +151,7 @@ pub type FxContext = struct {
 }
 
 /// Flash state
-pub type FlashState = struct {
+pub sigil FlashState {
     pub color: AuraColor!,
     pub opacity: f64!,
     pub start_time: f64!,
@@ -159,7 +159,7 @@ pub type FlashState = struct {
 }
 
 /// Queued effect
-type QueuedEffect = struct {
+sigil QueuedEffect {
     effect: ReactiveEffect!,
     trigger_time: f64!,
 }
@@ -424,7 +424,7 @@ impl FxContext {
 // ============================================================================
 
 /// Props for FxProvider
-pub type FxProviderProps = struct {
+pub sigil FxProviderProps {
     /// Child content
     pub children: Children!,
 }
@@ -493,7 +493,7 @@ pub fn use_fx() -> FxContext! {
 // ============================================================================
 
 /// Props for FxLayer
-pub type FxLayerProps = struct {
+pub sigil FxLayerProps {
     /// Whether to show particles
     pub particles: bool!,
 
@@ -717,7 +717,7 @@ fn start_animation_loop<F: Fn() + 'static>(callback: F!) {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
+scroll tests {
     use super::*;
 
     #[test]

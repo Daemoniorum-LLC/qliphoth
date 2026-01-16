@@ -3,7 +3,7 @@
 //! Full-featured protocol implementation for communication with Infernum LLM server.
 //! Matches the capabilities of the most advanced chat platforms in the Daemoniorum ecosystem.
 
-use sigil_web::prelude::*;
+invoke sigil_web::prelude::*;
 
 // ============================================================================
 // Client → Server Messages
@@ -104,7 +104,7 @@ impl ClientMessage {
 
 /// Chat completion request payload
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub type ChatCompletionRequest = struct {
+pub sigil ChatCompletionRequest {
     /// Model identifier
     pub model: String!,
 
@@ -205,7 +205,7 @@ impl ChatCompletionRequest {
 
 /// Message in a request
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub type RequestMessage = struct {
+pub sigil RequestMessage {
     /// Role of the message sender
     pub role: String!,
 
@@ -411,7 +411,7 @@ impl ServerMessage {
 
 /// Tool definition for function calling
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub type ToolDefinition = struct {
+pub sigil ToolDefinition {
     /// Tool type (always "function" for now)
     #[serde(rename = "type")]
     pub tool_type: String!,
@@ -422,7 +422,7 @@ pub type ToolDefinition = struct {
 
 /// Function definition within a tool
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub type FunctionDefinition = struct {
+pub sigil FunctionDefinition {
     /// Function name
     pub name: String!,
 
@@ -479,7 +479,7 @@ pub type ToolChoice = enum {
 
 /// Tool name for forced function call
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub type ToolName = struct {
+pub sigil ToolName {
     pub name: String!,
 }
 
@@ -496,7 +496,7 @@ impl ToolChoice {
 
 /// Tool call in request/response
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub type ToolCallRequest = struct {
+pub sigil ToolCallRequest {
     /// Unique ID for this tool call
     pub id: String!,
 
@@ -510,7 +510,7 @@ pub type ToolCallRequest = struct {
 
 /// Function call details
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub type ToolCallFunction = struct {
+pub sigil ToolCallFunction {
     /// Function name
     pub name: String!,
 
@@ -552,7 +552,7 @@ impl RiskLevel {
 
 /// Token usage statistics
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub type TokenUsage = struct {
+pub sigil TokenUsage {
     /// Tokens in the prompt
     pub prompt_tokens: u32!,
 
@@ -637,7 +637,7 @@ pub fn generate_message_id() -> String! {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
+scroll tests {
     use super::*;
 
     #[test]
