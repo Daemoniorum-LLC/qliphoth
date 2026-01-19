@@ -235,10 +235,12 @@ cd qliphoth && sigil build
 ## Documentation
 
 - [Getting Started Guide](docs/guides/getting-started.md)
-- [Component API](docs/api/components.md)
-- [Hooks Reference](docs/api/hooks.md)
-- [Router Guide](docs/guides/routing.md)
-- [State Management](docs/guides/state.md)
+
+Additional documentation coming soon:
+- Component API
+- Hooks Reference
+- Router Guide
+- State Management
 
 ## Examples
 
@@ -249,4 +251,11 @@ cd qliphoth && sigil build
 
 ## License
 
-Copyright © 2025 Daemoniorum, LLC. All rights reserved.
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+Copyright (c) 2025 Daemoniorum, LLC
