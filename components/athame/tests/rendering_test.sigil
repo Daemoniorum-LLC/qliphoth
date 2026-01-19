@@ -1,0 +1,1190 @@
+// Athame - Rendering, Brackets & Highlighting Tests
+// Phase 4: TDD Test Suite (T111-T150)
+// Virtual Scrolling, Bracket Matching, Syntax Highlighting
+// Native Sigil Syntax (2026-01-17)
+
+// =============================================================================
+// Core Types
+// =============================================================================
+
+sigil Signal {
+    value: String,
+    version: i64,
+}
+
+rite signal_new(initial: String) → Signal {
+    Signal { value: initial, version: 0 }
+}
+
+rite signal_get(s: Signal) → String {
+    s.value
+}
+
+sigil SignalInt {
+    value: i64,
+    version: i64,
+}
+
+rite signal_int_new(initial: i64) → SignalInt {
+    SignalInt { value: initial, version: 0 }
+}
+
+rite signal_int_get(s: SignalInt) → i64 {
+    s.value
+}
+
+rite signal_int_set(s: SignalInt, value: i64) → SignalInt {
+    SignalInt { value: value, version: s.version + 1 }
+}
+
+// =============================================================================
+// Token Types (from Phase 1)
+// =============================================================================
+
+ᛈ TokenKind {
+    Keyword,
+    Identifier,
+    Type,
+    String,
+    Number,
+    Comment,
+    Operator,
+    Morpheme,
+    NativeSymbol,
+    EvidenceKnown,
+    EvidenceUncertain,
+    EvidenceReported,
+    EvidenceParadox,
+    Punctuation,
+    Whitespace,
+    Newline,
+    Unknown,
+}
+
+sigil Token {
+    kind: TokenKind,
+    text: String,
+    start: i64,
+    end: i64,
+}
+
+// =============================================================================
+// SECTION 4.1: Virtual Scrolling / Viewport
+// =============================================================================
+
+sigil Viewport {
+    first_visible_line: i64,
+    visible_line_count: i64,
+    line_height: i64,          // pixels
+    container_height: i64,     // pixels
+}
+
+rite viewport_new(container_height: i64, line_height: i64) → Viewport {
+    ≔ visible = container_height / line_height;
+    Viewport {
+        first_visible_line: 0,
+        visible_line_count: visible,
+        line_height: line_height,
+        container_height: container_height,
+    }
+}
+
+rite viewport_scroll_to_line(vp: Viewport, line: i64, total_lines: i64) → Viewport {
+    // Clamp line to valid range
+    ≔ max_first = ⎇ total_lines > vp.visible_line_count {
+        total_lines - vp.visible_line_count
+    } ⎉ {
+        0
+    };
+    ≔ clamped = ⎇ line < 0 { 0 } ⎉ ⎇ line > max_first { max_first } ⎉ { line };
+
+    Viewport {
+        first_visible_line: clamped,
+        visible_line_count: vp.visible_line_count,
+        line_height: vp.line_height,
+        container_height: vp.container_height,
+    }
+}
+
+rite viewport_scroll_by(vp: Viewport, delta: i64, total_lines: i64) → Viewport {
+    viewport_scroll_to_line(vp, vp.first_visible_line + delta, total_lines)
+}
+
+rite viewport_ensure_visible(vp: Viewport, line: i64, total_lines: i64) → Viewport {
+    // If line is above viewport, scroll up
+    ⎇ line < vp.first_visible_line {
+        ⤺ viewport_scroll_to_line(vp, line, total_lines);
+    }
+    // If line is below viewport, scroll down
+    ⎇ line >= vp.first_visible_line + vp.visible_line_count {
+        ≔ new_first = line - vp.visible_line_count + 1;
+        ⤺ viewport_scroll_to_line(vp, new_first, total_lines);
+    }
+    // Already visible
+    vp
+}
+
+rite viewport_get_scroll_top(vp: Viewport) → i64 {
+    vp.first_visible_line * vp.line_height
+}
+
+rite viewport_get_total_height(total_lines: i64, line_height: i64) → i64 {
+    total_lines * line_height
+}
+
+rite is_line_visible(vp: Viewport, line: i64) → bool {
+    line >= vp.first_visible_line ∧ line < vp.first_visible_line + vp.visible_line_count
+}
+
+/// Get range of lines to render (for virtual scrolling)
+sigil LineRange {
+    start: i64,
+    end: i64,  // exclusive
+}
+
+rite viewport_visible_range(vp: Viewport, total_lines: i64) → LineRange {
+    ≔ start = vp.first_visible_line;
+    ≔ end = vp.first_visible_line + vp.visible_line_count;
+    ≔ clamped_end = ⎇ end > total_lines { total_lines } ⎉ { end };
+
+    LineRange { start: start, end: clamped_end }
+}
+
+/// Add overscan for smoother scrolling (render extra lines above/below)
+rite viewport_render_range(vp: Viewport, total_lines: i64, overscan: i64) → LineRange {
+    ≔ start = vp.first_visible_line - overscan;
+    ≔ end = vp.first_visible_line + vp.visible_line_count + overscan;
+
+    ≔ clamped_start = ⎇ start < 0 { 0 } ⎉ { start };
+    ≔ clamped_end = ⎇ end > total_lines { total_lines } ⎉ { end };
+
+    LineRange { start: clamped_start, end: clamped_end }
+}
+
+// =============================================================================
+// SECTION 4.2: Bracket Matching
+// =============================================================================
+
+ᛈ BracketType {
+    Round,      // ( )
+    Square,     // [ ]
+    Curly,      // { }
+    Angle,      // < >
+}
+
+sigil BracketPair {
+    open_pos: i64,
+    close_pos: i64,
+    bracket_type: BracketType,
+    depth: i64,
+}
+
+ᛈ OptionBracketPair {
+    None,
+    Some(BracketPair),
+}
+
+rite is_open_bracket(c: char) → bool {
+    c == '(' ∨ c == '[' ∨ c == '{' ∨ c == '<'
+}
+
+rite is_close_bracket(c: char) → bool {
+    c == ')' ∨ c == ']' ∨ c == '}' ∨ c == '>'
+}
+
+rite get_bracket_type(c: char) → BracketType {
+    ⎇ c == '(' ∨ c == ')' {
+        BracketType·Round
+    } ⎉ ⎇ c == '[' ∨ c == ']' {
+        BracketType·Square
+    } ⎉ ⎇ c == '{' ∨ c == '}' {
+        BracketType·Curly
+    } ⎉ {
+        BracketType·Angle
+    }
+}
+
+rite brackets_match(open: char, close: char) → bool {
+    (open == '(' ∧ close == ')') ∨
+    (open == '[' ∧ close == ']') ∨
+    (open == '{' ∧ close == '}') ∨
+    (open == '<' ∧ close == '>')
+}
+
+rite get_matching_bracket(c: char) → char {
+    ⎇ c == '(' { ')' }
+    ⎉ ⎇ c == ')' { '(' }
+    ⎉ ⎇ c == '[' { ']' }
+    ⎉ ⎇ c == ']' { '[' }
+    ⎉ ⎇ c == '{' { '}' }
+    ⎉ ⎇ c == '}' { '{' }
+    ⎉ ⎇ c == '<' { '>' }
+    ⎉ ⎇ c == '>' { '<' }
+    ⎉ { c }
+}
+
+/// Find matching bracket from position
+rite find_matching_bracket(content: String, pos: i64) → OptionBracketPair {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ⎇ pos < 0 ∨ pos >= len {
+        ⤺ OptionBracketPair·None;
+    }
+
+    ≔ c = cs[pos];
+
+    ⎇ is_open_bracket(c) {
+        // Search forward for closing bracket
+        ≔ target = get_matching_bracket(c);
+        ≔ vary depth = 1;
+        ≔ vary i = pos + 1;
+
+        ⟳ i < len ∧ depth > 0 {
+            ⎇ cs[i] == c {
+                depth = depth + 1;
+            } ⎉ ⎇ cs[i] == target {
+                depth = depth - 1;
+            }
+            ⎇ depth == 0 {
+                ⤺ OptionBracketPair·Some(BracketPair {
+                    open_pos: pos,
+                    close_pos: i,
+                    bracket_type: get_bracket_type(c),
+                    depth: 0,
+                });
+            }
+            i = i + 1;
+        }
+    } ⎉ ⎇ is_close_bracket(c) {
+        // Search backward for opening bracket
+        ≔ target = get_matching_bracket(c);
+        ≔ vary depth = 1;
+        ≔ vary i = pos - 1;
+
+        ⟳ i >= 0 ∧ depth > 0 {
+            ⎇ cs[i] == c {
+                depth = depth + 1;
+            } ⎉ ⎇ cs[i] == target {
+                depth = depth - 1;
+            }
+            ⎇ depth == 0 {
+                ⤺ OptionBracketPair·Some(BracketPair {
+                    open_pos: i,
+                    close_pos: pos,
+                    bracket_type: get_bracket_type(c),
+                    depth: 0,
+                });
+            }
+            i = i - 1;
+        }
+    }
+
+    OptionBracketPair·None
+}
+
+/// Find bracket at or near cursor position
+rite find_bracket_at_cursor(content: String, cursor: i64) → OptionBracketPair {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    // Check character at cursor
+    ⎇ cursor < len {
+        ≔ c = cs[cursor];
+        ⎇ is_open_bracket(c) ∨ is_close_bracket(c) {
+            ⤺ find_matching_bracket(content, cursor);
+        }
+    }
+
+    // Check character before cursor
+    ⎇ cursor > 0 {
+        ≔ c = cs[cursor - 1];
+        ⎇ is_open_bracket(c) ∨ is_close_bracket(c) {
+            ⤺ find_matching_bracket(content, cursor - 1);
+        }
+    }
+
+    OptionBracketPair·None
+}
+
+/// Get all bracket pairs in content (for rainbow brackets)
+rite find_all_brackets(content: String) → [BracketPair] {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+    ≔ vary result = Vec·new();
+
+    // Stack for tracking open brackets: (position, char, depth)
+    ≔ vary stack_pos = Vec·new();
+    ≔ vary stack_char = Vec·new();
+    ≔ vary current_depth = 0;
+
+    ≔ vary i = 0;
+    ⟳ i < len {
+        ≔ c = cs[i];
+        ⎇ is_open_bracket(c) {
+            stack_pos.push(i);
+            stack_char.push(c);
+            current_depth = current_depth + 1;
+        } ⎉ ⎇ is_close_bracket(c) {
+            // Find matching open bracket
+            ⎇ stack_pos.len() > 0 {
+                ≔ last_idx = stack_pos.len() - 1;
+                ≔ open_pos = stack_pos[last_idx];
+                ≔ open_char = stack_char[last_idx];
+
+                ⎇ brackets_match(open_char, c) {
+                    current_depth = current_depth - 1;
+                    result.push(BracketPair {
+                        open_pos: open_pos,
+                        close_pos: i,
+                        bracket_type: get_bracket_type(c),
+                        depth: current_depth,
+                    });
+
+                    // Pop from stack
+                    ≔ vary new_stack_pos = Vec·new();
+                    ≔ vary new_stack_char = Vec·new();
+                    ≔ vary j = 0;
+                    ⟳ j < last_idx {
+                        new_stack_pos.push(stack_pos[j]);
+                        new_stack_char.push(stack_char[j]);
+                        j = j + 1;
+                    }
+                    stack_pos = new_stack_pos;
+                    stack_char = new_stack_char;
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    result
+}
+
+// =============================================================================
+// SECTION 4.3: Syntax Highlighting
+// =============================================================================
+
+ᛈ HighlightStyle {
+    Keyword,
+    Type,
+    Function,
+    Variable,
+    String,
+    Number,
+    Comment,
+    Operator,
+    Morpheme,
+    NativeSymbol,
+    EvidenceKnown,
+    EvidenceUncertain,
+    EvidenceReported,
+    EvidenceParadox,
+    Punctuation,
+    Bracket,
+    BracketMatch,
+    Error,
+    Default,
+}
+
+sigil HighlightSpan {
+    start: i64,
+    end: i64,
+    style: HighlightStyle,
+}
+
+/// Map token kind to highlight style
+rite token_to_highlight_style(kind: TokenKind) → HighlightStyle {
+    ⌥ kind {
+        TokenKind·Keyword => HighlightStyle·Keyword,
+        TokenKind·Identifier => HighlightStyle·Variable,
+        TokenKind·Type => HighlightStyle·Type,
+        TokenKind·String => HighlightStyle·String,
+        TokenKind·Number => HighlightStyle·Number,
+        TokenKind·Comment => HighlightStyle·Comment,
+        TokenKind·Operator => HighlightStyle·Operator,
+        TokenKind·Morpheme => HighlightStyle·Morpheme,
+        TokenKind·NativeSymbol => HighlightStyle·NativeSymbol,
+        TokenKind·EvidenceKnown => HighlightStyle·EvidenceKnown,
+        TokenKind·EvidenceUncertain => HighlightStyle·EvidenceUncertain,
+        TokenKind·EvidenceReported => HighlightStyle·EvidenceReported,
+        TokenKind·EvidenceParadox => HighlightStyle·EvidenceParadox,
+        TokenKind·Punctuation => HighlightStyle·Punctuation,
+        TokenKind·Whitespace => HighlightStyle·Default,
+        TokenKind·Newline => HighlightStyle·Default,
+        TokenKind·Unknown => HighlightStyle·Error,
+    }
+}
+
+/// Convert tokens to highlight spans
+rite tokens_to_highlights(tokens: [Token]) → [HighlightSpan] {
+    ≔ vary result = Vec·new();
+    ≔ vary i = 0;
+
+    ⟳ i < tokens.len() {
+        ≔ token = tokens[i];
+        ≔ style = token_to_highlight_style(token.kind);
+
+        // Skip whitespace/newline (no highlighting needed)
+        ⎇ style != HighlightStyle·Default {
+            result.push(HighlightSpan {
+                start: token.start,
+                end: token.end,
+                style: style,
+            });
+        }
+        i = i + 1;
+    }
+
+    result
+}
+
+/// Get highlights for a specific line range (for virtual rendering)
+rite get_line_highlights(highlights: [HighlightSpan], line_start: i64, line_end: i64) → [HighlightSpan] {
+    ≔ vary result = Vec·new();
+    ≔ vary i = 0;
+
+    ⟳ i < highlights.len() {
+        ≔ span = highlights[i];
+        // Include span if it overlaps with range
+        ⎇ span.end > line_start ∧ span.start < line_end {
+            // Clamp to line range
+            ≔ clamped_start = ⎇ span.start < line_start { line_start } ⎉ { span.start };
+            ≔ clamped_end = ⎇ span.end > line_end { line_end } ⎉ { span.end };
+
+            result.push(HighlightSpan {
+                start: clamped_start,
+                end: clamped_end,
+                style: span.style,
+            });
+        }
+        i = i + 1;
+    }
+
+    result
+}
+
+/// Rainbow bracket depth to style
+rite bracket_depth_style(depth: i64) → HighlightStyle {
+    // Cycle through 4 colors
+    ≔ d = depth % 4;
+    ⎇ d == 0 { HighlightStyle·Bracket }
+    ⎉ ⎇ d == 1 { HighlightStyle·Type }
+    ⎉ ⎇ d == 2 { HighlightStyle·Keyword }
+    ⎉ { HighlightStyle·String }
+}
+
+// =============================================================================
+// SECTION 4.4: Line Rendering Helpers
+// =============================================================================
+
+/// Split content into lines
+rite split_into_lines(content: String) → [String] {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ⎇ len == 0 {
+        ≔ vary empty = Vec·new();
+        empty.push("");
+        ⤺ empty;
+    }
+
+    ≔ vary lines = Vec·new();
+    ≔ vary current = "";
+    ≔ vary i = 0;
+
+    ⟳ i < len {
+        ⎇ cs[i] == '\n' {
+            lines.push(current);
+            current = "";
+        } ⎉ {
+            current = current + to_string(cs[i]);
+        }
+        i = i + 1;
+    }
+
+    // Push last line
+    lines.push(current);
+    lines
+}
+
+/// Get line start positions (index into content for each line start)
+rite get_line_starts(content: String) → [i64] {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ≔ vary starts = Vec·new();
+    starts.push(0);  // First line starts at 0
+
+    ≔ vary i = 0;
+    ⟳ i < len {
+        ⎇ cs[i] == '\n' ∧ i + 1 <= len {
+            starts.push(i + 1);
+        }
+        i = i + 1;
+    }
+
+    starts
+}
+
+/// Get visible lines for rendering
+rite get_visible_lines(content: String, vp: Viewport) → [String] {
+    ≔ all_lines = split_into_lines(content);
+    ≔ total = all_lines.len();
+    ≔ range = viewport_visible_range(vp, total);
+
+    ≔ vary result = Vec·new();
+    ≔ vary i = range.start;
+    ⟳ i < range.end {
+        result.push(all_lines[i]);
+        i = i + 1;
+    }
+
+    result
+}
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite check(condition: bool, msg: String) {
+    ⎇ ¬condition {
+        println("FAIL: " + msg);
+        panic("test failed");
+    }
+}
+
+rite check_eq_int(actual: i64, expected: i64, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        println("  Expected: " + to_string(expected));
+        println("  Actual:   " + to_string(actual));
+        panic("test failed");
+    }
+}
+
+rite check_eq_str(actual: String, expected: String, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        println("  Expected: \"" + expected + "\"");
+        println("  Actual:   \"" + actual + "\"");
+        panic("test failed");
+    }
+}
+
+// =============================================================================
+// PHASE 4.1: Virtual Scrolling Tests (T111-T120)
+// =============================================================================
+
+rite test_t111_viewport_creation() {
+    // 500px container, 20px line height = 25 visible lines
+    ≔ vp = viewport_new(500, 20);
+
+    check_eq_int(vp.first_visible_line, 0, "T111: starts at line 0");
+    check_eq_int(vp.visible_line_count, 25, "T111: 25 visible lines");
+    check_eq_int(vp.line_height, 20, "T111: line height preserved");
+}
+
+rite test_t112_viewport_scroll_to() {
+    ≔ vp = viewport_new(500, 20);  // 25 visible lines
+    ≔ total_lines = 100;
+
+    ≔ vp2 = viewport_scroll_to_line(vp, 50, total_lines);
+    check_eq_int(vp2.first_visible_line, 50, "T112: scroll to line 50");
+
+    // Scroll past end - should clamp
+    ≔ vp3 = viewport_scroll_to_line(vp, 90, total_lines);
+    check_eq_int(vp3.first_visible_line, 75, "T112: clamped to max (100-25)");
+
+    // Scroll negative - should clamp to 0
+    ≔ vp4 = viewport_scroll_to_line(vp, -10, total_lines);
+    check_eq_int(vp4.first_visible_line, 0, "T112: clamped to 0");
+}
+
+rite test_t113_viewport_scroll_by() {
+    ≔ vp = viewport_new(500, 20);
+    ≔ total_lines = 100;
+
+    ≔ vp2 = viewport_scroll_to_line(vp, 50, total_lines);
+    ≔ vp3 = viewport_scroll_by(vp2, 10, total_lines);
+    check_eq_int(vp3.first_visible_line, 60, "T113: scroll by +10");
+
+    ≔ vp4 = viewport_scroll_by(vp3, -20, total_lines);
+    check_eq_int(vp4.first_visible_line, 40, "T113: scroll by -20");
+}
+
+rite test_t114_viewport_ensure_visible() {
+    ≔ vp = viewport_new(500, 20);  // 25 visible lines
+    ≔ total_lines = 100;
+
+    // Line already visible - no change
+    ≔ vp2 = viewport_ensure_visible(vp, 10, total_lines);
+    check_eq_int(vp2.first_visible_line, 0, "T114: already visible, no scroll");
+
+    // Line below viewport - scroll down
+    ≔ vp3 = viewport_ensure_visible(vp, 50, total_lines);
+    check_eq_int(vp3.first_visible_line, 26, "T114: scroll to show line 50");
+
+    // Line above viewport - scroll up
+    ≔ vp4 = viewport_scroll_to_line(vp, 50, total_lines);
+    ≔ vp5 = viewport_ensure_visible(vp4, 30, total_lines);
+    check_eq_int(vp5.first_visible_line, 30, "T114: scroll up to show line 30");
+}
+
+rite test_t115_is_line_visible() {
+    ≔ vp = viewport_new(500, 20);  // lines 0-24 visible
+
+    check(is_line_visible(vp, 0), "T115: line 0 visible");
+    check(is_line_visible(vp, 24), "T115: line 24 visible");
+    check(¬is_line_visible(vp, 25), "T115: line 25 not visible");
+    check(¬is_line_visible(vp, -1), "T115: line -1 not visible");
+}
+
+rite test_t116_viewport_visible_range() {
+    ≔ vp = viewport_new(500, 20);  // 25 visible lines
+    ≔ vp2 = viewport_scroll_to_line(vp, 10, 100);
+
+    ≔ range = viewport_visible_range(vp2, 100);
+    check_eq_int(range.start, 10, "T116: range starts at first visible");
+    check_eq_int(range.end, 35, "T116: range ends at last visible + 1");
+
+    // Near end of content
+    ≔ vp3 = viewport_scroll_to_line(vp, 0, 20);  // Only 20 lines total
+    ≔ range2 = viewport_visible_range(vp3, 20);
+    check_eq_int(range2.end, 20, "T116: clamped to total lines");
+}
+
+rite test_t117_viewport_render_range_overscan() {
+    ≔ vp = viewport_new(500, 20);  // 25 visible lines
+    ≔ vp2 = viewport_scroll_to_line(vp, 50, 100);
+
+    // With 5 lines overscan
+    ≔ range = viewport_render_range(vp2, 100, 5);
+    check_eq_int(range.start, 45, "T117: overscan before (50-5)");
+    check_eq_int(range.end, 80, "T117: overscan after (50+25+5)");
+
+    // At start - overscan clamped
+    ≔ range2 = viewport_render_range(vp, 100, 5);
+    check_eq_int(range2.start, 0, "T117: overscan clamped at start");
+}
+
+rite test_t118_viewport_scroll_top_pixels() {
+    ≔ vp = viewport_new(500, 20);
+    ≔ vp2 = viewport_scroll_to_line(vp, 10, 100);
+
+    check_eq_int(viewport_get_scroll_top(vp), 0, "T118: scroll top at line 0");
+    check_eq_int(viewport_get_scroll_top(vp2), 200, "T118: scroll top at line 10");
+}
+
+rite test_t119_total_height() {
+    check_eq_int(viewport_get_total_height(100, 20), 2000, "T119: 100 lines * 20px");
+    check_eq_int(viewport_get_total_height(1, 20), 20, "T119: 1 line * 20px");
+}
+
+rite test_t120_get_visible_lines() {
+    ≔ content = "line0\nline1\nline2\nline3\nline4";
+    ≔ vp = viewport_new(60, 20);  // 3 visible lines
+    ≔ vp2 = viewport_scroll_to_line(vp, 1, 5);
+
+    ≔ lines = get_visible_lines(content, vp2);
+    check_eq_int(lines.len(), 3, "T120: 3 lines returned");
+    check_eq_str(lines[0], "line1", "T120: first visible is line1");
+    check_eq_str(lines[1], "line2", "T120: second visible is line2");
+    check_eq_str(lines[2], "line3", "T120: third visible is line3");
+}
+
+// =============================================================================
+// PHASE 4.2: Bracket Matching Tests (T121-T130)
+// =============================================================================
+
+rite test_t121_bracket_classification() {
+    check(is_open_bracket('('), "T121: ( is open");
+    check(is_open_bracket('['), "T121: [ is open");
+    check(is_open_bracket('{'), "T121: { is open");
+    check(is_close_bracket(')'), "T121: ) is close");
+    check(is_close_bracket(']'), "T121: ] is close");
+    check(is_close_bracket('}'), "T121: } is close");
+    check(¬is_open_bracket('a'), "T121: a is not bracket");
+}
+
+rite test_t122_get_matching_bracket() {
+    check(get_matching_bracket('(') == ')', "T122: ( -> )");
+    check(get_matching_bracket(')') == '(', "T122: ) -> (");
+    check(get_matching_bracket('[') == ']', "T122: [ -> ]");
+    check(get_matching_bracket('{') == '}', "T122: { -> }");
+}
+
+rite test_t123_find_matching_simple() {
+    ≔ content = "(hello)";
+
+    ≔ result1 = find_matching_bracket(content, 0);  // at (
+    ⌥ result1 {
+        OptionBracketPair·None => {
+            println("FAIL: T123 expected Some");
+            panic("test failed");
+        },
+        OptionBracketPair·Some(pair) => {
+            check_eq_int(pair.open_pos, 0, "T123: open at 0");
+            check_eq_int(pair.close_pos, 6, "T123: close at 6");
+        },
+    }
+
+    ≔ result2 = find_matching_bracket(content, 6);  // at )
+    ⌥ result2 {
+        OptionBracketPair·None => {
+            println("FAIL: T123 expected Some from close");
+            panic("test failed");
+        },
+        OptionBracketPair·Some(pair) => {
+            check_eq_int(pair.open_pos, 0, "T123: open at 0 from close");
+            check_eq_int(pair.close_pos, 6, "T123: close at 6 from close");
+        },
+    }
+}
+
+rite test_t124_find_matching_nested() {
+    ≔ content = "((a))";
+
+    ≔ result1 = find_matching_bracket(content, 0);  // outer (
+    ⌥ result1 {
+        OptionBracketPair·None => {
+            println("FAIL: T124 outer");
+            panic("test failed");
+        },
+        OptionBracketPair·Some(pair) => {
+            check_eq_int(pair.close_pos, 4, "T124: outer close at 4");
+        },
+    }
+
+    ≔ result2 = find_matching_bracket(content, 1);  // inner (
+    ⌥ result2 {
+        OptionBracketPair·None => {
+            println("FAIL: T124 inner");
+            panic("test failed");
+        },
+        OptionBracketPair·Some(pair) => {
+            check_eq_int(pair.close_pos, 3, "T124: inner close at 3");
+        },
+    }
+}
+
+rite test_t125_find_matching_mixed() {
+    ≔ content = "{[()]}";
+
+    ≔ result = find_matching_bracket(content, 2);  // at (
+    ⌥ result {
+        OptionBracketPair·None => {
+            println("FAIL: T125 mixed");
+            panic("test failed");
+        },
+        OptionBracketPair·Some(pair) => {
+            check_eq_int(pair.close_pos, 3, "T125: ( matches ) at 3");
+        },
+    }
+}
+
+rite test_t126_find_matching_unmatched() {
+    ≔ content = "(hello";
+
+    ≔ result = find_matching_bracket(content, 0);
+    ⌥ result {
+        OptionBracketPair·None => {
+            // Expected - no match
+            check(yea, "T126: unmatched returns None");
+        },
+        OptionBracketPair·Some(_) => {
+            println("FAIL: T126 should be None");
+            panic("test failed");
+        },
+    }
+}
+
+rite test_t127_find_bracket_at_cursor() {
+    ≔ content = "foo(bar)";
+
+    // Cursor right after ( (position 4)
+    ≔ result = find_bracket_at_cursor(content, 4);
+    ⌥ result {
+        OptionBracketPair·None => {
+            println("FAIL: T127 should find bracket before cursor");
+            panic("test failed");
+        },
+        OptionBracketPair·Some(pair) => {
+            check_eq_int(pair.open_pos, 3, "T127: found ( at 3");
+        },
+    }
+}
+
+rite test_t128_find_all_brackets() {
+    ≔ content = "{()}";
+
+    ≔ pairs = find_all_brackets(content);
+    check_eq_int(pairs.len(), 2, "T128: found 2 pairs");
+}
+
+rite test_t129_bracket_depth() {
+    ≔ content = "((()))";
+
+    ≔ pairs = find_all_brackets(content);
+    // Pairs are added as they're closed, so innermost first
+    check_eq_int(pairs.len(), 3, "T129: 3 pairs");
+
+    // First pair closed is innermost (depth when closed = 2)
+    check_eq_int(pairs[0].open_pos, 2, "T129: innermost opens at 2");
+    check_eq_int(pairs[0].close_pos, 3, "T129: innermost closes at 3");
+}
+
+rite test_t130_no_bracket_at_position() {
+    ≔ content = "hello";
+
+    ≔ result = find_matching_bracket(content, 2);
+    ⌥ result {
+        OptionBracketPair·None => {
+            check(yea, "T130: no bracket returns None");
+        },
+        OptionBracketPair·Some(_) => {
+            println("FAIL: T130 should be None");
+            panic("test failed");
+        },
+    }
+}
+
+// =============================================================================
+// PHASE 4.3: Syntax Highlighting Tests (T131-T140)
+// =============================================================================
+
+rite test_t131_token_to_style_keyword() {
+    ≔ style = token_to_highlight_style(TokenKind·Keyword);
+    check(style == HighlightStyle·Keyword, "T131: Keyword -> Keyword style");
+}
+
+rite test_t132_token_to_style_type() {
+    ≔ style = token_to_highlight_style(TokenKind·Type);
+    check(style == HighlightStyle·Type, "T132: Type -> Type style");
+}
+
+rite test_t133_token_to_style_string() {
+    ≔ style = token_to_highlight_style(TokenKind·String);
+    check(style == HighlightStyle·String, "T133: String -> String style");
+}
+
+rite test_t134_token_to_style_number() {
+    ≔ style = token_to_highlight_style(TokenKind·Number);
+    check(style == HighlightStyle·Number, "T134: Number -> Number style");
+}
+
+rite test_t135_token_to_style_comment() {
+    ≔ style = token_to_highlight_style(TokenKind·Comment);
+    check(style == HighlightStyle·Comment, "T135: Comment -> Comment style");
+}
+
+rite test_t136_token_to_style_morpheme() {
+    ≔ style = token_to_highlight_style(TokenKind·Morpheme);
+    check(style == HighlightStyle·Morpheme, "T136: Morpheme -> Morpheme style");
+}
+
+rite test_t137_token_to_style_native() {
+    ≔ style = token_to_highlight_style(TokenKind·NativeSymbol);
+    check(style == HighlightStyle·NativeSymbol, "T137: NativeSymbol -> NativeSymbol style");
+}
+
+rite test_t138_token_to_style_evidence() {
+    ≔ s1 = token_to_highlight_style(TokenKind·EvidenceKnown);
+    ≔ s2 = token_to_highlight_style(TokenKind·EvidenceUncertain);
+    ≔ s3 = token_to_highlight_style(TokenKind·EvidenceReported);
+    ≔ s4 = token_to_highlight_style(TokenKind·EvidenceParadox);
+
+    check(s1 == HighlightStyle·EvidenceKnown, "T138: EvidenceKnown");
+    check(s2 == HighlightStyle·EvidenceUncertain, "T138: EvidenceUncertain");
+    check(s3 == HighlightStyle·EvidenceReported, "T138: EvidenceReported");
+    check(s4 == HighlightStyle·EvidenceParadox, "T138: EvidenceParadox");
+}
+
+rite test_t139_tokens_to_highlights() {
+    ≔ vary tokens = Vec·new();
+    tokens.push(Token { kind: TokenKind·Keyword, text: "rite", start: 0, end: 4 });
+    tokens.push(Token { kind: TokenKind·Whitespace, text: " ", start: 4, end: 5 });
+    tokens.push(Token { kind: TokenKind·Identifier, text: "main", start: 5, end: 9 });
+
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    // Whitespace should be skipped
+    check_eq_int(highlights.len(), 2, "T139: 2 highlights (whitespace skipped)");
+    check_eq_int(highlights[0].start, 0, "T139: first span start");
+    check_eq_int(highlights[0].end, 4, "T139: first span end");
+    check(highlights[0].style == HighlightStyle·Keyword, "T139: first is Keyword");
+}
+
+rite test_t140_get_line_highlights() {
+    ≔ vary highlights = Vec·new();
+    highlights.push(HighlightSpan { start: 0, end: 10, style: HighlightStyle·Keyword });
+    highlights.push(HighlightSpan { start: 15, end: 25, style: HighlightStyle·String });
+    highlights.push(HighlightSpan { start: 30, end: 40, style: HighlightStyle·Comment });
+
+    // Get highlights for line range 12-28
+    ≔ line_hl = get_line_highlights(highlights, 12, 28);
+
+    check_eq_int(line_hl.len(), 1, "T140: only 1 span overlaps");
+    check_eq_int(line_hl[0].start, 15, "T140: span starts at 15");
+    check_eq_int(line_hl[0].end, 25, "T140: span ends at 25");
+}
+
+// =============================================================================
+// PHASE 4.4: Line Rendering Tests (T141-T150)
+// =============================================================================
+
+rite test_t141_split_into_lines_empty() {
+    ≔ lines = split_into_lines("");
+    check_eq_int(lines.len(), 1, "T141: empty has 1 line");
+    check_eq_str(lines[0], "", "T141: empty line");
+}
+
+rite test_t142_split_into_lines_single() {
+    ≔ lines = split_into_lines("hello");
+    check_eq_int(lines.len(), 1, "T142: single line");
+    check_eq_str(lines[0], "hello", "T142: content preserved");
+}
+
+rite test_t143_split_into_lines_multiple() {
+    ≔ lines = split_into_lines("one\ntwo\nthree");
+    check_eq_int(lines.len(), 3, "T143: 3 lines");
+    check_eq_str(lines[0], "one", "T143: first line");
+    check_eq_str(lines[1], "two", "T143: second line");
+    check_eq_str(lines[2], "three", "T143: third line");
+}
+
+rite test_t144_split_into_lines_trailing_newline() {
+    ≔ lines = split_into_lines("hello\n");
+    check_eq_int(lines.len(), 2, "T144: trailing newline = 2 lines");
+    check_eq_str(lines[1], "", "T144: second line empty");
+}
+
+rite test_t145_get_line_starts() {
+    ≔ content = "hello\nworld\ntest";
+    ≔ starts = get_line_starts(content);
+
+    check_eq_int(starts.len(), 3, "T145: 3 line starts");
+    check_eq_int(starts[0], 0, "T145: line 0 starts at 0");
+    check_eq_int(starts[1], 6, "T145: line 1 starts at 6");
+    check_eq_int(starts[2], 12, "T145: line 2 starts at 12");
+}
+
+rite test_t146_line_starts_empty() {
+    ≔ starts = get_line_starts("");
+    check_eq_int(starts.len(), 1, "T146: empty has 1 line start");
+    check_eq_int(starts[0], 0, "T146: starts at 0");
+}
+
+rite test_t147_rainbow_bracket_style() {
+    ≔ s0 = bracket_depth_style(0);
+    ≔ s1 = bracket_depth_style(1);
+    ≔ s2 = bracket_depth_style(2);
+    ≔ s3 = bracket_depth_style(3);
+    ≔ s4 = bracket_depth_style(4);  // Cycles back
+
+    check(s0 == HighlightStyle·Bracket, "T147: depth 0");
+    check(s1 == HighlightStyle·Type, "T147: depth 1");
+    check(s2 == HighlightStyle·Keyword, "T147: depth 2");
+    check(s3 == HighlightStyle·String, "T147: depth 3");
+    check(s4 == HighlightStyle·Bracket, "T147: depth 4 cycles to 0");
+}
+
+rite test_t148_highlight_span_clamp() {
+    ≔ vary highlights = Vec·new();
+    // Span that starts before and ends after line range
+    highlights.push(HighlightSpan { start: 5, end: 25, style: HighlightStyle·Comment });
+
+    ≔ line_hl = get_line_highlights(highlights, 10, 20);
+
+    check_eq_int(line_hl.len(), 1, "T148: span found");
+    check_eq_int(line_hl[0].start, 10, "T148: start clamped to line start");
+    check_eq_int(line_hl[0].end, 20, "T148: end clamped to line end");
+}
+
+rite test_t149_highlight_no_overlap() {
+    ≔ vary highlights = Vec·new();
+    highlights.push(HighlightSpan { start: 0, end: 5, style: HighlightStyle·Keyword });
+    highlights.push(HighlightSpan { start: 50, end: 60, style: HighlightStyle·String });
+
+    // Line range 20-30 has no overlapping highlights
+    ≔ line_hl = get_line_highlights(highlights, 20, 30);
+
+    check_eq_int(line_hl.len(), 0, "T149: no overlapping highlights");
+}
+
+rite test_t150_complete_rendering_flow() {
+    // Simulate complete rendering: content -> lines -> viewport -> visible
+    ≔ content = "line0\nline1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9";
+    ≔ total_lines = 10;
+
+    // Viewport showing 3 lines
+    ≔ vp = viewport_new(60, 20);  // 3 visible lines
+    ≔ vp2 = viewport_scroll_to_line(vp, 3, total_lines);
+
+    // Get visible range with overscan
+    ≔ range = viewport_render_range(vp2, total_lines, 1);
+    check_eq_int(range.start, 2, "T150: render starts at 2 (3-1 overscan)");
+    check_eq_int(range.end, 7, "T150: render ends at 7 (3+3+1 overscan)");
+
+    // Get visible lines
+    ≔ visible = get_visible_lines(content, vp2);
+    check_eq_int(visible.len(), 3, "T150: 3 visible lines");
+    check_eq_str(visible[0], "line3", "T150: first visible is line3");
+
+    // Scroll position in pixels
+    check_eq_int(viewport_get_scroll_top(vp2), 60, "T150: scroll top = 3 * 20");
+
+    // Total scrollable height
+    check_eq_int(viewport_get_total_height(total_lines, 20), 200, "T150: total height = 10 * 20");
+}
+
+// =============================================================================
+// Test Runner
+// =============================================================================
+
+rite main() {
+    println("════════════════════════════════════════════════════════════");
+    println("  Athame - Rendering, Brackets & Highlighting");
+    println("  Phase 4: T111-T150 (Native Sigil Syntax)");
+    println("════════════════════════════════════════════════════════════");
+    println("");
+
+    // P4.1: Virtual Scrolling
+    println("── P4.1: Virtual Scrolling ──");
+    test_t111_viewport_creation();
+    println("✓ T111: viewport creation");
+
+    test_t112_viewport_scroll_to();
+    println("✓ T112: scroll to line");
+
+    test_t113_viewport_scroll_by();
+    println("✓ T113: scroll by delta");
+
+    test_t114_viewport_ensure_visible();
+    println("✓ T114: ensure line visible");
+
+    test_t115_is_line_visible();
+    println("✓ T115: is line visible");
+
+    test_t116_viewport_visible_range();
+    println("✓ T116: visible line range");
+
+    test_t117_viewport_render_range_overscan();
+    println("✓ T117: render range with overscan");
+
+    test_t118_viewport_scroll_top_pixels();
+    println("✓ T118: scroll top in pixels");
+
+    test_t119_total_height();
+    println("✓ T119: total scrollable height");
+
+    test_t120_get_visible_lines();
+    println("✓ T120: get visible lines");
+
+    println("");
+
+    // P4.2: Bracket Matching
+    println("── P4.2: Bracket Matching ──");
+    test_t121_bracket_classification();
+    println("✓ T121: bracket classification");
+
+    test_t122_get_matching_bracket();
+    println("✓ T122: get matching bracket");
+
+    test_t123_find_matching_simple();
+    println("✓ T123: find matching (simple)");
+
+    test_t124_find_matching_nested();
+    println("✓ T124: find matching (nested)");
+
+    test_t125_find_matching_mixed();
+    println("✓ T125: find matching (mixed types)");
+
+    test_t126_find_matching_unmatched();
+    println("✓ T126: unmatched bracket");
+
+    test_t127_find_bracket_at_cursor();
+    println("✓ T127: find bracket at cursor");
+
+    test_t128_find_all_brackets();
+    println("✓ T128: find all bracket pairs");
+
+    test_t129_bracket_depth();
+    println("✓ T129: bracket nesting depth");
+
+    test_t130_no_bracket_at_position();
+    println("✓ T130: no bracket at position");
+
+    println("");
+
+    // P4.3: Syntax Highlighting
+    println("── P4.3: Syntax Highlighting ──");
+    test_t131_token_to_style_keyword();
+    println("✓ T131: token -> style (Keyword)");
+
+    test_t132_token_to_style_type();
+    println("✓ T132: token -> style (Type)");
+
+    test_t133_token_to_style_string();
+    println("✓ T133: token -> style (String)");
+
+    test_t134_token_to_style_number();
+    println("✓ T134: token -> style (Number)");
+
+    test_t135_token_to_style_comment();
+    println("✓ T135: token -> style (Comment)");
+
+    test_t136_token_to_style_morpheme();
+    println("✓ T136: token -> style (Morpheme)");
+
+    test_t137_token_to_style_native();
+    println("✓ T137: token -> style (NativeSymbol)");
+
+    test_t138_token_to_style_evidence();
+    println("✓ T138: token -> style (Evidence markers)");
+
+    test_t139_tokens_to_highlights();
+    println("✓ T139: tokens to highlight spans");
+
+    test_t140_get_line_highlights();
+    println("✓ T140: get highlights for line range");
+
+    println("");
+
+    // P4.4: Line Rendering
+    println("── P4.4: Line Rendering ──");
+    test_t141_split_into_lines_empty();
+    println("✓ T141: split empty string");
+
+    test_t142_split_into_lines_single();
+    println("✓ T142: split single line");
+
+    test_t143_split_into_lines_multiple();
+    println("✓ T143: split multiple lines");
+
+    test_t144_split_into_lines_trailing_newline();
+    println("✓ T144: split with trailing newline");
+
+    test_t145_get_line_starts();
+    println("✓ T145: get line start positions");
+
+    test_t146_line_starts_empty();
+    println("✓ T146: line starts for empty");
+
+    test_t147_rainbow_bracket_style();
+    println("✓ T147: rainbow bracket depth styles");
+
+    test_t148_highlight_span_clamp();
+    println("✓ T148: highlight span clamping");
+
+    test_t149_highlight_no_overlap();
+    println("✓ T149: no overlapping highlights");
+
+    test_t150_complete_rendering_flow();
+    println("✓ T150: complete rendering flow integration");
+
+    println("");
+    println("════════════════════════════════════════════════════════════");
+    println("  ✅ ALL PHASE 4 TESTS PASSED (40/40)");
+    println("════════════════════════════════════════════════════════════");
+}

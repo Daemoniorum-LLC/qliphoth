@@ -1,0 +1,494 @@
+// Athame - Playground Page
+// Interactive Sigil playground using Athame editor
+// Native Sigil Syntax
+
+invoke qliphoth·prelude·*;
+invoke super·component·{AthameEditor, AthameProps, OptionCallback, ATHAME_STYLES};
+
+// =============================================================================
+// Playground State
+// =============================================================================
+
+ᛈ CompileStatus {
+    Idle,
+    Compiling,
+    Success,
+    Error(String),
+}
+
+sigil PlaygroundState {
+    code: String,
+    output: String,
+    status: CompileStatus,
+    show_console: bool,
+}
+
+// =============================================================================
+// Playground Component
+// =============================================================================
+
+/// Interactive Sigil playground with Athame editor
+☉ rite Playground() → VNode {
+    ≔ (state, set_state) = use_state(PlaygroundState {
+        code: DEFAULT_PLAYGROUND_CODE,
+        output: "",
+        status: CompileStatus·Idle,
+        show_console: yea,
+    });
+
+    // Handle code changes from editor
+    ≔ on_code_change = |new_code: String| {
+        set_state(PlaygroundState {
+            code: new_code,
+            output: state.output,
+            status: state.status,
+            show_console: state.show_console,
+        });
+    };
+
+    // Run the code
+    ≔ run_code = || {
+        set_state(PlaygroundState {
+            code: state.code,
+            output: "",
+            status: CompileStatus·Compiling,
+            show_console: yea,
+        });
+
+        // Compile and execute via WASM
+        // This would call the Sigil compiler
+        ≔ result = compile_and_run(state.code);
+
+        ⌥ result {
+            CompileResult·Success(output) => {
+                set_state(PlaygroundState {
+                    code: state.code,
+                    output: output,
+                    status: CompileStatus·Success,
+                    show_console: yea,
+                });
+            },
+            CompileResult·Error(err) => {
+                set_state(PlaygroundState {
+                    code: state.code,
+                    output: err,
+                    status: CompileStatus·Error(err),
+                    show_console: yea,
+                });
+            },
+        }
+    };
+
+    // Reset to default code
+    ≔ reset_code = || {
+        set_state(PlaygroundState {
+            code: DEFAULT_PLAYGROUND_CODE,
+            output: "",
+            status: CompileStatus·Idle,
+            show_console: state.show_console,
+        });
+    };
+
+    // Toggle console visibility
+    ≔ toggle_console = || {
+        set_state(PlaygroundState {
+            code: state.code,
+            output: state.output,
+            status: state.status,
+            show_console: ¬state.show_console,
+        });
+    };
+
+    // Determine status indicator
+    ≔ status_class = ⌥ state.status {
+        CompileStatus·Idle => "status-idle",
+        CompileStatus·Compiling => "status-compiling",
+        CompileStatus·Success => "status-success",
+        CompileStatus·Error(_) => "status-error",
+    };
+
+    ≔ is_running = ⌥ state.status {
+        CompileStatus·Compiling => yea,
+        _ => nay,
+    };
+
+    // Render the playground
+    div()
+        ·class("athame-playground")
+        ·children(Vec·from([
+            // Inject Athame styles
+            style()·text(ATHAME_STYLES)·build(),
+
+            // Header toolbar
+            div()
+                ·class("playground-header")
+                ·children(Vec·from([
+                    h1()·text("Sigil Playground")·build(),
+                    div()
+                        ·class("playground-actions")
+                        ·children(Vec·from([
+                            button()
+                                ·class("btn btn-primary")
+                                ·onclick(run_code)
+                                ·attr("disabled", ⎇ is_running { "true" } ⎉ { "" })
+                                ·children(Vec·from([
+                                    ⎇ is_running {
+                                        span()·class("spinner")·build()
+                                    } ⎉ {
+                                        Icon { name: "play" }
+                                    },
+                                    text(⎇ is_running { " Compiling..." } ⎉ { " Run" })
+                                ]))
+                                ·build(),
+                            button()
+                                ·class("btn btn-secondary")
+                                ·onclick(reset_code)
+                                ·children(Vec·from([
+                                    Icon { name: "refresh" },
+                                    text(" Reset")
+                                ]))
+                                ·build(),
+                            button()
+                                ·class("btn btn-ghost")
+                                ·onclick(toggle_console)
+                                ·children(Vec·from([
+                                    Icon { name: ⎇ state.show_console { "chevron-down" } ⎉ { "chevron-up" } },
+                                    text(" Console")
+                                ]))
+                                ·build(),
+                        ]))
+                        ·build(),
+                ]))
+                ·build(),
+
+            // Main content area
+            div()
+                ·class("playground-main")
+                ·children(Vec·from([
+                    // Editor panel
+                    div()
+                        ·class("playground-editor-panel")
+                        ·children(Vec·from([
+                            div()
+                                ·class("panel-header")
+                                ·children(Vec·from([
+                                    span()·class("panel-title")·text("main.sigil")·build(),
+                                    span()·class(&format!("status-indicator {}", status_class))·build(),
+                                ]))
+                                ·build(),
+                            AthameEditor(AthameProps {
+                                initial_content: state.code,
+                                readonly: nay,
+                                language: "sigil",
+                                show_line_numbers: yea,
+                                on_change: OptionCallback·Some(on_code_change),
+                                theme: "dark",
+                                height: 500,
+                            }),
+                        ]))
+                        ·build(),
+
+                    // Preview/output panel
+                    div()
+                        ·class("playground-output-panel")
+                        ·children(Vec·from([
+                            // Preview area
+                            div()
+                                ·class("preview-section")
+                                ·children(Vec·from([
+                                    div()
+                                        ·class("panel-header")
+                                        ·child(span()·class("panel-title")·text("Preview")·build())
+                                        ·build(),
+                                    div()
+                                        ·class("preview-content")
+                                        ·attr("id", "preview-target")
+                                        ·build(),
+                                ]))
+                                ·build(),
+
+                            // Console output
+                            ⎇ state.show_console {
+                                div()
+                                    ·class("console-section")
+                                    ·children(Vec·from([
+                                        div()
+                                            ·class("panel-header")
+                                            ·child(span()·class("panel-title")·text("Console")·build())
+                                            ·build(),
+                                        pre()
+                                            ·class(&format!("console-output {}", status_class))
+                                            ·text(&state.output)
+                                            ·build(),
+                                    ]))
+                                    ·build()
+                            } ⎉ {
+                                fragment(Vec·new())
+                            },
+                        ]))
+                        ·build(),
+                ]))
+                ·build(),
+        ]))
+        ·build()
+}
+
+// =============================================================================
+// Compilation Bridge
+// =============================================================================
+
+ᛈ CompileResult {
+    Success(String),
+    Error(String),
+}
+
+rite compile_and_run(code: String) → CompileResult {
+    // This would call the Sigil WASM compiler
+    // For now, return a placeholder
+    CompileResult·Success("// Compilation successful\n// Output would appear here")
+}
+
+// =============================================================================
+// Default Code
+// =============================================================================
+
+☉ const DEFAULT_PLAYGROUND_CODE: String = r#"// Welcome to the Sigil Playground!
+// Write native Sigil code and see it run in your browser.
+
+invoke qliphoth·prelude·*;
+
+// A simple counter component
+sigil CounterState {
+    count: i64,
+}
+
+☉ rite Counter() → VNode {
+    ≔ (state, set_state) = use_state(CounterState { count: 0 });
+
+    ≔ increment = || {
+        set_state(CounterState { count: state.count + 1 });
+    };
+
+    ≔ decrement = || {
+        set_state(CounterState { count: state.count - 1 });
+    };
+
+    div()
+        ·class("counter")
+        ·children(Vec·from([
+            h1()·text(&format!("Count: {}", state.count))·build(),
+            div()
+                ·class("counter-buttons")
+                ·children(Vec·from([
+                    button()
+                        ·class("btn btn-primary")
+                        ·onclick(decrement)
+                        ·text("-")
+                        ·build(),
+                    button()
+                        ·class("btn btn-primary")
+                        ·onclick(increment)
+                        ·text("+")
+                        ·build(),
+                ]))
+                ·build(),
+        ]))
+        ·build()
+}
+
+// Mount the component
+rite main() {
+    App·mount("#preview-target", Counter());
+}
+"#;
+
+// =============================================================================
+// Playground Styles
+// =============================================================================
+
+☉ const PLAYGROUND_STYLES: String = r#"
+.athame-playground {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #11111b;
+    color: #cdd6f4;
+}
+
+.playground-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 24px;
+    background: #181825;
+    border-bottom: 1px solid #313244;
+}
+
+.playground-header h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.playground-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.playground-main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.playground-editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #313244;
+}
+
+.playground-output-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    background: #1e1e2e;
+    border-bottom: 1px solid #313244;
+}
+
+.panel-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #a6adc8;
+}
+
+.preview-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.preview-content {
+    flex: 1;
+    padding: 16px;
+    background: #11111b;
+}
+
+.console-section {
+    border-top: 1px solid #313244;
+}
+
+.console-output {
+    margin: 0;
+    padding: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    background: #11111b;
+    min-height: 120px;
+    max-height: 200px;
+    overflow: auto;
+}
+
+.console-output.status-error {
+    color: #f38ba8;
+}
+
+.console-output.status-success {
+    color: #a6e3a1;
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.status-indicator.status-idle {
+    background: #6c7086;
+}
+
+.status-indicator.status-compiling {
+    background: #f9e2af;
+    animation: pulse 1s infinite;
+}
+
+.status-indicator.status-success {
+    background: #a6e3a1;
+}
+
+.status-indicator.status-error {
+    background: #f38ba8;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: none;
+}
+
+.btn-primary {
+    background: #cba6f7;
+    color: #11111b;
+}
+
+.btn-primary:hover {
+    background: #b4befe;
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: #313244;
+    color: #cdd6f4;
+}
+
+.btn-secondary:hover {
+    background: #45475a;
+}
+
+.btn-ghost {
+    background: transparent;
+    color: #a6adc8;
+}
+
+.btn-ghost:hover {
+    background: #313244;
+}
+
+.spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+"#;
+

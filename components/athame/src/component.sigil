@@ -1,0 +1,431 @@
+// Athame - Qliphoth Component Wrapper
+// Integrates Athame editor with Qliphoth's component model
+// Native Sigil Syntax
+
+invoke qliphoth·prelude·*;
+invoke super·editor·{Athame, athame_new, athame_with_content, athame_get_content, athame_set_content, athame_handle_key, athame_get_visible_range, athame_get_render_range, athame_get_line_highlights, athame_find_matching_bracket, athame_get_cursor_line, KeyCode, KeyEvent, EditorConfig};
+invoke super·state·{get_lines, get_cursor_pos, get_selection, OptionSelection};
+invoke super·highlight·{highlight_style_to_class, HighlightSpan, OptionBracketPair};
+invoke super·viewport·{LineRange};
+
+// =============================================================================
+// Athame Component Props
+// =============================================================================
+
+// Callback type for change events
+ᛈ OptionCallback {
+    None,
+    Some(rite(String) → ()),
+}
+
+sigil AthameProps {
+    initial_content: String,
+    readonly: bool,
+    language: String,
+    show_line_numbers: bool,
+    on_change: OptionCallback,
+    theme: String,
+    height: i64,
+}
+
+rite athame_props_default() → AthameProps {
+    AthameProps {
+        initial_content: "",
+        readonly: nay,
+        language: "sigil",
+        show_line_numbers: yea,
+        on_change: OptionCallback·None,
+        theme: "dark",
+        height: 400,
+    }
+}
+
+rite callback_is_some(opt: OptionCallback) → bool {
+    ⌥ opt {
+        OptionCallback·None => nay,
+        OptionCallback·Some(_) => yea,
+    }
+}
+
+rite callback_unwrap(opt: OptionCallback) → rite(String) → () {
+    ⌥ opt {
+        OptionCallback·None => |_| {},
+        OptionCallback·Some(f) => f,
+    }
+}
+
+// =============================================================================
+// Athame Component
+// =============================================================================
+
+/// Athame code editor component for Qliphoth
+☉ rite AthameEditor(props: AthameProps) → VNode {
+    // Initialize editor state
+    ≔ (editor, set_editor) = use_state(athame_with_content(props.initial_content, props.height));
+    ≔ (focused, set_focused) = use_state(nay);
+
+    // Effect to notify parent of changes
+    use_effect(|| {
+        ⎇ callback_is_some(props.on_change) {
+            ≔ content = athame_get_content(editor);
+            ≔ handler = callback_unwrap(props.on_change);
+            handler(content);
+        }
+    }, [editor.state.content.version]);
+
+    // Keyboard event handler
+    ≔ handle_keydown = |event: KeyboardEvent| {
+        ≔ key_code = parse_key_code(event);
+        ≔ key_event = KeyEvent {
+            key: key_code,
+            ctrl: event.ctrl_key,
+            shift: event.shift_key,
+            alt: event.alt_key,
+        };
+        set_editor(athame_handle_key(editor, key_event));
+    };
+
+    // Build visible lines
+    ≔ lines = get_lines(editor.state);
+    ≔ render_range = athame_get_render_range(editor, 3);
+    ≔ cursor_line = athame_get_cursor_line(editor);
+    ≔ bracket_match = athame_find_matching_bracket(editor);
+
+    // Render the editor
+    div()
+        ·class(&format!("athame-editor athame-theme-{}", props.theme))
+        ·style(&format!("height: {}px", props.height))
+        ·attr("tabindex", "0")
+        ·onfocus(|| set_focused(yea))
+        ·onblur(|| set_focused(nay))
+        ·onkeydown(handle_keydown)
+        ·children(vec![
+            // Line numbers gutter (optional)
+            ⎇ props.show_line_numbers {
+                render_gutter(render_range, cursor_line)
+            } ⎉ {
+                fragment(vec![])
+            },
+
+            // Code content area
+            div()
+                ·class("athame-content")
+                ·children(
+                    render_lines(editor, render_range, cursor_line, bracket_match, focused)
+                )
+                ·build(),
+
+            // Hidden input for text entry
+            ⎇ ¬props.readonly ∧ focused {
+                input()
+                    ·class("athame-hidden-input")
+                    ·attr("type", "text")
+                    ·attr("autocomplete", "off")
+                    ·attr("autocorrect", "off")
+                    ·attr("autocapitalize", "off")
+                    ·attr("spellcheck", "false")
+                    ·build()
+            } ⎉ {
+                fragment(vec![])
+            }
+        ])
+        ·build()
+}
+
+// =============================================================================
+// Render Helpers
+// =============================================================================
+
+rite render_gutter(range: LineRange, cursor_line: i64) → VNode {
+    ≔ vary line_numbers = Vec·new();
+    ≔ vary i = range.start;
+
+    ⟳ i < range.end {
+        ≔ is_current = i == cursor_line;
+        ≔ class_name = ⎇ is_current { "athame-line-number athame-line-current" } ⎉ { "athame-line-number" };
+
+        line_numbers.push(
+            div()
+                ·class(class_name)
+                ·text(&to_string(i + 1))
+                ·build()
+        );
+        i = i + 1;
+    }
+
+    div()
+        ·class("athame-gutter")
+        ·children(line_numbers)
+        ·build()
+}
+
+rite render_lines(editor: Athame, range: LineRange, cursor_line: i64, bracket_match: OptionBracketPair, focused: bool) → [VNode] {
+    ≔ lines = get_lines(editor.state);
+    ≔ vary rendered = Vec·new();
+    ≔ vary line_offset = 0;
+
+    // Calculate line offsets for highlighting
+    ≔ vary offsets = Vec·new();
+    ≔ vary offset = 0;
+    ≔ vary j = 0;
+    ⟳ j < lines.len() {
+        offsets.push(offset);
+        offset = offset + chars(lines[j]).len() + 1; // +1 for newline
+        j = j + 1;
+    }
+
+    ≔ vary i = range.start;
+    ⟳ i < range.end ∧ i < lines.len() {
+        ≔ line = lines[i];
+        ≔ is_current = i == cursor_line;
+        ≔ line_start = offsets[i];
+        ≔ line_end = line_start + chars(line).len();
+
+        // Get highlights for this line
+        ≔ highlights = athame_get_line_highlights(editor, line_start, line_end);
+
+        rendered.push(
+            render_line(line, i, is_current, line_start, highlights, bracket_match, focused, editor)
+        );
+        i = i + 1;
+    }
+
+    rendered
+}
+
+rite render_line(line: String, line_num: i64, is_current: bool, line_start: i64, highlights: [HighlightSpan], bracket_match: OptionBracketPair, focused: bool, editor: Athame) → VNode {
+    ≔ class_name = ⎇ is_current { "athame-line athame-line-current" } ⎉ { "athame-line" };
+    ≔ cs = chars(line);
+    ≔ len = cs.len();
+
+    ⎇ len == 0 {
+        // Empty line
+        ⤺ div()
+            ·class(class_name)
+            ·children(vec![
+                span()·class("athame-line-content")·text(" ")·build(),
+                ⎇ is_current ∧ focused {
+                    render_cursor(0)
+                } ⎉ {
+                    fragment(vec![])
+                }
+            ])
+            ·build();
+    }
+
+    // Build spans with syntax highlighting
+    ≔ vary spans = Vec·new();
+    ≔ cursor_pos = get_cursor_pos(editor.state);
+    ≔ cursor_col = cursor_pos - line_start;
+    ≔ vary char_idx = 0;
+
+    ⟳ char_idx < len {
+        // Find highlight for this character
+        ≔ char_pos = line_start + char_idx;
+        ≔ vary span_class = "athame-text";
+        ≔ vary span_end = char_idx + 1;
+
+        // Check for highlight spans
+        ≔ vary h = 0;
+        ⟳ h < highlights.len() {
+            ≔ hl = highlights[h];
+            ⎇ char_pos >= hl.start ∧ char_pos < hl.end {
+                span_class = highlight_style_to_class(hl.style);
+                span_end = ⎇ hl.end - line_start < len { hl.end - line_start } ⎉ { len };
+                ⊗; // break
+            }
+            h = h + 1;
+        }
+
+        // Check for bracket match
+        ⌥ bracket_match {
+            OptionBracketPair·Some(pair) => {
+                ⎇ char_pos == pair.open_pos ∨ char_pos == pair.close_pos {
+                    span_class = "athame-bracket-match";
+                }
+            },
+            OptionBracketPair·None => {},
+        }
+
+        // Build span text
+        ≔ vary span_text = "";
+        ≔ vary k = char_idx;
+        ⟳ k < span_end {
+            span_text = span_text + to_string(cs[k]);
+            k = k + 1;
+        }
+
+        spans.push(
+            span()·class(span_class)·text(&span_text)·build()
+        );
+
+        // Add cursor if it's in this span
+        ⎇ is_current ∧ focused ∧ cursor_col >= char_idx ∧ cursor_col < span_end {
+            spans.push(render_cursor(cursor_col - char_idx));
+        }
+
+        char_idx = span_end;
+    }
+
+    // Cursor at end of line
+    ⎇ is_current ∧ focused ∧ cursor_col >= len {
+        spans.push(render_cursor(0));
+    }
+
+    div()
+        ·class(class_name)
+        ·children(vec![
+            span()·class("athame-line-content")·children(spans)·build()
+        ])
+        ·build()
+}
+
+rite render_cursor(offset: i64) → VNode {
+    span()
+        ·class("athame-cursor")
+        ·style(&format!("left: {}ch", offset))
+        ·build()
+}
+
+// =============================================================================
+// Key Code Parsing
+// =============================================================================
+
+rite parse_key_code(event: KeyboardEvent) → KeyCode {
+    ≔ key = event.key;
+
+    ⎇ key == "Backspace" { KeyCode·Backspace }
+    ⎉ ⎇ key == "Delete" { KeyCode·Delete }
+    ⎉ ⎇ key == "Enter" { KeyCode·Enter }
+    ⎉ ⎇ key == "Tab" { KeyCode·Tab }
+    ⎉ ⎇ key == "ArrowLeft" { KeyCode·ArrowLeft }
+    ⎉ ⎇ key == "ArrowRight" { KeyCode·ArrowRight }
+    ⎉ ⎇ key == "ArrowUp" { KeyCode·ArrowUp }
+    ⎉ ⎇ key == "ArrowDown" { KeyCode·ArrowDown }
+    ⎉ ⎇ key == "Home" { KeyCode·Home }
+    ⎉ ⎇ key == "End" { KeyCode·End }
+    ⎉ ⎇ key == "PageUp" { KeyCode·PageUp }
+    ⎉ ⎇ key == "PageDown" { KeyCode·PageDown }
+    ⎉ ⎇ chars(key).len() == 1 {
+        KeyCode·Character(chars(key)[0])
+    } ⎉ {
+        KeyCode·Unknown
+    }
+}
+
+// =============================================================================
+// CSS Styles (Embedded)
+// =============================================================================
+
+☉ const ATHAME_STYLES: &str = r#"
+.athame-editor {
+    display: flex;
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+    border-radius: 8px;
+    position: relative;
+}
+
+.athame-theme-dark {
+    background: #1e1e2e;
+    color: #cdd6f4;
+}
+
+.athame-theme-light {
+    background: #eff1f5;
+    color: #4c4f69;
+}
+
+.athame-gutter {
+    flex-shrink: 0;
+    padding: 0 12px;
+    background: rgba(0, 0, 0, 0.1);
+    color: #6c7086;
+    text-align: right;
+    user-select: none;
+}
+
+.athame-line-number {
+    height: 1.5em;
+}
+
+.athame-line-number.athame-line-current {
+    color: #cba6f7;
+}
+
+.athame-content {
+    flex: 1;
+    overflow: auto;
+    padding: 0 12px;
+}
+
+.athame-line {
+    height: 1.5em;
+    white-space: pre;
+    position: relative;
+}
+
+.athame-line.athame-line-current {
+    background: rgba(203, 166, 247, 0.1);
+}
+
+.athame-line-content {
+    display: inline;
+}
+
+/* Syntax highlighting classes */
+.ath-keyword { color: #cba6f7; font-weight: 500; }
+.ath-type { color: #89b4fa; }
+.ath-function { color: #89dceb; }
+.ath-variable { color: #cdd6f4; }
+.ath-string { color: #a6e3a1; }
+.ath-number { color: #fab387; }
+.ath-comment { color: #6c7086; font-style: italic; }
+.ath-operator { color: #89dceb; }
+.ath-morpheme { color: #f5c2e7; font-weight: 600; }
+.ath-native { color: #94e2d5; font-weight: 600; }
+.ath-evidence-known { color: #a6e3a1; }
+.ath-evidence-uncertain { color: #f9e2af; }
+.ath-evidence-reported { color: #89b4fa; }
+.ath-evidence-paradox { color: #f38ba8; }
+.ath-punctuation { color: #9399b2; }
+.ath-bracket { color: #f5c2e7; }
+.ath-bracket-match { background: rgba(245, 194, 231, 0.3); border-radius: 2px; }
+.ath-error { color: #f38ba8; text-decoration: wavy underline; }
+
+/* Cursor */
+.athame-cursor {
+    position: absolute;
+    width: 2px;
+    height: 1.2em;
+    background: #f5e0dc;
+    animation: athame-blink 1s infinite;
+}
+
+@keyframes athame-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.athame-hidden-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+
+/* Light theme overrides */
+.athame-theme-light .ath-keyword { color: #8839ef; }
+.athame-theme-light .ath-type { color: #1e66f5; }
+.athame-theme-light .ath-function { color: #179299; }
+.athame-theme-light .ath-string { color: #40a02b; }
+.athame-theme-light .ath-number { color: #fe640b; }
+.athame-theme-light .ath-comment { color: #9ca0b0; }
+.athame-theme-light .ath-morpheme { color: #ea76cb; }
+.athame-theme-light .ath-native { color: #179299; }
+.athame-theme-light .athame-cursor { background: #4c4f69; }
+"#;
+

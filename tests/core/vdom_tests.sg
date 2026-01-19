@@ -1,0 +1,333 @@
+// Qliphoth Framework - VDOM Unit Tests
+// Phase 0: Framework Core Tests
+
+// ============================================================================
+// VNode Type Definitions
+// ============================================================================
+
+☉ sigil VText {
+    content: !String
+}
+
+☉ sigil VElement {
+    tag: !String,
+    id_attr: ?String,
+    class_attr: ?String,
+    children: !Vec<VNode>,
+    key: ?String
+}
+
+☉ ᛈ VNode {
+    Element(!VElement),
+    Text(!VText),
+    Empty
+}
+
+// ============================================================================
+// Constructors
+// ============================================================================
+
+rite make_element(t: !String) → !VElement {
+    ≔ c: !Vec<VNode> = Vec·new();
+    VElement {
+        tag: t,
+        id_attr: None,
+        class_attr: None,
+        children: c,
+        key: None
+    }
+}
+
+rite div() → !VElement {
+    make_element("div")
+}
+
+rite span() → !VElement {
+    make_element("span")
+}
+
+rite text(s: !String) → !VNode {
+    VNode·Text(VText { content: s })
+}
+
+rite with_id(el: !VElement, id: !String) → !VElement {
+    VElement {
+        tag: el.tag,
+        id_attr: Some(id),
+        class_attr: el.class_attr,
+        children: el.children,
+        key: el.key
+    }
+}
+
+rite with_class(el: !VElement, cls: !String) → !VElement {
+    VElement {
+        tag: el.tag,
+        id_attr: el.id_attr,
+        class_attr: Some(cls),
+        children: el.children,
+        key: el.key
+    }
+}
+
+rite with_key(el: !VElement, k: !String) → !VElement {
+    VElement {
+        tag: el.tag,
+        id_attr: el.id_attr,
+        class_attr: el.class_attr,
+        children: el.children,
+        key: Some(k)
+    }
+}
+
+rite with_child(el: !VElement, child: !VNode) → !VElement {
+    ≔ vary c: !Vec<VNode> = el.children;
+    c.push(child);
+    VElement {
+        tag: el.tag,
+        id_attr: el.id_attr,
+        class_attr: el.class_attr,
+        children: c,
+        key: el.key
+    }
+}
+
+// ============================================================================
+// Tests: Basic Element Creation
+// ============================================================================
+
+rite test_div_tag() → !i64 {
+    ≔ el: !VElement = div();
+    ⎇ el.tag == "div" { 1 } ⎉ { 0 }
+}
+
+rite test_span_tag() → !i64 {
+    ≔ el: !VElement = span();
+    ⎇ el.tag == "span" { 1 } ⎉ { 0 }
+}
+
+rite test_element_no_id() → !i64 {
+    ≔ el: !VElement = div();
+    ⌥ el.id_attr {
+        Some(_) => 0,
+        None => 1
+    }
+}
+
+rite test_element_with_id() → !i64 {
+    ≔ el: !VElement = with_id(div(), "main");
+    ⌥ el.id_attr {
+        Some(id) => ⎇ id == "main" { 1 } ⎉ { 0 },
+        None => 0
+    }
+}
+
+rite test_element_with_class() → !i64 {
+    ≔ el: !VElement = with_class(div(), "container");
+    ⌥ el.class_attr {
+        Some(c) => ⎇ c == "container" { 1 } ⎉ { 0 },
+        None => 0
+    }
+}
+
+rite test_element_with_key() → !i64 {
+    ≔ el: !VElement = with_key(div(), "item-1");
+    ⌥ el.key {
+        Some(k) => ⎇ k == "item-1" { 1 } ⎉ { 0 },
+        None => 0
+    }
+}
+
+// ============================================================================
+// Tests: Text Nodes
+// ============================================================================
+
+rite test_text_node() → !i64 {
+    ≔ node: !VNode = text("Hello");
+    ⌥ node {
+        VNode·Text(t) => ⎇ t.content == "Hello" { 1 } ⎉ { 0 },
+        _ => 0
+    }
+}
+
+rite test_empty_text() → !i64 {
+    ≔ node: !VNode = text("");
+    ⌥ node {
+        VNode·Text(t) => ⎇ t.content == "" { 1 } ⎉ { 0 },
+        _ => 0
+    }
+}
+
+// ============================================================================
+// Tests: VNode Enum Variants
+// ============================================================================
+
+rite test_vnode_element_variant() → !i64 {
+    ≔ el: !VElement = div();
+    ≔ node: !VNode = VNode·Element(el);
+    ⌥ node {
+        VNode·Element(e) => ⎇ e.tag == "div" { 1 } ⎉ { 0 },
+        _ => 0
+    }
+}
+
+rite test_vnode_text_variant() → !i64 {
+    ≔ node: !VNode = text("World");
+    ⌥ node {
+        VNode·Text(_) => 1,
+        _ => 0
+    }
+}
+
+rite test_vnode_empty_variant() → !i64 {
+    ≔ node: !VNode = VNode·Empty;
+    ⌥ node {
+        VNode·Empty => 1,
+        _ => 0
+    }
+}
+
+// ============================================================================
+// Tests: Children
+// ============================================================================
+
+rite test_empty_children() → !i64 {
+    ≔ el: !VElement = div();
+    ⎇ el.children.len() == 0 { 1 } ⎉ { 0 }
+}
+
+rite test_one_child() → !i64 {
+    ≔ el: !VElement = with_child(div(), text("Hello"));
+    ⎇ el.children.len() == 1 { 1 } ⎉ { 0 }
+}
+
+rite test_two_children() → !i64 {
+    ≔ el1: !VElement = with_child(div(), text("A"));
+    ≔ el2: !VElement = with_child(el1, text("B"));
+    ⎇ el2.children.len() == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_nested_element() → !i64 {
+    ≔ inner: !VElement = span();
+    ≔ outer: !VElement = with_child(div(), VNode·Element(inner));
+    ⎇ outer.children.len() == 1 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Attribute Diffing
+// ============================================================================
+
+rite test_same_id() → !i64 {
+    ≔ el1: !VElement = with_id(div(), "test");
+    ≔ el2: !VElement = with_id(div(), "test");
+    ⌥ (el1.id_attr, el2.id_attr) {
+        (Some(a), Some(b)) => ⎇ a == b { 1 } ⎉ { 0 },
+        (None, None) => 1,
+        _ => 0
+    }
+}
+
+rite test_different_id() → !i64 {
+    ≔ el1: !VElement = with_id(div(), "old");
+    ≔ el2: !VElement = with_id(div(), "new");
+    ⌥ (el1.id_attr, el2.id_attr) {
+        (Some(a), Some(b)) => ⎇ a != b { 1 } ⎉ { 0 },
+        _ => 0
+    }
+}
+
+rite test_id_added() → !i64 {
+    ≔ el1: !VElement = div();
+    ≔ el2: !VElement = with_id(div(), "new");
+    ⌥ (el1.id_attr, el2.id_attr) {
+        (None, Some(_)) => 1,
+        _ => 0
+    }
+}
+
+rite test_id_removed() → !i64 {
+    ≔ el1: !VElement = with_id(div(), "old");
+    ≔ el2: !VElement = div();
+    ⌥ (el1.id_attr, el2.id_attr) {
+        (Some(_), None) => 1,
+        _ => 0
+    }
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+rite main() {
+    println("=== Qliphoth VDOM Unit Tests ===");
+    println("");
+
+    ≔ vary passed: !i64 = 0;
+    ≔ vary total: !i64 = 0;
+
+    // Basic element tests
+    total = total + 1;
+    ⎇ test_div_tag() == 1 { passed = passed + 1; println("PASS: div tag"); } ⎉ { println("FAIL: div tag"); }
+
+    total = total + 1;
+    ⎇ test_span_tag() == 1 { passed = passed + 1; println("PASS: span tag"); } ⎉ { println("FAIL: span tag"); }
+
+    total = total + 1;
+    ⎇ test_element_no_id() == 1 { passed = passed + 1; println("PASS: no id"); } ⎉ { println("FAIL: no id"); }
+
+    total = total + 1;
+    ⎇ test_element_with_id() == 1 { passed = passed + 1; println("PASS: with id"); } ⎉ { println("FAIL: with id"); }
+
+    total = total + 1;
+    ⎇ test_element_with_class() == 1 { passed = passed + 1; println("PASS: with class"); } ⎉ { println("FAIL: with class"); }
+
+    total = total + 1;
+    ⎇ test_element_with_key() == 1 { passed = passed + 1; println("PASS: with key"); } ⎉ { println("FAIL: with key"); }
+
+    // Text node tests
+    total = total + 1;
+    ⎇ test_text_node() == 1 { passed = passed + 1; println("PASS: text node"); } ⎉ { println("FAIL: text node"); }
+
+    total = total + 1;
+    ⎇ test_empty_text() == 1 { passed = passed + 1; println("PASS: empty text"); } ⎉ { println("FAIL: empty text"); }
+
+    // VNode variant tests
+    total = total + 1;
+    ⎇ test_vnode_element_variant() == 1 { passed = passed + 1; println("PASS: vnode element"); } ⎉ { println("FAIL: vnode element"); }
+
+    total = total + 1;
+    ⎇ test_vnode_text_variant() == 1 { passed = passed + 1; println("PASS: vnode text"); } ⎉ { println("FAIL: vnode text"); }
+
+    total = total + 1;
+    ⎇ test_vnode_empty_variant() == 1 { passed = passed + 1; println("PASS: vnode empty"); } ⎉ { println("FAIL: vnode empty"); }
+
+    // Children tests
+    total = total + 1;
+    ⎇ test_empty_children() == 1 { passed = passed + 1; println("PASS: empty children"); } ⎉ { println("FAIL: empty children"); }
+
+    total = total + 1;
+    ⎇ test_one_child() == 1 { passed = passed + 1; println("PASS: one child"); } ⎉ { println("FAIL: one child"); }
+
+    total = total + 1;
+    ⎇ test_two_children() == 1 { passed = passed + 1; println("PASS: two children"); } ⎉ { println("FAIL: two children"); }
+
+    total = total + 1;
+    ⎇ test_nested_element() == 1 { passed = passed + 1; println("PASS: nested element"); } ⎉ { println("FAIL: nested element"); }
+
+    // Attribute diffing tests
+    total = total + 1;
+    ⎇ test_same_id() == 1 { passed = passed + 1; println("PASS: same id"); } ⎉ { println("FAIL: same id"); }
+
+    total = total + 1;
+    ⎇ test_different_id() == 1 { passed = passed + 1; println("PASS: different id"); } ⎉ { println("FAIL: different id"); }
+
+    total = total + 1;
+    ⎇ test_id_added() == 1 { passed = passed + 1; println("PASS: id added"); } ⎉ { println("FAIL: id added"); }
+
+    total = total + 1;
+    ⎇ test_id_removed() == 1 { passed = passed + 1; println("PASS: id removed"); } ⎉ { println("FAIL: id removed"); }
+
+    println("");
+    println(passed);
+    println(total);
+}

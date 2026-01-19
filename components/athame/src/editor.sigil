@@ -1,0 +1,490 @@
+// Athame - Main Editor Component
+// Combines all modules into a cohesive code editor
+// Native Sigil Syntax
+
+invoke super·tokenizer·{Token, TokenKind, tokenize};
+invoke super·state·{EditorState, editor_state_new, editor_state_with_content, get_content, set_content, get_cursor_pos, set_cursor_pos, get_selection, set_selection, clear_selection, insert_text, delete_backward, delete_forward, move_cursor_left, move_cursor_right, move_cursor_home, move_cursor_end, get_lines, get_line_count, is_readonly};
+invoke super·history·{EditorHistory, editor_history_new, editor_history_record, editor_history_undo, editor_history_redo, editor_history_can_undo, editor_history_can_redo, HistoryEntry};
+invoke super·viewport·{Viewport, viewport_new, viewport_scroll_to_line, viewport_scroll_by, viewport_ensure_visible, viewport_visible_range, viewport_render_range, LineRange};
+invoke super·highlight·{HighlightStyle, HighlightSpan, tokens_to_highlights, get_line_highlights, find_bracket_at_cursor, highlight_style_to_class, OptionBracketPair, BracketPair};
+
+// =============================================================================
+// Editor Configuration
+// =============================================================================
+
+sigil EditorConfig {
+    line_height: i64,
+    tab_size: i64,
+    insert_spaces: bool,
+    word_wrap: bool,
+    show_line_numbers: bool,
+    highlight_current_line: bool,
+    bracket_matching: bool,
+    auto_indent: bool,
+}
+
+rite editor_config_default() → EditorConfig {
+    EditorConfig {
+        line_height: 20,
+        tab_size: 4,
+        insert_spaces: yea,
+        word_wrap: nay,
+        show_line_numbers: yea,
+        highlight_current_line: yea,
+        bracket_matching: yea,
+        auto_indent: yea,
+    }
+}
+
+// =============================================================================
+// Full Editor State
+// =============================================================================
+
+sigil Athame {
+    state: EditorState,
+    history: EditorHistory,
+    viewport: Viewport,
+    config: EditorConfig,
+    tokens: [Token],
+    highlights: [HighlightSpan],
+}
+
+rite athame_new(container_height: i64) → Athame {
+    ≔ config = editor_config_default();
+    Athame {
+        state: editor_state_new(),
+        history: editor_history_new(),
+        viewport: viewport_new(container_height, config.line_height),
+        config: config,
+        tokens: Vec·new(),
+        highlights: Vec·new(),
+    }
+}
+
+rite athame_with_content(content: String, container_height: i64) → Athame {
+    ≔ config = editor_config_default();
+    ≔ tokens = tokenize(content);
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    ≔ state = editor_state_with_content(content);
+    ≔ history = editor_history_new();
+    ≔ history = editor_history_record(history, content, 0);
+
+    Athame {
+        state: state,
+        history: history,
+        viewport: viewport_new(container_height, config.line_height),
+        config: config,
+        tokens: tokens,
+        highlights: highlights,
+    }
+}
+
+// =============================================================================
+// Content Operations
+// =============================================================================
+
+rite athame_get_content(editor: Athame) → String {
+    get_content(editor.state)
+}
+
+rite athame_set_content(editor: Athame, content: String) → Athame {
+    ≔ new_state = set_content(editor.state, content);
+    ≔ tokens = tokenize(content);
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    Athame {
+        state: new_state,
+        history: editor.history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: tokens,
+        highlights: highlights,
+    }
+}
+
+rite athame_update_tokens(editor: Athame) → Athame {
+    ≔ content = get_content(editor.state);
+    ≔ tokens = tokenize(content);
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    Athame {
+        state: editor.state,
+        history: editor.history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: tokens,
+        highlights: highlights,
+    }
+}
+
+// =============================================================================
+// Text Input Operations
+// =============================================================================
+
+rite athame_insert(editor: Athame, text: String) → Athame {
+    ≔ new_state = insert_text(editor.state, text);
+    ≔ content = get_content(new_state);
+    ≔ cursor = get_cursor_pos(new_state);
+    ≔ new_history = editor_history_record(editor.history, content, cursor);
+    ≔ tokens = tokenize(content);
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    Athame {
+        state: new_state,
+        history: new_history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: tokens,
+        highlights: highlights,
+    }
+}
+
+rite athame_delete_backward(editor: Athame) → Athame {
+    ≔ new_state = delete_backward(editor.state);
+    ≔ content = get_content(new_state);
+    ≔ cursor = get_cursor_pos(new_state);
+    ≔ new_history = editor_history_record(editor.history, content, cursor);
+    ≔ tokens = tokenize(content);
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    Athame {
+        state: new_state,
+        history: new_history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: tokens,
+        highlights: highlights,
+    }
+}
+
+rite athame_delete_forward(editor: Athame) → Athame {
+    ≔ new_state = delete_forward(editor.state);
+    ≔ content = get_content(new_state);
+    ≔ cursor = get_cursor_pos(new_state);
+    ≔ new_history = editor_history_record(editor.history, content, cursor);
+    ≔ tokens = tokenize(content);
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    Athame {
+        state: new_state,
+        history: new_history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: tokens,
+        highlights: highlights,
+    }
+}
+
+rite athame_newline(editor: Athame) → Athame {
+    ≔ indent = ⎇ editor.config.auto_indent {
+        athame_get_current_indent(editor)
+    } ⎉ {
+        ""
+    };
+    athame_insert(editor, "\n" + indent)
+}
+
+rite athame_tab(editor: Athame) → Athame {
+    ⎇ editor.config.insert_spaces {
+        ≔ vary spaces = "";
+        ≔ vary i = 0;
+        ⟳ i < editor.config.tab_size {
+            spaces = spaces + " ";
+            i = i + 1;
+        }
+        athame_insert(editor, spaces)
+    } ⎉ {
+        athame_insert(editor, "\t")
+    }
+}
+
+// =============================================================================
+// Cursor Operations
+// =============================================================================
+
+rite athame_move_left(editor: Athame) → Athame {
+    Athame {
+        state: move_cursor_left(editor.state),
+        history: editor.history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: editor.tokens,
+        highlights: editor.highlights,
+    }
+}
+
+rite athame_move_right(editor: Athame) → Athame {
+    Athame {
+        state: move_cursor_right(editor.state),
+        history: editor.history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: editor.tokens,
+        highlights: editor.highlights,
+    }
+}
+
+rite athame_move_home(editor: Athame) → Athame {
+    Athame {
+        state: move_cursor_home(editor.state),
+        history: editor.history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: editor.tokens,
+        highlights: editor.highlights,
+    }
+}
+
+rite athame_move_end(editor: Athame) → Athame {
+    Athame {
+        state: move_cursor_end(editor.state),
+        history: editor.history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: editor.tokens,
+        highlights: editor.highlights,
+    }
+}
+
+// =============================================================================
+// Undo/Redo Operations
+// =============================================================================
+
+rite athame_undo(editor: Athame) → Athame {
+    ⎇ ¬editor_history_can_undo(editor.history) {
+        ⤺ editor;
+    }
+
+    ≔ (new_history, entry) = editor_history_undo(editor.history);
+    ≔ new_state = set_content(editor.state, entry.content);
+    ≔ new_state = set_cursor_pos(new_state, entry.cursor_pos);
+    ≔ tokens = tokenize(entry.content);
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    Athame {
+        state: new_state,
+        history: new_history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: tokens,
+        highlights: highlights,
+    }
+}
+
+rite athame_redo(editor: Athame) → Athame {
+    ⎇ ¬editor_history_can_redo(editor.history) {
+        ⤺ editor;
+    }
+
+    ≔ (new_history, entry) = editor_history_redo(editor.history);
+    ≔ new_state = set_content(editor.state, entry.content);
+    ≔ new_state = set_cursor_pos(new_state, entry.cursor_pos);
+    ≔ tokens = tokenize(entry.content);
+    ≔ highlights = tokens_to_highlights(tokens);
+
+    Athame {
+        state: new_state,
+        history: new_history,
+        viewport: editor.viewport,
+        config: editor.config,
+        tokens: tokens,
+        highlights: highlights,
+    }
+}
+
+rite athame_can_undo(editor: Athame) → bool {
+    editor_history_can_undo(editor.history)
+}
+
+rite athame_can_redo(editor: Athame) → bool {
+    editor_history_can_redo(editor.history)
+}
+
+// =============================================================================
+// Viewport Operations
+// =============================================================================
+
+rite athame_scroll_to(editor: Athame, line: i64) → Athame {
+    ≔ total = get_line_count(editor.state);
+    Athame {
+        state: editor.state,
+        history: editor.history,
+        viewport: viewport_scroll_to_line(editor.viewport, line, total),
+        config: editor.config,
+        tokens: editor.tokens,
+        highlights: editor.highlights,
+    }
+}
+
+rite athame_scroll_by(editor: Athame, delta: i64) → Athame {
+    ≔ total = get_line_count(editor.state);
+    Athame {
+        state: editor.state,
+        history: editor.history,
+        viewport: viewport_scroll_by(editor.viewport, delta, total),
+        config: editor.config,
+        tokens: editor.tokens,
+        highlights: editor.highlights,
+    }
+}
+
+rite athame_ensure_cursor_visible(editor: Athame) → Athame {
+    ≔ cursor_line = athame_get_cursor_line(editor);
+    ≔ total = get_line_count(editor.state);
+    Athame {
+        state: editor.state,
+        history: editor.history,
+        viewport: viewport_ensure_visible(editor.viewport, cursor_line, total),
+        config: editor.config,
+        tokens: editor.tokens,
+        highlights: editor.highlights,
+    }
+}
+
+rite athame_get_visible_range(editor: Athame) → LineRange {
+    ≔ total = get_line_count(editor.state);
+    viewport_visible_range(editor.viewport, total)
+}
+
+rite athame_get_render_range(editor: Athame, overscan: i64) → LineRange {
+    ≔ total = get_line_count(editor.state);
+    viewport_render_range(editor.viewport, total, overscan)
+}
+
+// =============================================================================
+// Line Operations
+// =============================================================================
+
+rite athame_get_cursor_line(editor: Athame) → i64 {
+    ≔ content = get_content(editor.state);
+    ≔ cursor = get_cursor_pos(editor.state);
+    ≔ cs = chars(content);
+
+    ≔ vary line = 0;
+    ≔ vary i = 0;
+    ⟳ i < cursor ∧ i < cs.len() {
+        ⎇ cs[i] == '\n' {
+            line = line + 1;
+        }
+        i = i + 1;
+    }
+    line
+}
+
+rite athame_get_current_indent(editor: Athame) → String {
+    ≔ lines = get_lines(editor.state);
+    ≔ cursor_line = athame_get_cursor_line(editor);
+
+    ⎇ cursor_line >= lines.len() {
+        ⤺ "";
+    }
+
+    ≔ line = lines[cursor_line];
+    ≔ cs = chars(line);
+    ≔ vary indent = "";
+    ≔ vary i = 0;
+
+    ⟳ i < cs.len() ∧ (cs[i] == ' ' ∨ cs[i] == '\t') {
+        indent = indent + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    indent
+}
+
+// =============================================================================
+// Bracket Matching
+// =============================================================================
+
+rite athame_find_matching_bracket(editor: Athame) → OptionBracketPair {
+    ⎇ ¬editor.config.bracket_matching {
+        ⤺ OptionBracketPair·None;
+    }
+
+    ≔ content = get_content(editor.state);
+    ≔ cursor = get_cursor_pos(editor.state);
+    find_bracket_at_cursor(content, cursor)
+}
+
+// =============================================================================
+// Highlighting
+// =============================================================================
+
+rite athame_get_line_highlights(editor: Athame, line_start: i64, line_end: i64) → [HighlightSpan] {
+    get_line_highlights(editor.highlights, line_start, line_end)
+}
+
+rite athame_get_highlight_class(style: HighlightStyle) → String {
+    highlight_style_to_class(style)
+}
+
+// =============================================================================
+// Keyboard Event Handling
+// =============================================================================
+
+ᛈ KeyCode {
+    Backspace,
+    Delete,
+    Enter,
+    Tab,
+    ArrowLeft,
+    ArrowRight,
+    ArrowUp,
+    ArrowDown,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Character(char),
+    Unknown,
+}
+
+sigil KeyEvent {
+    key: KeyCode,
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+}
+
+rite athame_handle_key(editor: Athame, event: KeyEvent) → Athame {
+    ⎇ is_readonly(editor.state) {
+        // Only allow navigation in readonly mode
+        ⌥ event.key {
+            KeyCode·ArrowLeft => athame_move_left(editor),
+            KeyCode·ArrowRight => athame_move_right(editor),
+            KeyCode·Home => athame_move_home(editor),
+            KeyCode·End => athame_move_end(editor),
+            KeyCode·PageUp => athame_scroll_by(editor, -10),
+            KeyCode·PageDown => athame_scroll_by(editor, 10),
+            _ => editor,
+        }
+    } ⎉ {
+        // Full editing mode
+        ⎇ event.ctrl {
+            ⌥ event.key {
+                KeyCode·Character('z') => ⎇ event.shift { athame_redo(editor) } ⎉ { athame_undo(editor) },
+                KeyCode·Character('y') => athame_redo(editor),
+                KeyCode·Home => athame_scroll_to(editor, 0),
+                KeyCode·End => athame_scroll_to(editor, get_line_count(editor.state)),
+                _ => editor,
+            }
+        } ⎉ {
+            ⌥ event.key {
+                KeyCode·Backspace => athame_delete_backward(editor),
+                KeyCode·Delete => athame_delete_forward(editor),
+                KeyCode·Enter => athame_newline(editor),
+                KeyCode·Tab => athame_tab(editor),
+                KeyCode·ArrowLeft => athame_move_left(editor),
+                KeyCode·ArrowRight => athame_move_right(editor),
+                KeyCode·Home => athame_move_home(editor),
+                KeyCode·End => athame_move_end(editor),
+                KeyCode·PageUp => athame_scroll_by(editor, -10),
+                KeyCode·PageDown => athame_scroll_by(editor, 10),
+                KeyCode·Character(c) => athame_insert(editor, to_string(c)),
+                _ => editor,
+            }
+        }
+    }
+}
+

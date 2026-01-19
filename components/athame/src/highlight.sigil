@@ -1,0 +1,264 @@
+// Athame - Syntax Highlighting Module
+// Maps tokens to visual styles and manages bracket matching
+// Native Sigil Syntax
+
+invoke super·tokenizer·{Token, TokenKind};
+
+// =============================================================================
+// Highlight Styles
+// =============================================================================
+
+ᛈ HighlightStyle {
+    Keyword,
+    Type,
+    Function,
+    Variable,
+    String,
+    Number,
+    Comment,
+    Operator,
+    Morpheme,
+    NativeSymbol,
+    EvidenceKnown,
+    EvidenceUncertain,
+    EvidenceReported,
+    EvidenceParadox,
+    Punctuation,
+    Bracket,
+    BracketMatch,
+    Error,
+    Default,
+}
+
+sigil HighlightSpan {
+    start: i64,
+    end: i64,
+    style: HighlightStyle,
+}
+
+// =============================================================================
+// Token to Style Mapping
+// =============================================================================
+
+rite token_to_highlight_style(kind: TokenKind) → HighlightStyle {
+    ⌥ kind {
+        TokenKind·Keyword => HighlightStyle·Keyword,
+        TokenKind·Identifier => HighlightStyle·Variable,
+        TokenKind·Type => HighlightStyle·Type,
+        TokenKind·String => HighlightStyle·String,
+        TokenKind·Number => HighlightStyle·Number,
+        TokenKind·Comment => HighlightStyle·Comment,
+        TokenKind·Operator => HighlightStyle·Operator,
+        TokenKind·Morpheme => HighlightStyle·Morpheme,
+        TokenKind·NativeSymbol => HighlightStyle·NativeSymbol,
+        TokenKind·EvidenceKnown => HighlightStyle·EvidenceKnown,
+        TokenKind·EvidenceUncertain => HighlightStyle·EvidenceUncertain,
+        TokenKind·EvidenceReported => HighlightStyle·EvidenceReported,
+        TokenKind·EvidenceParadox => HighlightStyle·EvidenceParadox,
+        TokenKind·Punctuation => HighlightStyle·Punctuation,
+        TokenKind·Whitespace => HighlightStyle·Default,
+        TokenKind·Newline => HighlightStyle·Default,
+        TokenKind·Unknown => HighlightStyle·Error,
+    }
+}
+
+rite tokens_to_highlights(tokens: [Token]) → [HighlightSpan] {
+    ≔ vary result = Vec·new();
+    ≔ vary i = 0;
+
+    ⟳ i < tokens.len() {
+        ≔ token = tokens[i];
+        ≔ style = token_to_highlight_style(token.kind);
+
+        ⎇ style != HighlightStyle·Default {
+            result.push(HighlightSpan {
+                start: token.start,
+                end: token.end,
+                style: style,
+            });
+        }
+        i = i + 1;
+    }
+
+    result
+}
+
+rite get_line_highlights(highlights: [HighlightSpan], line_start: i64, line_end: i64) → [HighlightSpan] {
+    ≔ vary result = Vec·new();
+    ≔ vary i = 0;
+
+    ⟳ i < highlights.len() {
+        ≔ span = highlights[i];
+        ⎇ span.end > line_start ∧ span.start < line_end {
+            ≔ clamped_start = ⎇ span.start < line_start { line_start } ⎉ { span.start };
+            ≔ clamped_end = ⎇ span.end > line_end { line_end } ⎉ { span.end };
+
+            result.push(HighlightSpan {
+                start: clamped_start,
+                end: clamped_end,
+                style: span.style,
+            });
+        }
+        i = i + 1;
+    }
+
+    result
+}
+
+// =============================================================================
+// Bracket Matching
+// =============================================================================
+
+ᛈ BracketType {
+    Round,
+    Square,
+    Curly,
+    Angle,
+}
+
+sigil BracketPair {
+    open_pos: i64,
+    close_pos: i64,
+    bracket_type: BracketType,
+    depth: i64,
+}
+
+ᛈ OptionBracketPair {
+    None,
+    Some(BracketPair),
+}
+
+rite is_open_bracket(c: char) → bool {
+    c == '(' ∨ c == '[' ∨ c == '{' ∨ c == '<'
+}
+
+rite is_close_bracket(c: char) → bool {
+    c == ')' ∨ c == ']' ∨ c == '}' ∨ c == '>'
+}
+
+rite get_matching_bracket(c: char) → char {
+    ⎇ c == '(' { ')' }
+    ⎉ ⎇ c == ')' { '(' }
+    ⎉ ⎇ c == '[' { ']' }
+    ⎉ ⎇ c == ']' { '[' }
+    ⎉ ⎇ c == '{' { '}' }
+    ⎉ ⎇ c == '}' { '{' }
+    ⎉ ⎇ c == '<' { '>' }
+    ⎉ ⎇ c == '>' { '<' }
+    ⎉ { c }
+}
+
+rite find_matching_bracket(content: String, pos: i64) → OptionBracketPair {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ⎇ pos < 0 ∨ pos >= len {
+        ⤺ OptionBracketPair·None;
+    }
+
+    ≔ c = cs[pos];
+
+    ⎇ is_open_bracket(c) {
+        ≔ target = get_matching_bracket(c);
+        ≔ vary depth = 1;
+        ≔ vary i = pos + 1;
+
+        ⟳ i < len ∧ depth > 0 {
+            ⎇ cs[i] == c {
+                depth = depth + 1;
+            } ⎉ ⎇ cs[i] == target {
+                depth = depth - 1;
+            }
+            ⎇ depth == 0 {
+                ⤺ OptionBracketPair·Some(BracketPair {
+                    open_pos: pos,
+                    close_pos: i,
+                    bracket_type: BracketType·Round,
+                    depth: 0,
+                });
+            }
+            i = i + 1;
+        }
+    } ⎉ ⎇ is_close_bracket(c) {
+        ≔ target = get_matching_bracket(c);
+        ≔ vary depth = 1;
+        ≔ vary i = pos - 1;
+
+        ⟳ i >= 0 ∧ depth > 0 {
+            ⎇ cs[i] == c {
+                depth = depth + 1;
+            } ⎉ ⎇ cs[i] == target {
+                depth = depth - 1;
+            }
+            ⎇ depth == 0 {
+                ⤺ OptionBracketPair·Some(BracketPair {
+                    open_pos: i,
+                    close_pos: pos,
+                    bracket_type: BracketType·Round,
+                    depth: 0,
+                });
+            }
+            i = i - 1;
+        }
+    }
+
+    OptionBracketPair·None
+}
+
+rite find_bracket_at_cursor(content: String, cursor: i64) → OptionBracketPair {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ⎇ cursor < len {
+        ≔ c = cs[cursor];
+        ⎇ is_open_bracket(c) ∨ is_close_bracket(c) {
+            ⤺ find_matching_bracket(content, cursor);
+        }
+    }
+
+    ⎇ cursor > 0 {
+        ≔ c = cs[cursor - 1];
+        ⎇ is_open_bracket(c) ∨ is_close_bracket(c) {
+            ⤺ find_matching_bracket(content, cursor - 1);
+        }
+    }
+
+    OptionBracketPair·None
+}
+
+// Rainbow bracket colors
+rite bracket_depth_style(depth: i64) → HighlightStyle {
+    ≔ d = depth % 4;
+    ⎇ d == 0 { HighlightStyle·Bracket }
+    ⎉ ⎇ d == 1 { HighlightStyle·Type }
+    ⎉ ⎇ d == 2 { HighlightStyle·Keyword }
+    ⎉ { HighlightStyle·String }
+}
+
+// =============================================================================
+// CSS Class Generation
+// =============================================================================
+
+rite highlight_style_to_class(style: HighlightStyle) → String {
+    ⌥ style {
+        HighlightStyle·Keyword => "ath-keyword",
+        HighlightStyle·Type => "ath-type",
+        HighlightStyle·Function => "ath-function",
+        HighlightStyle·Variable => "ath-variable",
+        HighlightStyle·String => "ath-string",
+        HighlightStyle·Number => "ath-number",
+        HighlightStyle·Comment => "ath-comment",
+        HighlightStyle·Operator => "ath-operator",
+        HighlightStyle·Morpheme => "ath-morpheme",
+        HighlightStyle·NativeSymbol => "ath-native",
+        HighlightStyle·EvidenceKnown => "ath-evidence-known",
+        HighlightStyle·EvidenceUncertain => "ath-evidence-uncertain",
+        HighlightStyle·EvidenceReported => "ath-evidence-reported",
+        HighlightStyle·EvidenceParadox => "ath-evidence-paradox",
+        HighlightStyle·Punctuation => "ath-punctuation",
+        HighlightStyle·Bracket => "ath-bracket",
+        HighlightStyle·BracketMatch => "ath-bracket-match",
+        HighlightStyle·Error => "ath-error",
+        HighlightStyle·Default => "",
+    }
+}

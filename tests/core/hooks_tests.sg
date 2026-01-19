@@ -1,0 +1,346 @@
+// Qliphoth Framework - Hooks Unit Tests
+// Phase 0: Framework Core Tests
+// Tests: useState, useEffect, useMemo, useCallback, useRef, custom hooks
+
+// ============================================================================
+// State Hook Types
+// ============================================================================
+
+☉ sigil State<T> {
+    value: T,
+    version: !i64
+}
+
+☉ sigil Ref<T> {
+    current: T
+}
+
+☉ sigil MemoValue<T> {
+    value: T,
+    deps_hash: !i64
+}
+
+// ============================================================================
+// Effect Types
+// ============================================================================
+
+☉ ᛈ EffectState {
+    Pending,
+    Running,
+    Cleanup,
+    Complete
+}
+
+☉ sigil Effect {
+    id: !i64,
+    state: !EffectState,
+    deps_hash: !i64
+}
+
+// ============================================================================
+// State Hook Implementation
+// ============================================================================
+
+rite create_state<T>(initial: T) → !State<T> {
+    State { value: initial, version: 0 }
+}
+
+rite set_state<T>(s: !State<T>, new_val: T) → !State<T> {
+    State { value: new_val, version: s.version + 1 }
+}
+
+rite get_state<T>(s: !State<T>) → T {
+    s.value
+}
+
+// ============================================================================
+// Ref Hook Implementation
+// ============================================================================
+
+rite create_ref<T>(initial: T) → !Ref<T> {
+    Ref { current: initial }
+}
+
+rite set_ref<T>(r: !Ref<T>, val: T) → !Ref<T> {
+    Ref { current: val }
+}
+
+// ============================================================================
+// Memo Hook Implementation
+// ============================================================================
+
+rite hash_deps(d1: !i64, d2: !i64) → !i64 {
+    d1 * 31 + d2
+}
+
+rite create_memo<T>(value: T, deps_hash: !i64) → !MemoValue<T> {
+    MemoValue { value: value, deps_hash: deps_hash }
+}
+
+rite should_recompute<T>(m: !MemoValue<T>, new_hash: !i64) → !bool {
+    m.deps_hash != new_hash
+}
+
+// ============================================================================
+// Effect Hook Implementation
+// ============================================================================
+
+rite create_effect(id: !i64, deps_hash: !i64) → !Effect {
+    Effect { id: id, state: EffectState·Pending, deps_hash: deps_hash }
+}
+
+rite mark_running(e: !Effect) → !Effect {
+    Effect { id: e.id, state: EffectState·Running, deps_hash: e.deps_hash }
+}
+
+rite mark_cleanup(e: !Effect) → !Effect {
+    Effect { id: e.id, state: EffectState·Cleanup, deps_hash: e.deps_hash }
+}
+
+rite mark_complete(e: !Effect) → !Effect {
+    Effect { id: e.id, state: EffectState·Complete, deps_hash: e.deps_hash }
+}
+
+rite effect_should_run(e: !Effect, new_hash: !i64) → !bool {
+    e.deps_hash != new_hash
+}
+
+// ============================================================================
+// Tests: useState Hook
+// ============================================================================
+
+rite test_state_initial() → !i64 {
+    ≔ s: !State<i64> = create_state(42);
+    ⎇ s.value == 42 { 1 } ⎉ { 0 }
+}
+
+rite test_state_update() → !i64 {
+    ≔ s1: !State<i64> = create_state(0);
+    ≔ s2: !State<i64> = set_state(s1, 100);
+    ⎇ s2.value == 100 { 1 } ⎉ { 0 }
+}
+
+rite test_state_version_increments() → !i64 {
+    ≔ s1: !State<i64> = create_state(0);
+    ≔ s2: !State<i64> = set_state(s1, 1);
+    ≔ s3: !State<i64> = set_state(s2, 2);
+    ⎇ s3.version == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_state_immutable() → !i64 {
+    ≔ s1: !State<i64> = create_state(10);
+    ≔ s2: !State<i64> = set_state(s1, 20);
+    // s1 should still be 10
+    ⎇ s1.value == 10 ∧ s2.value == 20 { 1 } ⎉ { 0 }
+}
+
+rite test_state_string() → !i64 {
+    ≔ s: !State<String> = create_state("hello");
+    ⎇ s.value == "hello" { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: useRef Hook
+// ============================================================================
+
+rite test_ref_initial() → !i64 {
+    ≔ r: !Ref<i64> = create_ref(99);
+    ⎇ r.current == 99 { 1 } ⎉ { 0 }
+}
+
+rite test_ref_update() → !i64 {
+    ≔ r1: !Ref<i64> = create_ref(0);
+    ≔ r2: !Ref<i64> = set_ref(r1, 42);
+    ⎇ r2.current == 42 { 1 } ⎉ { 0 }
+}
+
+rite test_ref_no_version() → !i64 {
+    // Refs don't trigger re-renders (no version tracking)
+    ≔ r: !Ref<i64> = create_ref(1);
+    1  // Just verify it compiles
+}
+
+// ============================================================================
+// Tests: useMemo Hook
+// ============================================================================
+
+rite test_memo_initial() → !i64 {
+    ≔ h: !i64 = hash_deps(1, 2);
+    ≔ m: !MemoValue<i64> = create_memo(100, h);
+    ⎇ m.value == 100 { 1 } ⎉ { 0 }
+}
+
+rite test_memo_same_deps() → !i64 {
+    ≔ h1: !i64 = hash_deps(1, 2);
+    ≔ h2: !i64 = hash_deps(1, 2);
+    ≔ m: !MemoValue<i64> = create_memo(50, h1);
+    ⎇ ¬should_recompute(m, h2) { 1 } ⎉ { 0 }
+}
+
+rite test_memo_different_deps() → !i64 {
+    ≔ h1: !i64 = hash_deps(1, 2);
+    ≔ h2: !i64 = hash_deps(1, 3);
+    ≔ m: !MemoValue<i64> = create_memo(50, h1);
+    ⎇ should_recompute(m, h2) { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: useEffect Hook
+// ============================================================================
+
+rite test_effect_initial_state() → !i64 {
+    ≔ e: !Effect = create_effect(1, 0);
+    ⌥ e.state {
+        EffectState·Pending => 1,
+        _ => 0
+    }
+}
+
+rite test_effect_running() → !i64 {
+    ≔ e1: !Effect = create_effect(1, 0);
+    ≔ e2: !Effect = mark_running(e1);
+    ⌥ e2.state {
+        EffectState·Running => 1,
+        _ => 0
+    }
+}
+
+rite test_effect_cleanup() → !i64 {
+    ≔ e1: !Effect = create_effect(1, 0);
+    ≔ e2: !Effect = mark_cleanup(e1);
+    ⌥ e2.state {
+        EffectState·Cleanup => 1,
+        _ => 0
+    }
+}
+
+rite test_effect_complete() → !i64 {
+    ≔ e1: !Effect = create_effect(1, 0);
+    ≔ e2: !Effect = mark_complete(e1);
+    ⌥ e2.state {
+        EffectState·Complete => 1,
+        _ => 0
+    }
+}
+
+rite test_effect_deps_change() → !i64 {
+    ≔ e: !Effect = create_effect(1, 100);
+    ⎇ effect_should_run(e, 200) { 1 } ⎉ { 0 }
+}
+
+rite test_effect_deps_same() → !i64 {
+    ≔ e: !Effect = create_effect(1, 100);
+    ⎇ ¬effect_should_run(e, 100) { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Custom Hooks (composition)
+// ============================================================================
+
+rite test_counter_hook() → !i64 {
+    // Simulates useCounter custom hook
+    ≔ s: !State<i64> = create_state(0);
+    ≔ s1: !State<i64> = set_state(s, s.value + 1);
+    ≔ s2: !State<i64> = set_state(s1, s1.value + 1);
+    ⎇ s2.value == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_toggle_hook() → !i64 {
+    // Simulates useToggle custom hook
+    ≔ s: !State<bool> = create_state(⊥);
+    ≔ s1: !State<bool> = set_state(s, ¬s.value);
+    ≔ s2: !State<bool> = set_state(s1, ¬s1.value);
+    // Started false, toggled twice, should be false again
+    ⎇ ¬s2.value { 1 } ⎉ { 0 }
+}
+
+rite test_previous_hook() → !i64 {
+    // Simulates usePrevious custom hook using ref
+    ≔ r: !Ref<i64> = create_ref(0);
+    ≔ current: !i64 = 10;
+    ≔ previous: !i64 = r.current;
+    ≔ r2: !Ref<i64> = set_ref(r, current);
+    // Previous should be 0, current is 10
+    ⎇ previous == 0 ∧ r2.current == 10 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+rite main() {
+    println("=== Qliphoth Hooks Unit Tests ===");
+    println("");
+
+    ≔ vary passed: !i64 = 0;
+    ≔ vary total: !i64 = 0;
+
+    // useState tests
+    total = total + 1;
+    ⎇ test_state_initial() == 1 { passed = passed + 1; println("PASS: state initial"); } ⎉ { println("FAIL: state initial"); }
+
+    total = total + 1;
+    ⎇ test_state_update() == 1 { passed = passed + 1; println("PASS: state update"); } ⎉ { println("FAIL: state update"); }
+
+    total = total + 1;
+    ⎇ test_state_version_increments() == 1 { passed = passed + 1; println("PASS: state version"); } ⎉ { println("FAIL: state version"); }
+
+    total = total + 1;
+    ⎇ test_state_immutable() == 1 { passed = passed + 1; println("PASS: state immutable"); } ⎉ { println("FAIL: state immutable"); }
+
+    total = total + 1;
+    ⎇ test_state_string() == 1 { passed = passed + 1; println("PASS: state string"); } ⎉ { println("FAIL: state string"); }
+
+    // useRef tests
+    total = total + 1;
+    ⎇ test_ref_initial() == 1 { passed = passed + 1; println("PASS: ref initial"); } ⎉ { println("FAIL: ref initial"); }
+
+    total = total + 1;
+    ⎇ test_ref_update() == 1 { passed = passed + 1; println("PASS: ref update"); } ⎉ { println("FAIL: ref update"); }
+
+    total = total + 1;
+    ⎇ test_ref_no_version() == 1 { passed = passed + 1; println("PASS: ref no version"); } ⎉ { println("FAIL: ref no version"); }
+
+    // useMemo tests
+    total = total + 1;
+    ⎇ test_memo_initial() == 1 { passed = passed + 1; println("PASS: memo initial"); } ⎉ { println("FAIL: memo initial"); }
+
+    total = total + 1;
+    ⎇ test_memo_same_deps() == 1 { passed = passed + 1; println("PASS: memo same deps"); } ⎉ { println("FAIL: memo same deps"); }
+
+    total = total + 1;
+    ⎇ test_memo_different_deps() == 1 { passed = passed + 1; println("PASS: memo diff deps"); } ⎉ { println("FAIL: memo diff deps"); }
+
+    // useEffect tests
+    total = total + 1;
+    ⎇ test_effect_initial_state() == 1 { passed = passed + 1; println("PASS: effect initial"); } ⎉ { println("FAIL: effect initial"); }
+
+    total = total + 1;
+    ⎇ test_effect_running() == 1 { passed = passed + 1; println("PASS: effect running"); } ⎉ { println("FAIL: effect running"); }
+
+    total = total + 1;
+    ⎇ test_effect_cleanup() == 1 { passed = passed + 1; println("PASS: effect cleanup"); } ⎉ { println("FAIL: effect cleanup"); }
+
+    total = total + 1;
+    ⎇ test_effect_complete() == 1 { passed = passed + 1; println("PASS: effect complete"); } ⎉ { println("FAIL: effect complete"); }
+
+    total = total + 1;
+    ⎇ test_effect_deps_change() == 1 { passed = passed + 1; println("PASS: effect deps change"); } ⎉ { println("FAIL: effect deps change"); }
+
+    total = total + 1;
+    ⎇ test_effect_deps_same() == 1 { passed = passed + 1; println("PASS: effect deps same"); } ⎉ { println("FAIL: effect deps same"); }
+
+    // Custom hook tests
+    total = total + 1;
+    ⎇ test_counter_hook() == 1 { passed = passed + 1; println("PASS: counter hook"); } ⎉ { println("FAIL: counter hook"); }
+
+    total = total + 1;
+    ⎇ test_toggle_hook() == 1 { passed = passed + 1; println("PASS: toggle hook"); } ⎉ { println("FAIL: toggle hook"); }
+
+    total = total + 1;
+    ⎇ test_previous_hook() == 1 { passed = passed + 1; println("PASS: previous hook"); } ⎉ { println("FAIL: previous hook"); }
+
+    println("");
+    println(passed);
+    println(total);
+}

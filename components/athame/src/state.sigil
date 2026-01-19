@@ -1,0 +1,481 @@
+// Athame - Editor State Module
+// Reactive state management for the code editor
+// Native Sigil Syntax
+
+invoke super·tokenizer·{Token, TokenKind, tokenize};
+
+// =============================================================================
+// Signal Types (Reactive primitives)
+// =============================================================================
+
+sigil Signal {
+    value: String,
+    version: i64,
+}
+
+rite signal_new(initial: String) → Signal {
+    Signal { value: initial, version: 0 }
+}
+
+rite signal_get(s: Signal) → String {
+    s.value
+}
+
+rite signal_set(s: Signal, value: String) → Signal {
+    Signal { value: value, version: s.version + 1 }
+}
+
+sigil SignalInt {
+    value: i64,
+    version: i64,
+}
+
+rite signal_int_new(initial: i64) → SignalInt {
+    SignalInt { value: initial, version: 0 }
+}
+
+rite signal_int_get(s: SignalInt) → i64 {
+    s.value
+}
+
+rite signal_int_set(s: SignalInt, value: i64) → SignalInt {
+    SignalInt { value: value, version: s.version + 1 }
+}
+
+sigil SignalBool {
+    value: bool,
+    version: i64,
+}
+
+rite signal_bool_new(initial: bool) → SignalBool {
+    SignalBool { value: initial, version: 0 }
+}
+
+rite signal_bool_get(s: SignalBool) → bool {
+    s.value
+}
+
+rite signal_bool_set(s: SignalBool, value: bool) → SignalBool {
+    SignalBool { value: value, version: s.version + 1 }
+}
+
+// =============================================================================
+// Selection Types
+// =============================================================================
+
+sigil Selection {
+    start: i64,
+    end: i64,
+}
+
+ᛈ OptionSelection {
+    None,
+    Some(Selection),
+}
+
+rite selection_is_some(opt: OptionSelection) → bool {
+    ⌥ opt {
+        OptionSelection·None => nay,
+        OptionSelection·Some(_) => yea,
+    }
+}
+
+rite selection_is_none(opt: OptionSelection) → bool {
+    ⌥ opt {
+        OptionSelection·None => yea,
+        OptionSelection·Some(_) => nay,
+    }
+}
+
+rite selection_unwrap(opt: OptionSelection) → Selection {
+    ⌥ opt {
+        OptionSelection·None => Selection { start: 0, end: 0 },
+        OptionSelection·Some(s) => s,
+    }
+}
+
+sigil SignalSelection {
+    value: OptionSelection,
+    version: i64,
+}
+
+rite signal_selection_new() → SignalSelection {
+    SignalSelection { value: OptionSelection·None, version: 0 }
+}
+
+rite signal_selection_get(s: SignalSelection) → OptionSelection {
+    s.value
+}
+
+rite signal_selection_set(s: SignalSelection, value: OptionSelection) → SignalSelection {
+    SignalSelection { value: value, version: s.version + 1 }
+}
+
+rite signal_selection_clear(s: SignalSelection) → SignalSelection {
+    SignalSelection { value: OptionSelection·None, version: s.version + 1 }
+}
+
+// =============================================================================
+// EditorState - Main state container
+// =============================================================================
+
+sigil EditorState {
+    content: Signal,
+    cursor_pos: SignalInt,
+    selection: SignalSelection,
+    scroll_top: SignalInt,
+    focused: SignalBool,
+    readonly: bool,
+    tokens_version: i64,
+}
+
+rite editor_state_new() → EditorState {
+    EditorState {
+        content: signal_new(""),
+        cursor_pos: signal_int_new(0),
+        selection: signal_selection_new(),
+        scroll_top: signal_int_new(0),
+        focused: signal_bool_new(nay),
+        readonly: nay,
+        tokens_version: 0,
+    }
+}
+
+rite editor_state_with_content(initial: String) → EditorState {
+    EditorState {
+        content: signal_new(initial),
+        cursor_pos: signal_int_new(0),
+        selection: signal_selection_new(),
+        scroll_top: signal_int_new(0),
+        focused: signal_bool_new(nay),
+        readonly: nay,
+        tokens_version: 0,
+    }
+}
+
+rite editor_state_readonly(initial: String) → EditorState {
+    EditorState {
+        content: signal_new(initial),
+        cursor_pos: signal_int_new(0),
+        selection: signal_selection_new(),
+        scroll_top: signal_int_new(0),
+        focused: signal_bool_new(nay),
+        readonly: yea,
+        tokens_version: 0,
+    }
+}
+
+// =============================================================================
+// Content Operations
+// =============================================================================
+
+rite get_content(state: EditorState) → String {
+    signal_get(state.content)
+}
+
+rite set_content(state: EditorState, value: String) → EditorState {
+    ⎇ state.readonly {
+        ⤺ state;
+    }
+
+    ≔ current = signal_get(state.content);
+    ⎇ current == value {
+        ⤺ state;
+    }
+
+    EditorState {
+        content: signal_set(state.content, value),
+        cursor_pos: state.cursor_pos,
+        selection: state.selection,
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version + 1,
+    }
+}
+
+rite get_lines(state: EditorState) → [String] {
+    ≔ content = signal_get(state.content);
+    split_lines(content)
+}
+
+rite split_lines(s: String) → [String] {
+    ≔ cs = chars(s);
+    ≔ len = cs.len();
+
+    ⎇ len == 0 {
+        ≔ vary empty = Vec·new();
+        empty.push("");
+        ⤺ empty;
+    }
+
+    ≔ vary lines = Vec·new();
+    ≔ vary current = "";
+    ≔ vary i = 0;
+
+    ⟳ i < len {
+        ⎇ cs[i] == '\n' {
+            lines.push(current);
+            current = "";
+        } ⎉ {
+            current = current + to_string(cs[i]);
+        }
+        i = i + 1;
+    }
+
+    lines.push(current);
+    lines
+}
+
+rite get_line_count(state: EditorState) → i64 {
+    ≔ lines = get_lines(state);
+    lines.len()
+}
+
+// =============================================================================
+// Cursor Operations
+// =============================================================================
+
+rite get_cursor_pos(state: EditorState) → i64 {
+    ≔ sel = signal_selection_get(state.selection);
+    ⌥ sel {
+        OptionSelection·None => signal_int_get(state.cursor_pos),
+        OptionSelection·Some(s) => s.end,
+    }
+}
+
+rite set_cursor_pos(state: EditorState, pos: i64) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: signal_int_set(state.cursor_pos, pos),
+        selection: state.selection,
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+rite get_selection(state: EditorState) → OptionSelection {
+    signal_selection_get(state.selection)
+}
+
+rite set_selection(state: EditorState, start: i64, end: i64) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: state.cursor_pos,
+        selection: signal_selection_set(state.selection, OptionSelection·Some(Selection { start: start, end: end })),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+rite clear_selection(state: EditorState) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: state.cursor_pos,
+        selection: signal_selection_clear(state.selection),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+// =============================================================================
+// UI State Operations
+// =============================================================================
+
+rite get_scroll_top(state: EditorState) → i64 {
+    signal_int_get(state.scroll_top)
+}
+
+rite set_scroll_top(state: EditorState, top: i64) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: state.cursor_pos,
+        selection: state.selection,
+        scroll_top: signal_int_set(state.scroll_top, top),
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+rite get_focused(state: EditorState) → bool {
+    signal_bool_get(state.focused)
+}
+
+rite set_focused(state: EditorState, focused: bool) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: state.cursor_pos,
+        selection: state.selection,
+        scroll_top: state.scroll_top,
+        focused: signal_bool_set(state.focused, focused),
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+rite is_readonly(state: EditorState) → bool {
+    state.readonly
+}
+
+// =============================================================================
+// Text Editing Operations
+// =============================================================================
+
+rite insert_text(state: EditorState, text: String) → EditorState {
+    ⎇ state.readonly {
+        ⤺ state;
+    }
+
+    ≔ content = signal_get(state.content);
+    ≔ pos = get_cursor_pos(state);
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+    ≔ safe_pos = ⎇ pos < 0 { 0 } ⎉ ⎇ pos > len { len } ⎉ { pos };
+
+    ≔ vary before = "";
+    ≔ vary i = 0;
+    ⟳ i < safe_pos {
+        before = before + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ vary after = "";
+    ⟳ i < len {
+        after = after + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ new_content = before + text + after;
+    ≔ text_len = chars(text).len();
+
+    EditorState {
+        content: signal_set(state.content, new_content),
+        cursor_pos: signal_int_set(state.cursor_pos, safe_pos + text_len),
+        selection: signal_selection_clear(state.selection),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version + 1,
+    }
+}
+
+rite delete_backward(state: EditorState) → EditorState {
+    ⎇ state.readonly {
+        ⤺ state;
+    }
+
+    ≔ content = signal_get(state.content);
+    ≔ pos = get_cursor_pos(state);
+
+    ⎇ pos <= 0 {
+        ⤺ state;
+    }
+
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ≔ vary before = "";
+    ≔ vary i = 0;
+    ⟳ i < pos - 1 {
+        before = before + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ vary after = "";
+    i = pos;
+    ⟳ i < len {
+        after = after + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    EditorState {
+        content: signal_set(state.content, before + after),
+        cursor_pos: signal_int_set(state.cursor_pos, pos - 1),
+        selection: signal_selection_clear(state.selection),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version + 1,
+    }
+}
+
+rite delete_forward(state: EditorState) → EditorState {
+    ⎇ state.readonly {
+        ⤺ state;
+    }
+
+    ≔ content = signal_get(state.content);
+    ≔ pos = get_cursor_pos(state);
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ⎇ pos >= len {
+        ⤺ state;
+    }
+
+    ≔ vary before = "";
+    ≔ vary i = 0;
+    ⟳ i < pos {
+        before = before + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ vary after = "";
+    i = pos + 1;
+    ⟳ i < len {
+        after = after + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    EditorState {
+        content: signal_set(state.content, before + after),
+        cursor_pos: state.cursor_pos,
+        selection: signal_selection_clear(state.selection),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version + 1,
+    }
+}
+
+// =============================================================================
+// Cursor Movement
+// =============================================================================
+
+rite move_cursor_left(state: EditorState) → EditorState {
+    ≔ pos = get_cursor_pos(state);
+    ⎇ pos > 0 {
+        set_cursor_pos(clear_selection(state), pos - 1)
+    } ⎉ {
+        clear_selection(state)
+    }
+}
+
+rite move_cursor_right(state: EditorState) → EditorState {
+    ≔ pos = get_cursor_pos(state);
+    ≔ content = signal_get(state.content);
+    ≔ len = chars(content).len();
+
+    ⎇ pos < len {
+        set_cursor_pos(clear_selection(state), pos + 1)
+    } ⎉ {
+        clear_selection(state)
+    }
+}
+
+rite move_cursor_home(state: EditorState) → EditorState {
+    set_cursor_pos(clear_selection(state), 0)
+}
+
+rite move_cursor_end(state: EditorState) → EditorState {
+    ≔ content = signal_get(state.content);
+    ≔ len = chars(content).len();
+    set_cursor_pos(clear_selection(state), len)
+}

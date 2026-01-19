@@ -1,0 +1,998 @@
+// Athame - History & Advanced Editing Tests
+// Phase 3: TDD Test Suite (T086-T110)
+// Undo/Redo, Line Navigation, Word Operations
+// Native Sigil Syntax (2026-01-17)
+
+// =============================================================================
+// Core Types (imported from state_test concepts)
+// =============================================================================
+
+sigil Signal {
+    value: String,
+    version: i64,
+}
+
+rite signal_new(initial: String) → Signal {
+    Signal { value: initial, version: 0 }
+}
+
+rite signal_get(s: Signal) → String {
+    s.value
+}
+
+rite signal_set(s: Signal, value: String) → Signal {
+    Signal { value: value, version: s.version + 1 }
+}
+
+sigil SignalInt {
+    value: i64,
+    version: i64,
+}
+
+rite signal_int_new(initial: i64) → SignalInt {
+    SignalInt { value: initial, version: 0 }
+}
+
+rite signal_int_get(s: SignalInt) → i64 {
+    s.value
+}
+
+rite signal_int_set(s: SignalInt, value: i64) → SignalInt {
+    SignalInt { value: value, version: s.version + 1 }
+}
+
+// =============================================================================
+// History Entry - Snapshot of editor state for undo/redo
+// =============================================================================
+
+sigil HistoryEntry {
+    content: String,
+    cursor_pos: i64,
+}
+
+rite history_entry_new(content: String, cursor_pos: i64) → HistoryEntry {
+    HistoryEntry { content: content, cursor_pos: cursor_pos }
+}
+
+// =============================================================================
+// History Stack - Manages undo/redo states
+// =============================================================================
+
+sigil HistoryStack {
+    entries: [HistoryEntry],
+    current_index: i64,
+    max_size: i64,
+}
+
+rite history_stack_new(max_size: i64) → HistoryStack {
+    HistoryStack {
+        entries: Vec·new(),
+        current_index: -1,
+        max_size: max_size,
+    }
+}
+
+rite history_push(stack: HistoryStack, entry: HistoryEntry) → HistoryStack {
+    // Truncate any redo history
+    ≔ vary new_entries = Vec·new();
+    ≔ vary i = 0;
+    ⟳ i <= stack.current_index ∧ i < stack.entries.len() {
+        new_entries.push(stack.entries[i]);
+        i = i + 1;
+    }
+
+    // Add new entry
+    new_entries.push(entry);
+
+    // Enforce max size (remove oldest entries)
+    ⟳ new_entries.len() > stack.max_size {
+        ≔ vary trimmed = Vec·new();
+        ≔ vary j = 1;
+        ⟳ j < new_entries.len() {
+            trimmed.push(new_entries[j]);
+            j = j + 1;
+        }
+        new_entries = trimmed;
+    }
+
+    HistoryStack {
+        entries: new_entries,
+        current_index: new_entries.len() - 1,
+        max_size: stack.max_size,
+    }
+}
+
+rite history_can_undo(stack: HistoryStack) → bool {
+    stack.current_index > 0
+}
+
+rite history_can_redo(stack: HistoryStack) → bool {
+    stack.current_index < stack.entries.len() - 1
+}
+
+rite history_undo(stack: HistoryStack) → HistoryStack {
+    ⎇ ¬history_can_undo(stack) {
+        ⤺ stack;
+    }
+    HistoryStack {
+        entries: stack.entries,
+        current_index: stack.current_index - 1,
+        max_size: stack.max_size,
+    }
+}
+
+rite history_redo(stack: HistoryStack) → HistoryStack {
+    ⎇ ¬history_can_redo(stack) {
+        ⤺ stack;
+    }
+    HistoryStack {
+        entries: stack.entries,
+        current_index: stack.current_index + 1,
+        max_size: stack.max_size,
+    }
+}
+
+rite history_current(stack: HistoryStack) → HistoryEntry {
+    ⎇ stack.current_index < 0 ∨ stack.current_index >= stack.entries.len() {
+        ⤺ history_entry_new("", 0);
+    }
+    stack.entries[stack.current_index]
+}
+
+// =============================================================================
+// EditorWithHistory - Editor state with undo/redo support
+// =============================================================================
+
+sigil EditorWithHistory {
+    content: Signal,
+    cursor_pos: SignalInt,
+    history: HistoryStack,
+}
+
+rite editor_with_history_new() → EditorWithHistory {
+    ≔ initial_entry = history_entry_new("", 0);
+    ≔ stack = history_stack_new(100);
+    ≔ stack_with_initial = history_push(stack, initial_entry);
+
+    EditorWithHistory {
+        content: signal_new(""),
+        cursor_pos: signal_int_new(0),
+        history: stack_with_initial,
+    }
+}
+
+rite editor_with_history_content(editor: EditorWithHistory, initial: String) → EditorWithHistory {
+    ≔ initial_entry = history_entry_new(initial, 0);
+    ≔ stack = history_stack_new(100);
+    ≔ stack_with_initial = history_push(stack, initial_entry);
+
+    EditorWithHistory {
+        content: signal_new(initial),
+        cursor_pos: signal_int_new(0),
+        history: stack_with_initial,
+    }
+}
+
+rite get_editor_content(editor: EditorWithHistory) → String {
+    signal_get(editor.content)
+}
+
+rite get_editor_cursor(editor: EditorWithHistory) → i64 {
+    signal_int_get(editor.cursor_pos)
+}
+
+/// Apply an edit and record to history
+rite editor_edit(editor: EditorWithHistory, new_content: String, new_cursor: i64) → EditorWithHistory {
+    ≔ entry = history_entry_new(new_content, new_cursor);
+    EditorWithHistory {
+        content: signal_set(editor.content, new_content),
+        cursor_pos: signal_int_set(editor.cursor_pos, new_cursor),
+        history: history_push(editor.history, entry),
+    }
+}
+
+/// Undo last edit
+rite editor_undo(editor: EditorWithHistory) → EditorWithHistory {
+    ⎇ ¬history_can_undo(editor.history) {
+        ⤺ editor;
+    }
+    ≔ new_history = history_undo(editor.history);
+    ≔ entry = history_current(new_history);
+
+    EditorWithHistory {
+        content: signal_set(editor.content, entry.content),
+        cursor_pos: signal_int_set(editor.cursor_pos, entry.cursor_pos),
+        history: new_history,
+    }
+}
+
+/// Redo undone edit
+rite editor_redo(editor: EditorWithHistory) → EditorWithHistory {
+    ⎇ ¬history_can_redo(editor.history) {
+        ⤺ editor;
+    }
+    ≔ new_history = history_redo(editor.history);
+    ≔ entry = history_current(new_history);
+
+    EditorWithHistory {
+        content: signal_set(editor.content, entry.content),
+        cursor_pos: signal_int_set(editor.cursor_pos, entry.cursor_pos),
+        history: new_history,
+    }
+}
+
+// =============================================================================
+// Line Navigation Helpers
+// =============================================================================
+
+/// Get line and column from absolute position
+rite pos_to_line_col(content: String, pos: i64) → (i64, i64) {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+    ≔ safe_pos = ⎇ pos > len { len } ⎉ ⎇ pos < 0 { 0 } ⎉ { pos };
+
+    ≔ vary line = 0;
+    ≔ vary col = 0;
+    ≔ vary i = 0;
+
+    ⟳ i < safe_pos {
+        ⎇ cs[i] == '\n' {
+            line = line + 1;
+            col = 0;
+        } ⎉ {
+            col = col + 1;
+        }
+        i = i + 1;
+    }
+
+    (line, col)
+}
+
+/// Get absolute position from line and column
+rite line_col_to_pos(content: String, line: i64, col: i64) → i64 {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ≔ vary current_line = 0;
+    ≔ vary current_col = 0;
+    ≔ vary i = 0;
+
+    ⟳ i < len {
+        ⎇ current_line == line ∧ current_col == col {
+            ⤺ i;
+        }
+        ⎇ cs[i] == '\n' {
+            ⎇ current_line == line {
+                // Col exceeds line length, return end of line
+                ⤺ i;
+            }
+            current_line = current_line + 1;
+            current_col = 0;
+        } ⎉ {
+            current_col = current_col + 1;
+        }
+        i = i + 1;
+    }
+
+    // Return end of content
+    len
+}
+
+/// Get start position of a line
+rite line_start_pos(content: String, line: i64) → i64 {
+    line_col_to_pos(content, line, 0)
+}
+
+/// Get end position of a line (before newline)
+rite line_end_pos(content: String, line: i64) → i64 {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+    ≔ start = line_start_pos(content, line);
+
+    ≔ vary i = start;
+    ⟳ i < len ∧ cs[i] != '\n' {
+        i = i + 1;
+    }
+    i
+}
+
+/// Get total number of lines
+rite count_lines(content: String) → i64 {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ⎇ len == 0 {
+        ⤺ 1;
+    }
+
+    ≔ vary lines = 1;
+    ≔ vary i = 0;
+    ⟳ i < len {
+        ⎇ cs[i] == '\n' {
+            lines = lines + 1;
+        }
+        i = i + 1;
+    }
+    lines
+}
+
+/// Move cursor up one line
+rite move_cursor_up(content: String, cursor: i64) → i64 {
+    ≔ pos = pos_to_line_col(content, cursor);
+    ≔ line = pos.0;
+    ≔ col = pos.1;
+
+    ⎇ line == 0 {
+        ⤺ 0;  // Already at first line, go to start
+    }
+
+    // Move to same column on previous line (or end of line if shorter)
+    line_col_to_pos(content, line - 1, col)
+}
+
+/// Move cursor down one line
+rite move_cursor_down(content: String, cursor: i64) → i64 {
+    ≔ pos = pos_to_line_col(content, cursor);
+    ≔ line = pos.0;
+    ≔ col = pos.1;
+    ≔ total_lines = count_lines(content);
+
+    ⎇ line >= total_lines - 1 {
+        ⤺ chars(content).len();  // Already at last line, go to end
+    }
+
+    // Move to same column on next line (or end of line if shorter)
+    line_col_to_pos(content, line + 1, col)
+}
+
+// =============================================================================
+// Word Navigation Helpers
+// =============================================================================
+
+rite is_word_char(c: char) → bool {
+    (c >= 'a' ∧ c <= 'z') ∨ (c >= 'A' ∧ c <= 'Z') ∨ (c >= '0' ∧ c <= '9') ∨ c == '_'
+}
+
+/// Move cursor to start of previous word
+rite move_word_left(content: String, cursor: i64) → i64 {
+    ≔ cs = chars(content);
+    ≔ vary pos = cursor;
+
+    ⎇ pos <= 0 {
+        ⤺ 0;
+    }
+
+    // Skip any whitespace/non-word chars going left
+    ⟳ pos > 0 ∧ ¬is_word_char(cs[pos - 1]) {
+        pos = pos - 1;
+    }
+
+    // Skip word chars going left
+    ⟳ pos > 0 ∧ is_word_char(cs[pos - 1]) {
+        pos = pos - 1;
+    }
+
+    pos
+}
+
+/// Move cursor to end of next word
+rite move_word_right(content: String, cursor: i64) → i64 {
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+    ≔ vary pos = cursor;
+
+    ⎇ pos >= len {
+        ⤺ len;
+    }
+
+    // Skip any whitespace/non-word chars going right
+    ⟳ pos < len ∧ ¬is_word_char(cs[pos]) {
+        pos = pos + 1;
+    }
+
+    // Skip word chars going right
+    ⟳ pos < len ∧ is_word_char(cs[pos]) {
+        pos = pos + 1;
+    }
+
+    pos
+}
+
+/// Delete word before cursor (Ctrl+Backspace)
+rite delete_word_backward(content: String, cursor: i64) → (String, i64) {
+    ≔ new_pos = move_word_left(content, cursor);
+    ⎇ new_pos == cursor {
+        ⤺ (content, cursor);
+    }
+
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    // Build new content: before[0..new_pos] + after[cursor..]
+    ≔ vary before = "";
+    ≔ vary i = 0;
+    ⟳ i < new_pos {
+        before = before + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ vary after = "";
+    i = cursor;
+    ⟳ i < len {
+        after = after + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    (before + after, new_pos)
+}
+
+/// Delete word after cursor (Ctrl+Delete)
+rite delete_word_forward(content: String, cursor: i64) → (String, i64) {
+    ≔ new_end = move_word_right(content, cursor);
+    ⎇ new_end == cursor {
+        ⤺ (content, cursor);
+    }
+
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    // Build new content: before[0..cursor] + after[new_end..]
+    ≔ vary before = "";
+    ≔ vary i = 0;
+    ⟳ i < cursor {
+        before = before + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ vary after = "";
+    i = new_end;
+    ⟳ i < len {
+        after = after + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    (before + after, cursor)
+}
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite check(condition: bool, msg: String) {
+    ⎇ ¬condition {
+        println("FAIL: " + msg);
+        panic("test failed");
+    }
+}
+
+rite check_eq_str(actual: String, expected: String, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        println("  Expected: \"" + expected + "\"");
+        println("  Actual:   \"" + actual + "\"");
+        panic("test failed");
+    }
+}
+
+rite check_eq_int(actual: i64, expected: i64, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        println("  Expected: " + to_string(expected));
+        println("  Actual:   " + to_string(actual));
+        panic("test failed");
+    }
+}
+
+// =============================================================================
+// PHASE 3.1: History/Undo Tests (T086-T093)
+// =============================================================================
+
+rite test_t086_history_stack_new() {
+    ≔ stack = history_stack_new(10);
+    check_eq_int(stack.max_size, 10, "T086: max_size set correctly");
+    check_eq_int(stack.current_index, -1, "T086: initial index is -1");
+}
+
+rite test_t087_history_push() {
+    ≔ stack = history_stack_new(10);
+    ≔ entry = history_entry_new("hello", 5);
+    ≔ stack2 = history_push(stack, entry);
+
+    check_eq_int(stack2.entries.len(), 1, "T087: entry added");
+    check_eq_int(stack2.current_index, 0, "T087: index updated");
+}
+
+rite test_t088_history_can_undo_redo() {
+    ≔ stack = history_stack_new(10);
+    ≔ e1 = history_entry_new("a", 1);
+    ≔ e2 = history_entry_new("ab", 2);
+
+    ≔ s1 = history_push(stack, e1);
+    check(¬history_can_undo(s1), "T088: can't undo with single entry");
+    check(¬history_can_redo(s1), "T088: can't redo at end");
+
+    ≔ s2 = history_push(s1, e2);
+    check(history_can_undo(s2), "T088: can undo with 2 entries");
+    check(¬history_can_redo(s2), "T088: still can't redo at end");
+
+    ≔ s3 = history_undo(s2);
+    check(¬history_can_undo(s3), "T088: can't undo at first entry");
+    check(history_can_redo(s3), "T088: can redo after undo");
+}
+
+rite test_t089_history_undo() {
+    ≔ stack = history_stack_new(10);
+    ≔ e1 = history_entry_new("first", 5);
+    ≔ e2 = history_entry_new("second", 6);
+
+    ≔ s1 = history_push(stack, e1);
+    ≔ s2 = history_push(s1, e2);
+    ≔ s3 = history_undo(s2);
+
+    ≔ current = history_current(s3);
+    check_eq_str(current.content, "first", "T089: undo restores previous content");
+    check_eq_int(current.cursor_pos, 5, "T089: undo restores previous cursor");
+}
+
+rite test_t090_history_redo() {
+    ≔ stack = history_stack_new(10);
+    ≔ e1 = history_entry_new("first", 5);
+    ≔ e2 = history_entry_new("second", 6);
+
+    ≔ s1 = history_push(stack, e1);
+    ≔ s2 = history_push(s1, e2);
+    ≔ s3 = history_undo(s2);
+    ≔ s4 = history_redo(s3);
+
+    ≔ current = history_current(s4);
+    check_eq_str(current.content, "second", "T090: redo restores next content");
+    check_eq_int(current.cursor_pos, 6, "T090: redo restores next cursor");
+}
+
+rite test_t091_history_truncates_on_edit() {
+    ≔ stack = history_stack_new(10);
+    ≔ e1 = history_entry_new("a", 1);
+    ≔ e2 = history_entry_new("ab", 2);
+    ≔ e3 = history_entry_new("abc", 3);
+
+    ≔ s1 = history_push(stack, e1);
+    ≔ s2 = history_push(s1, e2);
+    ≔ s3 = history_push(s2, e3);
+
+    // Undo twice, then make new edit
+    ≔ s4 = history_undo(s3);
+    ≔ s5 = history_undo(s4);
+    ≔ e_new = history_entry_new("ax", 2);
+    ≔ s6 = history_push(s5, e_new);
+
+    // Should only have "a" and "ax" - "ab" and "abc" truncated
+    check_eq_int(s6.entries.len(), 2, "T091: history truncated after new edit");
+    check(¬history_can_redo(s6), "T091: can't redo after new edit");
+}
+
+rite test_t092_history_max_size() {
+    ≔ stack = history_stack_new(3);
+
+    ≔ e1 = history_entry_new("a", 1);
+    ≔ e2 = history_entry_new("ab", 2);
+    ≔ e3 = history_entry_new("abc", 3);
+    ≔ e4 = history_entry_new("abcd", 4);
+
+    ≔ s1 = history_push(stack, e1);
+    ≔ s2 = history_push(s1, e2);
+    ≔ s3 = history_push(s2, e3);
+    ≔ s4 = history_push(s3, e4);
+
+    check_eq_int(s4.entries.len(), 3, "T092: history respects max_size");
+
+    // Oldest entry should be gone
+    ≔ first = s4.entries[0];
+    check_eq_str(first.content, "ab", "T092: oldest entry removed");
+}
+
+rite test_t093_editor_undo_redo() {
+    ≔ editor = editor_with_history_new();
+
+    // Make some edits
+    ≔ e1 = editor_edit(editor, "hello", 5);
+    ≔ e2 = editor_edit(e1, "hello world", 11);
+
+    check_eq_str(get_editor_content(e2), "hello world", "T093: content after edits");
+
+    // Undo
+    ≔ e3 = editor_undo(e2);
+    check_eq_str(get_editor_content(e3), "hello", "T093: content after undo");
+    check_eq_int(get_editor_cursor(e3), 5, "T093: cursor after undo");
+
+    // Redo
+    ≔ e4 = editor_redo(e3);
+    check_eq_str(get_editor_content(e4), "hello world", "T093: content after redo");
+    check_eq_int(get_editor_cursor(e4), 11, "T093: cursor after redo");
+}
+
+// =============================================================================
+// PHASE 3.2: Line Navigation Tests (T094-T100)
+// =============================================================================
+
+rite test_t094_pos_to_line_col() {
+    ≔ content = "hello\nworld\ntest";
+
+    ≔ pos0 = pos_to_line_col(content, 0);
+    check_eq_int(pos0.0, 0, "T094: pos 0 is line 0");
+    check_eq_int(pos0.1, 0, "T094: pos 0 is col 0");
+
+    ≔ pos5 = pos_to_line_col(content, 5);
+    check_eq_int(pos5.0, 0, "T094: pos 5 is line 0");
+    check_eq_int(pos5.1, 5, "T094: pos 5 is col 5");
+
+    ≔ pos6 = pos_to_line_col(content, 6);
+    check_eq_int(pos6.0, 1, "T094: pos 6 (after newline) is line 1");
+    check_eq_int(pos6.1, 0, "T094: pos 6 is col 0");
+
+    ≔ pos9 = pos_to_line_col(content, 9);
+    check_eq_int(pos9.0, 1, "T094: pos 9 is line 1");
+    check_eq_int(pos9.1, 3, "T094: pos 9 is col 3");
+}
+
+rite test_t095_line_col_to_pos() {
+    ≔ content = "hello\nworld\ntest";
+
+    check_eq_int(line_col_to_pos(content, 0, 0), 0, "T095: line 0 col 0");
+    check_eq_int(line_col_to_pos(content, 0, 5), 5, "T095: line 0 col 5");
+    check_eq_int(line_col_to_pos(content, 1, 0), 6, "T095: line 1 col 0");
+    check_eq_int(line_col_to_pos(content, 1, 3), 9, "T095: line 1 col 3");
+    check_eq_int(line_col_to_pos(content, 2, 0), 12, "T095: line 2 col 0");
+}
+
+rite test_t096_line_start_end() {
+    ≔ content = "hello\nworld\ntest";
+
+    check_eq_int(line_start_pos(content, 0), 0, "T096: line 0 starts at 0");
+    check_eq_int(line_end_pos(content, 0), 5, "T096: line 0 ends at 5");
+
+    check_eq_int(line_start_pos(content, 1), 6, "T096: line 1 starts at 6");
+    check_eq_int(line_end_pos(content, 1), 11, "T096: line 1 ends at 11");
+
+    check_eq_int(line_start_pos(content, 2), 12, "T096: line 2 starts at 12");
+    check_eq_int(line_end_pos(content, 2), 16, "T096: line 2 ends at 16");
+}
+
+rite test_t097_count_lines() {
+    check_eq_int(count_lines(""), 1, "T097: empty string has 1 line");
+    check_eq_int(count_lines("hello"), 1, "T097: no newlines = 1 line");
+    check_eq_int(count_lines("hello\n"), 2, "T097: trailing newline = 2 lines");
+    check_eq_int(count_lines("a\nb\nc"), 3, "T097: 2 newlines = 3 lines");
+    check_eq_int(count_lines("a\nb\nc\n"), 4, "T097: 3 newlines = 4 lines");
+}
+
+rite test_t098_move_cursor_up() {
+    ≔ content = "hello\nworld\ntest";
+
+    // From middle of line 1
+    ≔ pos1 = move_cursor_up(content, 9);  // "wor|ld"
+    check_eq_int(pos1, 3, "T098: up from line 1 col 3 -> line 0 col 3");
+
+    // From first line - goes to start
+    ≔ pos2 = move_cursor_up(content, 3);
+    check_eq_int(pos2, 0, "T098: up from line 0 -> start");
+
+    // From col beyond previous line length
+    ≔ content2 = "hi\nworld";
+    ≔ pos3 = move_cursor_up(content2, 6);  // "wo|rld" col 3
+    check_eq_int(pos3, 2, "T098: up to shorter line clamps to end");
+}
+
+rite test_t099_move_cursor_down() {
+    ≔ content = "hello\nworld\ntest";
+
+    // From middle of line 0
+    ≔ pos1 = move_cursor_down(content, 3);  // "hel|lo"
+    check_eq_int(pos1, 9, "T099: down from line 0 col 3 -> line 1 col 3");
+
+    // From last line - goes to end
+    ≔ pos2 = move_cursor_down(content, 14);  // "te|st"
+    check_eq_int(pos2, 16, "T099: down from last line -> end");
+
+    // From col beyond next line length
+    ≔ content2 = "hello\nhi";
+    ≔ pos3 = move_cursor_down(content2, 4);  // "hell|o" col 4
+    check_eq_int(pos3, 8, "T099: down to shorter line clamps to end");
+}
+
+rite test_t100_cursor_line_home_end() {
+    ≔ content = "hello\nworld\ntest";
+
+    // Home on line 1
+    ≔ pos1 = line_start_pos(content, 1);
+    check_eq_int(pos1, 6, "T100: home on line 1");
+
+    // End on line 1
+    ≔ pos2 = line_end_pos(content, 1);
+    check_eq_int(pos2, 11, "T100: end on line 1");
+}
+
+// =============================================================================
+// PHASE 3.3: Word Navigation Tests (T101-T107)
+// =============================================================================
+
+rite test_t101_is_word_char() {
+    check(is_word_char('a'), "T101: 'a' is word char");
+    check(is_word_char('Z'), "T101: 'Z' is word char");
+    check(is_word_char('5'), "T101: '5' is word char");
+    check(is_word_char('_'), "T101: '_' is word char");
+    check(¬is_word_char(' '), "T101: space is not word char");
+    check(¬is_word_char('.'), "T101: '.' is not word char");
+    check(¬is_word_char('\n'), "T101: newline is not word char");
+}
+
+rite test_t102_move_word_left() {
+    ≔ content = "hello world test";
+
+    // From end of "world"
+    ≔ pos1 = move_word_left(content, 11);  // "world|"
+    check_eq_int(pos1, 6, "T102: word left from end of word");
+
+    // From middle of "world"
+    ≔ pos2 = move_word_left(content, 9);  // "wor|ld"
+    check_eq_int(pos2, 6, "T102: word left from middle goes to start");
+
+    // From space after "hello"
+    ≔ pos3 = move_word_left(content, 6);  // "hello |world"
+    check_eq_int(pos3, 0, "T102: word left skips whitespace");
+
+    // From start
+    ≔ pos4 = move_word_left(content, 0);
+    check_eq_int(pos4, 0, "T102: word left at start stays at start");
+}
+
+rite test_t103_move_word_right() {
+    ≔ content = "hello world test";
+
+    // From start
+    ≔ pos1 = move_word_right(content, 0);
+    check_eq_int(pos1, 5, "T103: word right from start");
+
+    // From middle of "hello"
+    ≔ pos2 = move_word_right(content, 2);  // "he|llo"
+    check_eq_int(pos2, 5, "T103: word right from middle goes to end");
+
+    // From space
+    ≔ pos3 = move_word_right(content, 5);  // "hello| world"
+    check_eq_int(pos3, 11, "T103: word right skips whitespace");
+
+    // From end
+    ≔ pos4 = move_word_right(content, 16);
+    check_eq_int(pos4, 16, "T103: word right at end stays at end");
+}
+
+rite test_t104_move_word_with_symbols() {
+    ≔ content = "foo.bar_baz(x)";
+
+    // Word boundaries around symbols
+    ≔ pos1 = move_word_right(content, 0);
+    check_eq_int(pos1, 3, "T104: stops at '.'");
+
+    ≔ pos2 = move_word_right(content, 4);
+    check_eq_int(pos2, 11, "T104: bar_baz is one word");
+}
+
+rite test_t105_delete_word_backward() {
+    ≔ content = "hello world";
+    ≔ result = delete_word_backward(content, 11);  // cursor at end
+
+    check_eq_str(result.0, "hello ", "T105: delete word backward");
+    check_eq_int(result.1, 6, "T105: cursor moved to word start");
+}
+
+rite test_t106_delete_word_forward() {
+    ≔ content = "hello world";
+    ≔ result = delete_word_forward(content, 0);  // cursor at start
+
+    check_eq_str(result.0, " world", "T106: delete word forward");
+    check_eq_int(result.1, 0, "T106: cursor stays in place");
+}
+
+rite test_t107_delete_word_at_boundaries() {
+    ≔ content = "hello";
+
+    // Delete backward at start
+    ≔ r1 = delete_word_backward(content, 0);
+    check_eq_str(r1.0, "hello", "T107: delete word backward at start - no change");
+
+    // Delete forward at end
+    ≔ r2 = delete_word_forward(content, 5);
+    check_eq_str(r2.0, "hello", "T107: delete word forward at end - no change");
+}
+
+// =============================================================================
+// PHASE 3.4: Selection Extension Tests (T108-T110)
+// =============================================================================
+
+sigil Selection {
+    start: i64,
+    end: i64,
+}
+
+rite selection_new(start: i64, end: i64) → Selection {
+    Selection { start: start, end: end }
+}
+
+/// Extend selection to the left
+rite extend_selection_left(sel: Selection, content: String) → Selection {
+    ⎇ sel.end > 0 {
+        Selection { start: sel.start, end: sel.end - 1 }
+    } ⎉ {
+        sel
+    }
+}
+
+/// Extend selection to the right
+rite extend_selection_right(sel: Selection, content: String) → Selection {
+    ≔ len = chars(content).len();
+    ⎇ sel.end < len {
+        Selection { start: sel.start, end: sel.end + 1 }
+    } ⎉ {
+        sel
+    }
+}
+
+/// Extend selection by word left
+rite extend_selection_word_left(sel: Selection, content: String) → Selection {
+    ≔ new_end = move_word_left(content, sel.end);
+    Selection { start: sel.start, end: new_end }
+}
+
+/// Extend selection by word right
+rite extend_selection_word_right(sel: Selection, content: String) → Selection {
+    ≔ new_end = move_word_right(content, sel.end);
+    Selection { start: sel.start, end: new_end }
+}
+
+rite test_t108_extend_selection_char() {
+    ≔ content = "hello world";
+    ≔ sel = selection_new(5, 5);  // Cursor at position 5
+
+    // Extend right (shift+right)
+    ≔ sel2 = extend_selection_right(sel, content);
+    check_eq_int(sel2.start, 5, "T108: start unchanged");
+    check_eq_int(sel2.end, 6, "T108: end moved right");
+
+    // Extend left (shift+left)
+    ≔ sel3 = extend_selection_left(sel, content);
+    check_eq_int(sel3.start, 5, "T108: start unchanged");
+    check_eq_int(sel3.end, 4, "T108: end moved left");
+}
+
+rite test_t109_extend_selection_word() {
+    ≔ content = "hello world test";
+    ≔ sel = selection_new(6, 6);  // Cursor at start of "world"
+
+    // Extend word right (ctrl+shift+right)
+    ≔ sel2 = extend_selection_word_right(sel, content);
+    check_eq_int(sel2.start, 6, "T109: start unchanged");
+    check_eq_int(sel2.end, 11, "T109: end at end of 'world'");
+
+    // From that selection, extend word right again
+    ≔ sel3 = extend_selection_word_right(sel2, content);
+    check_eq_int(sel3.end, 16, "T109: end at end of 'test'");
+}
+
+rite test_t110_selection_boundaries() {
+    ≔ content = "hello";
+    ≔ sel_start = selection_new(0, 0);
+    ≔ sel_end = selection_new(5, 5);
+
+    // Can't extend left at start
+    ≔ r1 = extend_selection_left(sel_start, content);
+    check_eq_int(r1.end, 0, "T110: can't extend left at start");
+
+    // Can't extend right at end
+    ≔ r2 = extend_selection_right(sel_end, content);
+    check_eq_int(r2.end, 5, "T110: can't extend right at end");
+}
+
+// =============================================================================
+// Test Runner
+// =============================================================================
+
+rite main() {
+    println("════════════════════════════════════════════════════════════");
+    println("  Athame - History & Advanced Editing Test Suite");
+    println("  Phase 3: T086-T110 (Native Sigil Syntax)");
+    println("════════════════════════════════════════════════════════════");
+    println("");
+
+    // P3.1: History/Undo
+    println("── P3.1: History/Undo ──");
+    test_t086_history_stack_new();
+    println("✓ T086: history stack creation");
+
+    test_t087_history_push();
+    println("✓ T087: history push");
+
+    test_t088_history_can_undo_redo();
+    println("✓ T088: can_undo / can_redo");
+
+    test_t089_history_undo();
+    println("✓ T089: history undo");
+
+    test_t090_history_redo();
+    println("✓ T090: history redo");
+
+    test_t091_history_truncates_on_edit();
+    println("✓ T091: history truncates on new edit after undo");
+
+    test_t092_history_max_size();
+    println("✓ T092: history respects max_size");
+
+    test_t093_editor_undo_redo();
+    println("✓ T093: editor undo/redo integration");
+
+    println("");
+
+    // P3.2: Line Navigation
+    println("── P3.2: Line Navigation ──");
+    test_t094_pos_to_line_col();
+    println("✓ T094: position to line/column");
+
+    test_t095_line_col_to_pos();
+    println("✓ T095: line/column to position");
+
+    test_t096_line_start_end();
+    println("✓ T096: line start/end positions");
+
+    test_t097_count_lines();
+    println("✓ T097: count lines");
+
+    test_t098_move_cursor_up();
+    println("✓ T098: move cursor up");
+
+    test_t099_move_cursor_down();
+    println("✓ T099: move cursor down");
+
+    test_t100_cursor_line_home_end();
+    println("✓ T100: cursor line home/end");
+
+    println("");
+
+    // P3.3: Word Navigation
+    println("── P3.3: Word Navigation ──");
+    test_t101_is_word_char();
+    println("✓ T101: is_word_char");
+
+    test_t102_move_word_left();
+    println("✓ T102: move word left");
+
+    test_t103_move_word_right();
+    println("✓ T103: move word right");
+
+    test_t104_move_word_with_symbols();
+    println("✓ T104: word boundaries with symbols");
+
+    test_t105_delete_word_backward();
+    println("✓ T105: delete word backward (Ctrl+Backspace)");
+
+    test_t106_delete_word_forward();
+    println("✓ T106: delete word forward (Ctrl+Delete)");
+
+    test_t107_delete_word_at_boundaries();
+    println("✓ T107: delete word at boundaries");
+
+    println("");
+
+    // P3.4: Selection Extension
+    println("── P3.4: Selection Extension ──");
+    test_t108_extend_selection_char();
+    println("✓ T108: extend selection by character");
+
+    test_t109_extend_selection_word();
+    println("✓ T109: extend selection by word");
+
+    test_t110_selection_boundaries();
+    println("✓ T110: selection at boundaries");
+
+    println("");
+    println("════════════════════════════════════════════════════════════");
+    println("  ✅ ALL PHASE 3 TESTS PASSED (25/25)");
+    println("════════════════════════════════════════════════════════════");
+}

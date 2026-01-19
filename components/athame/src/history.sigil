@@ -1,0 +1,149 @@
+// Athame - History Module
+// Undo/Redo support for the code editor
+// Native Sigil Syntax
+
+// =============================================================================
+// History Entry
+// =============================================================================
+
+sigil HistoryEntry {
+    content: String,
+    cursor_pos: i64,
+}
+
+rite history_entry_new(content: String, cursor_pos: i64) → HistoryEntry {
+    HistoryEntry { content: content, cursor_pos: cursor_pos }
+}
+
+// =============================================================================
+// History Stack
+// =============================================================================
+
+sigil HistoryStack {
+    entries: [HistoryEntry],
+    current_index: i64,
+    max_size: i64,
+}
+
+rite history_stack_new(max_size: i64) → HistoryStack {
+    HistoryStack {
+        entries: Vec·new(),
+        current_index: -1,
+        max_size: max_size,
+    }
+}
+
+rite history_push(stack: HistoryStack, entry: HistoryEntry) → HistoryStack {
+    // Truncate any redo history
+    ≔ vary new_entries = Vec·new();
+    ≔ vary i = 0;
+    ⟳ i <= stack.current_index ∧ i < stack.entries.len() {
+        new_entries.push(stack.entries[i]);
+        i = i + 1;
+    }
+
+    new_entries.push(entry);
+
+    // Enforce max size
+    ⟳ new_entries.len() > stack.max_size {
+        ≔ vary trimmed = Vec·new();
+        ≔ vary j = 1;
+        ⟳ j < new_entries.len() {
+            trimmed.push(new_entries[j]);
+            j = j + 1;
+        }
+        new_entries = trimmed;
+    }
+
+    HistoryStack {
+        entries: new_entries,
+        current_index: new_entries.len() - 1,
+        max_size: stack.max_size,
+    }
+}
+
+rite history_can_undo(stack: HistoryStack) → bool {
+    stack.current_index > 0
+}
+
+rite history_can_redo(stack: HistoryStack) → bool {
+    stack.current_index < stack.entries.len() - 1
+}
+
+rite history_undo(stack: HistoryStack) → HistoryStack {
+    ⎇ ¬history_can_undo(stack) {
+        ⤺ stack;
+    }
+    HistoryStack {
+        entries: stack.entries,
+        current_index: stack.current_index - 1,
+        max_size: stack.max_size,
+    }
+}
+
+rite history_redo(stack: HistoryStack) → HistoryStack {
+    ⎇ ¬history_can_redo(stack) {
+        ⤺ stack;
+    }
+    HistoryStack {
+        entries: stack.entries,
+        current_index: stack.current_index + 1,
+        max_size: stack.max_size,
+    }
+}
+
+rite history_current(stack: HistoryStack) → HistoryEntry {
+    ⎇ stack.current_index < 0 ∨ stack.current_index >= stack.entries.len() {
+        ⤺ history_entry_new("", 0);
+    }
+    stack.entries[stack.current_index]
+}
+
+// =============================================================================
+// Editor with History
+// =============================================================================
+
+sigil EditorHistory {
+    history: HistoryStack,
+}
+
+rite editor_history_new() → EditorHistory {
+    ≔ stack = history_stack_new(100);
+    ≔ initial = history_entry_new("", 0);
+    EditorHistory {
+        history: history_push(stack, initial),
+    }
+}
+
+rite editor_history_record(hist: EditorHistory, content: String, cursor: i64) → EditorHistory {
+    ≔ entry = history_entry_new(content, cursor);
+    EditorHistory {
+        history: history_push(hist.history, entry),
+    }
+}
+
+rite editor_history_undo(hist: EditorHistory) → (EditorHistory, HistoryEntry) {
+    ⎇ ¬history_can_undo(hist.history) {
+        ⤺ (hist, history_current(hist.history));
+    }
+    ≔ new_history = history_undo(hist.history);
+    ≔ entry = history_current(new_history);
+    (EditorHistory { history: new_history }, entry)
+}
+
+rite editor_history_redo(hist: EditorHistory) → (EditorHistory, HistoryEntry) {
+    ⎇ ¬history_can_redo(hist.history) {
+        ⤺ (hist, history_current(hist.history));
+    }
+    ≔ new_history = history_redo(hist.history);
+    ≔ entry = history_current(new_history);
+    (EditorHistory { history: new_history }, entry)
+}
+
+rite editor_history_can_undo(hist: EditorHistory) → bool {
+    history_can_undo(hist.history)
+}
+
+rite editor_history_can_redo(hist: EditorHistory) → bool {
+    history_can_redo(hist.history)
+}
