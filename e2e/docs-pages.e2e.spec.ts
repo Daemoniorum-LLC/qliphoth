@@ -79,7 +79,10 @@ test.describe('Doc Page', () => {
     await expect(tocNav).toBeVisible()
   })
 
-  test('TOC links scroll to sections', async ({ page }) => {
+  test('TOC links scroll to sections', async ({ page, viewport }) => {
+    // Skip on tablet/mobile where TOC is hidden
+    test.skip(viewport !== null && viewport.width < 1024, 'TOC not visible on smaller viewports')
+
     const tocLink = page.getByTestId('toc-nav').locator('a').first()
     const href = await tocLink.getAttribute('href')
 
@@ -197,7 +200,10 @@ test.describe('Doc Navigation Flow', () => {
     await expect(page).toHaveURL('/')
   })
 
-  test('sidebar navigation updates URL and content', async ({ page }) => {
+  test('sidebar navigation updates URL and content', async ({ page, viewport }) => {
+    // Skip on tablet/mobile where sidebar is hidden or collapsed
+    test.skip(viewport !== null && viewport.width < 1024, 'Sidebar not visible on smaller viewports')
+
     await page.goto('/docs')
 
     // Navigate to Sigil
