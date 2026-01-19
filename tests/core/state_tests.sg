@@ -1,0 +1,366 @@
+// Qliphoth Framework - State/Signal Unit Tests
+// Phase 0: Framework Core Tests
+// Tests: Reactive signals, computed values, effects, stores
+
+// ============================================================================
+// Signal Types (Fine-grained Reactivity)
+// ============================================================================
+
+☉ sigil Signal<T> {
+    value: T,
+    subscribers: !i64,
+    version: !i64
+}
+
+☉ sigil Computed<T> {
+    value: T,
+    dirty: !bool,
+    deps_version: !i64
+}
+
+☉ sigil Store<T> {
+    state: T,
+    version: !i64,
+    name: !String
+}
+
+☉ ᛈ Action {
+    Set(!i64),
+    Update,
+    Reset
+}
+
+// ============================================================================
+// Signal Implementation
+// ============================================================================
+
+rite create_signal<T>(initial: T) → !Signal<T> {
+    Signal { value: initial, subscribers: 0, version: 0 }
+}
+
+rite get_signal<T>(s: !Signal<T>) → T {
+    s.value
+}
+
+rite set_signal<T>(s: !Signal<T>, val: T) → !Signal<T> {
+    Signal { value: val, subscribers: s.subscribers, version: s.version + 1 }
+}
+
+rite subscribe<T>(s: !Signal<T>) → !Signal<T> {
+    Signal { value: s.value, subscribers: s.subscribers + 1, version: s.version }
+}
+
+rite unsubscribe<T>(s: !Signal<T>) → !Signal<T> {
+    ≔ new_subs: !i64 = ⎇ s.subscribers > 0 { s.subscribers - 1 } ⎉ { 0 };
+    Signal { value: s.value, subscribers: new_subs, version: s.version }
+}
+
+// ============================================================================
+// Computed Values
+// ============================================================================
+
+rite create_computed<T>(initial: T, deps_ver: !i64) → !Computed<T> {
+    Computed { value: initial, dirty: ⊥, deps_version: deps_ver }
+}
+
+rite mark_dirty<T>(c: !Computed<T>) → !Computed<T> {
+    Computed { value: c.value, dirty: ⊤, deps_version: c.deps_version }
+}
+
+rite update_computed<T>(c: !Computed<T>, new_val: T, new_deps: !i64) → !Computed<T> {
+    Computed { value: new_val, dirty: ⊥, deps_version: new_deps }
+}
+
+rite needs_recompute<T>(c: !Computed<T>, current_deps: !i64) → !bool {
+    c.dirty ∨ c.deps_version != current_deps
+}
+
+// ============================================================================
+// Store (Global State)
+// ============================================================================
+
+rite create_store<T>(initial: T, name: !String) → !Store<T> {
+    Store { state: initial, version: 0, name: name }
+}
+
+rite get_store<T>(s: !Store<T>) → T {
+    s.state
+}
+
+rite dispatch<T>(s: !Store<T>, new_state: T) → !Store<T> {
+    Store { state: new_state, version: s.version + 1, name: s.name }
+}
+
+// ============================================================================
+// Tests: Signal Creation
+// ============================================================================
+
+rite test_signal_initial() → !i64 {
+    ≔ s: !Signal<i64> = create_signal(42);
+    ⎇ s.value == 42 { 1 } ⎉ { 0 }
+}
+
+rite test_signal_zero_subscribers() → !i64 {
+    ≔ s: !Signal<i64> = create_signal(0);
+    ⎇ s.subscribers == 0 { 1 } ⎉ { 0 }
+}
+
+rite test_signal_initial_version() → !i64 {
+    ≔ s: !Signal<i64> = create_signal(0);
+    ⎇ s.version == 0 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Signal Updates
+// ============================================================================
+
+rite test_signal_set() → !i64 {
+    ≔ s1: !Signal<i64> = create_signal(0);
+    ≔ s2: !Signal<i64> = set_signal(s1, 100);
+    ⎇ s2.value == 100 { 1 } ⎉ { 0 }
+}
+
+rite test_signal_version_increment() → !i64 {
+    ≔ s1: !Signal<i64> = create_signal(0);
+    ≔ s2: !Signal<i64> = set_signal(s1, 1);
+    ≔ s3: !Signal<i64> = set_signal(s2, 2);
+    ⎇ s3.version == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_signal_immutable() → !i64 {
+    ≔ s1: !Signal<i64> = create_signal(10);
+    ≔ s2: !Signal<i64> = set_signal(s1, 20);
+    ⎇ s1.value == 10 ∧ s2.value == 20 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Signal Subscriptions
+// ============================================================================
+
+rite test_subscribe() → !i64 {
+    ≔ s1: !Signal<i64> = create_signal(0);
+    ≔ s2: !Signal<i64> = subscribe(s1);
+    ⎇ s2.subscribers == 1 { 1 } ⎉ { 0 }
+}
+
+rite test_multiple_subscribe() → !i64 {
+    ≔ s1: !Signal<i64> = create_signal(0);
+    ≔ s2: !Signal<i64> = subscribe(s1);
+    ≔ s3: !Signal<i64> = subscribe(s2);
+    ≔ s4: !Signal<i64> = subscribe(s3);
+    ⎇ s4.subscribers == 3 { 1 } ⎉ { 0 }
+}
+
+rite test_unsubscribe() → !i64 {
+    ≔ s1: !Signal<i64> = create_signal(0);
+    ≔ s2: !Signal<i64> = subscribe(s1);
+    ≔ s3: !Signal<i64> = unsubscribe(s2);
+    ⎇ s3.subscribers == 0 { 1 } ⎉ { 0 }
+}
+
+rite test_unsubscribe_floor() → !i64 {
+    ≔ s1: !Signal<i64> = create_signal(0);
+    ≔ s2: !Signal<i64> = unsubscribe(s1);  // Already 0
+    ⎇ s2.subscribers == 0 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Computed Values
+// ============================================================================
+
+rite test_computed_initial() → !i64 {
+    ≔ c: !Computed<i64> = create_computed(50, 0);
+    ⎇ c.value == 50 { 1 } ⎉ { 0 }
+}
+
+rite test_computed_not_dirty() → !i64 {
+    ≔ c: !Computed<i64> = create_computed(50, 0);
+    ⎇ ¬c.dirty { 1 } ⎉ { 0 }
+}
+
+rite test_computed_mark_dirty() → !i64 {
+    ≔ c1: !Computed<i64> = create_computed(50, 0);
+    ≔ c2: !Computed<i64> = mark_dirty(c1);
+    ⎇ c2.dirty { 1 } ⎉ { 0 }
+}
+
+rite test_computed_update_clears_dirty() → !i64 {
+    ≔ c1: !Computed<i64> = create_computed(50, 0);
+    ≔ c2: !Computed<i64> = mark_dirty(c1);
+    ≔ c3: !Computed<i64> = update_computed(c2, 100, 1);
+    ⎇ ¬c3.dirty ∧ c3.value == 100 { 1 } ⎉ { 0 }
+}
+
+rite test_needs_recompute_dirty() → !i64 {
+    ≔ c1: !Computed<i64> = create_computed(50, 0);
+    ≔ c2: !Computed<i64> = mark_dirty(c1);
+    ⎇ needs_recompute(c2, 0) { 1 } ⎉ { 0 }
+}
+
+rite test_needs_recompute_version() → !i64 {
+    ≔ c: !Computed<i64> = create_computed(50, 0);
+    ⎇ needs_recompute(c, 1) { 1 } ⎉ { 0 }  // deps changed
+}
+
+rite test_no_recompute_same() → !i64 {
+    ≔ c: !Computed<i64> = create_computed(50, 5);
+    ⎇ ¬needs_recompute(c, 5) { 1 } ⎉ { 0 }  // same deps, not dirty
+}
+
+// ============================================================================
+// Tests: Store
+// ============================================================================
+
+rite test_store_initial() → !i64 {
+    ≔ s: !Store<i64> = create_store(0, "counter");
+    ⎇ s.state == 0 { 1 } ⎉ { 0 }
+}
+
+rite test_store_name() → !i64 {
+    ≔ s: !Store<i64> = create_store(0, "mystore");
+    ⎇ s.name == "mystore" { 1 } ⎉ { 0 }
+}
+
+rite test_store_dispatch() → !i64 {
+    ≔ s1: !Store<i64> = create_store(0, "counter");
+    ≔ s2: !Store<i64> = dispatch(s1, 42);
+    ⎇ s2.state == 42 { 1 } ⎉ { 0 }
+}
+
+rite test_store_version() → !i64 {
+    ≔ s1: !Store<i64> = create_store(0, "counter");
+    ≔ s2: !Store<i64> = dispatch(s1, 1);
+    ≔ s3: !Store<i64> = dispatch(s2, 2);
+    ⎇ s3.version == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_store_preserves_name() → !i64 {
+    ≔ s1: !Store<i64> = create_store(0, "counter");
+    ≔ s2: !Store<i64> = dispatch(s1, 100);
+    ⎇ s2.name == "counter" { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Action Types
+// ============================================================================
+
+rite test_action_set() → !i64 {
+    ≔ a: !Action = Action·Set(42);
+    ⌥ a {
+        Action·Set(v) => ⎇ v == 42 { 1 } ⎉ { 0 },
+        _ => 0
+    }
+}
+
+rite test_action_update() → !i64 {
+    ≔ a: !Action = Action·Update;
+    ⌥ a {
+        Action·Update => 1,
+        _ => 0
+    }
+}
+
+rite test_action_reset() → !i64 {
+    ≔ a: !Action = Action·Reset;
+    ⌥ a {
+        Action·Reset => 1,
+        _ => 0
+    }
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+rite main() {
+    println("=== Qliphoth State/Signal Unit Tests ===");
+    println("");
+
+    ≔ vary passed: !i64 = 0;
+    ≔ vary total: !i64 = 0;
+
+    // Signal creation tests
+    total = total + 1;
+    ⎇ test_signal_initial() == 1 { passed = passed + 1; println("PASS: signal initial"); } ⎉ { println("FAIL: signal initial"); }
+
+    total = total + 1;
+    ⎇ test_signal_zero_subscribers() == 1 { passed = passed + 1; println("PASS: zero subscribers"); } ⎉ { println("FAIL: zero subscribers"); }
+
+    total = total + 1;
+    ⎇ test_signal_initial_version() == 1 { passed = passed + 1; println("PASS: initial version"); } ⎉ { println("FAIL: initial version"); }
+
+    // Signal update tests
+    total = total + 1;
+    ⎇ test_signal_set() == 1 { passed = passed + 1; println("PASS: signal set"); } ⎉ { println("FAIL: signal set"); }
+
+    total = total + 1;
+    ⎇ test_signal_version_increment() == 1 { passed = passed + 1; println("PASS: version increment"); } ⎉ { println("FAIL: version increment"); }
+
+    total = total + 1;
+    ⎇ test_signal_immutable() == 1 { passed = passed + 1; println("PASS: signal immutable"); } ⎉ { println("FAIL: signal immutable"); }
+
+    // Subscription tests
+    total = total + 1;
+    ⎇ test_subscribe() == 1 { passed = passed + 1; println("PASS: subscribe"); } ⎉ { println("FAIL: subscribe"); }
+
+    total = total + 1;
+    ⎇ test_multiple_subscribe() == 1 { passed = passed + 1; println("PASS: multiple subscribe"); } ⎉ { println("FAIL: multiple subscribe"); }
+
+    total = total + 1;
+    ⎇ test_unsubscribe() == 1 { passed = passed + 1; println("PASS: unsubscribe"); } ⎉ { println("FAIL: unsubscribe"); }
+
+    total = total + 1;
+    ⎇ test_unsubscribe_floor() == 1 { passed = passed + 1; println("PASS: unsubscribe floor"); } ⎉ { println("FAIL: unsubscribe floor"); }
+
+    // Computed tests
+    total = total + 1;
+    ⎇ test_computed_initial() == 1 { passed = passed + 1; println("PASS: computed initial"); } ⎉ { println("FAIL: computed initial"); }
+
+    total = total + 1;
+    ⎇ test_computed_not_dirty() == 1 { passed = passed + 1; println("PASS: computed not dirty"); } ⎉ { println("FAIL: computed not dirty"); }
+
+    total = total + 1;
+    ⎇ test_computed_mark_dirty() == 1 { passed = passed + 1; println("PASS: computed mark dirty"); } ⎉ { println("FAIL: computed mark dirty"); }
+
+    total = total + 1;
+    ⎇ test_computed_update_clears_dirty() == 1 { passed = passed + 1; println("PASS: update clears dirty"); } ⎉ { println("FAIL: update clears dirty"); }
+
+    total = total + 1;
+    ⎇ test_needs_recompute_dirty() == 1 { passed = passed + 1; println("PASS: needs recompute dirty"); } ⎉ { println("FAIL: needs recompute dirty"); }
+
+    total = total + 1;
+    ⎇ test_needs_recompute_version() == 1 { passed = passed + 1; println("PASS: needs recompute version"); } ⎉ { println("FAIL: needs recompute version"); }
+
+    total = total + 1;
+    ⎇ test_no_recompute_same() == 1 { passed = passed + 1; println("PASS: no recompute same"); } ⎉ { println("FAIL: no recompute same"); }
+
+    // Store tests
+    total = total + 1;
+    ⎇ test_store_initial() == 1 { passed = passed + 1; println("PASS: store initial"); } ⎉ { println("FAIL: store initial"); }
+
+    total = total + 1;
+    ⎇ test_store_name() == 1 { passed = passed + 1; println("PASS: store name"); } ⎉ { println("FAIL: store name"); }
+
+    total = total + 1;
+    ⎇ test_store_dispatch() == 1 { passed = passed + 1; println("PASS: store dispatch"); } ⎉ { println("FAIL: store dispatch"); }
+
+    total = total + 1;
+    ⎇ test_store_version() == 1 { passed = passed + 1; println("PASS: store version"); } ⎉ { println("FAIL: store version"); }
+
+    total = total + 1;
+    ⎇ test_store_preserves_name() == 1 { passed = passed + 1; println("PASS: store preserves name"); } ⎉ { println("FAIL: store preserves name"); }
+
+    // Action tests
+    total = total + 1;
+    ⎇ test_action_set() == 1 { passed = passed + 1; println("PASS: action set"); } ⎉ { println("FAIL: action set"); }
+
+    total = total + 1;
+    ⎇ test_action_update() == 1 { passed = passed + 1; println("PASS: action update"); } ⎉ { println("FAIL: action update"); }
+
+    total = total + 1;
+    ⎇ test_action_reset() == 1 { passed = passed + 1; println("PASS: action reset"); } ⎉ { println("FAIL: action reset"); }
+
+    println("");
+    println(passed);
+    println(total);
+}

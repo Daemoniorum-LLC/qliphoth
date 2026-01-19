@@ -1,0 +1,609 @@
+// Markdown Loader
+// Loads and parses markdown documentation from the repository
+// Native Sigil Syntax
+
+invoke std·collections·HashMap;
+invoke crate·layouts·TocItem;
+
+/// Parsed markdown document
+☉ sigil MarkdownDoc {
+    /// Document title (from first H1 or frontmatter)
+    title: String!,
+    /// Document description (from frontmatter or first paragraph)
+    description: String!,
+    /// Raw markdown content
+    raw_content: String!,
+    /// Parsed HTML content
+    html_content: String!,
+    /// Table of contents extracted from headings
+    toc: [TocItem]!,
+    /// Frontmatter metadata
+    frontmatter: HashMap<String, String>!,
+    /// Last modified timestamp
+    last_modified: OptionString?,
+    /// Word count
+    word_count: u32!,
+    /// Estimated reading time in minutes
+    reading_time: u32!,
+}
+
+/// Load markdown file from repository
+☉ async rite load_markdown(file_path: String) → ResultMarkdownDoc~! {
+    ≔ base_path! = "/home/user/persona-framework";
+    ≔ full_path! = format!("{}/{}", base_path, file_path);
+
+    // Read file content
+    ≔ raw_content~! = read_file(full_path·as_str())|await?;
+
+    // Parse the markdown
+    parse_markdown(raw_content~·as_str())
+}
+
+/// Parse markdown content into structured document
+☉ rite parse_markdown(content: String) → ResultMarkdownDoc! {
+    // Extract frontmatter if present
+    ≔ (frontmatter, markdown_content) = extract_frontmatter(content·as_str());
+
+    // Parse title from first H1 or frontmatter
+    ≔ title! = ⌥ frontmatter·get("title") {
+        OptionStringRef·Some(t) => t·clone(),
+        OptionStringRef·None => extract_first_heading(markdown_content·as_str())
+    };
+
+    // Extract description
+    ≔ description! = ⌥ frontmatter·get("description") {
+        OptionStringRef·Some(d) => d·clone(),
+        OptionStringRef·None => extract_first_paragraph(markdown_content·as_str())
+    };
+
+    // Build table of contents
+    ≔ toc! = build_toc(markdown_content·as_str());
+
+    // Convert markdown to HTML
+    ≔ html_content! = markdown_to_html(markdown_content·as_str());
+
+    // Calculate stats
+    ≔ word_count! = count_words(markdown_content·as_str());
+    ≔ reading_time! = (word_count / 200)·max(1);  // ~200 words per minute
+
+    ResultMarkdownDoc·Ok(MarkdownDoc {
+        title: title,
+        description: description,
+        raw_content: content,
+        html_content: html_content,
+        toc: toc,
+        frontmatter: frontmatter,
+        last_modified: OptionString·None,
+        word_count: word_count,
+        reading_time: reading_time
+    })
+}
+
+/// Extract YAML frontmatter from markdown
+rite extract_frontmatter(content: String) → (HashMap<String, String>, String)! {
+    ≔ vary frontmatter! = HashMap·new();
+
+    ⎇ content·starts_with("---") {
+        ⌥ content[3..]·find("---") {
+            OptionIndex·Some(end_idx) => {
+                ≔ yaml_content! = content[3..end_idx + 3]·as_str();
+                ≔ markdown_content! = content[end_idx + 6..]·as_str();
+
+                // Parse simple YAML key: value pairs
+                ∀ line ∈ yaml_content·lines() {
+                    ⌥ line·find(':') {
+                        OptionIndex·Some(colon_idx) => {
+                            ≔ key! = line[..colon_idx]·trim().to_string();
+                            ≔ value! = line[colon_idx + 1..]·trim()
+                                ·trim_matches('"')
+                                ·trim_matches('\'')
+                                .to_string();
+                            frontmatter·insert(key, value);
+                        }
+                        OptionIndex·None => {}
+                    }
+                }
+
+                ⤺ (frontmatter, markdown_content·trim().to_string())
+            }
+            OptionIndex·None => {}
+        }
+    };
+
+    (frontmatter, content.to_string())
+}
+
+/// Extract first H1 heading from markdown
+rite extract_first_heading(content: String) → String! {
+    ∀ line ∈ content·lines() {
+        ≔ trimmed! = line·trim();
+        ⎇ trimmed·starts_with("# ") {
+            ⤺ trimmed[2..]·trim().to_string()
+        }
+    }
+    "Untitled".to_string()
+}
+
+/// Extract first paragraph from markdown
+rite extract_first_paragraph(content: String) → String! {
+    ≔ vary in_paragraph! = nay;
+    ≔ vary paragraph! = String·new();
+
+    ∀ line ∈ content·lines() {
+        ≔ trimmed! = line·trim();
+
+        // Skip headings and empty lines at start
+        ⎇ trimmed·is_empty() {
+            ⎇ in_paragraph {
+                ⊘
+            }
+            ↻
+        };
+
+        ⎇ trimmed·starts_with('#') ∨ trimmed·starts_with("```") {
+            ⎇ in_paragraph {
+                ⊘
+            }
+            ↻
+        };
+
+        in_paragraph = yea;
+        ⎇ ¬paragraph·is_empty() {
+            paragraph·push(' ');
+        };
+        paragraph·push_str(trimmed);
+    }
+
+    // Limit to ~200 chars
+    ⎇ paragraph·len() > 200 {
+        ≔ truncated! = paragraph[..200]·as_str();
+        ⌥ truncated·rfind(' ') {
+            OptionIndex·Some(i) => format!("{}...", truncated[..i]),
+            OptionIndex·None => format!("{}...", truncated)
+        }
+    } ⎉ {
+        paragraph
+    }
+}
+
+/// Build table of contents from headings
+rite build_toc(content: String) → [TocItem]! {
+    ≔ vary toc! = Vec·new();
+    ≔ vary heading_counts! = HashMap·new();
+
+    ∀ line ∈ content·lines() {
+        ≔ trimmed! = line·trim();
+
+        // Match heading patterns
+        ⎇ trimmed·starts_with("## ") {
+            ≔ title! = trimmed[3..]·trim().to_string();
+            ≔ anchor! = generate_anchor(title·as_str(), heading_counts·borrow_mut());
+            toc·push(TocItem {
+                title: title,
+                anchor: anchor,
+                level: 2,
+                children: Vec·new()
+            });
+        } ⎉ ⎇ trimmed·starts_with("### ") {
+            ≔ title! = trimmed[4..]·trim().to_string();
+            ≔ anchor! = generate_anchor(title·as_str(), heading_counts·borrow_mut());
+
+            // Add as child of last H2 if exists
+            ⌥ toc·last_mut() {
+                OptionTocItemRef·Some(last) => {
+                    last.children·push(TocItem {
+                        title: title,
+                        anchor: anchor,
+                        level: 3,
+                        children: Vec·new()
+                    });
+                }
+                OptionTocItemRef·None => {
+                    toc·push(TocItem {
+                        title: title,
+                        anchor: anchor,
+                        level: 3,
+                        children: Vec·new()
+                    });
+                }
+            }
+        }
+    }
+
+    toc
+}
+
+/// Generate URL-safe anchor from heading text
+rite generate_anchor(text: String, counts: vary HashMap<String, u32>) → String! {
+    ≔ base_anchor! = text
+        ·to_lowercase()
+        ·chars()
+        ·filter(|c| c·is_alphanumeric() ∨ *c == ' ' ∨ *c == '-')
+        ·collect()
+        ·replace(' ', "-")
+        ·trim_matches('-')
+        .to_string();
+
+    // Handle duplicate anchors
+    ≔ count! = counts·entry(base_anchor·clone())·or_insert(0);
+    *count += 1;
+
+    ⎇ *count > 1 {
+        format!("{}-{}", base_anchor, count - 1)
+    } ⎉ {
+        base_anchor
+    }
+}
+
+/// Convert markdown to HTML
+rite markdown_to_html(content: String) → String! {
+    ≔ vary html! = String·new();
+    ≔ vary in_code_block! = nay;
+    ≔ vary code_lang! = String·new();
+    ≔ vary code_content! = String·new();
+    ≔ vary in_list! = nay;
+    ≔ vary list_type! = "ul";
+
+    ∀ line ∈ content·lines() {
+        ≔ trimmed! = line·trim();
+
+        // Code blocks
+        ⎇ trimmed·starts_with("```") {
+            ⎇ in_code_block {
+                // End code block
+                html·push_str(format!(
+                    "<pre><code class=\"language-{}\">{}</code></pre>\n",
+                    code_lang,
+                    escape_html(code_content·as_str())
+                )·as_str());
+                code_content·clear();
+                in_code_block = nay;
+            } ⎉ {
+                // Start code block
+                code_lang = trimmed[3..]·trim().to_string();
+                ⎇ code_lang·is_empty() {
+                    code_lang = "text".to_string();
+                };
+                in_code_block = yea;
+            }
+            ↻
+        };
+
+        ⎇ in_code_block {
+            code_content·push_str(line);
+            code_content·push('\n');
+            ↻
+        };
+
+        // Empty line
+        ⎇ trimmed·is_empty() {
+            ⎇ in_list {
+                html·push_str(format!("</{}>\n", list_type)·as_str());
+                in_list = nay;
+            }
+            ↻
+        };
+
+        // Headings
+        ⎇ trimmed·starts_with("# ") {
+            ≔ text! = trimmed[2..]·as_str();
+            ≔ anchor! = text·to_lowercase()·replace(' ', "-");
+            html·push_str(format!("<h1 id=\"{}\">{}</h1>\n", anchor, escape_html(text))·as_str());
+            ↻
+        };
+        ⎇ trimmed·starts_with("## ") {
+            ≔ text! = trimmed[3..]·as_str();
+            ≔ anchor! = text·to_lowercase()·replace(' ', "-");
+            html·push_str(format!("<h2 id=\"{}\">{}</h2>\n", anchor, escape_html(text))·as_str());
+            ↻
+        };
+        ⎇ trimmed·starts_with("### ") {
+            ≔ text! = trimmed[4..]·as_str();
+            ≔ anchor! = text·to_lowercase()·replace(' ', "-");
+            html·push_str(format!("<h3 id=\"{}\">{}</h3>\n", anchor, escape_html(text))·as_str());
+            ↻
+        };
+        ⎇ trimmed·starts_with("#### ") {
+            ≔ text! = trimmed[5..]·as_str();
+            html·push_str(format!("<h4>{}</h4>\n", escape_html(text))·as_str());
+            ↻
+        };
+
+        // Lists
+        ⎇ trimmed·starts_with("- ") ∨ trimmed·starts_with("* ") {
+            ⎇ ¬in_list {
+                html·push_str("<ul>\n");
+                in_list = yea;
+                list_type = "ul";
+            };
+            ≔ text! = trimmed[2..]·as_str();
+            html·push_str(format!("<li>{}</li>\n", process_inline(text))·as_str());
+            ↻
+        };
+
+        // Numbered lists
+        ⌥ trimmed·chars()·next() {
+            OptionChar·Some(c) => {
+                ⎇ c·is_digit(10) {
+                    ⌥ trimmed·find(". ") {
+                        OptionIndex·Some(dot_idx) => {
+                            ⎇ ¬in_list {
+                                html·push_str("<ol>\n");
+                                in_list = yea;
+                                list_type = "ol";
+                            };
+                            ≔ text! = trimmed[dot_idx + 2..]·as_str();
+                            html·push_str(format!("<li>{}</li>\n", process_inline(text))·as_str());
+                            ↻
+                        }
+                        OptionIndex·None => {}
+                    }
+                }
+            }
+            OptionChar·None => {}
+        };
+
+        // Blockquotes
+        ⎇ trimmed·starts_with("> ") {
+            ≔ text! = trimmed[2..]·as_str();
+            html·push_str(format!("<blockquote><p>{}</p></blockquote>\n", process_inline(text))·as_str());
+            ↻
+        };
+
+        // Horizontal rule
+        ⎇ trimmed == "---" ∨ trimmed == "***" ∨ trimmed == "___" {
+            html·push_str("<hr />\n");
+            ↻
+        };
+
+        // Tables (simple)
+        ⎇ trimmed·starts_with("|") ∧ trimmed·ends_with("|") {
+            // Basic table row
+            ⎇ trimmed·contains("---") {
+                ↻  // Skip separator row
+            };
+            ≔ cells! = trimmed
+                ·trim_matches('|')
+                ·split('|')
+                ·map(|c| format!("<td>{}</td>", process_inline(c·trim())))
+                ·collect()
+                ·join("");
+            html·push_str(format!("<tr>{}</tr>\n", cells)·as_str());
+            ↻
+        };
+
+        // Regular paragraph
+        ⎇ in_list {
+            html·push_str(format!("</{}>\n", list_type)·as_str());
+            in_list = nay;
+        };
+        html·push_str(format!("<p>{}</p>\n", process_inline(trimmed))·as_str());
+    }
+
+    // Close any open lists
+    ⎇ in_list {
+        html·push_str(format!("</{}>\n", list_type)·as_str());
+    };
+
+    html
+}
+
+/// Process inline markdown formatting
+rite process_inline(text: String) → String! {
+    ≔ vary result! = escape_html(text·as_str());
+
+    // Bold **text** or __text__
+    result = regex_replace(result·as_str(), r"\*\*(.+?)\*\*", "<strong>$1</strong>");
+    result = regex_replace(result·as_str(), r"__(.+?)__", "<strong>$1</strong>");
+
+    // Italic *text* or _text_
+    result = regex_replace(result·as_str(), r"\*(.+?)\*", "<em>$1</em>");
+    result = regex_replace(result·as_str(), r"_(.+?)_", "<em>$1</em>");
+
+    // Inline code `code`
+    result = regex_replace(result·as_str(), r"`(.+?)`", "<code>$1</code>");
+
+    // Links [text](url)
+    result = regex_replace(result·as_str(), r"\[(.+?)\]\((.+?)\)", "<a href=\"$2\">$1</a>");
+
+    // Images ![alt](src)
+    result = regex_replace(result·as_str(), r"!\[(.+?)\]\((.+?)\)", "<img src=\"$2\" alt=\"$1\" />");
+
+    result
+}
+
+/// Escape HTML special characters
+rite escape_html(s: String) → String! {
+    s·replace('&', "&amp;")
+     ·replace('<', "&lt;")
+     ·replace('>', "&gt;")
+     ·replace('"', "&quot;")
+}
+
+/// Simple regex replace (placeholder - would use real regex lib)
+rite regex_replace(text: String, pattern: String, replacement: String) → String! {
+    // Simplified implementation - real version would use regex crate
+    text.to_string()
+}
+
+/// Count words in text
+rite count_words(text: String) → u32! {
+    text·split_whitespace()·count() as u32
+}
+
+/// Read file from filesystem
+async rite read_file(path: String) → ResultString~! {
+    // Platform-specific file reading
+    // In browser: fetch from server
+    // In SSR: read from filesystem
+    ResultString·Err(LoadError·NotFound(path.to_string()))
+}
+
+/// Load error types
+☉ ᛈ LoadError {
+    NotFound(String!),
+    ParseError(String!),
+    IoError(String!),
+}
+
+∋ LoadError {
+    ☉ rite message(this) → String! {
+        ⌥ this {
+            LoadError·NotFound(path) => format!("File not found: {}", path),
+            LoadError·ParseError(msg) => format!("Parse error: {}", msg),
+            LoadError·IoError(msg) => format!("IO error: {}", msg)
+        }
+    }
+}
+
+/// Cache for loaded documents
+☉ sigil DocCache {
+    cache: HashMap<String, MarkdownDoc>!,
+    max_size: usize!,
+}
+
+∋ DocCache {
+    ☉ rite new(max_size: usize) → DocCache! {
+        DocCache {
+            cache: HashMap·new(),
+            max_size: max_size
+        }
+    }
+
+    ☉ rite get(this, path: String) → OptionMarkdownDocRef? {
+        this.cache·get(path·as_str())
+    }
+
+    ☉ rite insert(vary this, path: String, doc: MarkdownDoc) {
+        ⎇ this.cache·len() >= this.max_size {
+            // Simple LRU: remove first entry
+            ⌥ this.cache·keys()·next()·cloned() {
+                OptionString·Some(key) => {
+                    this.cache·remove(key·as_str());
+                }
+                OptionString·None => {}
+            }
+        };
+        this.cache·insert(path, doc);
+    }
+
+    ☉ rite invalidate(vary this, path: String) {
+        this.cache·remove(path·as_str());
+    }
+
+    ☉ rite clear(vary this) {
+        this.cache·clear();
+    }
+}
+
+// Global document cache
+thread_local! {
+    static DOC_CACHE: RefCell<DocCache> = RefCell·new(DocCache·new(100));
+}
+
+/// Get cached document or load from disk
+☉ async rite get_doc(file_path: String) → ResultMarkdownDoc~! {
+    // Check cache first
+    ≔ cached? = DOC_CACHE·with(|cache| {
+        cache·borrow()·get(file_path·clone())·cloned()
+    });
+
+    ⌥ cached? {
+        OptionMarkdownDoc·Some(doc) => {
+            ⤺ ResultMarkdownDoc·Ok(doc)
+        }
+        OptionMarkdownDoc·None => {}
+    };
+
+    // Load and cache
+    ≔ doc~! = load_markdown(file_path·clone())|await?;
+    DOC_CACHE·with(|cache| {
+        cache·borrow_mut()·insert(file_path·clone(), doc~·clone());
+    });
+
+    ResultMarkdownDoc·Ok(doc~)
+}
+
+// ============================================================================
+// Option and Result Types
+// ============================================================================
+
+ᛈ OptionString {
+    None,
+    Some(String),
+}
+
+ᛈ OptionStringRef {
+    None,
+    Some(String),
+}
+
+ᛈ OptionIndex {
+    None,
+    Some(usize),
+}
+
+ᛈ OptionChar {
+    None,
+    Some(char),
+}
+
+ᛈ OptionTocItemRef {
+    None,
+    Some(vary TocItem),
+}
+
+ᛈ OptionMarkdownDoc {
+    None,
+    Some(MarkdownDoc),
+}
+
+ᛈ OptionMarkdownDocRef {
+    None,
+    Some(MarkdownDoc),
+}
+
+ᛈ ResultMarkdownDoc {
+    Ok(MarkdownDoc),
+    Err(LoadError),
+}
+
+ᛈ ResultString {
+    Ok(String),
+    Err(LoadError),
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+∏ tests {
+    invoke super·*;
+
+    ∏ test_extract_frontmatter {
+        ≔ content! = "---\ntitle: Test\ndescription: A test doc\n---\n\n# Content";
+        ≔ (fm, md) = extract_frontmatter(content);
+        assert_eq!(fm·get("title"), OptionStringRef·Some("Test".to_string()));
+        assert!(md·contains("# Content"));
+    }
+
+    ∏ test_extract_first_heading {
+        ≔ content! = "Some text\n\n# My Title\n\nMore text";
+        assert_eq!(extract_first_heading(content), "My Title");
+    }
+
+    ∏ test_generate_anchor {
+        ≔ vary counts! = HashMap·new();
+        assert_eq!(generate_anchor("Hello World", counts·borrow_mut()), "hello-world");
+        assert_eq!(generate_anchor("Hello World", counts·borrow_mut()), "hello-world-1");
+    }
+
+    ∏ test_build_toc {
+        ≔ content! = "## Introduction\n\n### Overview\n\n## Getting Started\n\n### Installation";
+        ≔ toc! = build_toc(content);
+        assert_eq!(toc·len(), 2);
+        assert_eq!(toc[0].title, "Introduction");
+        assert_eq!(toc[0].children·len(), 1);
+    }
+}
+

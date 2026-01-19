@@ -1,183 +1,252 @@
-# Qliphoth (git@github.com:Daemoniorum-LLC/qliphoth.git)
+# Qliphoth
 
-**The meta-statement: A web platform built entirely in Sigil.**
+A React-inspired web application framework built on Sigil's polysynthetic programming paradigm.
 
-Qliphoth is the unified web frontend for the Daemoniorum ecosystem, written 100% in Sigil and compiled to WebAssembly. It replaces the existing React (daemoniorum-app) and Vue (docs-site) applications with a single, coherent platform.
+## Overview
+
+Qliphoth leverages Sigil's unique features to create a powerful, type-safe web framework:
+
+- **Evidentiality-Driven State**: Track data provenance (`!` computed, `?` cached, `~` remote, `‽` untrusted)
+- **Morpheme Components**: Compose UI with pipe operators and Greek letter transformations
+- **Actor-Based State Management**: Predictable state updates via message passing
+- **Zero-Cost Abstractions**: Compile-time optimization for production builds
+
+## Quick Start
+
+```sigil
+use qliphoth::prelude::*
+
+// Define a component
+component Counter {
+    state count: i64! = 0
+
+    fn render(self) -> Element {
+        div {
+            h1 { "Count: {self.count}" }
+            button[onclick: || self.count += 1] { "Increment" }
+        }
+    }
+}
+
+// Mount to DOM
+fn main() {
+    App::mount("#root", Counter::new())
+}
+```
+
+## Core Concepts
+
+### Components
+
+Components are the building blocks of Qliphoth applications:
+
+```sigil
+// Functional component
+fn Greeting(props: {name: String}) -> Element {
+    h1 { "Hello, {props.name}!" }
+}
+
+// Stateful component
+component Timer {
+    state seconds: i64! = 0
+
+    on Mount {
+        interval(1000, || self.seconds += 1)
+    }
+
+    fn render(self) -> Element {
+        span { "Elapsed: {self.seconds}s" }
+    }
+}
+```
+
+### Evidentiality in UI
+
+Sigil's evidentiality system naturally maps to UI data flow:
+
+| Marker | Meaning | UI Context |
+|--------|---------|------------|
+| `!` | Known/Computed | Local state, derived values |
+| `?` | Uncertain | Optional props, nullable data |
+| `~` | Reported | API responses, external data |
+| `‽` | Paradox | User input, untrusted sources |
+
+```sigil
+component UserProfile {
+    state user: User~ = User::empty()  // Remote data
+    state editing: bool! = false        // Local state
+
+    fn render(self) -> Element {
+        match self.user {
+            User::empty() => Spinner {},
+            user~ => ProfileCard { user: user~|validate‽ }
+        }
+    }
+}
+```
+
+### Pipe-Based Composition
+
+Use Sigil's pipe operators for elegant component composition:
+
+```sigil
+fn UserList(users: Vec<User>~) -> Element {
+    users
+        |φ{_.active}           // Filter active users
+        |σ{_.name}             // Sort by name
+        |τ{user => UserCard { user }}  // Map to components
+        |into_fragment         // Collect into fragment
+}
+```
+
+### Hooks
+
+React-inspired hooks with evidentiality tracking:
+
+```sigil
+fn SearchBox() -> Element {
+    let (query, set_query) = use_state!("")
+    let results~ = use_fetch("/api/search?q={query}")
+    let debounced? = use_debounce(query, 300)
+
+    div {
+        input[value: query, oninput: set_query]
+        match results~ {
+            Loading => Spinner {},
+            Error(e~) => ErrorBanner { message: e~ },
+            Data(items~) => ResultList { items: items~ }
+        }
+    }
+}
+```
+
+### Routing
+
+Declarative routing with type-safe parameters:
+
+```sigil
+use qliphoth::router::*
+
+fn App() -> Element {
+    Router {
+        Route[path: "/"] { Home {} }
+        Route[path: "/docs/:section"] { |params|
+            Docs { section: params.section }
+        }
+        Route[path: "/api/:module/:function"] { |params|
+            ApiReference {
+                module: params.module,
+                function: params.function
+            }
+        }
+        Route[path: "*"] { NotFound {} }
+    }
+}
+```
+
+## Cross-Platform Support
+
+Qliphoth runs on multiple platforms from the same codebase:
+
+| Platform | Target | Backend | UI Renderer |
+|----------|--------|---------|-------------|
+| **Browser** | `wasm32` | LLVM→WASM | DOM via JS FFI |
+| **Server** | native | LLVM | HTML strings (SSR) |
+| **Desktop** | native | LLVM | GTK4 widgets |
+
+### Build for Different Platforms
+
+```bash
+# Web (WebAssembly)
+sigil compile --target wasm32-unknown-unknown -o app.wasm
+
+# Server (SSR)
+sigil compile -o app-server
+
+# Desktop (GTK4)
+sigil compile --features gtk -o app-desktop
+```
+
+### Platform-Specific Code
+
+Use `#[cfg(...)]` for platform-specific behavior:
+
+```sigil
+component App {
+    fn render(self) -> Element {
+        div {
+            h1 { "Cross-Platform App" }
+
+            #[cfg(target_arch = "wasm32")]
+            { p { "Running in browser" } }
+
+            #[cfg(feature = "gtk")]
+            { p { "Running on desktop" } }
+        }
+    }
+}
+```
+
+### Platform Abstraction
+
+The `Platform` trait provides a unified interface:
+
+```sigil
+use qliphoth::platform::{Platform, detect};
+
+fn main() {
+    // Auto-detect platform
+    let platform = detect();
+
+    // Use platform-agnostic APIs
+    let (width, height) = platform·window_size();
+    platform·set_timeout(|| println!("Hello!"), 1000);
+}
+```
 
 ## Architecture
 
 ```
 qliphoth/
-├── crates/
-│   ├── qliphoth-core/    # API client, routing, state management
-│   ├── qliphoth-ui/      # 40+ Corporate Goth components
-│   ├── qliphoth-viz/     # Data visualization with morphemes
-│   ├── qliphoth-app/     # Main web application
-│   ├── qliphoth-docs/    # Documentation portal
-│   └── qliphoth-chat/    # Infernum chat widget
-├── scripts/              # Build and dev scripts
-├── dist/                 # Build output (generated)
-├── Sigil.toml           # Workspace configuration
-└── Makefile             # Build commands
+├── src/
+│   ├── core/           # Core runtime and reconciliation
+│   ├── components/     # Base component system
+│   ├── hooks/          # React-style hooks
+│   ├── router/         # Client-side routing
+│   ├── dom/            # Virtual DOM implementation
+│   ├── state/          # Actor-based state management
+│   └── platform/       # Platform bindings (browser, SSR, GTK)
+├── docs/               # Framework documentation
+├── examples/           # Example applications
+└── tests/              # Test suite
 ```
 
-## Technology
-
-- **Language**: Sigil (100% - no JavaScript)
-- **Compilation**: WASM via LLVM backend
-- **Styling**: Inline CSS with design tokens
-- **State**: Signal-based reactivity
-- **Routing**: Type-safe client-side routing
-
-## Design System
-
-The Corporate Goth aesthetic:
-
-- **Colors**: Void (#0a0a0a), Phthalo (#123524), Crimson (#8b0000)
-- **Typography**: Inter, JetBrains Mono
-- **Shadows**: Phthalo glow, Crimson glow
-- **Animations**: Fade, slide, pulse, serpent
-
-## Components (40+)
-
-### Layout
-- Container, Grid, Stack, Flex
-- PageShell, Header, Footer, Sidebar
-- Section, Divider, Spacer
-
-### Input
-- Button, Input, Textarea, Select
-- Checkbox, Radio, Switch
-- Form, FormField
-
-### Typography
-- Heading, Text, Paragraph
-- Code, Pre, Link
-- Badge, Label
-
-### Feedback
-- Alert, Toast, Spinner
-- Progress, Skeleton
-
-### Navigation
-- Nav, NavItem, Breadcrumb
-- Tabs, TabPanel, Pagination
-- Menu, MenuItem
-
-### Data Display
-- Card, CardHeader, CardBody
-- Table, List, Avatar
-- Tooltip
-
-### Overlay
-- Modal, Drawer
-- Popover, Dropdown
-
-### Specialized
-- CodeBlock, Evidence
-- ChatBubble, ProductCard
-- StatCard, MetricDisplay
-- JormungandrViz, SerpentPath
-
-## Data Visualization (qliphoth-viz)
-
-SVG-based charts where data flows through morpheme transformations:
-
-```sigil
-let chart! = data
-    |φ{d => d.value > 0}           // Filter: keep positive
-    |τ{d => DataPoint::new(d)}     // Transform: to chart points
-    |σ{a, b => a.x·cmp(&b.x)}      // Sort: by x-axis
-    |ρ{BarChart::render};          // Reduce: into visualization
-```
-
-### Charts
-- **BarChart** - Vertical/horizontal bars with grouping
-- **LineChart** - Lines with multiple interpolation modes (linear, monotone, step, cardinal)
-- **AreaChart** - Filled areas with stacking and normalization
-- **PieChart** - Circular proportions with slice interactivity
-- **DonutChart** - Pie with center hole for totals
-- **Sparkline** - Inline mini-charts (line, area, bar, bullet)
-
-### Components
-- **Axis** - Configurable axes with ticks, labels, grid
-- **Scale** - Linear, Category, and Time scales
-- **Legend** - Series identification with toggle support
-- **Tooltip** - Contextual hover information
-
-### Design
-- Calibrated for dark backgrounds (Corporate Goth)
-- 8-color series palette for distinguishability
-- Semantic colors (positive/negative/warning)
-- Smooth animations with configurable easing
-
-## Getting Started
-
-### Prerequisites
-
-- Sigil compiler (v0.1.0+)
-- wasm-bindgen-cli
-- wasm-opt (optional, for optimization)
-
-### Build
+## Installation
 
 ```bash
-# Build all targets
-make build
+# Add to your Sigil project
+sigil add qliphoth
 
-# Build specific target
-make build-app
-make build-docs
-
-# Development mode with hot reload
-make dev
+# Or clone for development
+git clone https://github.com/daemoniorum/qliphoth
+cd qliphoth && sigil build
 ```
 
-### Development
+## Documentation
 
-```bash
-# Start development server
-make dev
+- [Getting Started Guide](docs/guides/getting-started.md)
+- [Component API](docs/api/components.md)
+- [Hooks Reference](docs/api/hooks.md)
+- [Router Guide](docs/guides/routing.md)
+- [State Management](docs/guides/state.md)
 
-# Run tests
-make test
+## Examples
 
-# Format code
-make fmt
-
-# Lint
-make lint
-```
-
-## Deployment
-
-Production builds are output to `dist/`:
-
-```
-dist/
-├── qliphoth-app/
-│   ├── index.html
-│   ├── qliphoth_app.js
-│   └── qliphoth_app_bg.wasm
-└── qliphoth-docs/
-    ├── index.html
-    ├── qliphoth_docs.js
-    └── qliphoth_docs_bg.wasm
-```
-
-Deploy to:
-- **App**: qliphoth.dev
-- **Docs**: docs.qliphoth.dev
-
-## Sigil Features Used
-
-- **Morphemes**: τ (transform), φ (filter), σ (sort), ρ (reduce)
-- **Evidentiality**: ! (known), ? (uncertain), ~ (reported)
-- **Incorporation**: · (middle dot for method chaining)
-- **Bracket Generics**: `Vec[T]` instead of `Vec<T>`
-- **Type Definitions**: `type Name = struct { ... }`
-- **Async**: ⌛ (hourglass) for await
+- [Counter](examples/counter.sigil) - Simple state management
+- [Cross-Platform Counter](examples/counter_cross_platform.sigil) - **Same code runs on Web, Server, and Desktop**
+- [Todo App](examples/todo.sigil) - CRUD operations
+- [Docs Platform](examples/docs-platform/) - Full documentation site
 
 ## License
 
-Proprietary - Daemoniorum LLC
+Copyright © 2025 Daemoniorum, LLC. All rights reserved.

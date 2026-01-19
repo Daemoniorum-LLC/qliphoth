@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qliphoth html! Macro Test</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e8e8ec;
+            padding: 2rem;
+        }
+        h1 { color: #14A088; margin-bottom: 1rem; }
+        p { color: #a0a0aa; margin-bottom: 1rem; }
+        button {
+            background: #14A088;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:hover { background: #1AB89D; }
+        .container { max-width: 600px; margin: 0 auto; }
+        #status {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            background: #1a1a1a;
+        }
+        #app {
+            padding: 2rem;
+            border: 1px solid #333;
+            border-radius: 8px;
+            min-height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Qliphoth html! Macro Test</h1>
+    <div id="status">Loading WASM...</div>
+    <div id="app"><!-- VDOM will render here --></div>
+
+    <script type="module">
+        import { SigilRuntime } from '../runtime/sigil_runtime.js';
+
+        const status = document.getElementById('status');
+
+        async function run() {
+            try {
+                status.textContent = 'Initializing runtime...';
+
+                const runtime = new SigilRuntime();
+                const response = await fetch('./html_test.wasm');
+                const bytes = await response.arrayBuffer();
+
+                status.textContent = 'Instantiating WASM...';
+                const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
+                runtime.init(instance);
+
+                status.textContent = 'Calling main()...';
+                if (instance.exports.main) {
+                    const vnodeId = instance.exports.main();
+                    console.log('main() returned vnode id:', vnodeId);
+
+                    // Mount the VDOM to #app
+                    // The runtime has vdomMountVnode but we need to call it manually
+                    // since we're not calling it from Sigil yet
+                    const mountResult = runtime.mount(Number(vnodeId), '#app');
+
+                    status.textContent = `Success! vnode ${vnodeId} mounted.`;
+                    status.style.borderLeft = '4px solid #14A088';
+                } else {
+                    status.textContent = 'No main() export found';
+                }
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                console.error(error);
+            }
+        }
+
+        run();
+    </script>
+</body>
+</html>

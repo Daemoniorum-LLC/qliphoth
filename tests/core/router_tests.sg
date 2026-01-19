@@ -1,0 +1,326 @@
+// Qliphoth Framework - Router Unit Tests
+// Phase 0: Framework Core Tests
+// Tests: Route matching, path params, query params, navigation
+
+// ============================================================================
+// Route Types
+// ============================================================================
+
+☉ sigil Route {
+    path: !String,
+    name: !String,
+    is_dynamic: !bool
+}
+
+☉ sigil RouteMatch {
+    route: !Route,
+    matched: !bool,
+    params: !Vec<RouteParam>
+}
+
+☉ sigil RouteParam {
+    key: !String,
+    value: !String
+}
+
+☉ sigil RouterState {
+    current_path: !String,
+    history_len: !i64
+}
+
+☉ ᛈ NavigationResult {
+    Success(!Route),
+    NotFound,
+    Redirect(!String)
+}
+
+// ============================================================================
+// Route Creation
+// ============================================================================
+
+rite create_route(path: !String, name: !String) → !Route {
+    ≔ dynamic: !bool = contains_dynamic(path);
+    Route { path: path, name: name, is_dynamic: dynamic }
+}
+
+rite contains_dynamic(path: !String) → !bool {
+    // Simple check: if path contains ":" it has dynamic segments
+    // For testing, we'll use a simplified check
+    ⊥  // Will be enhanced later
+}
+
+// ============================================================================
+// Route Matching
+// ============================================================================
+
+rite exact_match(route: !Route, path: !String) → !bool {
+    route.path == path
+}
+
+rite create_match(route: !Route, matched: !bool) → !RouteMatch {
+    ≔ p: !Vec<RouteParam> = Vec·new();
+    RouteMatch { route: route, matched: matched, params: p }
+}
+
+rite match_route(route: !Route, path: !String) → !RouteMatch {
+    ≔ matched: !bool = exact_match(route, path);
+    create_match(route, matched)
+}
+
+// ============================================================================
+// Router State Management
+// ============================================================================
+
+rite create_router(initial: !String) → !RouterState {
+    RouterState { current_path: initial, history_len: 1 }
+}
+
+rite navigate(router: !RouterState, path: !String) → !RouterState {
+    RouterState {
+        current_path: path,
+        history_len: router.history_len + 1
+    }
+}
+
+rite go_back(router: !RouterState) → !RouterState {
+    ⎇ router.history_len > 1 {
+        RouterState {
+            current_path: router.current_path,  // Would need actual history
+            history_len: router.history_len - 1
+        }
+    } ⎉ {
+        router
+    }
+}
+
+// ============================================================================
+// Tests: Route Creation
+// ============================================================================
+
+rite test_route_path() → !i64 {
+    ≔ r: !Route = create_route("/home", "home");
+    ⎇ r.path == "/home" { 1 } ⎉ { 0 }
+}
+
+rite test_route_name() → !i64 {
+    ≔ r: !Route = create_route("/about", "about");
+    ⎇ r.name == "about" { 1 } ⎉ { 0 }
+}
+
+rite test_static_route() → !i64 {
+    ≔ r: !Route = create_route("/static", "static");
+    ⎇ ¬r.is_dynamic { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Exact Matching
+// ============================================================================
+
+rite test_exact_match_success() → !i64 {
+    ≔ r: !Route = create_route("/home", "home");
+    ⎇ exact_match(r, "/home") { 1 } ⎉ { 0 }
+}
+
+rite test_exact_match_fail() → !i64 {
+    ≔ r: !Route = create_route("/home", "home");
+    ⎇ ¬exact_match(r, "/about") { 1 } ⎉ { 0 }
+}
+
+rite test_exact_match_case_sensitive() → !i64 {
+    ≔ r: !Route = create_route("/Home", "home");
+    ⎇ ¬exact_match(r, "/home") { 1 } ⎉ { 0 }
+}
+
+rite test_root_route() → !i64 {
+    ≔ r: !Route = create_route("/", "root");
+    ⎇ exact_match(r, "/") { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Route Match Result
+// ============================================================================
+
+rite test_match_returns_route() → !i64 {
+    ≔ r: !Route = create_route("/test", "test");
+    ≔ m: !RouteMatch = match_route(r, "/test");
+    ⎇ m.route.name == "test" { 1 } ⎉ { 0 }
+}
+
+rite test_match_success_flag() → !i64 {
+    ≔ r: !Route = create_route("/test", "test");
+    ≔ m: !RouteMatch = match_route(r, "/test");
+    ⎇ m.matched { 1 } ⎉ { 0 }
+}
+
+rite test_match_fail_flag() → !i64 {
+    ≔ r: !Route = create_route("/test", "test");
+    ≔ m: !RouteMatch = match_route(r, "/other");
+    ⎇ ¬m.matched { 1 } ⎉ { 0 }
+}
+
+rite test_match_empty_params() → !i64 {
+    ≔ r: !Route = create_route("/test", "test");
+    ≔ m: !RouteMatch = match_route(r, "/test");
+    ⎇ m.params.len() == 0 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Router State
+// ============================================================================
+
+rite test_initial_path() → !i64 {
+    ≔ router: !RouterState = create_router("/");
+    ⎇ router.current_path == "/" { 1 } ⎉ { 0 }
+}
+
+rite test_initial_history() → !i64 {
+    ≔ router: !RouterState = create_router("/");
+    ⎇ router.history_len == 1 { 1 } ⎉ { 0 }
+}
+
+rite test_navigate_changes_path() → !i64 {
+    ≔ r1: !RouterState = create_router("/");
+    ≔ r2: !RouterState = navigate(r1, "/about");
+    ⎇ r2.current_path == "/about" { 1 } ⎉ { 0 }
+}
+
+rite test_navigate_increments_history() → !i64 {
+    ≔ r1: !RouterState = create_router("/");
+    ≔ r2: !RouterState = navigate(r1, "/about");
+    ⎇ r2.history_len == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_multiple_navigations() → !i64 {
+    ≔ r1: !RouterState = create_router("/");
+    ≔ r2: !RouterState = navigate(r1, "/a");
+    ≔ r3: !RouterState = navigate(r2, "/b");
+    ≔ r4: !RouterState = navigate(r3, "/c");
+    ⎇ r4.history_len == 4 ∧ r4.current_path == "/c" { 1 } ⎉ { 0 }
+}
+
+rite test_go_back_decrements() → !i64 {
+    ≔ r1: !RouterState = create_router("/");
+    ≔ r2: !RouterState = navigate(r1, "/about");
+    ≔ r3: !RouterState = go_back(r2);
+    ⎇ r3.history_len == 1 { 1 } ⎉ { 0 }
+}
+
+rite test_go_back_at_start() → !i64 {
+    ≔ r1: !RouterState = create_router("/");
+    ≔ r2: !RouterState = go_back(r1);
+    // Should not go below 1
+    ⎇ r2.history_len == 1 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Navigation Result
+// ============================================================================
+
+rite test_nav_success() → !i64 {
+    ≔ r: !Route = create_route("/found", "found");
+    ≔ result: !NavigationResult = NavigationResult·Success(r);
+    ⌥ result {
+        NavigationResult·Success(route) => ⎇ route.name == "found" { 1 } ⎉ { 0 },
+        _ => 0
+    }
+}
+
+rite test_nav_not_found() → !i64 {
+    ≔ result: !NavigationResult = NavigationResult·NotFound;
+    ⌥ result {
+        NavigationResult·NotFound => 1,
+        _ => 0
+    }
+}
+
+rite test_nav_redirect() → !i64 {
+    ≔ result: !NavigationResult = NavigationResult·Redirect("/new-location");
+    ⌥ result {
+        NavigationResult·Redirect(path) => ⎇ path == "/new-location" { 1 } ⎉ { 0 },
+        _ => 0
+    }
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+rite main() {
+    println("=== Qliphoth Router Unit Tests ===");
+    println("");
+
+    ≔ vary passed: !i64 = 0;
+    ≔ vary total: !i64 = 0;
+
+    // Route creation tests
+    total = total + 1;
+    ⎇ test_route_path() == 1 { passed = passed + 1; println("PASS: route path"); } ⎉ { println("FAIL: route path"); }
+
+    total = total + 1;
+    ⎇ test_route_name() == 1 { passed = passed + 1; println("PASS: route name"); } ⎉ { println("FAIL: route name"); }
+
+    total = total + 1;
+    ⎇ test_static_route() == 1 { passed = passed + 1; println("PASS: static route"); } ⎉ { println("FAIL: static route"); }
+
+    // Exact matching tests
+    total = total + 1;
+    ⎇ test_exact_match_success() == 1 { passed = passed + 1; println("PASS: exact match success"); } ⎉ { println("FAIL: exact match success"); }
+
+    total = total + 1;
+    ⎇ test_exact_match_fail() == 1 { passed = passed + 1; println("PASS: exact match fail"); } ⎉ { println("FAIL: exact match fail"); }
+
+    total = total + 1;
+    ⎇ test_exact_match_case_sensitive() == 1 { passed = passed + 1; println("PASS: case sensitive"); } ⎉ { println("FAIL: case sensitive"); }
+
+    total = total + 1;
+    ⎇ test_root_route() == 1 { passed = passed + 1; println("PASS: root route"); } ⎉ { println("FAIL: root route"); }
+
+    // Route match tests
+    total = total + 1;
+    ⎇ test_match_returns_route() == 1 { passed = passed + 1; println("PASS: match returns route"); } ⎉ { println("FAIL: match returns route"); }
+
+    total = total + 1;
+    ⎇ test_match_success_flag() == 1 { passed = passed + 1; println("PASS: match success flag"); } ⎉ { println("FAIL: match success flag"); }
+
+    total = total + 1;
+    ⎇ test_match_fail_flag() == 1 { passed = passed + 1; println("PASS: match fail flag"); } ⎉ { println("FAIL: match fail flag"); }
+
+    total = total + 1;
+    ⎇ test_match_empty_params() == 1 { passed = passed + 1; println("PASS: match empty params"); } ⎉ { println("FAIL: match empty params"); }
+
+    // Router state tests
+    total = total + 1;
+    ⎇ test_initial_path() == 1 { passed = passed + 1; println("PASS: initial path"); } ⎉ { println("FAIL: initial path"); }
+
+    total = total + 1;
+    ⎇ test_initial_history() == 1 { passed = passed + 1; println("PASS: initial history"); } ⎉ { println("FAIL: initial history"); }
+
+    total = total + 1;
+    ⎇ test_navigate_changes_path() == 1 { passed = passed + 1; println("PASS: navigate path"); } ⎉ { println("FAIL: navigate path"); }
+
+    total = total + 1;
+    ⎇ test_navigate_increments_history() == 1 { passed = passed + 1; println("PASS: navigate history"); } ⎉ { println("FAIL: navigate history"); }
+
+    total = total + 1;
+    ⎇ test_multiple_navigations() == 1 { passed = passed + 1; println("PASS: multiple nav"); } ⎉ { println("FAIL: multiple nav"); }
+
+    total = total + 1;
+    ⎇ test_go_back_decrements() == 1 { passed = passed + 1; println("PASS: go back"); } ⎉ { println("FAIL: go back"); }
+
+    total = total + 1;
+    ⎇ test_go_back_at_start() == 1 { passed = passed + 1; println("PASS: go back at start"); } ⎉ { println("FAIL: go back at start"); }
+
+    // Navigation result tests
+    total = total + 1;
+    ⎇ test_nav_success() == 1 { passed = passed + 1; println("PASS: nav success"); } ⎉ { println("FAIL: nav success"); }
+
+    total = total + 1;
+    ⎇ test_nav_not_found() == 1 { passed = passed + 1; println("PASS: nav not found"); } ⎉ { println("FAIL: nav not found"); }
+
+    total = total + 1;
+    ⎇ test_nav_redirect() == 1 { passed = passed + 1; println("PASS: nav redirect"); } ⎉ { println("FAIL: nav redirect"); }
+
+    println("");
+    println(passed);
+    println(total);
+}

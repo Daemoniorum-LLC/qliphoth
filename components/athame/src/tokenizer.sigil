@@ -1,0 +1,291 @@
+// Athame - Tokenizer Module
+// Lexes Sigil source code into tokens for syntax highlighting
+// Native Sigil Syntax
+
+// =============================================================================
+// Token Types
+// =============================================================================
+
+ᛈ TokenKind {
+    Keyword,
+    Identifier,
+    Type,
+    String,
+    Number,
+    Comment,
+    Operator,
+    Morpheme,
+    NativeSymbol,
+    EvidenceKnown,
+    EvidenceUncertain,
+    EvidenceReported,
+    EvidenceParadox,
+    Punctuation,
+    Whitespace,
+    Newline,
+    Unknown,
+}
+
+sigil Token {
+    kind: TokenKind,
+    text: String,
+    start: i64,
+    end: i64,
+}
+
+// =============================================================================
+// Character Classification
+// =============================================================================
+
+rite is_whitespace_char(c: char) → bool {
+    c == ' ' ∨ c == '\t' ∨ c == '\r'
+}
+
+rite is_newline_char(c: char) → bool {
+    c == '\n'
+}
+
+rite is_digit_char(c: char) → bool {
+    c >= '0' ∧ c <= '9'
+}
+
+rite is_hex_digit_char(c: char) → bool {
+    is_digit_char(c) ∨ (c >= 'a' ∧ c <= 'f') ∨ (c >= 'A' ∧ c <= 'F')
+}
+
+rite is_alpha_char(c: char) → bool {
+    (c >= 'a' ∧ c <= 'z') ∨ (c >= 'A' ∧ c <= 'Z')
+}
+
+rite is_ident_start_char(c: char) → bool {
+    is_alpha_char(c) ∨ c == '_'
+}
+
+rite is_ident_continue_char(c: char) → bool {
+    is_ident_start_char(c) ∨ is_digit_char(c)
+}
+
+rite is_uppercase_char(c: char) → bool {
+    c >= 'A' ∧ c <= 'Z'
+}
+
+// Native Sigil keywords (both legacy and native)
+rite is_keyword(text: String) → bool {
+    // Legacy keywords (still supported as aliases)
+    text == "fn" ∨ text == "let" ∨ text == "mut" ∨ text == "if" ∨
+    text == "else" ∨ text == "match" ∨ text == "return" ∨ text == "for" ∨
+    text == "while" ∨ text == "in" ∨ text == "struct" ∨ text == "enum" ∨
+    text == "trait" ∨ text == "impl" ∨ text == "use" ∨ text == "pub" ∨
+    text == "async" ∨ text == "await" ∨ text == "true" ∨ text == "false" ∨
+    text == "self" ∨ text == "Self" ∨ text == "super" ∨ text == "loop" ∨
+    text == "break" ∨ text == "continue" ∨ text == "const" ∨ text == "where" ∨
+    // Native Sigil keywords
+    text == "rite" ∨ text == "sigil" ∨ text == "aspect" ∨ text == "vary" ∨
+    text == "yea" ∨ text == "nay" ∨ text == "each" ∨ text == "of" ∨
+    text == "forever" ∨ text == "this" ∨ text == "This" ∨ text == "above" ∨
+    text == "invoke" ∨ text == "scroll" ∨ text == "tome"
+}
+
+// Greek morpheme operators (semantic pipeline operators)
+rite is_morpheme_char(c: char) → bool {
+    c == 'τ' ∨ c == 'φ' ∨ c == 'σ' ∨ c == 'ρ' ∨
+    c == 'Σ' ∨ c == 'Π' ∨ c == 'α' ∨ c == 'ω' ∨
+    c == 'μ' ∨ c == 'λ' ∨
+    c == 'Τ' ∨ c == 'Φ' ∨ c == 'Ρ' ∨ c == 'Α' ∨
+    c == 'Ω' ∨ c == 'Μ' ∨ c == 'Λ' ∨ c == 'Θ'
+}
+
+// Native Sigil symbols (control flow, logic, structure)
+rite is_native_symbol(c: char) → bool {
+    c == '≔' ∨ c == '◆' ∨ c == 'Δ' ∨
+    c == '⎇' ∨ c == '⎉' ∨ c == '⌥' ∨ c == '⟳' ∨ c == '∞' ∨
+    c == '⊗' ∨ c == '↻' ∨ c == '⤺' ∨ c == '∀' ∨ c == '∈' ∨
+    c == '⊤' ∨ c == '⊥' ∨ c == '∧' ∨ c == '∨' ∨ c == '¬' ∨
+    c == '⊢' ∨ c == 'ᛈ' ∨ c == '☉' ∨ c == '⊙' ∨ c == '∋' ∨
+    c == '·' ∨ c == '→'
+}
+
+// =============================================================================
+// Tokenizer
+// =============================================================================
+
+rite tokenize(source: String) → [Token] {
+    ≔ cs = chars(source);
+    ≔ len = cs.len();
+    ≔ vary pos = 0;
+    ≔ vary tokens = Vec·new();
+    ≔ vary prev_kind = TokenKind·Unknown;
+
+    ⟳ pos < len {
+        ≔ start = pos;
+        ≔ c = cs[pos];
+
+        ⎇ is_whitespace_char(c) {
+            ≔ vary text = "";
+            ⟳ pos < len ∧ is_whitespace_char(cs[pos]) {
+                text = text + to_string(cs[pos]);
+                pos = pos + 1;
+            }
+            tokens.push(Token { kind: TokenKind·Whitespace, text: text, start: start, end: pos });
+            prev_kind = TokenKind·Whitespace;
+        } ⎉ ⎇ is_newline_char(c) {
+            pos = pos + 1;
+            tokens.push(Token { kind: TokenKind·Newline, text: "\n", start: start, end: pos });
+            prev_kind = TokenKind·Newline;
+        } ⎉ ⎇ is_ident_start_char(c) {
+            ≔ vary text = "";
+            ⟳ pos < len ∧ is_ident_continue_char(cs[pos]) {
+                text = text + to_string(cs[pos]);
+                pos = pos + 1;
+            }
+            ≔ kind = ⎇ is_keyword(text) {
+                TokenKind·Keyword
+            } ⎉ ⎇ text.len() > 0 ∧ is_uppercase_char(chars(text)[0]) {
+                TokenKind·Type
+            } ⎉ {
+                TokenKind·Identifier
+            };
+            tokens.push(Token { kind: kind, text: text, start: start, end: pos });
+            prev_kind = kind;
+        } ⎉ ⎇ is_digit_char(c) {
+            ≔ vary text = "";
+            ⎇ c == '0' ∧ pos + 1 < len ∧ cs[pos + 1] == 'x' {
+                text = "0x";
+                pos = pos + 2;
+                ⟳ pos < len ∧ is_hex_digit_char(cs[pos]) {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                }
+            } ⎉ {
+                ⟳ pos < len ∧ is_digit_char(cs[pos]) {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                }
+                ⎇ pos < len ∧ cs[pos] == '.' ∧ pos + 1 < len ∧ is_digit_char(cs[pos + 1]) {
+                    text = text + ".";
+                    pos = pos + 1;
+                    ⟳ pos < len ∧ is_digit_char(cs[pos]) {
+                        text = text + to_string(cs[pos]);
+                        pos = pos + 1;
+                    }
+                }
+            }
+            tokens.push(Token { kind: TokenKind·Number, text: text, start: start, end: pos });
+            prev_kind = TokenKind·Number;
+        } ⎉ ⎇ c == '"' {
+            ≔ vary text = "\"";
+            pos = pos + 1;
+            ⟳ pos < len ∧ cs[pos] != '"' ∧ ¬is_newline_char(cs[pos]) {
+                ⎇ cs[pos] == '\\' ∧ pos + 1 < len {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                } ⎉ {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                }
+            }
+            ⎇ pos < len ∧ cs[pos] == '"' {
+                text = text + "\"";
+                pos = pos + 1;
+            }
+            tokens.push(Token { kind: TokenKind·String, text: text, start: start, end: pos });
+            prev_kind = TokenKind·String;
+        } ⎉ ⎇ c == '/' ∧ pos + 1 < len ∧ cs[pos + 1] == '/' {
+            ≔ vary text = "//";
+            pos = pos + 2;
+            ⟳ pos < len ∧ ¬is_newline_char(cs[pos]) {
+                text = text + to_string(cs[pos]);
+                pos = pos + 1;
+            }
+            tokens.push(Token { kind: TokenKind·Comment, text: text, start: start, end: pos });
+            prev_kind = TokenKind·Comment;
+        } ⎉ ⎇ c == '/' ∧ pos + 1 < len ∧ cs[pos + 1] == '*' {
+            ≔ vary text = "/*";
+            pos = pos + 2;
+            ≔ vary depth = 1;
+            ⟳ pos < len ∧ depth > 0 {
+                ⎇ pos + 1 < len ∧ cs[pos] == '*' ∧ cs[pos + 1] == '/' {
+                    text = text + "*/";
+                    pos = pos + 2;
+                    depth = depth - 1;
+                } ⎉ ⎇ pos + 1 < len ∧ cs[pos] == '/' ∧ cs[pos + 1] == '*' {
+                    text = text + "/*";
+                    pos = pos + 2;
+                    depth = depth + 1;
+                } ⎉ {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                }
+            }
+            tokens.push(Token { kind: TokenKind·Comment, text: text, start: start, end: pos });
+            prev_kind = TokenKind·Comment;
+        } ⎉ ⎇ is_morpheme_char(c) {
+            tokens.push(Token { kind: TokenKind·Morpheme, text: to_string(c), start: start, end: pos + 1 });
+            pos = pos + 1;
+            prev_kind = TokenKind·Morpheme;
+        } ⎉ ⎇ is_native_symbol(c) {
+            tokens.push(Token { kind: TokenKind·NativeSymbol, text: to_string(c), start: start, end: pos + 1 });
+            pos = pos + 1;
+            prev_kind = TokenKind·NativeSymbol;
+        } ⎉ ⎇ c == '!' ∨ c == '?' ∨ c == '~' {
+            ≔ kind = ⎇ prev_kind == TokenKind·Identifier ∨ prev_kind == TokenKind·Type {
+                ⎇ c == '!' { TokenKind·EvidenceKnown }
+                ⎉ ⎇ c == '?' { TokenKind·EvidenceUncertain }
+                ⎉ { TokenKind·EvidenceReported }
+            } ⎉ {
+                TokenKind·Operator
+            };
+            tokens.push(Token { kind: kind, text: to_string(c), start: start, end: pos + 1 });
+            pos = pos + 1;
+            prev_kind = kind;
+        } ⎉ ⎇ c == '‽' {
+            tokens.push(Token { kind: TokenKind·EvidenceParadox, text: "‽", start: start, end: pos + 1 });
+            pos = pos + 1;
+            prev_kind = TokenKind·EvidenceParadox;
+        } ⎉ {
+            ≔ next = ⎇ pos + 1 < len { cs[pos + 1] } ⎉ { '\0' };
+            ≔ two = to_string(c) + to_string(next);
+            ⎇ two == "==" ∨ two == "!=" ∨ two == "<=" ∨ two == ">=" ∨
+               two == "&&" ∨ two == "||" ∨ two == "->" ∨ two == "=>" ∨
+               two == "+=" ∨ two == "-=" ∨ two == "*=" ∨ two == "/=" ∨
+               two == "::" {
+                tokens.push(Token { kind: TokenKind·Operator, text: two, start: start, end: pos + 2 });
+                pos = pos + 2;
+                prev_kind = TokenKind·Operator;
+            } ⎉ {
+                ≔ kind = ⎇ c == '{' ∨ c == '}' ∨ c == '(' ∨ c == ')' ∨
+                              c == '[' ∨ c == ']' ∨ c == ',' ∨ c == ';' ∨ c == ':' ∨ c == '.' {
+                    TokenKind·Punctuation
+                } ⎉ ⎇ c == '+' ∨ c == '-' ∨ c == '*' ∨ c == '/' ∨
+                          c == '%' ∨ c == '=' ∨ c == '<' ∨ c == '>' ∨
+                          c == '&' ∨ c == '|' ∨ c == '^' {
+                    TokenKind·Operator
+                } ⎉ {
+                    TokenKind·Unknown
+                };
+                tokens.push(Token { kind: kind, text: to_string(c), start: start, end: pos + 1 });
+                pos = pos + 1;
+                prev_kind = kind;
+            }
+        }
+    }
+
+    tokens
+}
+
+/// Filter out whitespace and newlines for analysis
+rite tokenize_significant(source: String) → [Token] {
+    ≔ all = tokenize(source);
+    ≔ vary result = Vec·new();
+    ≔ vary i = 0;
+    ⟳ i < all.len() {
+        ≔ token = all[i];
+        ⎇ token.kind != TokenKind·Whitespace ∧ token.kind != TokenKind·Newline {
+            result.push(token);
+        }
+        i = i + 1;
+    }
+    result
+}

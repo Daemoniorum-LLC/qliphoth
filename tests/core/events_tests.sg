@@ -1,0 +1,386 @@
+// Qliphoth Framework - Events Unit Tests
+// Phase 0: Framework Core Tests
+// Tests: Event types, handlers, propagation, delegation
+
+// ============================================================================
+// Event Types
+// ============================================================================
+
+☉ ᛈ EventType {
+    Click,
+    Input,
+    Change,
+    Focus,
+    Blur,
+    KeyDown,
+    KeyUp,
+    Submit,
+    Custom(!String)
+}
+
+☉ sigil EventData {
+    event_type: !EventType,
+    target_id: !String,
+    timestamp: !i64,
+    stopped: !bool,
+    prevented: !bool
+}
+
+☉ sigil MouseEventData {
+    x: !i64,
+    y: !i64,
+    button: !i64
+}
+
+☉ sigil KeyEventData {
+    key: !String,
+    code: !String,
+    ctrl: !bool,
+    shift: !bool,
+    alt: !bool
+}
+
+☉ ᛈ PropagationPhase {
+    Capture,
+    Target,
+    Bubble
+}
+
+// ============================================================================
+// Event Creation
+// ============================================================================
+
+rite create_event(t: !EventType, target: !String, ts: !i64) → !EventData {
+    EventData {
+        event_type: t,
+        target_id: target,
+        timestamp: ts,
+        stopped: ⊥,
+        prevented: ⊥
+    }
+}
+
+rite stop_propagation(e: !EventData) → !EventData {
+    EventData {
+        event_type: e.event_type,
+        target_id: e.target_id,
+        timestamp: e.timestamp,
+        stopped: ⊤,
+        prevented: e.prevented
+    }
+}
+
+rite prevent_default(e: !EventData) → !EventData {
+    EventData {
+        event_type: e.event_type,
+        target_id: e.target_id,
+        timestamp: e.timestamp,
+        stopped: e.stopped,
+        prevented: ⊤
+    }
+}
+
+// ============================================================================
+// Mouse Event Helpers
+// ============================================================================
+
+rite create_mouse_event(x: !i64, y: !i64, button: !i64) → !MouseEventData {
+    MouseEventData { x: x, y: y, button: button }
+}
+
+rite is_left_click(m: !MouseEventData) → !bool {
+    m.button == 0
+}
+
+rite is_right_click(m: !MouseEventData) → !bool {
+    m.button == 2
+}
+
+// ============================================================================
+// Key Event Helpers
+// ============================================================================
+
+rite create_key_event(key: !String, code: !String) → !KeyEventData {
+    KeyEventData { key: key, code: code, ctrl: ⊥, shift: ⊥, alt: ⊥ }
+}
+
+rite with_ctrl(k: !KeyEventData) → !KeyEventData {
+    KeyEventData { key: k.key, code: k.code, ctrl: ⊤, shift: k.shift, alt: k.alt }
+}
+
+rite with_shift(k: !KeyEventData) → !KeyEventData {
+    KeyEventData { key: k.key, code: k.code, ctrl: k.ctrl, shift: ⊤, alt: k.alt }
+}
+
+rite is_enter(k: !KeyEventData) → !bool {
+    k.code == "Enter"
+}
+
+rite is_escape(k: !KeyEventData) → !bool {
+    k.code == "Escape"
+}
+
+// ============================================================================
+// Tests: Event Creation
+// ============================================================================
+
+rite test_event_click() → !i64 {
+    ≔ e: !EventData = create_event(EventType·Click, "btn", 1000);
+    ⌥ e.event_type {
+        EventType·Click => 1,
+        _ => 0
+    }
+}
+
+rite test_event_input() → !i64 {
+    ≔ e: !EventData = create_event(EventType·Input, "input", 1000);
+    ⌥ e.event_type {
+        EventType·Input => 1,
+        _ => 0
+    }
+}
+
+rite test_event_custom() → !i64 {
+    ≔ e: !EventData = create_event(EventType·Custom("myevent"), "div", 1000);
+    ⌥ e.event_type {
+        EventType·Custom(name) => ⎇ name == "myevent" { 1 } ⎉ { 0 },
+        _ => 0
+    }
+}
+
+rite test_event_target() → !i64 {
+    ≔ e: !EventData = create_event(EventType·Click, "my-button", 1000);
+    ⎇ e.target_id == "my-button" { 1 } ⎉ { 0 }
+}
+
+rite test_event_timestamp() → !i64 {
+    ≔ e: !EventData = create_event(EventType·Click, "btn", 12345);
+    ⎇ e.timestamp == 12345 { 1 } ⎉ { 0 }
+}
+
+rite test_event_not_stopped() → !i64 {
+    ≔ e: !EventData = create_event(EventType·Click, "btn", 1000);
+    ⎇ ¬e.stopped { 1 } ⎉ { 0 }
+}
+
+rite test_event_not_prevented() → !i64 {
+    ≔ e: !EventData = create_event(EventType·Click, "btn", 1000);
+    ⎇ ¬e.prevented { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Event Modification
+// ============================================================================
+
+rite test_stop_propagation() → !i64 {
+    ≔ e1: !EventData = create_event(EventType·Click, "btn", 1000);
+    ≔ e2: !EventData = stop_propagation(e1);
+    ⎇ e2.stopped { 1 } ⎉ { 0 }
+}
+
+rite test_prevent_default() → !i64 {
+    ≔ e1: !EventData = create_event(EventType·Submit, "form", 1000);
+    ≔ e2: !EventData = prevent_default(e1);
+    ⎇ e2.prevented { 1 } ⎉ { 0 }
+}
+
+rite test_stop_and_prevent() → !i64 {
+    ≔ e1: !EventData = create_event(EventType·Click, "btn", 1000);
+    ≔ e2: !EventData = stop_propagation(e1);
+    ≔ e3: !EventData = prevent_default(e2);
+    ⎇ e3.stopped ∧ e3.prevented { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Mouse Events
+// ============================================================================
+
+rite test_mouse_position() → !i64 {
+    ≔ m: !MouseEventData = create_mouse_event(100, 200, 0);
+    ⎇ m.x == 100 ∧ m.y == 200 { 1 } ⎉ { 0 }
+}
+
+rite test_left_click() → !i64 {
+    ≔ m: !MouseEventData = create_mouse_event(0, 0, 0);
+    ⎇ is_left_click(m) { 1 } ⎉ { 0 }
+}
+
+rite test_right_click() → !i64 {
+    ≔ m: !MouseEventData = create_mouse_event(0, 0, 2);
+    ⎇ is_right_click(m) { 1 } ⎉ { 0 }
+}
+
+rite test_not_left_click() → !i64 {
+    ≔ m: !MouseEventData = create_mouse_event(0, 0, 2);
+    ⎇ ¬is_left_click(m) { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Key Events
+// ============================================================================
+
+rite test_key_event_key() → !i64 {
+    ≔ k: !KeyEventData = create_key_event("a", "KeyA");
+    ⎇ k.key == "a" { 1 } ⎉ { 0 }
+}
+
+rite test_key_event_code() → !i64 {
+    ≔ k: !KeyEventData = create_key_event("Enter", "Enter");
+    ⎇ k.code == "Enter" { 1 } ⎉ { 0 }
+}
+
+rite test_key_no_modifiers() → !i64 {
+    ≔ k: !KeyEventData = create_key_event("a", "KeyA");
+    ⎇ ¬k.ctrl ∧ ¬k.shift ∧ ¬k.alt { 1 } ⎉ { 0 }
+}
+
+rite test_key_with_ctrl() → !i64 {
+    ≔ k1: !KeyEventData = create_key_event("c", "KeyC");
+    ≔ k2: !KeyEventData = with_ctrl(k1);
+    ⎇ k2.ctrl { 1 } ⎉ { 0 }
+}
+
+rite test_key_with_shift() → !i64 {
+    ≔ k1: !KeyEventData = create_key_event("a", "KeyA");
+    ≔ k2: !KeyEventData = with_shift(k1);
+    ⎇ k2.shift { 1 } ⎉ { 0 }
+}
+
+rite test_is_enter() → !i64 {
+    ≔ k: !KeyEventData = create_key_event("Enter", "Enter");
+    ⎇ is_enter(k) { 1 } ⎉ { 0 }
+}
+
+rite test_is_escape() → !i64 {
+    ≔ k: !KeyEventData = create_key_event("Escape", "Escape");
+    ⎇ is_escape(k) { 1 } ⎉ { 0 }
+}
+
+rite test_not_enter() → !i64 {
+    ≔ k: !KeyEventData = create_key_event("a", "KeyA");
+    ⎇ ¬is_enter(k) { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Propagation Phase
+// ============================================================================
+
+rite test_phase_capture() → !i64 {
+    ≔ p: !PropagationPhase = PropagationPhase·Capture;
+    ⌥ p {
+        PropagationPhase·Capture => 1,
+        _ => 0
+    }
+}
+
+rite test_phase_target() → !i64 {
+    ≔ p: !PropagationPhase = PropagationPhase·Target;
+    ⌥ p {
+        PropagationPhase·Target => 1,
+        _ => 0
+    }
+}
+
+rite test_phase_bubble() → !i64 {
+    ≔ p: !PropagationPhase = PropagationPhase·Bubble;
+    ⌥ p {
+        PropagationPhase·Bubble => 1,
+        _ => 0
+    }
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+rite main() {
+    println("=== Qliphoth Events Unit Tests ===");
+    println("");
+
+    ≔ vary passed: !i64 = 0;
+    ≔ vary total: !i64 = 0;
+
+    // Event creation tests
+    total = total + 1;
+    ⎇ test_event_click() == 1 { passed = passed + 1; println("PASS: event click"); } ⎉ { println("FAIL: event click"); }
+
+    total = total + 1;
+    ⎇ test_event_input() == 1 { passed = passed + 1; println("PASS: event input"); } ⎉ { println("FAIL: event input"); }
+
+    total = total + 1;
+    ⎇ test_event_custom() == 1 { passed = passed + 1; println("PASS: event custom"); } ⎉ { println("FAIL: event custom"); }
+
+    total = total + 1;
+    ⎇ test_event_target() == 1 { passed = passed + 1; println("PASS: event target"); } ⎉ { println("FAIL: event target"); }
+
+    total = total + 1;
+    ⎇ test_event_timestamp() == 1 { passed = passed + 1; println("PASS: event timestamp"); } ⎉ { println("FAIL: event timestamp"); }
+
+    total = total + 1;
+    ⎇ test_event_not_stopped() == 1 { passed = passed + 1; println("PASS: not stopped"); } ⎉ { println("FAIL: not stopped"); }
+
+    total = total + 1;
+    ⎇ test_event_not_prevented() == 1 { passed = passed + 1; println("PASS: not prevented"); } ⎉ { println("FAIL: not prevented"); }
+
+    // Event modification tests
+    total = total + 1;
+    ⎇ test_stop_propagation() == 1 { passed = passed + 1; println("PASS: stop propagation"); } ⎉ { println("FAIL: stop propagation"); }
+
+    total = total + 1;
+    ⎇ test_prevent_default() == 1 { passed = passed + 1; println("PASS: prevent default"); } ⎉ { println("FAIL: prevent default"); }
+
+    total = total + 1;
+    ⎇ test_stop_and_prevent() == 1 { passed = passed + 1; println("PASS: stop and prevent"); } ⎉ { println("FAIL: stop and prevent"); }
+
+    // Mouse event tests
+    total = total + 1;
+    ⎇ test_mouse_position() == 1 { passed = passed + 1; println("PASS: mouse position"); } ⎉ { println("FAIL: mouse position"); }
+
+    total = total + 1;
+    ⎇ test_left_click() == 1 { passed = passed + 1; println("PASS: left click"); } ⎉ { println("FAIL: left click"); }
+
+    total = total + 1;
+    ⎇ test_right_click() == 1 { passed = passed + 1; println("PASS: right click"); } ⎉ { println("FAIL: right click"); }
+
+    total = total + 1;
+    ⎇ test_not_left_click() == 1 { passed = passed + 1; println("PASS: not left click"); } ⎉ { println("FAIL: not left click"); }
+
+    // Key event tests
+    total = total + 1;
+    ⎇ test_key_event_key() == 1 { passed = passed + 1; println("PASS: key event key"); } ⎉ { println("FAIL: key event key"); }
+
+    total = total + 1;
+    ⎇ test_key_event_code() == 1 { passed = passed + 1; println("PASS: key event code"); } ⎉ { println("FAIL: key event code"); }
+
+    total = total + 1;
+    ⎇ test_key_no_modifiers() == 1 { passed = passed + 1; println("PASS: no modifiers"); } ⎉ { println("FAIL: no modifiers"); }
+
+    total = total + 1;
+    ⎇ test_key_with_ctrl() == 1 { passed = passed + 1; println("PASS: with ctrl"); } ⎉ { println("FAIL: with ctrl"); }
+
+    total = total + 1;
+    ⎇ test_key_with_shift() == 1 { passed = passed + 1; println("PASS: with shift"); } ⎉ { println("FAIL: with shift"); }
+
+    total = total + 1;
+    ⎇ test_is_enter() == 1 { passed = passed + 1; println("PASS: is enter"); } ⎉ { println("FAIL: is enter"); }
+
+    total = total + 1;
+    ⎇ test_is_escape() == 1 { passed = passed + 1; println("PASS: is escape"); } ⎉ { println("FAIL: is escape"); }
+
+    total = total + 1;
+    ⎇ test_not_enter() == 1 { passed = passed + 1; println("PASS: not enter"); } ⎉ { println("FAIL: not enter"); }
+
+    // Propagation phase tests
+    total = total + 1;
+    ⎇ test_phase_capture() == 1 { passed = passed + 1; println("PASS: phase capture"); } ⎉ { println("FAIL: phase capture"); }
+
+    total = total + 1;
+    ⎇ test_phase_target() == 1 { passed = passed + 1; println("PASS: phase target"); } ⎉ { println("FAIL: phase target"); }
+
+    total = total + 1;
+    ⎇ test_phase_bubble() == 1 { passed = passed + 1; println("PASS: phase bubble"); } ⎉ { println("FAIL: phase bubble"); }
+
+    println("");
+    println(passed);
+    println(total);
+}

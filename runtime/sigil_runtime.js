@@ -23,17 +23,20 @@ function getMemory() {
 }
 
 function readString(ptr, len) {
+    const p = Number(ptr);
+    const l = Number(len);
     const mem = getMemory();
-    const bytes = mem.slice(ptr, ptr + len);
+    const bytes = mem.slice(p, p + l);
     return new TextDecoder().decode(bytes);
 }
 
 // Read a length-prefixed string (Sigil's format: 4-byte len + bytes)
 function readLengthPrefixedString(ptr) {
+    const p = Number(ptr); // Convert BigInt from WASM to Number
     const mem = getMemory();
     const view = new DataView(wasmMemory.buffer);
-    const len = view.getUint32(ptr, true); // little-endian
-    const bytes = mem.slice(ptr + 4, ptr + 4 + len);
+    const len = view.getUint32(p, true); // little-endian
+    const bytes = mem.slice(p + 4, p + 4 + len);
     return new TextDecoder().decode(bytes);
 }
 
@@ -88,26 +91,28 @@ function signalCreate(initialValue) {
 }
 
 function signalGet(id) {
+    const sigId = Number(id);
     // Auto-track dependency if we're inside an effect
     if (currentEffect !== null) {
-        const subs = signalSubscribers.get(id);
+        const subs = signalSubscribers.get(sigId);
         if (subs && !subs.has(currentEffect)) {
             subs.add(currentEffect);
-            currentEffect.deps.add(id);
+            currentEffect.deps.add(sigId);
         }
     }
-    const value = signals.get(id) ?? 0n;
-    console.log(`[signal.get] id=${id} value=${value}`);
+    const value = signals.get(sigId) ?? 0n;
+    console.log(`[signal.get] id=${sigId} value=${value}`);
     return value;
 }
 
 function signalSet(id, value) {
-    const old = signals.get(id);
-    console.log(`[signal.set] id=${id} old=${old} new=${value}`);
+    const sigId = Number(id);
+    const old = signals.get(sigId);
+    console.log(`[signal.set] id=${sigId} old=${old} new=${value}`);
     if (old !== value) {
-        signals.set(id, value);
+        signals.set(sigId, value);
         // Notify subscribers
-        const subs = signalSubscribers.get(id);
+        const subs = signalSubscribers.get(sigId);
         if (subs) {
             if (batchDepth > 0) {
                 subs.forEach(effect => pendingEffects.add(effect));
@@ -125,15 +130,17 @@ function signalSet(id, value) {
 }
 
 function signalSubscribe(id, callbackPtr) {
+    const sigId = Number(id);
+    const cbIdx = Number(callbackPtr);
     const callback = () => {
         if (wasmExports && wasmExports.__indirect_function_table) {
-            wasmExports.__indirect_function_table.get(callbackPtr)();
+            wasmExports.__indirect_function_table.get(cbIdx)();
         }
     };
-    const subs = signalSubscribers.get(id) || new Set();
+    const subs = signalSubscribers.get(sigId) || new Set();
     const handle = { run: callback, deps: new Set() };
     subs.add(handle);
-    signalSubscribers.set(id, subs);
+    signalSubscribers.set(sigId, subs);
     return callbackPtr;
 }
 
@@ -157,6 +164,7 @@ function signalBatchEnd() {
 }
 
 function signalComputed(computePtr) {
+    const cbIdx = Number(computePtr);
     // Create a computed signal - derives value from other signals
     const id = nextSignalId++;
     signals.set(id, 0n);
@@ -164,7 +172,7 @@ function signalComputed(computePtr) {
 
     const compute = () => {
         if (wasmExports && wasmExports.__indirect_function_table) {
-            const result = wasmExports.__indirect_function_table.get(computePtr)();
+            const result = wasmExports.__indirect_function_table.get(cbIdx)();
             const old = signals.get(id);
             if (result !== old) {
                 signals.set(id, result);
@@ -205,6 +213,7 @@ function signalComputed(computePtr) {
 }
 
 function signalEffect(effectPtr) {
+    const cbIdx = Number(effectPtr);
     // Create and run a side effect that auto-tracks dependencies
     const effectId = nextEffectId++;
 
@@ -233,7 +242,7 @@ function signalEffect(effectPtr) {
             currentEffect = effectRunner;
             try {
                 if (wasmExports && wasmExports.__indirect_function_table) {
-                    wasmExports.__indirect_function_table.get(effectPtr)();
+                    wasmExports.__indirect_function_table.get(cbIdx)();
                 }
             } finally {
                 currentEffect = prev;
@@ -255,7 +264,7 @@ function signalEffect(effectPtr) {
 // =============================================================================
 
 function consoleLogI64(value) {
-    console.log('[sigil]', value);
+    console.log('[sigil]', String(value));
 }
 
 function consoleLogF64(value) {
@@ -322,6 +331,94 @@ function stringParseFloat(ptr) {
     return parseFloat(str) || 0.0;
 }
 
+function stringLines(ptr) {
+    const str = readLengthPrefixedString(ptr);
+    const lines = str.split('\n');
+    // Return as array handle
+    const arr = lines.map(line => writeLengthPrefixedString(line));
+    return createArrayFromValues(arr);
+}
+
+function stringSplitWhitespace(ptr) {
+    const str = readLengthPrefixedString(ptr);
+    const parts = str.trim().split(/\s+/).filter(s => s.length > 0);
+    const arr = parts.map(part => writeLengthPrefixedString(part));
+    return createArrayFromValues(arr);
+}
+
+function stringSplit(ptr, delimPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const delim = readLengthPrefixedString(delimPtr);
+    const parts = str.split(delim);
+    const arr = parts.map(part => writeLengthPrefixedString(part));
+    return createArrayFromValues(arr);
+}
+
+function stringTrim(ptr) {
+    const str = readLengthPrefixedString(ptr);
+    return writeLengthPrefixedString(str.trim());
+}
+
+function stringTrimStart(ptr) {
+    const str = readLengthPrefixedString(ptr);
+    return writeLengthPrefixedString(str.trimStart());
+}
+
+function stringTrimEnd(ptr) {
+    const str = readLengthPrefixedString(ptr);
+    return writeLengthPrefixedString(str.trimEnd());
+}
+
+function stringToUppercase(ptr) {
+    const str = readLengthPrefixedString(ptr);
+    return writeLengthPrefixedString(str.toUpperCase());
+}
+
+function stringToLowercase(ptr) {
+    const str = readLengthPrefixedString(ptr);
+    return writeLengthPrefixedString(str.toLowerCase());
+}
+
+function stringContains(ptr, searchPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const search = readLengthPrefixedString(searchPtr);
+    return str.includes(search) ? 1n : 0n;
+}
+
+function stringStartsWith(ptr, prefixPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const prefix = readLengthPrefixedString(prefixPtr);
+    return str.startsWith(prefix) ? 1n : 0n;
+}
+
+function stringEndsWith(ptr, suffixPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const suffix = readLengthPrefixedString(suffixPtr);
+    return str.endsWith(suffix) ? 1n : 0n;
+}
+
+function stringReplace(ptr, fromPtr, toPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const from = readLengthPrefixedString(fromPtr);
+    const to = readLengthPrefixedString(toPtr);
+    return writeLengthPrefixedString(str.replaceAll(from, to));
+}
+
+function stringChars(ptr) {
+    const str = readLengthPrefixedString(ptr);
+    const chars = [...str].map(ch => writeLengthPrefixedString(ch));
+    return createArrayFromValues(chars);
+}
+
+// Helper for string functions that return arrays
+function createArrayFromValues(values) {
+    const arrId = arrayNew();
+    for (const val of values) {
+        arrayPush(arrId, val);
+    }
+    return arrId;
+}
+
 // =============================================================================
 // DOM Operations - All strings are length-prefixed (4-byte len + bytes)
 // =============================================================================
@@ -329,10 +426,15 @@ function stringParseFloat(ptr) {
 const domElements = new Map();
 let nextDomId = 1;
 
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const SVG_TAGS = new Set(['svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'g', 'defs', 'use', 'text', 'tspan', 'image', 'clipPath', 'mask', 'pattern', 'linearGradient', 'radialGradient', 'stop', 'symbol', 'marker', 'foreignObject']);
+
 function domCreateElement(tagPtr) {
     const tag = readLengthPrefixedString(tagPtr);
     console.log('[dom.create_element]', tag);
-    const el = document.createElement(tag);
+    const el = SVG_TAGS.has(tag.toLowerCase())
+        ? document.createElementNS(SVG_NAMESPACE, tag)
+        : document.createElement(tag);
     const id = nextDomId++;
     domElements.set(id, el);
     return id;
@@ -348,7 +450,7 @@ function domCreateText(textPtr) {
 }
 
 function domSetAttribute(elId, namePtr, valuePtr) {
-    const el = domElements.get(elId);
+    const el = domElements.get(Number(elId));
     if (el) {
         const name = readLengthPrefixedString(namePtr);
         const value = readLengthPrefixedString(valuePtr);
@@ -358,7 +460,7 @@ function domSetAttribute(elId, namePtr, valuePtr) {
 }
 
 function domRemoveAttribute(elId, namePtr) {
-    const el = domElements.get(elId);
+    const el = domElements.get(Number(elId));
     if (el) {
         const name = readLengthPrefixedString(namePtr);
         console.log('[dom.remove_attribute]', elId, name);
@@ -367,7 +469,7 @@ function domRemoveAttribute(elId, namePtr) {
 }
 
 function domSetProperty(elId, namePtr, value) {
-    const el = domElements.get(elId);
+    const el = domElements.get(Number(elId));
     if (el) {
         const name = readLengthPrefixedString(namePtr);
         console.log('[dom.set_property]', elId, name, '=', value);
@@ -375,42 +477,51 @@ function domSetProperty(elId, namePtr, value) {
     }
 }
 
+function domSetInnerHTML(elId, htmlPtr) {
+    const el = domElements.get(Number(elId));
+    if (el) {
+        const html = readLengthPrefixedString(htmlPtr);
+        console.log('[dom.set_inner_html]', elId, html.substring(0, 50) + '...');
+        el.innerHTML = html;
+    }
+}
+
 function domAppendChild(parentId, childId) {
-    const parent = domElements.get(parentId);
-    const child = domElements.get(childId);
+    const parent = domElements.get(Number(parentId));
+    const child = domElements.get(Number(childId));
     if (parent && child) {
         parent.appendChild(child);
     }
 }
 
 function domInsertBefore(parentId, newId, refId) {
-    const parent = domElements.get(parentId);
-    const newNode = domElements.get(newId);
-    const ref = domElements.get(refId);
+    const parent = domElements.get(Number(parentId));
+    const newNode = domElements.get(Number(newId));
+    const ref = domElements.get(Number(refId));
     if (parent && newNode) {
         parent.insertBefore(newNode, ref);
     }
 }
 
 function domRemoveChild(parentId, childId) {
-    const parent = domElements.get(parentId);
-    const child = domElements.get(childId);
+    const parent = domElements.get(Number(parentId));
+    const child = domElements.get(Number(childId));
     if (parent && child) {
         parent.removeChild(child);
     }
 }
 
 function domReplaceChild(parentId, newId, oldId) {
-    const parent = domElements.get(parentId);
-    const newNode = domElements.get(newId);
-    const oldNode = domElements.get(oldId);
+    const parent = domElements.get(Number(parentId));
+    const newNode = domElements.get(Number(newId));
+    const oldNode = domElements.get(Number(oldId));
     if (parent && newNode && oldNode) {
         parent.replaceChild(newNode, oldNode);
     }
 }
 
 function domSetTextContent(elId, textPtr) {
-    const el = domElements.get(elId);
+    const el = domElements.get(Number(elId));
     if (el) {
         const text = readLengthPrefixedString(textPtr);
         console.log('[dom.set_text_content]', elId, text);
@@ -443,7 +554,7 @@ function domQuerySelector(selectorPtr) {
 }
 
 function domCloneNode(elId, deep) {
-    const el = domElements.get(elId);
+    const el = domElements.get(Number(elId));
     if (el) {
         const clone = el.cloneNode(!!deep);
         const id = nextDomId++;
@@ -460,28 +571,39 @@ function domCloneNode(elId, deep) {
 const eventListeners = new Map();
 let nextListenerId = 1;
 
-function eventsAddListener(elId, typePtr, typeLen, callbackPtr) {
-    const el = domElements.get(elId);
-    if (!el) return 0;
+function eventsAddListener(elId, typePtr, callbackPtr, flags) {
+    const el = domElements.get(Number(elId));
+    if (!el) {
+        console.warn('[events.add_listener] Element not found:', elId);
+        return 0n;
+    }
 
-    const type = readString(typePtr, typeLen);
+    const type = readLengthPrefixedString(typePtr);
+    const fnIdx = Number(callbackPtr);
+
     const listener = (event) => {
         if (wasmExports && wasmExports.__indirect_function_table) {
-            wasmExports.__indirect_function_table.get(callbackPtr)(0);
+            try {
+                const fn = wasmExports.__indirect_function_table.get(fnIdx);
+                if (fn) fn();
+            } catch (e) {
+                console.error('[events] callback error:', e);
+            }
         }
     };
 
     el.addEventListener(type, listener);
     const id = nextListenerId++;
     eventListeners.set(id, { el, type, listener });
-    return id;
+    return id; // Return I32 (Number), not BigInt
 }
 
 function eventsRemoveListener(listenerId) {
-    const info = eventListeners.get(listenerId);
+    const id = Number(listenerId);
+    const info = eventListeners.get(id);
     if (info) {
         info.el.removeEventListener(info.type, info.listener);
-        eventListeners.delete(listenerId);
+        eventListeners.delete(id);
     }
 }
 
@@ -510,33 +632,38 @@ function timingNow() {
 }
 
 function timingSetTimeout(callbackPtr, ms) {
+    const cb = Number(callbackPtr);
+    const delay = Number(ms);
     return setTimeout(() => {
         if (wasmExports && wasmExports.__indirect_function_table) {
-            wasmExports.__indirect_function_table.get(callbackPtr)();
+            wasmExports.__indirect_function_table.get(cb)();
         }
-    }, ms);
+    }, delay);
 }
 
 function timingClearTimeout(id) {
-    clearTimeout(id);
+    clearTimeout(Number(id));
 }
 
 function timingSetInterval(callbackPtr, ms) {
+    const cb = Number(callbackPtr);
+    const interval = Number(ms);
     return setInterval(() => {
         if (wasmExports && wasmExports.__indirect_function_table) {
-            wasmExports.__indirect_function_table.get(callbackPtr)();
+            wasmExports.__indirect_function_table.get(cb)();
         }
-    }, ms);
+    }, interval);
 }
 
 function timingClearInterval(id) {
-    clearInterval(id);
+    clearInterval(Number(id));
 }
 
 function timingRequestAnimationFrame(callbackPtr) {
+    const cb = Number(callbackPtr);
     return requestAnimationFrame((time) => {
         if (wasmExports && wasmExports.__indirect_function_table) {
-            wasmExports.__indirect_function_table.get(callbackPtr)(time);
+            wasmExports.__indirect_function_table.get(cb)(time);
         }
     });
 }
@@ -573,17 +700,17 @@ function fetchStart(urlPtr, urlLen, method) {
 }
 
 function fetchPoll(id) {
-    const req = fetchRequests.get(id);
+    const req = fetchRequests.get(Number(id));
     return req?.done ? 1 : 0;
 }
 
 function fetchGetStatus(id) {
-    const req = fetchRequests.get(id);
+    const req = fetchRequests.get(Number(id));
     return req?.status ?? 0;
 }
 
 function fetchGetBody(id) {
-    const req = fetchRequests.get(id);
+    const req = fetchRequests.get(Number(id));
     if (req?.body) {
         return writeLengthPrefixedString(req.body);
     }
@@ -591,7 +718,7 @@ function fetchGetBody(id) {
 }
 
 function fetchGetHeaders(id) {
-    const req = fetchRequests.get(id);
+    const req = fetchRequests.get(Number(id));
     if (req?.response) {
         const headers = {};
         req.response.headers.forEach((value, key) => {
@@ -603,7 +730,7 @@ function fetchGetHeaders(id) {
 }
 
 function fetchAbort(id) {
-    fetchRequests.delete(id);
+    fetchRequests.delete(Number(id));
 }
 
 // =============================================================================
@@ -716,18 +843,27 @@ function heapAlloc(size) {
 // =============================================================================
 
 const mathImports = {
-    sqrt: Math.sqrt,
-    sin: Math.sin,
-    cos: Math.cos,
-    tan: Math.tan,
-    pow: Math.pow,
-    exp: Math.exp,
-    log: Math.log,
-    floor: Math.floor,
-    ceil: Math.ceil,
-    round: Math.round,
-    abs: Math.abs,
+    sqrt: (x) => Math.sqrt(Number(x)),
+    sin: (x) => Math.sin(Number(x)),
+    cos: (x) => Math.cos(Number(x)),
+    tan: (x) => Math.tan(Number(x)),
+    pow: (x, y) => Math.pow(Number(x), Number(y)),
+    exp: (x) => Math.exp(Number(x)),
+    log: (x) => Math.log(Number(x)),
+    floor: (x) => Math.floor(Number(x)),
+    ceil: (x) => Math.ceil(Number(x)),
+    round: (x) => Math.round(Number(x)),
+    abs: (x) => Math.abs(Number(x)),
+    abs_int: (x) => x < 0n ? -x : x,
     random: Math.random,
+    clamp: (x, min, max) => Math.min(Math.max(Number(x), Number(min)), Number(max)),
+    clamp_int: (x, min, max) => x < min ? min : (x > max ? max : x),
+    min: (a, b) => Math.min(Number(a), Number(b)),
+    max: (a, b) => Math.max(Number(a), Number(b)),
+    min_int: (a, b) => a < b ? a : b,
+    max_int: (a, b) => a > b ? a : b,
+    signum: (x) => x > 0 ? 1.0 : (x < 0 ? -1.0 : 0.0),
+    signum_int: (x) => x > 0n ? 1n : (x < 0n ? -1n : 0n),
 };
 
 // =============================================================================
@@ -744,32 +880,32 @@ function arrayNew() {
 }
 
 function arrayPush(arrId, value) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     if (arr) arr.push(value);
 }
 
 function arrayGet(arrId, index) {
-    const arr = arrays.get(arrId);
-    return arr ? (arr[index] ?? 0n) : 0n;
+    const arr = arrays.get(Number(arrId));
+    return arr ? (arr[Number(index)] ?? 0n) : 0n;
 }
 
 function arraySet(arrId, index, value) {
-    const arr = arrays.get(arrId);
-    if (arr) arr[index] = value;
+    const arr = arrays.get(Number(arrId));
+    if (arr) arr[Number(index)] = value;
 }
 
 function arrayLen(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr ? arr.length : 0;
 }
 
 function arrayMap(arrId, fnPtr) {
     // Simplified
-    return arrId;
+    return Number(arrId);
 }
 
 function arrayFilter(arrId, fnPtr) {
-    return arrId;
+    return Number(arrId);
 }
 
 function arrayReduce(arrId, fnPtr, initial) {
@@ -777,58 +913,58 @@ function arrayReduce(arrId, fnPtr, initial) {
 }
 
 function arraySort(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     if (arr) arr.sort((a, b) => Number(a - b));
     return arrId;
 }
 
 function arrayFirst(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr && arr.length > 0 ? arr[0] : 0n;
 }
 
 function arrayLast(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr && arr.length > 0 ? arr[arr.length - 1] : 0n;
 }
 
 function arrayNth(arrId, n) {
-    const arr = arrays.get(arrId);
-    return arr ? (arr[n] ?? 0n) : 0n;
+    const arr = arrays.get(Number(arrId));
+    return arr ? (arr[Number(n)] ?? 0n) : 0n;
 }
 
 function arraySum(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr ? arr.reduce((a, b) => a + b, 0n) : 0n;
 }
 
 function arrayProduct(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr && arr.length > 0 ? arr.reduce((a, b) => a * b, 1n) : 0n;
 }
 
 function arrayMin(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr && arr.length > 0 ? arr.reduce((a, b) => a < b ? a : b) : 0n;
 }
 
 function arrayMax(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr && arr.length > 0 ? arr.reduce((a, b) => a > b ? a : b) : 0n;
 }
 
 function arrayAll(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr && arr.every(x => x) ? 1 : 0;
 }
 
 function arrayAny(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     return arr && arr.some(x => x) ? 1 : 0;
 }
 
 function arrayRandomElement(arrId) {
-    const arr = arrays.get(arrId);
+    const arr = arrays.get(Number(arrId));
     if (arr && arr.length > 0) {
         return arr[Math.floor(Math.random() * arr.length)];
     }
@@ -841,64 +977,176 @@ function arrayParallelFilter(arrId, fnPtr) { return arrayFilter(arrId, fnPtr); }
 function arrayParallelReduce(arrId, fnPtr, initial) { return arrayReduce(arrId, fnPtr, initial); }
 
 // =============================================================================
-// VDOM
+// VDOM - Virtual DOM with real DOM rendering
 // =============================================================================
 
 const vnodes = new Map();
 let nextVnodeId = 1;
 
+// Map vnode IDs to their rendered DOM elements
+const vnodeToDom = new Map();
+
 function vdomCreateVnode(tagStrRef) {
     const id = nextVnodeId++;
-    vnodes.set(id, { tag: tagStrRef, props: {}, children: [], isText: false });
-    return id;
+    const tag = readLengthPrefixedString(tagStrRef);
+    vnodes.set(id, { tag, props: {}, children: [], isText: false });
+    console.log(`[vdom.create_vnode] id=${id} tag=${tag}`);
+    return id; // Return I32 (Number), not BigInt
 }
 
 function vdomCreateTextVnode(textStrRef) {
     const id = nextVnodeId++;
-    vnodes.set(id, { text: textStrRef, isText: true });
-    return id;
+    const text = readLengthPrefixedString(textStrRef);
+    vnodes.set(id, { text, isText: true });
+    console.log(`[vdom.create_text_vnode] id=${id} text=${JSON.stringify(text)}`);
+    return id; // Return I32 (Number), not BigInt
 }
 
 function vdomCreateFragment() {
     const id = nextVnodeId++;
     vnodes.set(id, { isFragment: true, children: [] });
-    return id;
+    console.log(`[vdom.create_fragment] id=${id}`);
+    return id; // Return I32 (Number), not BigInt
 }
 
 function vdomSetVnodeProp(vnodeId, nameStrRef, value) {
-    const vnode = vnodes.get(vnodeId);
+    const id = Number(vnodeId);
+    const vnode = vnodes.get(id);
     if (vnode && !vnode.isText) {
-        vnode.props[nameStrRef] = value;
+        const name = readLengthPrefixedString(nameStrRef);
+        vnode.props[name] = value;
+        console.log(`[vdom.set_prop] id=${id} ${name}=${value}`);
     }
 }
 
 function vdomSetVnodeStrProp(vnodeId, nameStrRef, valueStrRef) {
-    const vnode = vnodes.get(vnodeId);
+    const id = Number(vnodeId);
+    const vnode = vnodes.get(id);
     if (vnode && !vnode.isText) {
-        vnode.props[nameStrRef] = valueStrRef;
+        const name = readLengthPrefixedString(nameStrRef);
+        const value = readLengthPrefixedString(valueStrRef);
+        vnode.props[name] = value;
+        console.log(`[vdom.set_str_prop] id=${id} ${name}=${JSON.stringify(value)}`);
     }
 }
 
 function vdomAppendVnodeChild(parentId, childId) {
-    const parent = vnodes.get(parentId);
-    const child = vnodes.get(childId);
-    if (parent && child && !parent.isText) {
+    const pId = Number(parentId);
+    const cId = Number(childId);
+    const parent = vnodes.get(pId);
+    if (parent && !parent.isText) {
         parent.children = parent.children || [];
-        parent.children.push(childId);
+        parent.children.push(cId);
+        console.log(`[vdom.append_child] parent=${pId} child=${cId}`);
     }
 }
 
+// Render a vnode to an actual DOM element
+function renderVnodeToDom(vnodeId) {
+    const vnode = vnodes.get(vnodeId);
+    if (!vnode) return null;
+
+    if (vnode.isText) {
+        return document.createTextNode(vnode.text);
+    }
+
+    if (vnode.isFragment) {
+        const frag = document.createDocumentFragment();
+        for (const childId of (vnode.children || [])) {
+            const childDom = renderVnodeToDom(childId);
+            if (childDom) frag.appendChild(childDom);
+        }
+        return frag;
+    }
+
+    // Regular element (with SVG namespace support)
+    const el = SVG_TAGS.has(vnode.tag.toLowerCase())
+        ? document.createElementNS(SVG_NAMESPACE, vnode.tag)
+        : document.createElement(vnode.tag);
+
+    // Set properties/attributes
+    for (const [name, value] of Object.entries(vnode.props || {})) {
+        if (name.startsWith('on')) {
+            // Event handler - value is a function pointer
+            const eventName = name.slice(2).toLowerCase();
+            el.addEventListener(eventName, () => {
+                // Call WASM function if it's a function index
+                if (typeof value === 'bigint' || typeof value === 'number') {
+                    const table = wasmExports?.__indirect_function_table;
+                    if (table) {
+                        try { table.get(Number(value))(); } catch (e) { console.error(e); }
+                    }
+                }
+            });
+        } else if (name === 'style' && typeof value === 'string') {
+            el.setAttribute('style', value);
+        } else if (name === 'class' || name === 'className') {
+            el.className = String(value);
+        } else if (name === 'id') {
+            el.id = String(value);
+        } else if (name === 'innerHTML') {
+            el.innerHTML = String(value);
+        } else if (typeof value === 'string') {
+            el.setAttribute(name, value);
+        } else if (typeof value === 'boolean' || value === 1n || value === 1) {
+            el.setAttribute(name, '');
+        }
+    }
+
+    // Append children
+    for (const childId of (vnode.children || [])) {
+        const childDom = renderVnodeToDom(childId);
+        if (childDom) el.appendChild(childDom);
+    }
+
+    return el;
+}
+
 function vdomDiffAndPatch(oldId, newId, domId) {
-    // Simplified - would do full diff/patch
+    // For now, just replace - full diffing is future work
+    const oId = Number(oldId);
+    const nId = Number(newId);
+    const dId = Number(domId);
+    const oldDom = vnodeToDom.get(oId) || domElements.get(dId);
+    if (oldDom && oldDom.parentNode) {
+        const newDom = renderVnodeToDom(nId);
+        if (newDom) {
+            oldDom.parentNode.replaceChild(newDom, oldDom);
+            vnodeToDom.set(nId, newDom);
+        }
+    }
 }
 
 function vdomMountVnode(vnodeId, selectorStrRef) {
-    // Mount vnode to DOM
-    return 0;
+    const id = Number(vnodeId);
+    const selector = readLengthPrefixedString(selectorStrRef);
+    console.log(`[vdom.mount] id=${id} selector=${selector}`);
+
+    const container = document.querySelector(selector) || document.getElementById(selector.replace('#', ''));
+    if (!container) {
+        console.error(`[vdom.mount] Container not found: ${selector}`);
+        return 0; // Return I32 (Number), not BigInt
+    }
+
+    const dom = renderVnodeToDom(id);
+    if (dom) {
+        container.innerHTML = ''; // Clear existing content
+        container.appendChild(dom);
+        vnodeToDom.set(id, dom);
+        console.log(`[vdom.mount] Mounted vnode ${id} to ${selector}`);
+        return id; // Return I32 (Number), not BigInt
+    }
+    return 0; // Return I32 (Number), not BigInt
 }
 
 function vdomDispose(vnodeId) {
-    vnodes.delete(vnodeId);
+    const id = Number(vnodeId);
+    const dom = vnodeToDom.get(id);
+    if (dom && dom.parentNode) {
+        dom.parentNode.removeChild(dom);
+    }
+    vnodeToDom.delete(id);
+    vnodes.delete(id);
 }
 
 // =============================================================================
@@ -926,7 +1174,7 @@ function promiseNew() {
 }
 
 function promiseResolve(id, value) {
-    const p = promises.get(id);
+    const p = promises.get(Number(id));
     if (!p || p.state !== PROMISE_PENDING) return;
     p.state = PROMISE_RESOLVED;
     p.value = value;
@@ -942,7 +1190,7 @@ function promiseResolve(id, value) {
 }
 
 function promiseReject(id, errorPtr, errorLen) {
-    const p = promises.get(id);
+    const p = promises.get(Number(id));
     if (!p || p.state !== PROMISE_PENDING) return;
     p.state = PROMISE_REJECTED;
     p.error = errorPtr ? readLengthPrefixedString(errorPtr) : 'Unknown error';
@@ -958,7 +1206,7 @@ function promiseReject(id, errorPtr, errorLen) {
 }
 
 function promiseThen(id, callbackTableIdx, envPtr) {
-    const p = promises.get(id);
+    const p = promises.get(Number(id));
     if (!p) return 0;
     const newPromiseId = promiseNew();
     console.log('[promise.then]', id, '-> new promise', newPromiseId);
@@ -977,7 +1225,7 @@ function promiseThen(id, callbackTableIdx, envPtr) {
 }
 
 function promiseCatch(id, callbackTableIdx) {
-    const p = promises.get(id);
+    const p = promises.get(Number(id));
     if (!p) return 0;
     const newPromiseId = promiseNew();
     console.log('[promise.catch]', id, '-> new promise', newPromiseId);
@@ -1022,7 +1270,7 @@ function promiseYieldNow() {
 }
 
 function promiseAwait(id) {
-    const p = promises.get(id);
+    const p = promises.get(Number(id));
     if (!p) return 0n;
     console.log('[promise.await]', id, 'state=', p.state);
     if (p.state === PROMISE_RESOLVED) {
@@ -1046,15 +1294,41 @@ function promiseResume(stateMachinePtr, value) {
 // Export Runtime
 // =============================================================================
 
+// Debug wrapper to catch BigInt errors
+function wrapImports(imports, moduleName) {
+    const wrapped = {};
+    for (const [name, fn] of Object.entries(imports)) {
+        if (typeof fn === 'function') {
+            wrapped[name] = (...args) => {
+                try {
+                    return fn(...args);
+                } catch (e) {
+                    if (e.message?.includes('BigInt')) {
+                        console.error(`[BIGINT ERROR] ${moduleName}.${name}`, args, e);
+                    }
+                    throw e;
+                }
+            };
+        } else {
+            wrapped[name] = fn;
+        }
+    }
+    return wrapped;
+}
+
 export function createImports() {
     return {
-        console: {
+        console: wrapImports({
             log_i64: consoleLogI64,
             log_f64: consoleLogF64,
             log_str: consoleLogStr,
             print: consolePrint,
-        },
-        string: {
+            println_i64: consoleLogI64,
+            println_f64: consoleLogF64,
+            println_str: consoleLogStr,
+            println: consolePrint,
+        }, 'console'),
+        string: wrapImports({
             concat: stringConcat,
             length: stringLength,
             slice: stringSlice,
@@ -1063,13 +1337,27 @@ export function createImports() {
             from_float: stringFromFloat,
             parse_int: stringParseInt,
             parse_float: stringParseFloat,
-        },
+            lines: stringLines,
+            split_whitespace: stringSplitWhitespace,
+            split: stringSplit,
+            trim: stringTrim,
+            trim_start: stringTrimStart,
+            trim_end: stringTrimEnd,
+            to_uppercase: stringToUppercase,
+            to_lowercase: stringToLowercase,
+            contains: stringContains,
+            starts_with: stringStartsWith,
+            ends_with: stringEndsWith,
+            replace: stringReplace,
+            chars: stringChars,
+        }, 'string'),
         dom: {
             create_element: domCreateElement,
             create_text: domCreateText,
             set_attribute: domSetAttribute,
             remove_attribute: domRemoveAttribute,
             set_property: domSetProperty,
+            set_inner_html: domSetInnerHTML,
             append_child: domAppendChild,
             insert_before: domInsertBefore,
             remove_child: domRemoveChild,
@@ -1185,6 +1473,37 @@ export function createImports() {
             continuation: promiseContinuation,
             resume: promiseResume,
         },
+        // async module - alias for promise functions with async naming convention
+        async: {
+            promise_new: promiseNew,
+            promise_resolve: promiseResolve,
+            promise_reject: promiseReject,
+            promise_then: promiseThen,
+            promise_catch: promiseCatch,
+            promise_all: promiseAll,
+            promise_race: promiseRace,
+            spawn: promiseSpawn,
+            yield_now: promiseYieldNow,
+            await_promise: promiseAwait,
+            create_continuation: promiseContinuation,
+            resume: promiseResume,
+        },
+        // browser module - window/document access
+        browser: {
+            window: () => 0n,  // Return handle to window
+            document: () => 0n,  // Return handle to document
+            inner_width: () => BigInt(typeof window !== 'undefined' ? window.innerWidth : 1920),
+            inner_height: () => BigInt(typeof window !== 'undefined' ? window.innerHeight : 1080),
+            add_event_listener: (target, event, callback, capture) => {
+                // Stub - would need callback registry
+                return 0n;
+            },
+            remove_event_listener: (target, listenerId) => {},
+            match_media: (query) => 0n,
+            mql_matches: (mql) => 0n,
+            mql_add_listener: (mql, callback) => 0n,
+            mql_remove_listener: (mql, listenerId) => {},
+        },
     };
 }
 
@@ -1203,4 +1522,42 @@ export async function loadWasm(wasmPath, additionalImports = {}) {
     return instance;
 }
 
-export default { createImports, loadWasm };
+// Convenience function to mount a vnode to a selector from JS
+export function mountVnode(vnodeId, selector) {
+    const container = document.querySelector(selector) || document.getElementById(selector.replace('#', ''));
+    if (!container) {
+        console.error(`[mount] Container not found: ${selector}`);
+        return 0;
+    }
+    const dom = renderVnodeToDom(vnodeId);
+    if (dom) {
+        container.innerHTML = '';
+        container.appendChild(dom);
+        vnodeToDom.set(vnodeId, dom);
+        console.log(`[mount] Mounted vnode ${vnodeId} to ${selector}`);
+        return vnodeId;
+    }
+    return 0;
+}
+
+// SigilRuntime class for convenient usage
+export class SigilRuntime {
+    constructor() {
+        this.instance = null;
+    }
+
+    getImports() {
+        return createImports();
+    }
+
+    init(instance) {
+        this.instance = instance;
+        setWasmExports(instance.exports);
+    }
+
+    mount(vnodeId, selector) {
+        return mountVnode(vnodeId, selector);
+    }
+}
+
+export default { createImports, loadWasm, mountVnode, SigilRuntime };

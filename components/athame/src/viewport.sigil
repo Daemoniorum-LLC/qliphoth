@@ -1,0 +1,90 @@
+// Athame - Viewport Module
+// Virtual scrolling for efficient rendering of large files
+// Native Sigil Syntax
+
+// =============================================================================
+// Viewport
+// =============================================================================
+
+sigil Viewport {
+    first_visible_line: i64,
+    visible_line_count: i64,
+    line_height: i64,
+    container_height: i64,
+}
+
+sigil LineRange {
+    start: i64,
+    end: i64,
+}
+
+rite viewport_new(container_height: i64, line_height: i64) → Viewport {
+    ≔ visible = container_height / line_height;
+    Viewport {
+        first_visible_line: 0,
+        visible_line_count: visible,
+        line_height: line_height,
+        container_height: container_height,
+    }
+}
+
+rite viewport_scroll_to_line(vp: Viewport, line: i64, total_lines: i64) → Viewport {
+    ≔ max_first = ⎇ total_lines > vp.visible_line_count {
+        total_lines - vp.visible_line_count
+    } ⎉ {
+        0
+    };
+    ≔ clamped = ⎇ line < 0 { 0 } ⎉ ⎇ line > max_first { max_first } ⎉ { line };
+
+    Viewport {
+        first_visible_line: clamped,
+        visible_line_count: vp.visible_line_count,
+        line_height: vp.line_height,
+        container_height: vp.container_height,
+    }
+}
+
+rite viewport_scroll_by(vp: Viewport, delta: i64, total_lines: i64) → Viewport {
+    viewport_scroll_to_line(vp, vp.first_visible_line + delta, total_lines)
+}
+
+rite viewport_ensure_visible(vp: Viewport, line: i64, total_lines: i64) → Viewport {
+    ⎇ line < vp.first_visible_line {
+        ⤺ viewport_scroll_to_line(vp, line, total_lines);
+    }
+    ⎇ line >= vp.first_visible_line + vp.visible_line_count {
+        ≔ new_first = line - vp.visible_line_count + 1;
+        ⤺ viewport_scroll_to_line(vp, new_first, total_lines);
+    }
+    vp
+}
+
+rite viewport_get_scroll_top(vp: Viewport) → i64 {
+    vp.first_visible_line * vp.line_height
+}
+
+rite viewport_get_total_height(total_lines: i64, line_height: i64) → i64 {
+    total_lines * line_height
+}
+
+rite is_line_visible(vp: Viewport, line: i64) → bool {
+    line >= vp.first_visible_line ∧ line < vp.first_visible_line + vp.visible_line_count
+}
+
+rite viewport_visible_range(vp: Viewport, total_lines: i64) → LineRange {
+    ≔ start = vp.first_visible_line;
+    ≔ end = vp.first_visible_line + vp.visible_line_count;
+    ≔ clamped_end = ⎇ end > total_lines { total_lines } ⎉ { end };
+
+    LineRange { start: start, end: clamped_end }
+}
+
+rite viewport_render_range(vp: Viewport, total_lines: i64, overscan: i64) → LineRange {
+    ≔ start = vp.first_visible_line - overscan;
+    ≔ end = vp.first_visible_line + vp.visible_line_count + overscan;
+
+    ≔ clamped_start = ⎇ start < 0 { 0 } ⎉ { start };
+    ≔ clamped_end = ⎇ end > total_lines { total_lines } ⎉ { end };
+
+    LineRange { start: clamped_start, end: clamped_end }
+}

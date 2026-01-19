@@ -1,0 +1,960 @@
+// Athame - State Management Tests
+// Phase 2: TDD Test Suite (T061-T085)
+// Reactive state using signals
+// Updated for Native Sigil Syntax (2026-01-17)
+
+// =============================================================================
+// Signal Types (Minimal implementation for testing)
+// =============================================================================
+
+/// Reactive signal - holds a value and tracks changes
+sigil Signal {
+    value: String,
+    version: i64,
+}
+
+rite signal_new(initial: String) → Signal {
+    Signal { value: initial, version: 0 }
+}
+
+rite signal_get(s: Signal) → String {
+    s.value
+}
+
+rite signal_set(s: Signal, value: String) → Signal {
+    Signal { value: value, version: s.version + 1 }
+}
+
+rite signal_version(s: Signal) → i64 {
+    s.version
+}
+
+/// Integer signal
+sigil SignalInt {
+    value: i64,
+    version: i64,
+}
+
+rite signal_int_new(initial: i64) → SignalInt {
+    SignalInt { value: initial, version: 0 }
+}
+
+rite signal_int_get(s: SignalInt) → i64 {
+    s.value
+}
+
+rite signal_int_set(s: SignalInt, value: i64) → SignalInt {
+    SignalInt { value: value, version: s.version + 1 }
+}
+
+/// Bool signal
+sigil SignalBool {
+    value: bool,
+    version: i64,
+}
+
+rite signal_bool_new(initial: bool) → SignalBool {
+    SignalBool { value: initial, version: 0 }
+}
+
+rite signal_bool_get(s: SignalBool) → bool {
+    s.value
+}
+
+rite signal_bool_set(s: SignalBool, value: bool) → SignalBool {
+    SignalBool { value: value, version: s.version + 1 }
+}
+
+// =============================================================================
+// Selection Types
+// =============================================================================
+
+/// Text selection range
+sigil Selection {
+    start: i64,
+    end: i64,
+}
+
+/// Optional selection (Some or None)
+ᛈ OptionSelection {
+    None,
+    Some(Selection),
+}
+
+rite is_some(opt: OptionSelection) → bool {
+    ⌥ opt {
+        OptionSelection·None => nay,
+        OptionSelection·Some(_) => yea,
+    }
+}
+
+rite is_none(opt: OptionSelection) → bool {
+    ⌥ opt {
+        OptionSelection·None => yea,
+        OptionSelection·Some(_) => nay,
+    }
+}
+
+rite unwrap_selection(opt: OptionSelection) → Selection {
+    ⌥ opt {
+        OptionSelection·None => Selection { start: -1, end: -1 },
+        OptionSelection·Some(s) => s,
+    }
+}
+
+/// Selection signal
+sigil SignalSelection {
+    value: OptionSelection,
+    version: i64,
+}
+
+rite signal_selection_new() → SignalSelection {
+    SignalSelection { value: OptionSelection·None, version: 0 }
+}
+
+rite signal_selection_get(s: SignalSelection) → OptionSelection {
+    s.value
+}
+
+rite signal_selection_set(s: SignalSelection, value: OptionSelection) → SignalSelection {
+    SignalSelection { value: value, version: s.version + 1 }
+}
+
+rite signal_selection_clear(s: SignalSelection) → SignalSelection {
+    SignalSelection { value: OptionSelection·None, version: s.version + 1 }
+}
+
+// =============================================================================
+// Token Types (copied from tokenizer for computed tokens)
+// =============================================================================
+
+ᛈ TokenKind {
+    Keyword,
+    Identifier,
+    Type,
+    String,
+    Number,
+    Comment,
+    Operator,
+    Morpheme,
+    NativeSymbol,
+    EvidenceKnown,
+    EvidenceUncertain,
+    EvidenceReported,
+    EvidenceParadox,
+    Punctuation,
+    Whitespace,
+    Newline,
+    Unknown,
+}
+
+sigil Token {
+    kind: TokenKind,
+    text: String,
+    start: i64,
+    end: i64,
+}
+
+// =============================================================================
+// EditorState - Main state container
+// =============================================================================
+
+sigil EditorState {
+    // Content signal
+    content: Signal,
+    // Cursor position
+    cursor_pos: SignalInt,
+    // Selection (optional)
+    selection: SignalSelection,
+    // Scroll position
+    scroll_top: SignalInt,
+    // Focus state
+    focused: SignalBool,
+    // Readonly mode
+    readonly: bool,
+    // Tokenization version (tracks when tokens need recompute)
+    tokens_version: i64,
+}
+
+/// Create new EditorState with empty content
+rite editor_state_new() → EditorState {
+    EditorState {
+        content: signal_new(""),
+        cursor_pos: signal_int_new(0),
+        selection: signal_selection_new(),
+        scroll_top: signal_int_new(0),
+        focused: signal_bool_new(nay),
+        readonly: nay,
+        tokens_version: 0,
+    }
+}
+
+/// Create new EditorState with initial content
+rite editor_state_with_content(initial: String) → EditorState {
+    EditorState {
+        content: signal_new(initial),
+        cursor_pos: signal_int_new(0),
+        selection: signal_selection_new(),
+        scroll_top: signal_int_new(0),
+        focused: signal_bool_new(nay),
+        readonly: nay,
+        tokens_version: 0,
+    }
+}
+
+/// Create readonly EditorState
+rite editor_state_readonly(initial: String) → EditorState {
+    EditorState {
+        content: signal_new(initial),
+        cursor_pos: signal_int_new(0),
+        selection: signal_selection_new(),
+        scroll_top: signal_int_new(0),
+        focused: signal_bool_new(nay),
+        readonly: yea,
+        tokens_version: 0,
+    }
+}
+
+/// Get content
+rite get_content(state: EditorState) → String {
+    signal_get(state.content)
+}
+
+/// Set content (respects readonly)
+rite set_content(state: EditorState, value: String) → EditorState {
+    ⎇ state.readonly {
+        ⤺ state;
+    }
+
+    ≔ current = signal_get(state.content);
+    ⎇ current == value {
+        // Same value - don't update tokens_version
+        ⤺ state;
+    }
+
+    EditorState {
+        content: signal_set(state.content, value),
+        cursor_pos: state.cursor_pos,
+        selection: state.selection,
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version + 1,
+    }
+}
+
+/// Get lines (computed from content)
+rite get_lines(state: EditorState) → [String] {
+    ≔ content = signal_get(state.content);
+    ⎇ content == "" {
+        ≔ vary empty_result = Vec·new();
+        empty_result.push("");
+        ⤺ empty_result;
+    }
+    split_lines(content)
+}
+
+/// Split string into lines
+rite split_lines(s: String) → [String] {
+    ≔ cs = chars(s);
+    ≔ len = cs.len();
+
+    ⎇ len == 0 {
+        ≔ vary empty_result = Vec·new();
+        empty_result.push("");
+        ⤺ empty_result;
+    }
+
+    // Collect lines
+    ≔ vary lines = Vec·new();
+    ≔ vary current_line = "";
+    ≔ vary i = 0;
+
+    ⟳ i < len {
+        ≔ c = cs[i];
+        ⎇ c == '\n' {
+            lines.push(current_line);
+            current_line = "";
+        } ⎉ {
+            current_line = current_line + to_string(c);
+        }
+        i = i + 1;
+    }
+
+    // Push final line (may be empty)
+    lines.push(current_line);
+
+    lines
+}
+
+/// Get line count (computed)
+rite get_line_count(state: EditorState) → i64 {
+    ≔ lines = get_lines(state);
+    lines.len()
+}
+
+/// Get cursor position
+rite get_cursor_pos(state: EditorState) → i64 {
+    // If selection exists, cursor is at selection end
+    ≔ sel = signal_selection_get(state.selection);
+    ⌥ sel {
+        OptionSelection·None => signal_int_get(state.cursor_pos),
+        OptionSelection·Some(s) => s.end,
+    }
+}
+
+/// Set cursor position
+rite set_cursor_pos(state: EditorState, pos: i64) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: signal_int_set(state.cursor_pos, pos),
+        selection: state.selection,
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+/// Get selection
+rite get_selection(state: EditorState) → OptionSelection {
+    signal_selection_get(state.selection)
+}
+
+/// Set selection
+rite set_selection(state: EditorState, start: i64, end: i64) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: state.cursor_pos,
+        selection: signal_selection_set(state.selection, OptionSelection·Some(Selection { start: start, end: end })),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+/// Clear selection
+rite clear_selection(state: EditorState) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: state.cursor_pos,
+        selection: signal_selection_clear(state.selection),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+/// Get scroll top
+rite get_scroll_top(state: EditorState) → i64 {
+    signal_int_get(state.scroll_top)
+}
+
+/// Set scroll top
+rite set_scroll_top(state: EditorState, top: i64) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: state.cursor_pos,
+        selection: state.selection,
+        scroll_top: signal_int_set(state.scroll_top, top),
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+/// Get focused state
+rite get_focused(state: EditorState) → bool {
+    signal_bool_get(state.focused)
+}
+
+/// Set focused state
+rite set_focused(state: EditorState, focused: bool) → EditorState {
+    EditorState {
+        content: state.content,
+        cursor_pos: state.cursor_pos,
+        selection: state.selection,
+        scroll_top: state.scroll_top,
+        focused: signal_bool_set(state.focused, focused),
+        readonly: state.readonly,
+        tokens_version: state.tokens_version,
+    }
+}
+
+/// Check if readonly
+rite is_readonly(state: EditorState) → bool {
+    state.readonly
+}
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite check(condition: bool, msg: String) {
+    ⎇ ¬condition {
+        println("FAIL: " + msg);
+        panic("test failed");
+    }
+}
+
+rite check_eq_str(actual: String, expected: String, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        println("  Expected: " + expected);
+        println("  Actual:   " + actual);
+        panic("test failed");
+    }
+}
+
+rite check_eq_int(actual: i64, expected: i64, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        println("  Expected: " + to_string(expected));
+        println("  Actual:   " + to_string(actual));
+        panic("test failed");
+    }
+}
+
+rite check_eq_bool(actual: bool, expected: bool, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        ≔ exp_str = ⎇ expected { "yea" } ⎉ { "nay" };
+        ≔ act_str = ⎇ actual { "yea" } ⎉ { "nay" };
+        println("  Expected: " + exp_str);
+        println("  Actual:   " + act_str);
+        panic("test failed");
+    }
+}
+
+// =============================================================================
+// PHASE 2.1: Content State Tests (T061-T066)
+// =============================================================================
+
+rite test_t061_editor_state_empty_content() {
+    ≔ state = editor_state_new();
+    ≔ content = get_content(state);
+    check_eq_str(content, "", "T061: EditorState initializes with empty content");
+}
+
+rite test_t062_editor_state_with_content() {
+    ≔ state = editor_state_with_content("hello world");
+    ≔ content = get_content(state);
+    check_eq_str(content, "hello world", "T062: EditorState initializes with provided content");
+}
+
+rite test_t063_content_update_triggers_recompute() {
+    ≔ state = editor_state_new();
+    ≔ v1 = state.tokens_version;
+
+    ≔ state2 = set_content(state, "rite main() {}");
+    ≔ v2 = state2.tokens_version;
+
+    check(v2 > v1, "T063: Content update should increment tokens_version");
+}
+
+rite test_t064_lines_splits_on_newlines() {
+    ≔ state = editor_state_with_content("line1\nline2\nline3");
+    ≔ lines = get_lines(state);
+
+    check_eq_int(lines.len(), 3, "T064: Should have 3 lines");
+    check_eq_str(lines[0], "line1", "T064: First line should be 'line1'");
+    check_eq_str(lines[1], "line2", "T064: Second line should be 'line2'");
+    check_eq_str(lines[2], "line3", "T064: Third line should be 'line3'");
+}
+
+rite test_t065_line_count() {
+    ≔ state1 = editor_state_with_content("");
+    check_eq_int(get_line_count(state1), 1, "T065: Empty content has 1 line");
+
+    ≔ state2 = editor_state_with_content("one");
+    check_eq_int(get_line_count(state2), 1, "T065: Single line content");
+
+    ≔ state3 = editor_state_with_content("one\ntwo\nthree\nfour");
+    check_eq_int(get_line_count(state3), 4, "T065: Four lines content");
+
+    ≔ state4 = editor_state_with_content("ends with newline\n");
+    check_eq_int(get_line_count(state4), 2, "T065: Trailing newline creates empty line");
+}
+
+rite test_t066_same_value_no_retokenize() {
+    ≔ state = editor_state_with_content("hello");
+    ≔ v1 = state.tokens_version;
+
+    // Set to same value
+    ≔ state2 = set_content(state, "hello");
+    ≔ v2 = state2.tokens_version;
+
+    check_eq_int(v1, v2, "T066: Setting same value should not increment tokens_version");
+}
+
+// =============================================================================
+// PHASE 2.2: Cursor and Selection Tests (T067-T072)
+// =============================================================================
+
+rite test_t067_cursor_pos_init_zero() {
+    ≔ state = editor_state_new();
+    ≔ pos = get_cursor_pos(state);
+    check_eq_int(pos, 0, "T067: cursor_pos initializes to 0");
+}
+
+rite test_t068_cursor_pos_update() {
+    ≔ state = editor_state_new();
+    ≔ state2 = set_cursor_pos(state, 42);
+    ≔ pos = get_cursor_pos(state2);
+    check_eq_int(pos, 42, "T068: cursor_pos updates on set");
+}
+
+rite test_t069_selection_init_none() {
+    ≔ state = editor_state_new();
+    ≔ sel = get_selection(state);
+    check(is_none(sel), "T069: selection initializes to None");
+}
+
+rite test_t070_selection_set_valid() {
+    ≔ state = editor_state_new();
+    ≔ state2 = set_selection(state, 5, 15);
+    ≔ sel = get_selection(state2);
+
+    check(is_some(sel), "T070: selection should be Some after set");
+    ≔ s = unwrap_selection(sel);
+    check_eq_int(s.start, 5, "T070: selection start should be 5");
+    check_eq_int(s.end, 15, "T070: selection end should be 15");
+}
+
+rite test_t071_selection_cleared() {
+    ≔ state = editor_state_new();
+    ≔ state2 = set_selection(state, 5, 15);
+    ≔ state3 = clear_selection(state2);
+    ≔ sel = get_selection(state3);
+
+    check(is_none(sel), "T071: selection cleared returns to None");
+}
+
+rite test_t072_cursor_derived_from_selection() {
+    ≔ state = editor_state_new();
+    ≔ state2 = set_cursor_pos(state, 10);
+
+    // Without selection, cursor is at set position
+    check_eq_int(get_cursor_pos(state2), 10, "T072: cursor at 10 without selection");
+
+    // With selection, cursor is at selection end
+    ≔ state3 = set_selection(state2, 5, 25);
+    check_eq_int(get_cursor_pos(state3), 25, "T072: cursor derived from selection end");
+}
+
+// =============================================================================
+// PHASE 2.3: UI State Tests (T073-T076)
+// =============================================================================
+
+rite test_t073_scroll_top_init_zero() {
+    ≔ state = editor_state_new();
+    ≔ top = get_scroll_top(state);
+    check_eq_int(top, 0, "T073: scroll_top initializes to 0");
+}
+
+rite test_t074_focused_init_false() {
+    ≔ state = editor_state_new();
+    ≔ focused = get_focused(state);
+    check_eq_bool(focused, nay, "T074: focused initializes to nay");
+}
+
+rite test_t075_focused_toggle() {
+    ≔ state = editor_state_new();
+
+    // Focus
+    ≔ state2 = set_focused(state, yea);
+    check_eq_bool(get_focused(state2), yea, "T075: focused set to yea");
+
+    // Blur
+    ≔ state3 = set_focused(state2, nay);
+    check_eq_bool(get_focused(state3), nay, "T075: focused set to nay");
+}
+
+rite test_t076_readonly_prevents_changes() {
+    ≔ state = editor_state_readonly("original");
+    ≔ content1 = get_content(state);
+    check_eq_str(content1, "original", "T076: Initial content set");
+
+    // Try to change content
+    ≔ state2 = set_content(state, "modified");
+    ≔ content2 = get_content(state2);
+
+    check_eq_str(content2, "original", "T076: readonly prevents content changes");
+    check(is_readonly(state2), "T076: state should be readonly");
+}
+
+// =============================================================================
+// PHASE 2.4: Text Operations Tests (T077-T082)
+// =============================================================================
+
+/// Insert text at cursor position
+rite insert_text(state: EditorState, text: String) → EditorState {
+    ⎇ state.readonly {
+        ⤺ state;
+    }
+
+    ≔ content = signal_get(state.content);
+    ≔ pos = get_cursor_pos(state);
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    // Clamp position
+    ≔ safe_pos = ⎇ pos < 0 { 0 } ⎉ ⎇ pos > len { len } ⎉ { pos };
+
+    // Build new content: before + text + after
+    ≔ vary before = "";
+    ≔ vary i = 0;
+    ⟳ i < safe_pos {
+        before = before + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ vary after = "";
+    ⟳ i < len {
+        after = after + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ new_content = before + text + after;
+    ≔ text_len = chars(text).len();
+
+    EditorState {
+        content: signal_set(state.content, new_content),
+        cursor_pos: signal_int_set(state.cursor_pos, safe_pos + text_len),
+        selection: signal_selection_clear(state.selection),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version + 1,
+    }
+}
+
+/// Delete character before cursor (backspace)
+rite delete_backward(state: EditorState) → EditorState {
+    ⎇ state.readonly {
+        ⤺ state;
+    }
+
+    ≔ content = signal_get(state.content);
+    ≔ pos = get_cursor_pos(state);
+
+    ⎇ pos <= 0 {
+        ⤺ state;  // Nothing to delete
+    }
+
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    // Build new content: before[0..pos-1] + after[pos..]
+    ≔ vary before = "";
+    ≔ vary i = 0;
+    ⟳ i < pos - 1 {
+        before = before + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ vary after = "";
+    i = pos;
+    ⟳ i < len {
+        after = after + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    EditorState {
+        content: signal_set(state.content, before + after),
+        cursor_pos: signal_int_set(state.cursor_pos, pos - 1),
+        selection: signal_selection_clear(state.selection),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version + 1,
+    }
+}
+
+/// Delete character at cursor (delete key)
+rite delete_forward(state: EditorState) → EditorState {
+    ⎇ state.readonly {
+        ⤺ state;
+    }
+
+    ≔ content = signal_get(state.content);
+    ≔ pos = get_cursor_pos(state);
+    ≔ cs = chars(content);
+    ≔ len = cs.len();
+
+    ⎇ pos >= len {
+        ⤺ state;  // Nothing to delete
+    }
+
+    // Build new content: before[0..pos] + after[pos+1..]
+    ≔ vary before = "";
+    ≔ vary i = 0;
+    ⟳ i < pos {
+        before = before + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    ≔ vary after = "";
+    i = pos + 1;
+    ⟳ i < len {
+        after = after + to_string(cs[i]);
+        i = i + 1;
+    }
+
+    EditorState {
+        content: signal_set(state.content, before + after),
+        cursor_pos: state.cursor_pos,  // Cursor stays in place
+        selection: signal_selection_clear(state.selection),
+        scroll_top: state.scroll_top,
+        focused: state.focused,
+        readonly: state.readonly,
+        tokens_version: state.tokens_version + 1,
+    }
+}
+
+rite test_t077_insert_text_at_cursor() {
+    ≔ state = editor_state_with_content("hello world");
+    ≔ state2 = set_cursor_pos(state, 5);
+    ≔ state3 = insert_text(state2, " beautiful");
+
+    check_eq_str(get_content(state3), "hello beautiful world", "T077: Insert text at cursor");
+    check_eq_int(get_cursor_pos(state3), 15, "T077: Cursor moves after inserted text");
+}
+
+rite test_t078_insert_at_beginning() {
+    ≔ state = editor_state_with_content("world");
+    ≔ state2 = set_cursor_pos(state, 0);
+    ≔ state3 = insert_text(state2, "hello ");
+
+    check_eq_str(get_content(state3), "hello world", "T078: Insert at beginning");
+}
+
+rite test_t079_insert_at_end() {
+    ≔ state = editor_state_with_content("hello");
+    ≔ state2 = set_cursor_pos(state, 5);
+    ≔ state3 = insert_text(state2, " world");
+
+    check_eq_str(get_content(state3), "hello world", "T079: Insert at end");
+}
+
+rite test_t080_delete_backward() {
+    ≔ state = editor_state_with_content("hello");
+    ≔ state2 = set_cursor_pos(state, 5);
+    ≔ state3 = delete_backward(state2);
+
+    check_eq_str(get_content(state3), "hell", "T080: Delete backward removes char before cursor");
+    check_eq_int(get_cursor_pos(state3), 4, "T080: Cursor moves back");
+}
+
+rite test_t081_delete_forward() {
+    ≔ state = editor_state_with_content("hello");
+    ≔ state2 = set_cursor_pos(state, 0);
+    ≔ state3 = delete_forward(state2);
+
+    check_eq_str(get_content(state3), "ello", "T081: Delete forward removes char at cursor");
+    check_eq_int(get_cursor_pos(state3), 0, "T081: Cursor stays in place");
+}
+
+rite test_t082_delete_at_boundary() {
+    // Delete backward at start - no change
+    ≔ state1 = editor_state_with_content("hello");
+    ≔ state1a = set_cursor_pos(state1, 0);
+    ≔ state1b = delete_backward(state1a);
+    check_eq_str(get_content(state1b), "hello", "T082: Delete backward at start - no change");
+
+    // Delete forward at end - no change
+    ≔ state2 = editor_state_with_content("hello");
+    ≔ state2a = set_cursor_pos(state2, 5);
+    ≔ state2b = delete_forward(state2a);
+    check_eq_str(get_content(state2b), "hello", "T082: Delete forward at end - no change");
+}
+
+// =============================================================================
+// PHASE 2.5: Cursor Movement Tests (T083-T085)
+// =============================================================================
+
+/// Move cursor left
+rite move_cursor_left(state: EditorState) → EditorState {
+    ≔ pos = get_cursor_pos(state);
+    ⎇ pos > 0 {
+        set_cursor_pos(clear_selection(state), pos - 1)
+    } ⎉ {
+        clear_selection(state)
+    }
+}
+
+/// Move cursor right
+rite move_cursor_right(state: EditorState) → EditorState {
+    ≔ pos = get_cursor_pos(state);
+    ≔ content = signal_get(state.content);
+    ≔ len = chars(content).len();
+
+    ⎇ pos < len {
+        set_cursor_pos(clear_selection(state), pos + 1)
+    } ⎉ {
+        clear_selection(state)
+    }
+}
+
+/// Move cursor to start of content
+rite move_cursor_home(state: EditorState) → EditorState {
+    set_cursor_pos(clear_selection(state), 0)
+}
+
+/// Move cursor to end of content
+rite move_cursor_end(state: EditorState) → EditorState {
+    ≔ content = signal_get(state.content);
+    ≔ len = chars(content).len();
+    set_cursor_pos(clear_selection(state), len)
+}
+
+rite test_t083_move_cursor_left() {
+    ≔ state = editor_state_with_content("hello");
+    ≔ state2 = set_cursor_pos(state, 3);
+    ≔ state3 = move_cursor_left(state2);
+
+    check_eq_int(get_cursor_pos(state3), 2, "T083: Cursor moves left");
+
+    // Move left at 0 stays at 0
+    ≔ state4 = set_cursor_pos(state, 0);
+    ≔ state5 = move_cursor_left(state4);
+    check_eq_int(get_cursor_pos(state5), 0, "T083: Cursor at 0 stays at 0");
+}
+
+rite test_t084_move_cursor_right() {
+    ≔ state = editor_state_with_content("hello");
+    ≔ state2 = set_cursor_pos(state, 2);
+    ≔ state3 = move_cursor_right(state2);
+
+    check_eq_int(get_cursor_pos(state3), 3, "T084: Cursor moves right");
+
+    // Move right at end stays at end
+    ≔ state4 = set_cursor_pos(state, 5);
+    ≔ state5 = move_cursor_right(state4);
+    check_eq_int(get_cursor_pos(state5), 5, "T084: Cursor at end stays at end");
+}
+
+rite test_t085_move_cursor_home_end() {
+    ≔ state = editor_state_with_content("hello world");
+    ≔ state2 = set_cursor_pos(state, 5);
+
+    // Move to home
+    ≔ state3 = move_cursor_home(state2);
+    check_eq_int(get_cursor_pos(state3), 0, "T085: Home moves cursor to 0");
+
+    // Move to end
+    ≔ state4 = move_cursor_end(state3);
+    check_eq_int(get_cursor_pos(state4), 11, "T085: End moves cursor to content length");
+}
+
+// =============================================================================
+// Test Runner
+// =============================================================================
+
+rite main() {
+    println("════════════════════════════════════════════════════════════");
+    println("  Athame - State Management Test Suite");
+    println("  Phase 2: T061-T085 (Native Sigil Syntax)");
+    println("════════════════════════════════════════════════════════════");
+    println("");
+
+    // P2.1: Content State
+    println("── P2.1: Content State ──");
+    test_t061_editor_state_empty_content();
+    println("✓ T061: EditorState initializes with empty content");
+
+    test_t062_editor_state_with_content();
+    println("✓ T062: EditorState initializes with provided content");
+
+    test_t063_content_update_triggers_recompute();
+    println("✓ T063: content signal updates trigger tokens recomputation");
+
+    test_t064_lines_splits_on_newlines();
+    println("✓ T064: lines computed signal splits on newlines");
+
+    test_t065_line_count();
+    println("✓ T065: line_count computed signal returns correct count");
+
+    test_t066_same_value_no_retokenize();
+    println("✓ T066: setting content to same value doesn't re-tokenize");
+
+    println("");
+
+    // P2.2: Cursor and Selection
+    println("── P2.2: Cursor and Selection ──");
+    test_t067_cursor_pos_init_zero();
+    println("✓ T067: cursor_pos signal initializes to 0");
+
+    test_t068_cursor_pos_update();
+    println("✓ T068: cursor_pos updates on set");
+
+    test_t069_selection_init_none();
+    println("✓ T069: selection signal initializes to None");
+
+    test_t070_selection_set_valid();
+    println("✓ T070: selection set with valid range");
+
+    test_t071_selection_cleared();
+    println("✓ T071: selection cleared returns to None");
+
+    test_t072_cursor_derived_from_selection();
+    println("✓ T072: cursor_pos derived from selection end when selected");
+
+    println("");
+
+    // P2.3: UI State
+    println("── P2.3: UI State ──");
+    test_t073_scroll_top_init_zero();
+    println("✓ T073: scroll_top signal initializes to 0");
+
+    test_t074_focused_init_false();
+    println("✓ T074: focused signal initializes to nay");
+
+    test_t075_focused_toggle();
+    println("✓ T075: focused toggled on focus/blur");
+
+    test_t076_readonly_prevents_changes();
+    println("✓ T076: readonly state prevents content changes");
+
+    println("");
+
+    // P2.4: Text Operations
+    println("── P2.4: Text Operations ──");
+    test_t077_insert_text_at_cursor();
+    println("✓ T077: insert text at cursor position");
+
+    test_t078_insert_at_beginning();
+    println("✓ T078: insert text at beginning");
+
+    test_t079_insert_at_end();
+    println("✓ T079: insert text at end");
+
+    test_t080_delete_backward();
+    println("✓ T080: delete backward (backspace)");
+
+    test_t081_delete_forward();
+    println("✓ T081: delete forward (delete key)");
+
+    test_t082_delete_at_boundary();
+    println("✓ T082: delete at boundary (no-op)");
+
+    println("");
+
+    // P2.5: Cursor Movement
+    println("── P2.5: Cursor Movement ──");
+    test_t083_move_cursor_left();
+    println("✓ T083: move cursor left");
+
+    test_t084_move_cursor_right();
+    println("✓ T084: move cursor right");
+
+    test_t085_move_cursor_home_end();
+    println("✓ T085: move cursor home/end");
+
+    println("");
+    println("════════════════════════════════════════════════════════════");
+    println("  ✅ ALL PHASE 2 TESTS PASSED (25/25)");
+    println("════════════════════════════════════════════════════════════");
+}

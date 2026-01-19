@@ -1,0 +1,1021 @@
+// Athame - Tokenizer Tests
+// Phase 1: TDD Test Suite (T001-T048)
+// Updated for Native Sigil Syntax (2026-01-17)
+
+// =============================================================================
+// Token Types
+// =============================================================================
+
+ᛈ TokenKind {
+    Keyword,
+    Identifier,
+    Type,
+    String,
+    Number,
+    Comment,
+    Operator,
+    Morpheme,
+    NativeSymbol,       // New: ≔, ⎇, ⎉, ⌥, etc.
+    EvidenceKnown,
+    EvidenceUncertain,
+    EvidenceReported,
+    EvidenceParadox,
+    Punctuation,
+    Whitespace,
+    Newline,
+    Unknown,
+}
+
+sigil Token {
+    kind: TokenKind,
+    text: String,
+    start: i64,
+    end: i64,
+}
+
+// =============================================================================
+// Character Classification Helpers
+// =============================================================================
+
+rite is_whitespace_char(c: char) → bool {
+    c == ' ' ∨ c == '\t' ∨ c == '\r'
+}
+
+rite is_newline_char(c: char) → bool {
+    c == '\n'
+}
+
+rite is_digit_char(c: char) → bool {
+    c >= '0' ∧ c <= '9'
+}
+
+rite is_hex_digit_char(c: char) → bool {
+    is_digit_char(c) ∨ (c >= 'a' ∧ c <= 'f') ∨ (c >= 'A' ∧ c <= 'F')
+}
+
+rite is_alpha_char(c: char) → bool {
+    (c >= 'a' ∧ c <= 'z') ∨ (c >= 'A' ∧ c <= 'Z')
+}
+
+rite is_ident_start_char(c: char) → bool {
+    is_alpha_char(c) ∨ c == '_'
+}
+
+rite is_ident_continue_char(c: char) → bool {
+    is_ident_start_char(c) ∨ is_digit_char(c)
+}
+
+rite is_uppercase_char(c: char) → bool {
+    c >= 'A' ∧ c <= 'Z'
+}
+
+// Native Sigil keywords (both old and new)
+rite is_keyword(text: String) → bool {
+    // Legacy keywords (still supported as aliases)
+    text == "fn" ∨ text == "let" ∨ text == "mut" ∨ text == "if" ∨
+    text == "else" ∨ text == "match" ∨ text == "return" ∨ text == "for" ∨
+    text == "while" ∨ text == "in" ∨ text == "struct" ∨ text == "enum" ∨
+    text == "trait" ∨ text == "impl" ∨ text == "use" ∨ text == "pub" ∨
+    text == "async" ∨ text == "await" ∨ text == "true" ∨ text == "false" ∨
+    text == "self" ∨ text == "Self" ∨ text == "super" ∨ text == "loop" ∨
+    text == "break" ∨ text == "continue" ∨ text == "const" ∨ text == "where" ∨
+    // Native Sigil keywords
+    text == "rite" ∨ text == "sigil" ∨ text == "aspect" ∨ text == "vary" ∨
+    text == "yea" ∨ text == "nay" ∨ text == "each" ∨ text == "of" ∨
+    text == "forever" ∨ text == "this" ∨ text == "This" ∨ text == "above" ∨
+    text == "invoke" ∨ text == "scroll" ∨ text == "tome"
+}
+
+// Greek morpheme operators (semantic pipeline operators)
+rite is_morpheme_char(c: char) → bool {
+    c == 'τ' ∨ c == 'φ' ∨ c == 'σ' ∨ c == 'ρ' ∨
+    c == 'Σ' ∨ c == 'Π' ∨ c == 'α' ∨ c == 'ω' ∨
+    c == 'μ' ∨ c == 'λ' ∨
+    // Capital variants
+    c == 'Τ' ∨ c == 'Φ' ∨ c == 'Ρ' ∨ c == 'Α' ∨
+    c == 'Ω' ∨ c == 'Μ' ∨ c == 'Λ' ∨ c == 'Θ'
+}
+
+// Native Sigil symbols (control flow, logic, structure)
+rite is_native_symbol(c: char) → bool {
+    // Definition & variables
+    c == '≔' ∨       // let (definition)
+    c == '◆' ∨       // const
+    c == 'Δ' ∨       // mut (delta = change)
+    // Control flow
+    c == '⎇' ∨       // if (branch)
+    c == '⎉' ∨       // else (alternative)
+    c == '⌥' ∨       // match (options)
+    c == '⟳' ∨       // while (cycle)
+    c == '∞' ∨       // loop (infinite)
+    c == '⊗' ∨       // break (stop)
+    c == '↻' ∨       // continue
+    c == '⤺' ∨       // return
+    // Iteration
+    c == '∀' ∨       // for (for all)
+    c == '∈' ∨       // in (element of)
+    // Logic
+    c == '⊤' ∨       // true (top)
+    c == '⊥' ∨       // false (bottom)
+    c == '∧' ∨       // and (conjunction)
+    c == '∨' ∨       // or (disjunction)
+    c == '¬' ∨       // not (negation)
+    // Structure
+    c == '⊢' ∨       // impl (turnstile - proves)
+    c == 'ᛈ' ∨       // enum (Perthro rune)
+    c == '☉' ∨       // pub (sun - visible)
+    c == '⊙' ∨       // self
+    c == '∋' ∨       // where (such that)
+    // Paths & arrows
+    c == '·' ∨       // · (middle dot path)
+    c == '→'         // -> or as (arrow)
+}
+
+// =============================================================================
+// Tokenizer
+// =============================================================================
+
+rite tokenize(source: String) → [Token] {
+    ≔ cs = chars(source);
+    ≔ len = cs.len();
+    ≔ vary pos = 0;
+    // Start with dummy token, we'll skip it when returning
+    ≔ vary tokens = [Token { kind: TokenKind·Unknown, text: "", start: -1, end: -1 }];
+    ≔ vary prev_kind = TokenKind·Unknown;
+
+    ⟳ pos < len {
+        ≔ start = pos;
+        ≔ c = cs[pos];
+
+        ⎇ is_whitespace_char(c) {
+            // Whitespace
+            ≔ vary text = "";
+            ⟳ pos < len ∧ is_whitespace_char(cs[pos]) {
+                text = text + to_string(cs[pos]);
+                pos = pos + 1;
+            }
+            tokens.push(Token { kind: TokenKind·Whitespace, text: text, start: start, end: pos });
+            prev_kind = TokenKind·Whitespace;
+        } ⎉ ⎇ is_newline_char(c) {
+            // Newline
+            pos = pos + 1;
+            tokens.push(Token { kind: TokenKind·Newline, text: "\n", start: start, end: pos });
+            prev_kind = TokenKind·Newline;
+        } ⎉ ⎇ is_ident_start_char(c) {
+            // Identifier or keyword
+            ≔ vary text = "";
+            ⟳ pos < len ∧ is_ident_continue_char(cs[pos]) {
+                text = text + to_string(cs[pos]);
+                pos = pos + 1;
+            }
+            ≔ kind = ⎇ is_keyword(text) {
+                TokenKind·Keyword
+            } ⎉ ⎇ text.len() > 0 ∧ is_uppercase_char(chars(text)[0]) {
+                TokenKind·Type
+            } ⎉ {
+                TokenKind·Identifier
+            };
+            tokens.push(Token { kind: kind, text: text, start: start, end: pos });
+            prev_kind = kind;
+        } ⎉ ⎇ is_digit_char(c) {
+            // Number
+            ≔ vary text = "";
+            // Check for hex
+            ⎇ c == '0' ∧ pos + 1 < len ∧ cs[pos + 1] == 'x' {
+                text = "0x";
+                pos = pos + 2;
+                ⟳ pos < len ∧ is_hex_digit_char(cs[pos]) {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                }
+            } ⎉ {
+                // Integer part
+                ⟳ pos < len ∧ is_digit_char(cs[pos]) {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                }
+                // Check for decimal
+                ⎇ pos < len ∧ cs[pos] == '.' ∧ pos + 1 < len ∧ is_digit_char(cs[pos + 1]) {
+                    text = text + ".";
+                    pos = pos + 1;
+                    ⟳ pos < len ∧ is_digit_char(cs[pos]) {
+                        text = text + to_string(cs[pos]);
+                        pos = pos + 1;
+                    }
+                }
+            }
+            tokens.push(Token { kind: TokenKind·Number, text: text, start: start, end: pos });
+            prev_kind = TokenKind·Number;
+        } ⎉ ⎇ c == '"' {
+            // String
+            ≔ vary text = "\"";
+            pos = pos + 1;
+            ⟳ pos < len ∧ cs[pos] != '"' ∧ ¬is_newline_char(cs[pos]) {
+                ⎇ cs[pos] == '\\' ∧ pos + 1 < len {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                } ⎉ {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                }
+            }
+            ⎇ pos < len ∧ cs[pos] == '"' {
+                text = text + "\"";
+                pos = pos + 1;
+            }
+            tokens.push(Token { kind: TokenKind·String, text: text, start: start, end: pos });
+            prev_kind = TokenKind·String;
+        } ⎉ ⎇ c == '/' ∧ pos + 1 < len ∧ cs[pos + 1] == '/' {
+            // Line comment
+            ≔ vary text = "//";
+            pos = pos + 2;
+            ⟳ pos < len ∧ ¬is_newline_char(cs[pos]) {
+                text = text + to_string(cs[pos]);
+                pos = pos + 1;
+            }
+            tokens.push(Token { kind: TokenKind·Comment, text: text, start: start, end: pos });
+            prev_kind = TokenKind·Comment;
+        } ⎉ ⎇ c == '/' ∧ pos + 1 < len ∧ cs[pos + 1] == '*' {
+            // Block comment
+            ≔ vary text = "/*";
+            pos = pos + 2;
+            ≔ vary depth = 1;
+            ⟳ pos < len ∧ depth > 0 {
+                ⎇ pos + 1 < len ∧ cs[pos] == '*' ∧ cs[pos + 1] == '/' {
+                    text = text + "*/";
+                    pos = pos + 2;
+                    depth = depth - 1;
+                } ⎉ ⎇ pos + 1 < len ∧ cs[pos] == '/' ∧ cs[pos + 1] == '*' {
+                    text = text + "/*";
+                    pos = pos + 2;
+                    depth = depth + 1;
+                } ⎉ {
+                    text = text + to_string(cs[pos]);
+                    pos = pos + 1;
+                }
+            }
+            tokens.push(Token { kind: TokenKind·Comment, text: text, start: start, end: pos });
+            prev_kind = TokenKind·Comment;
+        } ⎉ ⎇ is_morpheme_char(c) {
+            // Morpheme (Greek letters for semantic operators)
+            tokens.push(Token { kind: TokenKind·Morpheme, text: to_string(c), start: start, end: pos + 1 });
+            pos = pos + 1;
+            prev_kind = TokenKind·Morpheme;
+        } ⎉ ⎇ is_native_symbol(c) {
+            // Native Sigil symbol
+            tokens.push(Token { kind: TokenKind·NativeSymbol, text: to_string(c), start: start, end: pos + 1 });
+            pos = pos + 1;
+            prev_kind = TokenKind·NativeSymbol;
+        } ⎉ ⎇ c == '!' ∨ c == '?' ∨ c == '~' {
+            // Evidence or operator
+            ≔ kind = ⎇ prev_kind == TokenKind·Identifier ∨ prev_kind == TokenKind·Type {
+                ⎇ c == '!' { TokenKind·EvidenceKnown }
+                ⎉ ⎇ c == '?' { TokenKind·EvidenceUncertain }
+                ⎉ { TokenKind·EvidenceReported }
+            } ⎉ {
+                TokenKind·Operator
+            };
+            tokens.push(Token { kind: kind, text: to_string(c), start: start, end: pos + 1 });
+            pos = pos + 1;
+            prev_kind = kind;
+        } ⎉ ⎇ c == '‽' {
+            // Interrobang - always evidence paradox
+            tokens.push(Token { kind: TokenKind·EvidenceParadox, text: "‽", start: start, end: pos + 1 });
+            pos = pos + 1;
+            prev_kind = TokenKind·EvidenceParadox;
+        } ⎉ {
+            // Two-char operators (legacy support)
+            ≔ next = ⎇ pos + 1 < len { cs[pos + 1] } ⎉ { '\0' };
+            ≔ two = to_string(c) + to_string(next);
+            ⎇ two == "==" ∨ two == "!=" ∨ two == "<=" ∨ two == ">=" ∨
+               two == "&&" ∨ two == "||" ∨ two == "->" ∨ two == "+=" ∨
+               two == "-=" ∨ two == "*=" ∨ two == "/=" {
+                tokens.push(Token { kind: TokenKind·Operator, text: two, start: start, end: pos + 2 });
+                pos = pos + 2;
+                prev_kind = TokenKind·Operator;
+            } ⎉ ⎇ two == "·" {
+                tokens.push(Token { kind: TokenKind·Punctuation, text: "·", start: start, end: pos + 2 });
+                pos = pos + 2;
+                prev_kind = TokenKind·Punctuation;
+            } ⎉ {
+                // Single char
+                ≔ kind = ⎇ c == '{' ∨ c == '}' ∨ c == '(' ∨ c == ')' ∨
+                              c == '[' ∨ c == ']' ∨ c == ',' ∨ c == ';' ∨ c == ':' {
+                    TokenKind·Punctuation
+                } ⎉ ⎇ c == '+' ∨ c == '-' ∨ c == '*' ∨ c == '/' ∨
+                          c == '%' ∨ c == '=' ∨ c == '<' ∨ c == '>' ∨
+                          c == '&' ∨ c == '|' ∨ c == '^' {
+                    TokenKind·Operator
+                } ⎉ {
+                    TokenKind·Unknown
+                };
+                tokens.push(Token { kind: kind, text: to_string(c), start: start, end: pos + 1 });
+                pos = pos + 1;
+                prev_kind = kind;
+            }
+        }
+    }
+
+    // Skip the dummy first token
+    ⎇ tokens.len() <= 1 {
+        ⤺ Vec·new();
+    }
+    ≔ vary result = Vec·new();
+    ≔ vary i = 1;
+    ⟳ i < tokens.len() {
+        result.push(tokens[i]);
+        i = i + 1;
+    }
+    result
+}
+
+rite tokenize_significant(source: String) → [Token] {
+    ≔ all = tokenize(source);
+    ⎇ all.len() == 0 {
+        ⤺ all;
+    }
+    ≔ vary result = [Token { kind: TokenKind·Unknown, text: "", start: -1, end: -1 }];
+    ≔ vary i = 0;
+    ⟳ i < all.len() {
+        ≔ token = all[i];
+        ⎇ token.kind != TokenKind·Whitespace ∧ token.kind != TokenKind·Newline {
+            result.push(token);
+        }
+        i = i + 1;
+    }
+    ⎇ result.len() <= 1 {
+        ⤺ Vec·new();
+    }
+    ≔ vary final_result = Vec·new();
+    ≔ vary j = 1;
+    ⟳ j < result.len() {
+        final_result.push(result[j]);
+        j = j + 1;
+    }
+    final_result
+}
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite check_eq(actual: i64, expected: i64, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        println("  Expected: " + to_string(expected));
+        println("  Actual: " + to_string(actual));
+        panic("test failed");
+    }
+}
+
+rite assert_str_eq(actual: String, expected: String, msg: String) {
+    ⎇ actual != expected {
+        println("FAIL: " + msg);
+        println("  Expected: \"" + expected + "\"");
+        println("  Actual: \"" + actual + "\"");
+        panic("test failed");
+    }
+}
+
+rite assert_kind(token: Token, expected: TokenKind, msg: String) {
+    ⎇ token.kind != expected {
+        println("FAIL: " + msg + " - wrong kind");
+        panic("test failed");
+    }
+}
+
+// =============================================================================
+// P1.1: Basic Token Types (T001-T010)
+// =============================================================================
+
+rite test_t001_empty_string() {
+    ≔ tokens = tokenize("");
+    check_eq(tokens.len(), 0, "T001: empty string");
+    println("✓ T001: empty string returns empty array");
+}
+
+rite test_t002_whitespace() {
+    ≔ tokens = tokenize("   ");
+    check_eq(tokens.len(), 1, "T002: whitespace count");
+    assert_kind(tokens[0], TokenKind·Whitespace, "T002");
+    assert_str_eq(tokens[0].text, "   ", "T002: text");
+    println("✓ T002: whitespace returns Whitespace tokens");
+}
+
+rite test_t003_newlines() {
+    ≔ tokens = tokenize("\n\n");
+    check_eq(tokens.len(), 2, "T003: newline count");
+    assert_kind(tokens[0], TokenKind·Newline, "T003");
+    assert_kind(tokens[1], TokenKind·Newline, "T003");
+    println("✓ T003: newlines return Newline tokens");
+}
+
+rite test_t004_native_keyword_rite() {
+    ≔ tokens = tokenize_significant("rite");
+    check_eq(tokens.len(), 1, "T004: keyword count");
+    assert_kind(tokens[0], TokenKind·Keyword, "T004");
+    assert_str_eq(tokens[0].text, "rite", "T004: text");
+    println("✓ T004: 'rite' returns Keyword token");
+}
+
+rite test_t005_all_keywords() {
+    // Test both legacy and native keywords
+    ≔ legacy_keywords = ["fn", "let", "mut", "if", "else", "match", "return",
+                         "for", "while", "in", "struct", "enum", "trait", "impl",
+                         "use", "pub", "async", "await", "true", "false"];
+    ≔ native_keywords = ["rite", "sigil", "aspect", "vary", "yea", "nay",
+                         "each", "of", "forever", "this", "This", "above",
+                         "invoke", "scroll", "tome"];
+
+    ∀ kw ∈ legacy_keywords {
+        ≔ tokens = tokenize_significant(kw);
+        assert_kind(tokens[0], TokenKind·Keyword, "T005 legacy: " + kw);
+    }
+    ∀ kw ∈ native_keywords {
+        ≔ tokens = tokenize_significant(kw);
+        assert_kind(tokens[0], TokenKind·Keyword, "T005 native: " + kw);
+    }
+    println("✓ T005: all keywords (legacy + native) tokenize correctly");
+}
+
+rite test_t006_identifier() {
+    ≔ tokens = tokenize_significant("foo_bar");
+    assert_kind(tokens[0], TokenKind·Identifier, "T006");
+    assert_str_eq(tokens[0].text, "foo_bar", "T006: text");
+    println("✓ T006: identifiers tokenize correctly");
+}
+
+rite test_t007_type_name() {
+    ≔ tokens = tokenize_significant("MyType");
+    assert_kind(tokens[0], TokenKind·Type, "T007");
+    assert_str_eq(tokens[0].text, "MyType", "T007: text");
+    println("✓ T007: PascalCase returns Type tokens");
+}
+
+rite test_t008_integer() {
+    ≔ tokens = tokenize_significant("42");
+    assert_kind(tokens[0], TokenKind·Number, "T008");
+    assert_str_eq(tokens[0].text, "42", "T008: text");
+    println("✓ T008: integers return Number tokens");
+}
+
+rite test_t009_float() {
+    ≔ tokens = tokenize_significant("3.14");
+    assert_kind(tokens[0], TokenKind·Number, "T009");
+    assert_str_eq(tokens[0].text, "3.14", "T009: text");
+    println("✓ T009: floats return Number tokens");
+}
+
+rite test_t010_hex_number() {
+    ≔ tokens = tokenize_significant("0xFF");
+    assert_kind(tokens[0], TokenKind·Number, "T010");
+    assert_str_eq(tokens[0].text, "0xFF", "T010: text");
+    println("✓ T010: hex numbers return Number tokens");
+}
+
+// =============================================================================
+// P1.2: Strings and Comments (T011-T017)
+// =============================================================================
+
+rite test_t011_simple_string() {
+    ≔ tokens = tokenize_significant("\"hello\"");
+    assert_kind(tokens[0], TokenKind·String, "T011");
+    assert_str_eq(tokens[0].text, "\"hello\"", "T011: text");
+    println("✓ T011: strings return String tokens");
+}
+
+rite test_t012_string_escapes() {
+    ≔ tokens = tokenize_significant("\"hello\\nworld\"");
+    assert_kind(tokens[0], TokenKind·String, "T012");
+    println("✓ T012: string escapes work correctly");
+}
+
+rite test_t013_unclosed_string() {
+    ≔ tokens = tokenize("\"unclosed");
+    assert_kind(tokens[0], TokenKind·String, "T013");
+    println("✓ T013: unclosed strings handled");
+}
+
+rite test_t014_line_comment() {
+    ≔ tokens = tokenize_significant("// comment");
+    assert_kind(tokens[0], TokenKind·Comment, "T014");
+    assert_str_eq(tokens[0].text, "// comment", "T014: text");
+    println("✓ T014: line comments work");
+}
+
+rite test_t015_block_comment() {
+    ≔ tokens = tokenize_significant("/* block */");
+    assert_kind(tokens[0], TokenKind·Comment, "T015");
+    assert_str_eq(tokens[0].text, "/* block */", "T015: text");
+    println("✓ T015: block comments work");
+}
+
+rite test_t016_nested_comments() {
+    ≔ tokens = tokenize_significant("/* outer /* inner */ outer */");
+    assert_kind(tokens[0], TokenKind·Comment, "T016");
+    println("✓ T016: nested block comments work");
+}
+
+rite test_t017_unclosed_block_comment() {
+    ≔ tokens = tokenize_significant("/* unclosed");
+    assert_kind(tokens[0], TokenKind·Comment, "T017");
+    println("✓ T017: unclosed block comments handled");
+}
+
+// =============================================================================
+// P1.3: Operators and Punctuation (T018-T025)
+// =============================================================================
+
+rite test_t018_arithmetic_operators() {
+    ∀ op ∈ ["+", "-", "*", "/", "%"] {
+        ≔ tokens = tokenize_significant(op);
+        assert_kind(tokens[0], TokenKind·Operator, "T018: " + op);
+    }
+    println("✓ T018: arithmetic operators work");
+}
+
+rite test_t019_comparison_operators() {
+    ∀ op ∈ ["==", "!=", "<", ">", "<=", ">="] {
+        ≔ tokens = tokenize_significant(op);
+        assert_kind(tokens[0], TokenKind·Operator, "T019: " + op);
+    }
+    println("✓ T019: comparison operators work");
+}
+
+rite test_t020_logical_operators() {
+    // Legacy operators (still supported)
+    ∀ op ∈ ["&&", "||"] {
+        ≔ tokens = tokenize_significant(op);
+        assert_kind(tokens[0], TokenKind·Operator, "T020 legacy: " + op);
+    }
+    // Native symbols
+    ∀ sym ∈ ["∧", "∨", "¬"] {
+        ≔ tokens = tokenize_significant(sym);
+        assert_kind(tokens[0], TokenKind·NativeSymbol, "T020 native: " + sym);
+    }
+    println("✓ T020: logical operators (legacy + native) work");
+}
+
+rite test_t021_assignment() {
+    ≔ tokens = tokenize_significant("=");
+    assert_kind(tokens[0], TokenKind·Operator, "T021");
+    println("✓ T021: assignment works");
+}
+
+rite test_t022_pipe_operator() {
+    ≔ tokens = tokenize_significant("|");
+    assert_kind(tokens[0], TokenKind·Operator, "T022");
+    println("✓ T022: pipe operator works");
+}
+
+rite test_t023_punctuation() {
+    ∀ p ∈ ["{", "}", "(", ")", "[", "]", ",", ";", ":"] {
+        ≔ tokens = tokenize_significant(p);
+        assert_kind(tokens[0], TokenKind·Punctuation, "T023: " + p);
+    }
+    // Legacy :: (still supported)
+    ≔ tokens = tokenize_significant("::");
+    assert_kind(tokens[0], TokenKind·Punctuation, "T023: ::");
+    // Native · (middle dot path separator)
+    ≔ tokens2 = tokenize_significant("·");
+    assert_kind(tokens2[0], TokenKind·NativeSymbol, "T023: ·");
+    println("✓ T023: punctuation (legacy + native) works");
+}
+
+rite test_t024_arrow() {
+    // Legacy ->
+    ≔ tokens = tokenize_significant("->");
+    assert_kind(tokens[0], TokenKind·Operator, "T024 legacy");
+    assert_str_eq(tokens[0].text, "->", "T024: text");
+    // Native →
+    ≔ tokens2 = tokenize_significant("→");
+    assert_kind(tokens2[0], TokenKind·NativeSymbol, "T024 native");
+    println("✓ T024: arrow (legacy + native) works");
+}
+
+rite test_t025_compound_operators() {
+    ∀ op ∈ ["+=", "-=", "*=", "/="] {
+        ≔ tokens = tokenize_significant(op);
+        assert_kind(tokens[0], TokenKind·Operator, "T025: " + op);
+    }
+    println("✓ T025: compound operators work");
+}
+
+// =============================================================================
+// P1.4: Morpheme Operators (T026-T035)
+// =============================================================================
+
+rite test_t026_tau() {
+    ≔ tokens = tokenize_significant("τ");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T026");
+    println("✓ T026: τ (tau) works");
+}
+
+rite test_t027_phi() {
+    ≔ tokens = tokenize_significant("φ");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T027");
+    println("✓ T027: φ (phi) works");
+}
+
+rite test_t028_sigma() {
+    ≔ tokens = tokenize_significant("σ");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T028");
+    println("✓ T028: σ (sigma) works");
+}
+
+rite test_t029_rho() {
+    ≔ tokens = tokenize_significant("ρ");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T029");
+    println("✓ T029: ρ (rho) works");
+}
+
+rite test_t030_sigma_capital() {
+    ≔ tokens = tokenize_significant("Σ");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T030");
+    println("✓ T030: Σ (capital sigma) works");
+}
+
+rite test_t031_pi_capital() {
+    ≔ tokens = tokenize_significant("Π");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T031");
+    println("✓ T031: Π (capital pi) works");
+}
+
+rite test_t032_alpha() {
+    ≔ tokens = tokenize_significant("α");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T032");
+    println("✓ T032: α (alpha) works");
+}
+
+rite test_t033_omega() {
+    ≔ tokens = tokenize_significant("ω");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T033");
+    println("✓ T033: ω (omega) works");
+}
+
+rite test_t034_mu() {
+    ≔ tokens = tokenize_significant("μ");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T034");
+    println("✓ T034: μ (mu) works");
+}
+
+rite test_t035_lambda() {
+    ≔ tokens = tokenize_significant("λ");
+    assert_kind(tokens[0], TokenKind·Morpheme, "T035");
+    println("✓ T035: λ (lambda) works");
+}
+
+// =============================================================================
+// P1.5: Evidence Markers (T036-T042)
+// =============================================================================
+
+rite test_t036_evidence_known() {
+    ≔ tokens = tokenize_significant("result!");
+    assert_kind(tokens[0], TokenKind·Identifier, "T036: ident");
+    assert_kind(tokens[1], TokenKind·EvidenceKnown, "T036: !");
+    println("✓ T036: ! after identifier = EvidenceKnown");
+}
+
+rite test_t037_evidence_uncertain() {
+    ≔ tokens = tokenize_significant("value?");
+    assert_kind(tokens[0], TokenKind·Identifier, "T037: ident");
+    assert_kind(tokens[1], TokenKind·EvidenceUncertain, "T037: ?");
+    println("✓ T037: ? after identifier = EvidenceUncertain");
+}
+
+rite test_t038_evidence_reported() {
+    ≔ tokens = tokenize_significant("data~");
+    assert_kind(tokens[0], TokenKind·Identifier, "T038: ident");
+    assert_kind(tokens[1], TokenKind·EvidenceReported, "T038: ~");
+    println("✓ T038: ~ after identifier = EvidenceReported");
+}
+
+rite test_t039_evidence_paradox() {
+    ≔ tokens = tokenize_significant("ptr‽");
+    assert_kind(tokens[0], TokenKind·Identifier, "T039: ident");
+    assert_kind(tokens[1], TokenKind·EvidenceParadox, "T039: ‽");
+    println("✓ T039: ‽ = EvidenceParadox");
+}
+
+rite test_t040_standalone_bang() {
+    ≔ tokens = tokenize_significant("!flag");
+    assert_kind(tokens[0], TokenKind·Operator, "T040: !");
+    assert_kind(tokens[1], TokenKind·Identifier, "T040: flag");
+    println("✓ T040: standalone ! = Operator");
+}
+
+rite test_t041_evidence_in_context_native() {
+    // Native syntax: ≔ x! = 42
+    ≔ tokens = tokenize_significant("≔ x! = 42");
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T041: ≔");
+    assert_kind(tokens[1], TokenKind·Identifier, "T041: x");
+    assert_kind(tokens[2], TokenKind·EvidenceKnown, "T041: !");
+    assert_kind(tokens[3], TokenKind·Operator, "T041: =");
+    assert_kind(tokens[4], TokenKind·Number, "T041: 42");
+    println("✓ T041: evidence in '≔ x! = 42'");
+}
+
+rite test_t042_evidence_reported_context() {
+    ≔ tokens = tokenize_significant("≔ data~ = fetch()");
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T042: ≔");
+    assert_kind(tokens[1], TokenKind·Identifier, "T042: data");
+    assert_kind(tokens[2], TokenKind·EvidenceReported, "T042: ~");
+    println("✓ T042: evidence in '≔ data~'");
+}
+
+// =============================================================================
+// P1.6: Complex Tokenization (T043-T048)
+// =============================================================================
+
+rite test_t043_function_definition_native() {
+    // Native: rite main() { }
+    ≔ tokens = tokenize_significant("rite main() { }");
+    assert_kind(tokens[0], TokenKind·Keyword, "T043: rite");
+    assert_kind(tokens[1], TokenKind·Identifier, "T043: main");
+    assert_kind(tokens[2], TokenKind·Punctuation, "T043: (");
+    assert_kind(tokens[3], TokenKind·Punctuation, "T043: )");
+    assert_kind(tokens[4], TokenKind·Punctuation, "T043: {");
+    assert_kind(tokens[5], TokenKind·Punctuation, "T043: }");
+    println("✓ T043: function definition (native)");
+}
+
+rite test_t044_struct_definition_native() {
+    // Native: sigil Point { x: i64 }
+    ≔ tokens = tokenize_significant("sigil Point { x: i64 }");
+    assert_kind(tokens[0], TokenKind·Keyword, "T044: sigil");
+    assert_kind(tokens[1], TokenKind·Type, "T044: Point");
+    println("✓ T044: struct definition (native)");
+}
+
+rite test_t045_morpheme_pipeline() {
+    ≔ tokens = tokenize_significant("data|τ|Σ");
+    assert_kind(tokens[0], TokenKind·Identifier, "T045: data");
+    assert_kind(tokens[1], TokenKind·Operator, "T045: |");
+    assert_kind(tokens[2], TokenKind·Morpheme, "T045: τ");
+    assert_kind(tokens[3], TokenKind·Operator, "T045: |");
+    assert_kind(tokens[4], TokenKind·Morpheme, "T045: Σ");
+    println("✓ T045: morpheme pipeline");
+}
+
+rite test_t046_evidence_chain() {
+    ≔ tokens = tokenize_significant("x~ y? z!");
+    ≔ vary has_reported = ⊥;
+    ≔ vary has_uncertain = ⊥;
+    ≔ vary has_known = ⊥;
+    ∀ token ∈ tokens {
+        ⎇ token.kind == TokenKind·EvidenceReported { has_reported = ⊤; }
+        ⎇ token.kind == TokenKind·EvidenceUncertain { has_uncertain = ⊤; }
+        ⎇ token.kind == TokenKind·EvidenceKnown { has_known = ⊤; }
+    }
+    ⎇ ¬has_reported ∨ ¬has_uncertain ∨ ¬has_known {
+        panic("T046: missing evidence markers");
+    }
+    println("✓ T046: evidence chain");
+}
+
+rite test_t047_real_program_native() {
+    // Native syntax program
+    ≔ code = "rite main() { ≔ x! = 42; print(x!); }";
+    ≔ tokens = tokenize_significant(code);
+    ⎇ tokens.len() < 10 {
+        panic("T047: expected at least 10 tokens");
+    }
+    println("✓ T047: real program (native)");
+}
+
+rite test_t048_performance() {
+    ≔ vary code = "";
+    ≔ vary i = 0;
+    ⟳ i < 50 {
+        code = code + "rite f" + to_string(i) + "() { }\n";
+        i = i + 1;
+    }
+    ≔ tokens = tokenize(code);
+    ⎇ tokens.len() < 200 {
+        panic("T048: expected many tokens");
+    }
+    println("✓ T048: performance (50 functions)");
+}
+
+// =============================================================================
+// P1.7: Native Symbol Tests (T049-T060) - NEW
+// =============================================================================
+
+rite test_t049_definition_symbol() {
+    ≔ tokens = tokenize_significant("≔");
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T049");
+    assert_str_eq(tokens[0].text, "≔", "T049: text");
+    println("✓ T049: ≔ (definition) works");
+}
+
+rite test_t050_control_flow_symbols() {
+    // if/else/match
+    ≔ if_tok = tokenize_significant("⎇");
+    assert_kind(if_tok[0], TokenKind·NativeSymbol, "T050: ⎇");
+
+    ≔ else_tok = tokenize_significant("⎉");
+    assert_kind(else_tok[0], TokenKind·NativeSymbol, "T050: ⎉");
+
+    ≔ match_tok = tokenize_significant("⌥");
+    assert_kind(match_tok[0], TokenKind·NativeSymbol, "T050: ⌥");
+
+    println("✓ T050: control flow symbols (⎇ ⎉ ⌥) work");
+}
+
+rite test_t051_loop_symbols() {
+    ≔ while_tok = tokenize_significant("⟳");
+    assert_kind(while_tok[0], TokenKind·NativeSymbol, "T051: ⟳");
+
+    ≔ loop_tok = tokenize_significant("∞");
+    assert_kind(loop_tok[0], TokenKind·NativeSymbol, "T051: ∞");
+
+    ≔ break_tok = tokenize_significant("⊗");
+    assert_kind(break_tok[0], TokenKind·NativeSymbol, "T051: ⊗");
+
+    ≔ cont_tok = tokenize_significant("↻");
+    assert_kind(cont_tok[0], TokenKind·NativeSymbol, "T051: ↻");
+
+    println("✓ T051: loop symbols (⟳ ∞ ⊗ ↻) work");
+}
+
+rite test_t052_iteration_symbols() {
+    ≔ for_tok = tokenize_significant("∀");
+    assert_kind(for_tok[0], TokenKind·NativeSymbol, "T052: ∀");
+
+    ≔ in_tok = tokenize_significant("∈");
+    assert_kind(in_tok[0], TokenKind·NativeSymbol, "T052: ∈");
+
+    println("✓ T052: iteration symbols (∀ ∈) work");
+}
+
+rite test_t053_boolean_symbols() {
+    ≔ true_tok = tokenize_significant("⊤");
+    assert_kind(true_tok[0], TokenKind·NativeSymbol, "T053: ⊤");
+
+    ≔ false_tok = tokenize_significant("⊥");
+    assert_kind(false_tok[0], TokenKind·NativeSymbol, "T053: ⊥");
+
+    println("✓ T053: boolean symbols (⊤ ⊥) work");
+}
+
+rite test_t054_structure_symbols() {
+    ≔ impl_tok = tokenize_significant("⊢");
+    assert_kind(impl_tok[0], TokenKind·NativeSymbol, "T054: ⊢");
+
+    ≔ enum_tok = tokenize_significant("ᛈ");
+    assert_kind(enum_tok[0], TokenKind·NativeSymbol, "T054: ᛈ");
+
+    ≔ pub_tok = tokenize_significant("☉");
+    assert_kind(pub_tok[0], TokenKind·NativeSymbol, "T054: ☉");
+
+    println("✓ T054: structure symbols (⊢ ᛈ ☉) work");
+}
+
+rite test_t055_return_symbol() {
+    ≔ tokens = tokenize_significant("⤺");
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T055");
+    println("✓ T055: ⤺ (return) works");
+}
+
+rite test_t056_full_native_function() {
+    // Complete native function
+    ≔ code = "☉ rite greet(name: String) → String { ⤺ \"Hello, \" + name; }";
+    ≔ tokens = tokenize_significant(code);
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T056: ☉");
+    assert_kind(tokens[1], TokenKind·Keyword, "T056: rite");
+    assert_kind(tokens[2], TokenKind·Identifier, "T056: greet");
+    println("✓ T056: full native function definition");
+}
+
+rite test_t057_native_impl() {
+    // ⊢ Type : Trait
+    ≔ tokens = tokenize_significant("⊢ Point : Display");
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T057: ⊢");
+    assert_kind(tokens[1], TokenKind·Type, "T057: Point");
+    assert_kind(tokens[2], TokenKind·Punctuation, "T057: :");
+    assert_kind(tokens[3], TokenKind·Type, "T057: Display");
+    println("✓ T057: native impl (⊢ Type : Trait)");
+}
+
+rite test_t058_native_enum() {
+    // ᛈ Status { Active, Stopped }
+    ≔ tokens = tokenize_significant("ᛈ Status");
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T058: ᛈ");
+    assert_kind(tokens[1], TokenKind·Type, "T058: Status");
+    println("✓ T058: native enum (ᛈ)");
+}
+
+rite test_t059_native_control_flow() {
+    // ⎇ x > 0 { println("positive"); }
+    ≔ code = "⎇ x > 0 { println(\"positive\"); }";
+    ≔ tokens = tokenize_significant(code);
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T059: ⎇");
+    println("✓ T059: native if (⎇)");
+}
+
+rite test_t060_native_loop() {
+    // ⟳ i < 10 { i = i + 1; }
+    ≔ code = "⟳ i < 10 { i = i + 1; }";
+    ≔ tokens = tokenize_significant(code);
+    assert_kind(tokens[0], TokenKind·NativeSymbol, "T060: ⟳");
+    println("✓ T060: native while (⟳)");
+}
+
+// =============================================================================
+// Test Runner
+// =============================================================================
+
+rite main() {
+    println("════════════════════════════════════════════════════════════");
+    println("  Athame - Tokenizer Test Suite");
+    println("  Phase 1: T001-T060 (Updated for Native Syntax)");
+    println("════════════════════════════════════════════════════════════");
+    println("");
+
+    println("── P1.1: Basic Token Types ──");
+    test_t001_empty_string();
+    test_t002_whitespace();
+    test_t003_newlines();
+    test_t004_native_keyword_rite();
+    test_t005_all_keywords();
+    test_t006_identifier();
+    test_t007_type_name();
+    test_t008_integer();
+    test_t009_float();
+    test_t010_hex_number();
+    println("");
+
+    println("── P1.2: Strings and Comments ──");
+    test_t011_simple_string();
+    test_t012_string_escapes();
+    test_t013_unclosed_string();
+    test_t014_line_comment();
+    test_t015_block_comment();
+    test_t016_nested_comments();
+    test_t017_unclosed_block_comment();
+    println("");
+
+    println("── P1.3: Operators and Punctuation ──");
+    test_t018_arithmetic_operators();
+    test_t019_comparison_operators();
+    test_t020_logical_operators();
+    test_t021_assignment();
+    test_t022_pipe_operator();
+    test_t023_punctuation();
+    test_t024_arrow();
+    test_t025_compound_operators();
+    println("");
+
+    println("── P1.4: Morpheme Operators ──");
+    test_t026_tau();
+    test_t027_phi();
+    test_t028_sigma();
+    test_t029_rho();
+    test_t030_sigma_capital();
+    test_t031_pi_capital();
+    test_t032_alpha();
+    test_t033_omega();
+    test_t034_mu();
+    test_t035_lambda();
+    println("");
+
+    println("── P1.5: Evidence Markers ──");
+    test_t036_evidence_known();
+    test_t037_evidence_uncertain();
+    test_t038_evidence_reported();
+    test_t039_evidence_paradox();
+    test_t040_standalone_bang();
+    test_t041_evidence_in_context_native();
+    test_t042_evidence_reported_context();
+    println("");
+
+    println("── P1.6: Complex Tokenization ──");
+    test_t043_function_definition_native();
+    test_t044_struct_definition_native();
+    test_t045_morpheme_pipeline();
+    test_t046_evidence_chain();
+    test_t047_real_program_native();
+    test_t048_performance();
+    println("");
+
+    println("── P1.7: Native Symbol Tests ──");
+    test_t049_definition_symbol();
+    test_t050_control_flow_symbols();
+    test_t051_loop_symbols();
+    test_t052_iteration_symbols();
+    test_t053_boolean_symbols();
+    test_t054_structure_symbols();
+    test_t055_return_symbol();
+    test_t056_full_native_function();
+    test_t057_native_impl();
+    test_t058_native_enum();
+    test_t059_native_control_flow();
+    test_t060_native_loop();
+    println("");
+
+    println("════════════════════════════════════════════════════════════");
+    println("  ✅ ALL PHASE 1 TESTS PASSED (60/60)");
+    println("════════════════════════════════════════════════════════════");
+}

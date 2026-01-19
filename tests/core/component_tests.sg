@@ -1,0 +1,478 @@
+// Qliphoth Framework - Component Lifecycle Unit Tests
+// Phase 0: Framework Core Tests
+// Tests: Component creation, mounting, updating, unmounting, props, context
+
+// ============================================================================
+// Component Types
+// ============================================================================
+
+☉ ᛈ LifecyclePhase {
+    Created,
+    Mounting,
+    Mounted,
+    Updating,
+    Updated,
+    Unmounting,
+    Unmounted
+}
+
+☉ sigil ComponentState {
+    id: !String,
+    phase: !LifecyclePhase,
+    render_count: !i64,
+    props_version: !i64
+}
+
+☉ sigil Props {
+    values: !Vec<PropEntry>,
+    version: !i64
+}
+
+☉ sigil PropEntry {
+    key: !String,
+    value: !i64
+}
+
+☉ sigil Context {
+    name: !String,
+    value: !i64,
+    version: !i64
+}
+
+☉ ᛈ UpdateResult {
+    ShouldUpdate,
+    SkipUpdate,
+    ForceUpdate
+}
+
+// ============================================================================
+// Component Lifecycle
+// ============================================================================
+
+rite create_component(id: !String) → !ComponentState {
+    ComponentState {
+        id: id,
+        phase: LifecyclePhase·Created,
+        render_count: 0,
+        props_version: 0
+    }
+}
+
+rite begin_mount(c: !ComponentState) → !ComponentState {
+    ComponentState {
+        id: c.id,
+        phase: LifecyclePhase·Mounting,
+        render_count: c.render_count,
+        props_version: c.props_version
+    }
+}
+
+rite finish_mount(c: !ComponentState) → !ComponentState {
+    ComponentState {
+        id: c.id,
+        phase: LifecyclePhase·Mounted,
+        render_count: c.render_count + 1,
+        props_version: c.props_version
+    }
+}
+
+rite begin_update(c: !ComponentState) → !ComponentState {
+    ComponentState {
+        id: c.id,
+        phase: LifecyclePhase·Updating,
+        render_count: c.render_count,
+        props_version: c.props_version
+    }
+}
+
+rite finish_update(c: !ComponentState) → !ComponentState {
+    ComponentState {
+        id: c.id,
+        phase: LifecyclePhase·Updated,
+        render_count: c.render_count + 1,
+        props_version: c.props_version
+    }
+}
+
+rite begin_unmount(c: !ComponentState) → !ComponentState {
+    ComponentState {
+        id: c.id,
+        phase: LifecyclePhase·Unmounting,
+        render_count: c.render_count,
+        props_version: c.props_version
+    }
+}
+
+rite finish_unmount(c: !ComponentState) → !ComponentState {
+    ComponentState {
+        id: c.id,
+        phase: LifecyclePhase·Unmounted,
+        render_count: c.render_count,
+        props_version: c.props_version
+    }
+}
+
+rite receive_props(c: !ComponentState, new_version: !i64) → !ComponentState {
+    ComponentState {
+        id: c.id,
+        phase: c.phase,
+        render_count: c.render_count,
+        props_version: new_version
+    }
+}
+
+// ============================================================================
+// Props Management
+// ============================================================================
+
+rite create_props() → !Props {
+    ≔ v: !Vec<PropEntry> = Vec·new();
+    Props { values: v, version: 0 }
+}
+
+rite set_prop(p: !Props, key: !String, value: !i64) → !Props {
+    ≔ vary entries: !Vec<PropEntry> = p.values;
+    entries.push(PropEntry { key: key, value: value });
+    Props { values: entries, version: p.version + 1 }
+}
+
+rite props_changed(old: !Props, new: !Props) → !bool {
+    old.version != new.version
+}
+
+// ============================================================================
+// Context Management
+// ============================================================================
+
+rite create_context(name: !String, initial: !i64) → !Context {
+    Context { name: name, value: initial, version: 0 }
+}
+
+rite update_context(ctx: !Context, new_val: !i64) → !Context {
+    Context { name: ctx.name, value: new_val, version: ctx.version + 1 }
+}
+
+rite context_changed(old: !Context, new: !Context) → !bool {
+    old.version != new.version
+}
+
+// ============================================================================
+// Update Decision
+// ============================================================================
+
+rite should_update(old_props: !Props, new_props: !Props) → !UpdateResult {
+    ⎇ props_changed(old_props, new_props) {
+        UpdateResult·ShouldUpdate
+    } ⎉ {
+        UpdateResult·SkipUpdate
+    }
+}
+
+// ============================================================================
+// Tests: Component Creation
+// ============================================================================
+
+rite test_component_id() → !i64 {
+    ≔ c: !ComponentState = create_component("my-comp");
+    ⎇ c.id == "my-comp" { 1 } ⎉ { 0 }
+}
+
+rite test_component_created_phase() → !i64 {
+    ≔ c: !ComponentState = create_component("test");
+    ⌥ c.phase {
+        LifecyclePhase·Created => 1,
+        _ => 0
+    }
+}
+
+rite test_component_zero_renders() → !i64 {
+    ≔ c: !ComponentState = create_component("test");
+    ⎇ c.render_count == 0 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Mounting Lifecycle
+// ============================================================================
+
+rite test_begin_mount_phase() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = begin_mount(c1);
+    ⌥ c2.phase {
+        LifecyclePhase·Mounting => 1,
+        _ => 0
+    }
+}
+
+rite test_finish_mount_phase() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = begin_mount(c1);
+    ≔ c3: !ComponentState = finish_mount(c2);
+    ⌥ c3.phase {
+        LifecyclePhase·Mounted => 1,
+        _ => 0
+    }
+}
+
+rite test_mount_increments_render() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = begin_mount(c1);
+    ≔ c3: !ComponentState = finish_mount(c2);
+    ⎇ c3.render_count == 1 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Update Lifecycle
+// ============================================================================
+
+rite test_begin_update_phase() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = finish_mount(begin_mount(c1));
+    ≔ c3: !ComponentState = begin_update(c2);
+    ⌥ c3.phase {
+        LifecyclePhase·Updating => 1,
+        _ => 0
+    }
+}
+
+rite test_finish_update_phase() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = finish_mount(begin_mount(c1));
+    ≔ c3: !ComponentState = begin_update(c2);
+    ≔ c4: !ComponentState = finish_update(c3);
+    ⌥ c4.phase {
+        LifecyclePhase·Updated => 1,
+        _ => 0
+    }
+}
+
+rite test_update_increments_render() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = finish_mount(begin_mount(c1));
+    ≔ c3: !ComponentState = finish_update(begin_update(c2));
+    ⎇ c3.render_count == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_multiple_updates() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = finish_mount(begin_mount(c1));
+    ≔ c3: !ComponentState = finish_update(begin_update(c2));
+    ≔ c4: !ComponentState = finish_update(begin_update(c3));
+    ≔ c5: !ComponentState = finish_update(begin_update(c4));
+    ⎇ c5.render_count == 4 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Unmount Lifecycle
+// ============================================================================
+
+rite test_begin_unmount_phase() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = finish_mount(begin_mount(c1));
+    ≔ c3: !ComponentState = begin_unmount(c2);
+    ⌥ c3.phase {
+        LifecyclePhase·Unmounting => 1,
+        _ => 0
+    }
+}
+
+rite test_finish_unmount_phase() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = finish_mount(begin_mount(c1));
+    ≔ c3: !ComponentState = finish_unmount(begin_unmount(c2));
+    ⌥ c3.phase {
+        LifecyclePhase·Unmounted => 1,
+        _ => 0
+    }
+}
+
+rite test_unmount_preserves_render_count() → !i64 {
+    ≔ c1: !ComponentState = create_component("test");
+    ≔ c2: !ComponentState = finish_mount(begin_mount(c1));
+    ≔ c3: !ComponentState = finish_unmount(begin_unmount(c2));
+    ⎇ c3.render_count == 1 { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Props
+// ============================================================================
+
+rite test_empty_props() → !i64 {
+    ≔ p: !Props = create_props();
+    ⎇ p.values.len() == 0 { 1 } ⎉ { 0 }
+}
+
+rite test_set_prop() → !i64 {
+    ≔ p1: !Props = create_props();
+    ≔ p2: !Props = set_prop(p1, "count", 42);
+    ⎇ p2.values.len() == 1 { 1 } ⎉ { 0 }
+}
+
+rite test_props_version() → !i64 {
+    ≔ p1: !Props = create_props();
+    ≔ p2: !Props = set_prop(p1, "a", 1);
+    ≔ p3: !Props = set_prop(p2, "b", 2);
+    ⎇ p3.version == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_props_changed() → !i64 {
+    ≔ p1: !Props = create_props();
+    ≔ p2: !Props = set_prop(p1, "a", 1);
+    ⎇ props_changed(p1, p2) { 1 } ⎉ { 0 }
+}
+
+rite test_props_unchanged() → !i64 {
+    ≔ p: !Props = create_props();
+    ⎇ ¬props_changed(p, p) { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Context
+// ============================================================================
+
+rite test_context_initial() → !i64 {
+    ≔ ctx: !Context = create_context("theme", 0);
+    ⎇ ctx.value == 0 { 1 } ⎉ { 0 }
+}
+
+rite test_context_name() → !i64 {
+    ≔ ctx: !Context = create_context("user", 123);
+    ⎇ ctx.name == "user" { 1 } ⎉ { 0 }
+}
+
+rite test_context_update() → !i64 {
+    ≔ ctx1: !Context = create_context("count", 0);
+    ≔ ctx2: !Context = update_context(ctx1, 100);
+    ⎇ ctx2.value == 100 { 1 } ⎉ { 0 }
+}
+
+rite test_context_version() → !i64 {
+    ≔ ctx1: !Context = create_context("count", 0);
+    ≔ ctx2: !Context = update_context(ctx1, 1);
+    ≔ ctx3: !Context = update_context(ctx2, 2);
+    ⎇ ctx3.version == 2 { 1 } ⎉ { 0 }
+}
+
+rite test_context_changed() → !i64 {
+    ≔ ctx1: !Context = create_context("count", 0);
+    ≔ ctx2: !Context = update_context(ctx1, 1);
+    ⎇ context_changed(ctx1, ctx2) { 1 } ⎉ { 0 }
+}
+
+// ============================================================================
+// Tests: Update Decision
+// ============================================================================
+
+rite test_should_update_changed() → !i64 {
+    ≔ p1: !Props = create_props();
+    ≔ p2: !Props = set_prop(p1, "a", 1);
+    ⌥ should_update(p1, p2) {
+        UpdateResult·ShouldUpdate => 1,
+        _ => 0
+    }
+}
+
+rite test_skip_update_same() → !i64 {
+    ≔ p: !Props = create_props();
+    ⌥ should_update(p, p) {
+        UpdateResult·SkipUpdate => 1,
+        _ => 0
+    }
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+rite main() {
+    println("=== Qliphoth Component Lifecycle Tests ===");
+    println("");
+
+    ≔ vary passed: !i64 = 0;
+    ≔ vary total: !i64 = 0;
+
+    // Creation tests
+    total = total + 1;
+    ⎇ test_component_id() == 1 { passed = passed + 1; println("PASS: component id"); } ⎉ { println("FAIL: component id"); }
+
+    total = total + 1;
+    ⎇ test_component_created_phase() == 1 { passed = passed + 1; println("PASS: created phase"); } ⎉ { println("FAIL: created phase"); }
+
+    total = total + 1;
+    ⎇ test_component_zero_renders() == 1 { passed = passed + 1; println("PASS: zero renders"); } ⎉ { println("FAIL: zero renders"); }
+
+    // Mounting tests
+    total = total + 1;
+    ⎇ test_begin_mount_phase() == 1 { passed = passed + 1; println("PASS: begin mount"); } ⎉ { println("FAIL: begin mount"); }
+
+    total = total + 1;
+    ⎇ test_finish_mount_phase() == 1 { passed = passed + 1; println("PASS: finish mount"); } ⎉ { println("FAIL: finish mount"); }
+
+    total = total + 1;
+    ⎇ test_mount_increments_render() == 1 { passed = passed + 1; println("PASS: mount render"); } ⎉ { println("FAIL: mount render"); }
+
+    // Update tests
+    total = total + 1;
+    ⎇ test_begin_update_phase() == 1 { passed = passed + 1; println("PASS: begin update"); } ⎉ { println("FAIL: begin update"); }
+
+    total = total + 1;
+    ⎇ test_finish_update_phase() == 1 { passed = passed + 1; println("PASS: finish update"); } ⎉ { println("FAIL: finish update"); }
+
+    total = total + 1;
+    ⎇ test_update_increments_render() == 1 { passed = passed + 1; println("PASS: update render"); } ⎉ { println("FAIL: update render"); }
+
+    total = total + 1;
+    ⎇ test_multiple_updates() == 1 { passed = passed + 1; println("PASS: multiple updates"); } ⎉ { println("FAIL: multiple updates"); }
+
+    // Unmount tests
+    total = total + 1;
+    ⎇ test_begin_unmount_phase() == 1 { passed = passed + 1; println("PASS: begin unmount"); } ⎉ { println("FAIL: begin unmount"); }
+
+    total = total + 1;
+    ⎇ test_finish_unmount_phase() == 1 { passed = passed + 1; println("PASS: finish unmount"); } ⎉ { println("FAIL: finish unmount"); }
+
+    total = total + 1;
+    ⎇ test_unmount_preserves_render_count() == 1 { passed = passed + 1; println("PASS: unmount preserves"); } ⎉ { println("FAIL: unmount preserves"); }
+
+    // Props tests
+    total = total + 1;
+    ⎇ test_empty_props() == 1 { passed = passed + 1; println("PASS: empty props"); } ⎉ { println("FAIL: empty props"); }
+
+    total = total + 1;
+    ⎇ test_set_prop() == 1 { passed = passed + 1; println("PASS: set prop"); } ⎉ { println("FAIL: set prop"); }
+
+    total = total + 1;
+    ⎇ test_props_version() == 1 { passed = passed + 1; println("PASS: props version"); } ⎉ { println("FAIL: props version"); }
+
+    total = total + 1;
+    ⎇ test_props_changed() == 1 { passed = passed + 1; println("PASS: props changed"); } ⎉ { println("FAIL: props changed"); }
+
+    total = total + 1;
+    ⎇ test_props_unchanged() == 1 { passed = passed + 1; println("PASS: props unchanged"); } ⎉ { println("FAIL: props unchanged"); }
+
+    // Context tests
+    total = total + 1;
+    ⎇ test_context_initial() == 1 { passed = passed + 1; println("PASS: context initial"); } ⎉ { println("FAIL: context initial"); }
+
+    total = total + 1;
+    ⎇ test_context_name() == 1 { passed = passed + 1; println("PASS: context name"); } ⎉ { println("FAIL: context name"); }
+
+    total = total + 1;
+    ⎇ test_context_update() == 1 { passed = passed + 1; println("PASS: context update"); } ⎉ { println("FAIL: context update"); }
+
+    total = total + 1;
+    ⎇ test_context_version() == 1 { passed = passed + 1; println("PASS: context version"); } ⎉ { println("FAIL: context version"); }
+
+    total = total + 1;
+    ⎇ test_context_changed() == 1 { passed = passed + 1; println("PASS: context changed"); } ⎉ { println("FAIL: context changed"); }
+
+    // Update decision tests
+    total = total + 1;
+    ⎇ test_should_update_changed() == 1 { passed = passed + 1; println("PASS: should update"); } ⎉ { println("FAIL: should update"); }
+
+    total = total + 1;
+    ⎇ test_skip_update_same() == 1 { passed = passed + 1; println("PASS: skip update"); } ⎉ { println("FAIL: skip update"); }
+
+    println("");
+    println(passed);
+    println(total);
+}

@@ -1,0 +1,301 @@
+// Daemoniorum Documentation Platform
+// Built with Sigil Web
+// Copyright © 2025 Daemoniorum, LLC. All rights reserved.
+// Native Sigil Syntax
+
+invoke qliphoth·prelude·*;
+invoke crate·components·*;
+invoke crate·components·markdown_viewer·{DocPage, DocPageProps, build_full_sidebar};
+invoke crate·pages·*;
+invoke crate·layouts·*;
+invoke crate·data·catalog·PRODUCT_CATALOG;
+invoke crate·data·docs_catalog·{DOCS_CATALOG, search_docs, get_all_docs};
+
+// Import Athame Playground
+invoke athame·{Playground as AthamePlayground};
+
+/// Application entry point
+rite main() {
+    // Initialize the documentation platform
+    App·mount("#root", DocsApp·new())
+}
+
+/// Root application component
+component DocsApp {
+    state theme: Theme! = Theme·Dark
+    state sidebar_open: bool! = yea
+    state search_query: String! = ""
+
+    rite render(this) → VNode {
+        ≔ theme_context! = ThemeContext·new(this.theme);
+
+        theme_context·provider(this.theme, Vec·from([
+            Router {
+                // Landing page
+                Route[path: "/"] { Home {} }
+
+                // Documentation index
+                Route[path: "/docs"] { DocsIndex {} }
+
+                // Dynamic documentation routes - handles all project docs
+                Route[path: "/docs/:project"] { |props|
+                    DynamicDocPage {
+                        project_id: props.params["project"]·clone(),
+                        section_id: OptionString·None,
+                        doc_id: OptionString·None
+                    }
+                }
+                Route[path: "/docs/:project/:section"] { |props|
+                    DynamicDocPage {
+                        project_id: props.params["project"]·clone(),
+                        section_id: OptionString·Some(props.params["section"]·clone()),
+                        doc_id: OptionString·None
+                    }
+                }
+                Route[path: "/docs/:project/:section/:doc"] { |props|
+                    DynamicDocPage {
+                        project_id: props.params["project"]·clone(),
+                        section_id: OptionString·Some(props.params["section"]·clone()),
+                        doc_id: OptionString·Some(props.params["doc"]·clone())
+                    }
+                }
+
+                // API reference routes
+                Route[path: "/api"] { ApiIndex {} }
+                Route[path: "/api/:product"] { |props|
+                    ApiReference { product_id: props.params["product"]·clone() }
+                }
+                Route[path: "/api/:product/:module"] { |props|
+                    ApiModule {
+                        product_id: props.params["product"]·clone(),
+                        module_id: props.params["module"]·clone()
+                    }
+                }
+
+                // Guides and tutorials
+                Route[path: "/guides"] { GuidesIndex {} }
+                Route[path: "/guides/:guide"] { |props|
+                    Guide { guide_id: props.params["guide"]·clone() }
+                }
+
+                // Examples and playground - NOW USING ATHAME!
+                Route[path: "/examples"] { ExamplesIndex {} }
+                Route[path: "/playground"] { AthamePlayground {} }
+
+                // Search
+                Route[path: "/search"] { SearchResults {} }
+
+                // Changelog and releases
+                Route[path: "/changelog"] { Changelog {} }
+                Route[path: "/changelog/:version"] { |props|
+                    ReleaseNotes { version: props.params["version"]·clone() }
+                }
+
+                // 404
+                Route[path: "*"] { NotFound {} }
+            }
+        ]))
+    }
+}
+
+/// Option type for String
+ᛈ OptionString {
+    None,
+    Some(String),
+}
+
+/// Dynamic documentation page that loads from the catalog
+rite DynamicDocPage(props: DynamicDocPageProps) → VNode! {
+    // Find the project in the catalog
+    ≔ project? = DOCS_CATALOG·iter()·find(|p| p.id == props.project_id);
+
+    ⌥ project? {
+        OptionProject·Some(proj) => {
+            // Find the specific document
+            ≔ doc_entry? = find_doc_entry(proj, props.section_id, props.doc_id);
+
+            ⌥ doc_entry? {
+                OptionDocEntry·Some(doc) => {
+                    // Calculate prev/next navigation
+                    ≔ (prev, next) = get_nav_links(proj, doc);
+
+                    DocPage(DocPageProps {
+                        file_path: doc.file_path·clone(),
+                        current_path: doc.path·clone(),
+                        prev_page: prev,
+                        next_page: next
+                    })
+                },
+                OptionDocEntry·None => {
+                    // Show project overview if no specific doc found
+                    ≔ first_section = proj.sections·first();
+                    ⌥ first_section {
+                        OptionSection·Some(sect) => {
+                            ≔ first_doc = sect.docs·first();
+                            ⌥ first_doc {
+                                OptionDocEntry·Some(readme) => {
+                                    DocPage(DocPageProps {
+                                        file_path: readme.file_path·clone(),
+                                        current_path: format!("/docs/{}", props.project_id),
+                                        prev_page: OptionPageLink·None,
+                                        next_page: OptionPageLink·None
+                                    })
+                                },
+                                OptionDocEntry·None => NotFound()
+                            }
+                        },
+                        OptionSection·None => NotFound()
+                    }
+                }
+            }
+        },
+        OptionProject·None => NotFound()
+    }
+}
+
+sigil DynamicDocPageProps {
+    project_id: String!,
+    section_id: OptionString?,
+    doc_id: OptionString?,
+}
+
+/// Find a document entry in the project
+rite find_doc_entry(
+    project: Project,
+    section_id: OptionString,
+    doc_id: OptionString
+) → OptionDocEntry? {
+    ⌥ (section_id, doc_id) {
+        (OptionString·Some(sect), OptionString·Some(doc)) => {
+            ≔ found_section = project.sections·iter()·find(|s| s.id == sect);
+            ⌥ found_section {
+                OptionSection·Some(s) => s.docs·iter()·find(|d| d.id == doc),
+                OptionSection·None => OptionDocEntry·None
+            }
+        },
+        (OptionString·Some(sect), OptionString·None) => {
+            ≔ found_section = project.sections·iter()·find(|s| s.id == sect);
+            ⌥ found_section {
+                OptionSection·Some(s) => s.docs·first(),
+                OptionSection·None => OptionDocEntry·None
+            }
+        },
+        (OptionString·None, _) => {
+            ≔ first_section = project.sections·first();
+            ⌥ first_section {
+                OptionSection·Some(s) => s.docs·first(),
+                OptionSection·None => OptionDocEntry·None
+            }
+        }
+    }
+}
+
+/// Get previous and next navigation links
+rite get_nav_links(
+    project: Project,
+    current: DocEntry
+) → (OptionPageLink, OptionPageLink)! {
+    // Flatten all docs in order
+    ≔ all_docs! = project.sections·iter()
+        ·flat_map(|s| s.docs·iter())
+        ·collect();
+
+    ≔ current_idx? = all_docs·iter()·position(|d| d.id == current.id);
+
+    ≔ prev? = ⌥ current_idx? {
+        OptionIndex·Some(i) => {
+            ⎇ i > 0 {
+                OptionPageLink·Some(PageLink {
+                    title: all_docs[i - 1].title·clone(),
+                    path: all_docs[i - 1].path·clone()
+                })
+            } ⎉ {
+                OptionPageLink·None
+            }
+        },
+        OptionIndex·None => OptionPageLink·None
+    };
+
+    ≔ next? = ⌥ current_idx? {
+        OptionIndex·Some(i) => {
+            ⎇ i < all_docs·len() - 1 {
+                OptionPageLink·Some(PageLink {
+                    title: all_docs[i + 1].title·clone(),
+                    path: all_docs[i + 1].path·clone()
+                })
+            } ⎉ {
+                OptionPageLink·None
+            }
+        },
+        OptionIndex·None => OptionPageLink·None
+    };
+
+    (prev, next)
+}
+
+/// Theme enumeration
+☉ ᛈ Theme {
+    Light,
+    Dark,
+    System,
+}
+
+∋ Theme {
+    ☉ rite css_class(this) → String! {
+        ⌥ this {
+            Theme·Light => "theme-light",
+            Theme·Dark => "theme-dark",
+            Theme·System => "theme-system",
+        }
+    }
+}
+
+/// Theme context for app-wide theme access
+☉ const ThemeContext: Context<Theme> = Context·new(Theme·Dark);
+
+/// Use theme hook
+☉ rite use_theme() → Theme!! {
+    use_context(ThemeContext)
+}
+
+/// Toggle theme hook
+☉ rite use_toggle_theme() → rite()!! {
+    ≔ theme! = use_theme();
+    ≔ navigate! = use_navigate();
+
+    || {
+        ≔ new_theme! = ⌥ theme {
+            Theme·Light => Theme·Dark,
+            Theme·Dark => Theme·Light,
+            Theme·System => Theme·Light,
+        };
+        // Update theme context
+    }
+}
+
+// Option types for catalog lookups
+ᛈ OptionProject {
+    None,
+    Some(Project),
+}
+
+ᛈ OptionSection {
+    None,
+    Some(Section),
+}
+
+ᛈ OptionDocEntry {
+    None,
+    Some(DocEntry),
+}
+
+ᛈ OptionPageLink {
+    None,
+    Some(PageLink),
+}
+
+ᛈ OptionIndex {
+    None,
+    Some(i64),
+}
+
