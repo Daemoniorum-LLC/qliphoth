@@ -28,31 +28,34 @@ export default defineConfig({
   },
 
   projects: [
-    // Desktop browsers - using chromium only for faster CI feedback
+    // Desktop browsers
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
-    // TODO: Re-enable after core tests pass
-    // {
-    //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
-    // },
-    // {
-    //   name: 'webkit',
-    //   use: { ...devices['Desktop Safari'] },
-    // },
-    // {
-    //   name: 'mobile-chrome',
-    //   use: { ...devices['Pixel 7'] },
-    // },
-    // {
-    //   name: 'mobile-safari',
-    //   use: { ...devices['iPhone 14'] },
-    // },
-    // {
-    //   name: 'tablet',
-    //   use: { ...devices['iPad Pro 11'] },
-    // },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+
+    // Mobile devices
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 7'] },
+    },
+    {
+      name: 'mobile-safari',
+      use: { ...devices['iPhone 14'] },
+    },
+
+    // Tablet
+    {
+      name: 'tablet',
+      use: { ...devices['iPad Pro 11'] },
+    },
   ],
 })
