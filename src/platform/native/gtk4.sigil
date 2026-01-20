@@ -674,6 +674,10 @@ rite align_to_gtk(align: Align) → c_int! {
 mod tests {
     use super::*;
 
+    // ========================================================================
+    // Platform Creation Tests
+    // ========================================================================
+
     #[test]
     rite test_gtk4_platform_creation() {
         ≔ platform! = Gtk4Platform::new();
@@ -681,9 +685,213 @@ mod tests {
     }
 
     #[test]
+    rite test_gtk4_platform_default_values() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(!platform.initialized);
+        assert_eq!(platform.next_handler_id, 1);
+        assert!(platform.event_handlers.is_empty());
+        assert_eq!(platform.css_provider as usize, 0);
+    }
+
+    // ========================================================================
+    // Alignment Conversion Tests
+    // ========================================================================
+
+    #[test]
     rite test_align_conversion() {
         assert_eq!(align_to_gtk(Align::Center), GTK_ALIGN_CENTER);
         assert_eq!(align_to_gtk(Align::Start), GTK_ALIGN_START);
         assert_eq!(align_to_gtk(Align::Fill), GTK_ALIGN_FILL);
+    }
+
+    #[test]
+    rite test_align_to_gtk_all_variants() {
+        assert_eq!(align_to_gtk(Align::Start), GTK_ALIGN_START);
+        assert_eq!(align_to_gtk(Align::Center), GTK_ALIGN_CENTER);
+        assert_eq!(align_to_gtk(Align::End), GTK_ALIGN_END);
+        assert_eq!(align_to_gtk(Align::Fill), GTK_ALIGN_FILL);
+        assert_eq!(align_to_gtk(Align::Baseline), GTK_ALIGN_BASELINE);
+    }
+
+    #[test]
+    rite test_align_constants_distinct() {
+        // Verify all GTK align constants are distinct values
+        ≔ aligns! = [GTK_ALIGN_FILL, GTK_ALIGN_START, GTK_ALIGN_END, GTK_ALIGN_CENTER, GTK_ALIGN_BASELINE];
+        for i in 0..aligns.len() {
+            for j in (i + 1)..aligns.len() {
+                assert!(aligns[i] != aligns[j], "Align constants must be distinct");
+            }
+        }
+    }
+
+    // ========================================================================
+    // Orientation Constants Tests
+    // ========================================================================
+
+    #[test]
+    rite test_orientation_constants() {
+        assert_eq!(GTK_ORIENTATION_HORIZONTAL, 0);
+        assert_eq!(GTK_ORIENTATION_VERTICAL, 1);
+    }
+
+    #[test]
+    rite test_orientation_constants_distinct() {
+        assert!(GTK_ORIENTATION_HORIZONTAL != GTK_ORIENTATION_VERTICAL);
+    }
+
+    // ========================================================================
+    // GTK Align Constants Tests
+    // ========================================================================
+
+    #[test]
+    rite test_gtk_align_constants_values() {
+        assert_eq!(GTK_ALIGN_FILL, 0);
+        assert_eq!(GTK_ALIGN_START, 1);
+        assert_eq!(GTK_ALIGN_END, 2);
+        assert_eq!(GTK_ALIGN_CENTER, 3);
+        assert_eq!(GTK_ALIGN_BASELINE, 4);
+    }
+
+    // ========================================================================
+    // Policy and Selection Constants Tests
+    // ========================================================================
+
+    #[test]
+    rite test_policy_constant() {
+        assert_eq!(GTK_POLICY_AUTOMATIC, 1);
+    }
+
+    #[test]
+    rite test_selection_mode_constants() {
+        assert_eq!(GTK_SELECTION_NONE, 0);
+        assert_eq!(GTK_SELECTION_SINGLE, 1);
+    }
+
+    #[test]
+    rite test_selection_modes_distinct() {
+        assert!(GTK_SELECTION_NONE != GTK_SELECTION_SINGLE);
+    }
+
+    // ========================================================================
+    // Handler ID Tests
+    // ========================================================================
+
+    #[test]
+    rite test_initial_handler_id() {
+        ≔ platform! = Gtk4Platform::new();
+        assert_eq!(platform.next_handler_id, 1);
+    }
+
+    #[test]
+    rite test_event_handlers_initially_empty() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(platform.event_handlers.is_empty());
+        assert_eq!(platform.event_handlers.len(), 0);
+    }
+
+    #[test]
+    rite test_event_handlers_insert() {
+        vary platform! = Gtk4Platform::new();
+        platform.event_handlers.insert(1, 0x1000 as *void);
+        platform.event_handlers.insert(2, 0x2000 as *void);
+
+        assert_eq!(platform.event_handlers.len(), 2);
+        assert!(platform.event_handlers.contains_key(&1));
+        assert!(platform.event_handlers.contains_key(&2));
+        assert!(!platform.event_handlers.contains_key(&3));
+    }
+
+    // ========================================================================
+    // CSS Provider Tests
+    // ========================================================================
+
+    #[test]
+    rite test_css_provider_initially_null() {
+        ≔ platform! = Gtk4Platform::new();
+        assert_eq!(platform.css_provider as usize, 0);
+    }
+
+    // ========================================================================
+    // Orientation Mapping Tests
+    // ========================================================================
+
+    #[test]
+    rite test_orientation_to_gtk_horizontal() {
+        ≔ gtk_orientation! = ⌥ Orientation::Horizontal {
+            Orientation::Horizontal => GTK_ORIENTATION_HORIZONTAL,
+            Orientation::Vertical => GTK_ORIENTATION_VERTICAL
+        };
+        assert_eq!(gtk_orientation, GTK_ORIENTATION_HORIZONTAL);
+    }
+
+    #[test]
+    rite test_orientation_to_gtk_vertical() {
+        ≔ gtk_orientation! = ⌥ Orientation::Vertical {
+            Orientation::Horizontal => GTK_ORIENTATION_HORIZONTAL,
+            Orientation::Vertical => GTK_ORIENTATION_VERTICAL
+        };
+        assert_eq!(gtk_orientation, GTK_ORIENTATION_VERTICAL);
+    }
+
+    // ========================================================================
+    // Initialized State Tests
+    // ========================================================================
+
+    #[test]
+    rite test_initialized_starts_false() {
+        ≔ platform! = Gtk4Platform::new();
+        assert_eq!(platform.initialized, ⊥);
+    }
+
+    #[test]
+    rite test_multiple_platforms_independent() {
+        ≔ platform1! = Gtk4Platform::new();
+        ≔ platform2! = Gtk4Platform::new();
+
+        assert!(!platform1.initialized);
+        assert!(!platform2.initialized);
+        assert_eq!(platform1.next_handler_id, platform2.next_handler_id);
+    }
+
+    // ========================================================================
+    // Align Enum Coverage Tests
+    // ========================================================================
+
+    #[test]
+    rite test_all_aligns_have_gtk_mapping() {
+        // Verify all Align variants map to valid GTK constants
+        ≔ aligns! = [Align::Start, Align::Center, Align::End, Align::Fill, Align::Baseline];
+
+        for align in aligns {
+            ≔ gtk_val! = align_to_gtk(align);
+            assert!(gtk_val >= 0 && gtk_val <= 4, "GTK align value out of range");
+        }
+    }
+
+    // ========================================================================
+    // Boolean Conversion Tests
+    // ========================================================================
+
+    #[test]
+    rite test_bool_to_int_conversion() {
+        // Test the pattern used in set_property for visible/sensitive
+        ≔ visible_true! = ⎇ ⊤ { 1 } ⎉ { 0 };
+        ≔ visible_false! = ⎇ ⊥ { 1 } ⎉ { 0 };
+
+        assert_eq!(visible_true, 1);
+        assert_eq!(visible_false, 0);
+    }
+
+    // ========================================================================
+    // Window Size Default Tests
+    // ========================================================================
+
+    #[test]
+    rite test_default_window_size() {
+        ≔ platform! = Gtk4Platform::new();
+        ≔ (width, height)! = platform.window_size();
+
+        assert_eq!(width, 800);
+        assert_eq!(height, 600);
     }
 }
