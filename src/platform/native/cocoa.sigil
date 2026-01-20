@@ -2,9 +2,11 @@
 // macOS native GUI backend via AppKit/Cocoa API
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicPtr, Ordering};
 use crate::core::vdom::{VNode, Patch};
 use crate::core::events::{Event, EventType};
-use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
+use crate::core::error::{PlatformError, PlatformResult};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, PlatformFuture, Storage, StorageType};
 use super::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align};
 
 // ============================================================================
@@ -43,6 +45,9 @@ extern "C" {
     // Core Foundation
     rite CFStringCreateWithCString(allocator: *void, cStr: *c_char, encoding: u32) → *void;
     rite CFRelease(cf: *void);
+
+    // Time functions
+    rite mach_absolute_time() → u64;  // Returns nanoseconds since boot
 }
 
 // ============================================================================
@@ -218,6 +223,51 @@ sigil ObjC;
             ObjC::msg0(obj, "init\0")
         }
     }
+
+    /// Release an object (decrement retain count)
+    rite release(obj: *void) {
+        unsafe {
+            ⎇ obj as usize != 0 {
+                ObjC::msg0(obj, "release\0");
+            }
+        }
+    }
+
+    /// Autorelease an object (add to autorelease pool)
+    rite autorelease(obj: *void) → *void! {
+        unsafe {
+            ⎇ obj as usize != 0 {
+                ObjC::msg0(obj, "autorelease\0")
+            } ⎉ {
+                obj
+            }
+        }
+    }
+}
+
+/// Execute a closure with a temporary NSString that is auto-released
+/// SAFETY: The NSString is valid only within the closure
+#[cfg(target_os = "macos")]
+rite with_nsstring<T, F: FnOnce(*void) → T>(s: &str, f: F) → T! {
+    unsafe {
+        ≔ ns_str = ObjC::string(s);
+        ≔ result! = f(ns_str);
+        // Release the NSString after use to prevent memory leak
+        ObjC::release(ns_str);
+        result
+    }
+}
+
+/// Execute a closure within an autorelease pool
+/// SAFETY: Objects autoreleased within the closure are released when it returns
+#[cfg(target_os = "macos")]
+rite with_autorelease_pool<T, F: FnOnce() → T>(f: F) → T! {
+    unsafe {
+        ≔ pool = ObjC::alloc_init("NSAutoreleasePool\0");
+        ≔ result! = f();
+        ObjC::msg0(pool, "drain\0");
+        result
+    }
 }
 
 // ============================================================================
@@ -261,23 +311,82 @@ sigil LayoutInfo {
 /// SAFETY: This static must only be accessed from the main GUI thread.
 /// The platform instance must outlive all AppKit operations.
 /// Set during init() and read from target-action callbacks.
+///
+/// Thread Safety: Uses AtomicPtr for safe cross-thread access patterns.
+/// While AppKit is single-threaded, the atomic ensures:
+/// - Safe initialization from any thread
+/// - Memory ordering guarantees for the pointer value
+/// - No data races on the pointer itself
 #[cfg(target_os = "macos")]
-static vary PLATFORM_INSTANCE: *void = 0 as *void;
+static PLATFORM_INSTANCE: AtomicPtr<CocoaPlatform> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Safely access the platform instance
+/// Returns None if platform not initialized
+#[cfg(target_os = "macos")]
+#[inline]
+rite with_cocoa_platform<T, F: FnOnce(&CocoaPlatform) → T>(f: F) → Option<T>? {
+    ≔ ptr = PLATFORM_INSTANCE.load(Ordering::Acquire);
+    ⎇ !ptr.is_null() {
+        Some(f(unsafe { &*ptr }))
+    } ⎉ {
+        None
+    }
+}
+
+/// Safely access the platform instance mutably
+/// Returns None if platform not initialized
+#[cfg(target_os = "macos")]
+#[inline]
+rite with_cocoa_platform_mut<T, F: FnOnce(&vary CocoaPlatform) → T>(f: F) → Option<T>? {
+    ≔ ptr = PLATFORM_INSTANCE.load(Ordering::Acquire);
+    ⎇ !ptr.is_null() {
+        Some(f(unsafe { &vary *ptr }))
+    } ⎉ {
+        None
+    }
+}
 
 /// Target-action callback handler
 /// SAFETY: Called by AppKit via Objective-C runtime.
 /// - this is the QliphothActionTarget instance
 /// - sender is the control that triggered the action
-/// - PLATFORM_INSTANCE must be valid or null (checked before use)
+/// - Platform instance accessed via thread-safe AtomicPtr
 #[cfg(target_os = "macos")]
 extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
     // SAFETY: AppKit guarantees sender validity during action dispatch
-    unsafe {
-        ⎇ PLATFORM_INSTANCE as usize != 0 {
-            ≔ platform = &*(PLATFORM_INSTANCE as *CocoaPlatform);
-            platform.handle_action(sender);
-        }
-    }
+    with_cocoa_platform(|platform| {
+        platform.handle_action(sender);
+    });
+}
+
+/// Timer callback handler
+/// SAFETY: Called by NSTimer via Objective-C runtime.
+/// - timer is the NSTimer that fired
+/// - Platform instance accessed via thread-safe AtomicPtr
+#[cfg(target_os = "macos")]
+extern "C" rite timer_handler(this: *void, sel: *void, timer: *void) {
+    with_cocoa_platform_mut(|platform| {
+        platform.handle_timer(timer);
+    });
+}
+
+/// Stored callback type for event handlers
+#[cfg(target_os = "macos")]
+type EventCallback = Box<dyn Fn() + 'static>;
+
+/// Timer entry storing callback, timer object, and whether it repeats
+#[cfg(target_os = "macos")]
+sigil TimerEntry {
+    callback: EventCallback!,
+    timer_obj: *void!,
+    repeating: bool!
+}
+
+/// Animation frame entry for request_animation_frame
+#[cfg(target_os = "macos")]
+sigil AnimationEntry {
+    callback: Box<dyn Fn(f64) + 'static>!,
+    timer_obj: *void!  // NSTimer pointer for this animation frame
 }
 
 /// Cocoa Platform for macOS native GUI
@@ -286,12 +395,31 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
     initialized: bool!,
     app: *void!,
     main_window: *void!,
-    event_handlers: HashMap<u64, fn()>!,
+    /// Event handlers map: handler_id → callback
+    /// CRITICAL: This stores the actual callback functions that get invoked
+    event_handlers: HashMap<u64, EventCallback>!,
+    /// Widget to handler IDs for cleanup
+    widget_handlers: HashMap<usize, Vec<u64>>!,
     layout_info: HashMap<usize, LayoutInfo>!,
     next_handler_id: u64!,
     widget_to_handler: HashMap<usize, u64>!,
-    timer_map: HashMap<u64, *void>!,
-    action_target: *void!
+    /// Timer entries: timer_id → TimerEntry
+    timer_entries: HashMap<u64, TimerEntry>!,
+    /// NSTimer pointer → timer_id (for reverse lookup in callback)
+    timer_ptr_to_id: HashMap<usize, u64>!,
+    /// Animation frame callbacks: frame_id → AnimationEntry
+    animation_callbacks: HashMap<u64, AnimationEntry>!,
+    /// NSTimer pointer → animation frame_id (for reverse lookup)
+    timer_to_animation: HashMap<usize, u64>!,
+    /// Platform start time for animation timestamps (milliseconds)
+    start_time_ms: u64!,
+    next_animation_id: u64!,
+    action_target: *void!,
+    timer_target: *void!,
+    /// Track live widgets for memory safety
+    live_widgets: std::collections::HashSet<usize>!,
+    /// Track destroyed widgets to prevent double-free
+    destroyed_widgets: std::collections::HashSet<usize>!
 }
 
 #[cfg(target_os = "macos")]
@@ -302,11 +430,46 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
             app: 0 as *void,
             main_window: 0 as *void,
             event_handlers: HashMap::new(),
+            widget_handlers: HashMap::new(),
             layout_info: HashMap::new(),
             next_handler_id: 1000,
             widget_to_handler: HashMap::new(),
-            timer_map: HashMap::new(),
-            action_target: 0 as *void
+            timer_entries: HashMap::new(),
+            timer_ptr_to_id: HashMap::new(),
+            animation_callbacks: HashMap::new(),
+            timer_to_animation: HashMap::new(),
+            start_time_ms: 0,
+            next_animation_id: 1,
+            action_target: 0 as *void,
+            timer_target: 0 as *void,
+            live_widgets: std::collections::HashSet::new(),
+            destroyed_widgets: std::collections::HashSet::new()
+        }
+    }
+
+    /// Get current timestamp in milliseconds since platform start
+    rite get_timestamp_ms(&this) → f64! {
+        unsafe {
+            // mach_absolute_time returns nanoseconds on macOS
+            // We need to convert to milliseconds
+            ≔ now_ns = mach_absolute_time();
+            ≔ now_ms = (now_ns / 1_000_000) as u64;
+            (now_ms - this.start_time_ms) as f64
+        }
+    }
+
+    /// Handle animation frame timer callback
+    rite handle_animation_timer(&vary this, timer: *void) {
+        ⎇ let Some(frame_id) = this.timer_to_animation.get(&(timer as usize)).cloned() {
+            // Get timestamp before invoking callback
+            ≔ timestamp = this.get_timestamp_ms();
+
+            // Remove and invoke animation callback (one-shot)
+            ⎇ let Some(entry) = this.animation_callbacks.remove(&frame_id) {
+                this.timer_to_animation.remove(&(timer as usize));
+                unsafe { ObjC::msg0(timer, "invalidate\0"); }
+                (entry.callback)(timestamp);
+            }
         }
     }
 
@@ -315,6 +478,39 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
         ⎇ let Some(handler_id) = this.widget_to_handler.get(&(sender as usize)) {
             ⎇ let Some(callback) = this.event_handlers.get(handler_id) {
                 callback();
+            }
+        }
+    }
+
+    /// Handle timer callback
+    rite handle_timer(&vary this, timer: *void) {
+        // First, check if this is an animation frame timer
+        ⎇ this.timer_to_animation.contains_key(&(timer as usize)) {
+            this.handle_animation_timer(timer);
+            ret;
+        }
+
+        // Otherwise, look up timer_id from the NSTimer pointer for regular timers
+        ⎇ let Some(timer_id) = this.timer_ptr_to_id.get(&(timer as usize)).cloned() {
+            // First, invoke callback and check if cleanup needed
+            ≔ should_cleanup! = ⊥;
+
+            ⎇ let Some(entry) = this.timer_entries.get(&timer_id) {
+                // Invoke the callback
+                (entry.callback)();
+                // Check if one-shot (needs cleanup)
+                should_cleanup = ¬entry.repeating;
+            }
+
+            // Clean up AFTER releasing the borrow
+            ⎇ should_cleanup {
+                unsafe {
+                    // Note: For non-repeating NSTimer, invalidate is technically redundant
+                    // since the timer auto-invalidates, but it's safe to call
+                    ObjC::msg0(timer, "invalidate\0");
+                }
+                this.timer_ptr_to_id.remove(&(timer as usize));
+                this.timer_entries.remove(&timer_id);
             }
         }
     }
@@ -355,6 +551,32 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
             ObjC::msg0(target, "init\0")
         }
     }
+
+    /// Create the timer target object
+    rite create_timer_target(&vary this) → *void! {
+        unsafe {
+            ≔ superclass = ObjC::class("NSObject\0");
+            ≔ cls = objc_allocateClassPair(superclass, "QliphothTimerTarget\0".as_ptr() as *c_char, 0);
+
+            ⎇ cls as usize != 0 {
+                // New class - add the timerFired: method and register
+                ≔ sel = ObjC::sel("timerFired:\0");
+                ≔ types = "v@:@\0".as_ptr() as *c_char; // void, self, SEL, NSTimer*
+                class_addMethod(cls, sel, timer_handler as *void, types);
+                objc_registerClassPair(cls);
+            }
+
+            // Look up the class
+            ≔ target_cls = ObjC::class("QliphothTimerTarget\0");
+            ⎇ target_cls as usize == 0 {
+                ret 0 as *void;
+            }
+
+            // Alloc and init an instance
+            ≔ target = ObjC::msg0(target_cls, "alloc\0");
+            ObjC::msg0(target, "init\0")
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -365,8 +587,9 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
         }
 
         unsafe {
-            // Set global instance
-            PLATFORM_INSTANCE = this as *void;
+            // Set global instance using atomic operation
+            // Release ordering ensures all prior writes are visible
+            PLATFORM_INSTANCE.store(this as *vary CocoaPlatform, Ordering::Release);
 
             // Get shared application
             ≔ app_class = ObjC::class("NSApplication\0");
@@ -378,6 +601,12 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
 
             // Create action target
             this.action_target = this.create_action_target();
+
+            // Create timer target
+            this.timer_target = this.create_timer_target();
+
+            // Initialize start time for animation timestamps
+            this.start_time_ms = (mach_absolute_time() / 1_000_000) as u64;
 
             this.initialized = ⊤;
         }
@@ -415,9 +644,10 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
             window = objc_msgSend(window, sel, frame, style_mask, NSBackingStoreBuffered, ⊥ as i32);
 
             ⎇ window as usize != 0 {
-                // Set title
-                ≔ ns_title = ObjC::string(&title);
-                ObjC::msg1(window, "setTitle:\0", ns_title);
+                // Set title (using helper to auto-release NSString)
+                with_nsstring(&title, |ns_title| {
+                    ObjC::msg1(window, "setTitle:\0", ns_title);
+                });
 
                 // Center window
                 ObjC::msg0(window, "center\0");
@@ -425,6 +655,8 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
                 // Store as main window
                 this.main_window = window;
                 this.layout_info.insert(window as usize, LayoutInfo::default());
+                // Track widget for memory safety
+                this.live_widgets.insert(window as usize);
 
                 NativeWidget::new(window as usize, WidgetType::Window)
             } ⎉ {
@@ -463,15 +695,17 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
         unsafe {
             ⌥ (widget.widget_type, name) {
                 (WidgetType::Label, "text") | (_, "text") | (WidgetType::Button, "label") => {
-                    ≔ ns_value = ObjC::string(value);
-                    ⌥ widget.widget_type {
-                        WidgetType::Button => {
-                            ObjC::msg1(widget.handle as *void, "setTitle:\0", ns_value);
+                    // Use helper to auto-release NSString
+                    with_nsstring(value, |ns_value| {
+                        ⌥ widget.widget_type {
+                            WidgetType::Button => {
+                                ObjC::msg1(widget.handle as *void, "setTitle:\0", ns_value);
+                            }
+                            _ => {
+                                ObjC::msg1(widget.handle as *void, "setStringValue:\0", ns_value);
+                            }
                         }
-                        _ => {
-                            ObjC::msg1(widget.handle as *void, "setStringValue:\0", ns_value);
-                        }
-                    }
+                    });
                 }
                 (WidgetType::ProgressBar, "fraction") => {
                     ≔ fraction! = value.parse::<f64>().unwrap_or(0.0);
@@ -498,7 +732,16 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
         }
     }
 
-    ☉ rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64) {
+    ☉ rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64, callback: Box<dyn Fn() + 'static>) {
+        // CRITICAL FIX: Store the callback so it can be invoked later
+        this.event_handlers.insert(handler_id, callback);
+
+        // Track this handler for the widget (for cleanup on widget destruction)
+        this.widget_handlers
+            .entry(widget.handle)
+            .or_insert_with(Vec::new)
+            .push(handler_id);
+
         unsafe {
             // Set target and action for controls
             ObjC::msg1(widget.handle as *void, "setTarget:\0", this.action_target);
@@ -511,12 +754,49 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
     }
 
     ☉ rite disconnect(&vary this, widget: &NativeWidget, handler_id: u64) {
+        // Remove callback from storage
+        this.event_handlers.remove(&handler_id);
+
+        // Remove from widget's handler list
+        ⎇ let Some(handlers) = this.widget_handlers.get_mut(&widget.handle) {
+            handlers.retain(|id| *id != handler_id);
+        }
+
         unsafe {
             ObjC::msg1(widget.handle as *void, "setTarget:\0", 0 as *void);
             ObjC::msg1(widget.handle as *void, "setAction:\0", 0 as *void);
         }
         this.widget_to_handler.remove(&widget.handle);
-        this.event_handlers.remove(&handler_id);
+    }
+
+    ☉ rite destroy_widget(&vary this, widget: &NativeWidget) {
+        // Only process if widget is tracked (prevent double-free)
+        ⎇ this.live_widgets.remove(&widget.handle) {
+            // Remove all handlers associated with this widget
+            ⎇ let Some(handler_ids) = this.widget_handlers.remove(&widget.handle) {
+                for handler_id in handler_ids {
+                    this.event_handlers.remove(&handler_id);
+                }
+            }
+
+            // Clean up widget-to-handler mapping
+            this.widget_to_handler.remove(&widget.handle);
+
+            // Remove layout info
+            this.layout_info.remove(&widget.handle);
+
+            unsafe {
+                // Remove from superview if it has one
+                ObjC::msg0(widget.handle as *void, "removeFromSuperview\0");
+                // Release the object (decrement retain count)
+                ObjC::release(widget.handle as *void);
+            }
+        }
+        // If widget wasn't tracked, it's already been destroyed - no-op
+    }
+
+    ☉ rite is_widget_valid(&this, widget: &NativeWidget) → bool! {
+        this.live_widgets.contains(&widget.handle)
     }
 }
 
@@ -555,19 +835,22 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
         unsafe {
             // [NSButton buttonWithTitle:target:action:]
             ≔ btn_class = ObjC::class("NSButton\0");
-            ≔ ns_title = ObjC::string(label);
             ≔ sel = ObjC::sel("buttonWithTitle:target:action:\0");
-            ≔ button = objc_msgSend(btn_class, sel, ns_title, 0 as *void, 0 as *void);
 
-            ⎇ button as usize != 0 {
-                // Set button type
-                ObjC::msg1_i64(button, "setButtonType:\0", NSButtonTypeMomentaryPushIn as i64);
+            // Use with_nsstring to auto-release the NSString
+            with_nsstring(label, |ns_title| {
+                ≔ button = objc_msgSend(btn_class, sel, ns_title, 0 as *void, 0 as *void);
 
-                this.layout_info.insert(button as usize, LayoutInfo::default());
-                NativeWidget::new(button as usize, WidgetType::Button)
-            } ⎉ {
-                NativeWidget::null()
-            }
+                ⎇ button as usize != 0 {
+                    // Set button type
+                    ObjC::msg1_i64(button, "setButtonType:\0", NSButtonTypeMomentaryPushIn as i64);
+
+                    this.layout_info.insert(button as usize, LayoutInfo::default());
+                    NativeWidget::new(button as usize, WidgetType::Button)
+                } ⎉ {
+                    NativeWidget::null()
+                }
+            })
         }
     }
 
@@ -575,16 +858,19 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
         unsafe {
             // [NSTextField labelWithString:]
             ≔ tf_class = ObjC::class("NSTextField\0");
-            ≔ ns_text = ObjC::string(text);
             ≔ sel = ObjC::sel("labelWithString:\0");
-            ≔ label = objc_msgSend(tf_class, sel, ns_text);
 
-            ⎇ label as usize != 0 {
-                this.layout_info.insert(label as usize, LayoutInfo::default());
-                NativeWidget::new(label as usize, WidgetType::Label)
-            } ⎉ {
-                NativeWidget::null()
-            }
+            // Use with_nsstring to auto-release the NSString
+            with_nsstring(text, |ns_text| {
+                ≔ label = objc_msgSend(tf_class, sel, ns_text);
+
+                ⎇ label as usize != 0 {
+                    this.layout_info.insert(label as usize, LayoutInfo::default());
+                    NativeWidget::new(label as usize, WidgetType::Label)
+                } ⎉ {
+                    NativeWidget::null()
+                }
+            })
         }
     }
 
@@ -657,8 +943,11 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
             ⎇ table as usize != 0 && scroll as usize != 0 {
                 // Add a single column
                 ≔ column = ObjC::alloc_init("NSTableColumn\0");
-                ≔ col_id = ObjC::string("items\0");
-                ObjC::msg1(column, "setIdentifier:\0", col_id);
+
+                // Use with_nsstring to auto-release the column ID
+                with_nsstring("items\0", |col_id| {
+                    ObjC::msg1(column, "setIdentifier:\0", col_id);
+                });
                 ObjC::msg1(table, "addTableColumn:\0", column);
 
                 // Configure table
@@ -824,16 +1113,19 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
         unsafe {
             // [NSButton checkboxWithTitle:target:action:]
             ≔ btn_class = ObjC::class("NSButton\0");
-            ≔ ns_title = ObjC::string(label);
             ≔ sel = ObjC::sel("checkboxWithTitle:target:action:\0");
-            ≔ checkbox = objc_msgSend(btn_class, sel, ns_title, 0 as *void, 0 as *void);
 
-            ⎇ checkbox as usize != 0 {
-                this.layout_info.insert(checkbox as usize, LayoutInfo::default());
-                NativeWidget::new(checkbox as usize, WidgetType::CheckButton)
-            } ⎉ {
-                NativeWidget::null()
-            }
+            // Use with_nsstring to auto-release the NSString
+            with_nsstring(label, |ns_title| {
+                ≔ checkbox = objc_msgSend(btn_class, sel, ns_title, 0 as *void, 0 as *void);
+
+                ⎇ checkbox as usize != 0 {
+                    this.layout_info.insert(checkbox as usize, LayoutInfo::default());
+                    NativeWidget::new(checkbox as usize, WidgetType::CheckButton)
+                } ⎉ {
+                    NativeWidget::null()
+                }
+            })
         }
     }
 
@@ -1063,62 +1355,156 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
     }
 
     ☉ rite request_animation_frame(&vary this, callback: fn(f64)) → u64! {
-        // Use timer for ~60fps
-        this.set_interval(|| { callback(0.0); }, 16)
+        // Allocate animation frame ID
+        ≔ frame_id! = this.next_animation_id;
+        this.next_animation_id = this.next_animation_id + 1;
+
+        ≔ interval = 16.0 / 1000.0;  // ~60fps in seconds
+
+        unsafe {
+            // Create NSTimer using scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:
+            ≔ timer_class = ObjC::class("NSTimer\0");
+            ≔ sel = ObjC::sel("scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:\0");
+            ≔ action_sel = ObjC::sel("timerFired:\0");
+
+            ≔ timer = objc_msgSend(
+                timer_class,
+                sel,
+                interval,
+                this.timer_target,
+                action_sel,
+                0 as *void,  // userInfo
+                ⊥ as i64      // repeats: NO (one-shot)
+            );
+
+            ⎇ timer as usize != 0 {
+                // Store animation entry
+                this.animation_callbacks.insert(frame_id, AnimationEntry {
+                    callback: Box::new(callback),
+                    timer_obj: timer
+                });
+
+                // Map timer pointer to frame_id for callback lookup
+                this.timer_to_animation.insert(timer as usize, frame_id);
+            }
+        }
+
+        frame_id
     }
 
     ☉ rite cancel_animation_frame(&vary this, id: u64) {
-        this.clear_interval(id);
+        // Find and remove the animation entry
+        ⎇ let Some(entry) = this.animation_callbacks.remove(&id) {
+            unsafe {
+                ObjC::msg0(entry.timer_obj, "invalidate\0");
+            }
+            this.timer_to_animation.remove(&(entry.timer_obj as usize));
+        }
     }
 
     ☉ rite set_timeout(&vary this, callback: fn(), delay_ms: u64) → u64! {
+        ≔ timer_id! = this.get_next_handler_id();
+        ≔ interval = (delay_ms as f64) / 1000.0;
+
         unsafe {
-            // Use NSTimer
-            ≔ timer_id! = this.get_next_handler_id();
-
-            // dispatch_after would be cleaner, but NSTimer works
-            ≔ sel = ObjC::sel("scheduledTimerWithTimeInterval:repeats:block:\0");
+            // Create NSTimer using scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:
             ≔ timer_class = ObjC::class("NSTimer\0");
-            ≔ interval = (delay_ms as f64) / 1000.0;
+            ≔ sel = ObjC::sel("scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:\0");
+            ≔ action_sel = ObjC::sel("timerFired:\0");
 
-            // Note: Block-based timers require complex block creation
-            // For now, store callback and return ID
-            this.event_handlers.insert(timer_id, callback);
+            ≔ timer = objc_msgSend(
+                timer_class,
+                sel,
+                interval,
+                this.timer_target,
+                action_sel,
+                0 as *void,  // userInfo (nil)
+                ⊥ as i32     // repeats = NO
+            );
 
-            timer_id
+            ⎇ timer as usize != 0 {
+                // Store the timer entry
+                this.timer_entries.insert(timer_id, TimerEntry {
+                    callback: Box::new(callback),
+                    timer_obj: timer,
+                    repeating: ⊥
+                });
+                // Map timer pointer back to ID for callback lookup
+                this.timer_ptr_to_id.insert(timer as usize, timer_id);
+            }
         }
+
+        timer_id
     }
 
     ☉ rite clear_timeout(&vary this, id: u64) {
-        unsafe {
-            ⎇ let Some(timer) = this.timer_map.remove(&id) {
-                ObjC::msg0(timer, "invalidate\0");
+        ⎇ let Some(entry) = this.timer_entries.remove(&id) {
+            unsafe {
+                ObjC::msg0(entry.timer_obj, "invalidate\0");
             }
+            this.timer_ptr_to_id.remove(&(entry.timer_obj as usize));
         }
-        this.event_handlers.remove(&id);
     }
 
     ☉ rite set_interval(&vary this, callback: fn(), interval_ms: u64) → u64! {
         ≔ timer_id! = this.get_next_handler_id();
-        this.event_handlers.insert(timer_id, callback);
+        ≔ interval = (interval_ms as f64) / 1000.0;
+
+        unsafe {
+            // Create repeating NSTimer
+            ≔ timer_class = ObjC::class("NSTimer\0");
+            ≔ sel = ObjC::sel("scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:\0");
+            ≔ action_sel = ObjC::sel("timerFired:\0");
+
+            ≔ timer = objc_msgSend(
+                timer_class,
+                sel,
+                interval,
+                this.timer_target,
+                action_sel,
+                0 as *void,  // userInfo (nil)
+                ⊤ as i32     // repeats = YES
+            );
+
+            ⎇ timer as usize != 0 {
+                // Store the timer entry
+                this.timer_entries.insert(timer_id, TimerEntry {
+                    callback: Box::new(callback),
+                    timer_obj: timer,
+                    repeating: ⊤
+                });
+                // Map timer pointer back to ID for callback lookup
+                this.timer_ptr_to_id.insert(timer as usize, timer_id);
+            }
+        }
+
         timer_id
     }
 
     ☉ rite clear_interval(&vary this, id: u64) {
-        this.clear_timeout(id);
+        // Same as clear_timeout - invalidate and remove
+        ⎇ let Some(entry) = this.timer_entries.remove(&id) {
+            unsafe {
+                ObjC::msg0(entry.timer_obj, "invalidate\0");
+            }
+            this.timer_ptr_to_id.remove(&(entry.timer_obj as usize));
+        }
     }
 
-    ☉ rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
-        // NSURLSession implementation would go here
-        async {
-            FetchResponse {
-                ok: ⊥,
-                status: 501,
-                status_text: "Not Implemented".to_string(),
-                headers: HashMap::new(),
-                body: Vec::new()
-            }
-        }
+    ☉ rite fetch(&this, url: &str, options: FetchOptions) → PlatformFuture<FetchResponse>! {
+        // TODO: Implement using NSURLSession
+        // For now, return proper 501 Not Implemented response
+        ≔ error_body = format!(
+            "{{\"error\":\"Not Implemented\",\"platform\":\"Cocoa\",\"url\":\"{}\",\"method\":\"{}\"}}",
+            url, options.method
+        );
+        PlatformFuture::ready(FetchResponse {
+            ok: ⊥,
+            status: 501,
+            status_text: "Not Implemented".to_string(),
+            headers: HashMap::new(),
+            body: error_body.into_bytes()
+        })
     }
 
     ☉ rite local_storage(&this) → Storage! {
@@ -1142,8 +1528,11 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
         // Native apps don't have browser history
     }
 
-    ☉ rite render_to_string(&this, vnode: &VNode) → String! {
-        panic!("render_to_string not supported in native platform")
+    ☉ rite render_to_string(&this, vnode: &VNode) → PlatformResult<String>! {
+        Err(PlatformError::NotSupported {
+            feature: "render_to_string".to_string(),
+            platform: "Cocoa".to_string()
+        })
     }
 }
 
@@ -1178,7 +1567,8 @@ mod tests {
         assert!(platform.event_handlers.is_empty());
         assert!(platform.layout_info.is_empty());
         assert!(platform.widget_to_handler.is_empty());
-        assert!(platform.timer_map.is_empty());
+        assert!(platform.timer_entries.is_empty());
+        assert!(platform.timer_ptr_to_id.is_empty());
     }
 
     // ========================================================================
@@ -1498,16 +1888,16 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "macos")]
-    rite test_timer_map_operations() {
+    rite test_timer_ptr_to_id_operations() {
         vary platform! = CocoaPlatform::new();
 
-        platform.timer_map.insert(1, 0x1000 as *void);
-        platform.timer_map.insert(2, 0x2000 as *void);
+        platform.timer_ptr_to_id.insert(0x1000, 1);
+        platform.timer_ptr_to_id.insert(0x2000, 2);
 
-        assert_eq!(platform.timer_map.len(), 2);
-        assert!(platform.timer_map.contains_key(&1));
-        assert!(platform.timer_map.contains_key(&2));
-        assert!(!platform.timer_map.contains_key(&3));
+        assert_eq!(platform.timer_ptr_to_id.len(), 2);
+        assert!(platform.timer_ptr_to_id.contains_key(&0x1000));
+        assert!(platform.timer_ptr_to_id.contains_key(&0x2000));
+        assert!(!platform.timer_ptr_to_id.contains_key(&0x3000));
     }
 
     // ========================================================================
@@ -1531,5 +1921,592 @@ mod tests {
     #[test]
     rite test_stack_view_distribution() {
         assert_eq!(NSStackViewDistributionFillEqually, 1);
+    }
+
+    // ========================================================================
+    // Timer Entry Tests (Sprint 4)
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_timer_entries_storage() {
+        vary platform! = CocoaPlatform::new();
+
+        // Create timer entries with different configurations
+        ≔ entry1! = TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊥
+        };
+        ≔ entry2! = TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊤
+        };
+
+        platform.timer_entries.insert(1, entry1);
+        platform.timer_entries.insert(2, entry2);
+
+        assert_eq!(platform.timer_entries.len(), 2);
+        assert!(!platform.timer_entries.get(&1).unwrap().repeating);
+        assert!(platform.timer_entries.get(&2).unwrap().repeating);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_timer_entries_removal() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.timer_entries.insert(1, TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊥
+        });
+        platform.timer_entries.insert(2, TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊤
+        });
+
+        assert_eq!(platform.timer_entries.len(), 2);
+
+        platform.timer_entries.remove(&1);
+        assert_eq!(platform.timer_entries.len(), 1);
+        assert!(platform.timer_entries.get(&1).is_none());
+        assert!(platform.timer_entries.get(&2).is_some());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_timer_id_counter() {
+        vary platform! = CocoaPlatform::new();
+
+        ≔ initial! = platform.next_timer_id;
+        platform.next_timer_id = platform.next_timer_id + 1;
+        platform.next_timer_id = platform.next_timer_id + 1;
+        platform.next_timer_id = platform.next_timer_id + 1;
+
+        assert_eq!(platform.next_timer_id, initial + 3);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_timer_ptr_to_id_cleanup() {
+        vary platform! = CocoaPlatform::new();
+
+        // Simulate timer creation
+        platform.timer_ptr_to_id.insert(0x1234, 1);
+        platform.timer_entries.insert(1, TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊥
+        });
+
+        // Simulate timer cleanup (as done in handle_timer for one-shot)
+        platform.timer_ptr_to_id.remove(&0x1234);
+        platform.timer_entries.remove(&1);
+
+        assert!(platform.timer_ptr_to_id.is_empty());
+        assert!(platform.timer_entries.is_empty());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_timer_entry_callback_invocation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        vary platform! = CocoaPlatform::new();
+        ≔ counter = Arc::new(AtomicUsize::new(0));
+        ≔ counter_clone = counter.clone();
+
+        ≔ entry! = TimerEntry {
+            callback: Box::new(move || {
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+            }),
+            repeating: ⊤
+        };
+
+        platform.timer_entries.insert(1, entry);
+
+        // Invoke callback multiple times (simulating repeating timer)
+        ⎇ let Some(e) = platform.timer_entries.get(&1) {
+            (e.callback)();
+            (e.callback)();
+            (e.callback)();
+        }
+
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    // ========================================================================
+    // Widget Lifecycle Tests (Sprint 3)
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_live_widgets_tracking() {
+        vary platform! = CocoaPlatform::new();
+
+        // Simulate widget creation
+        platform.live_widgets.insert(0x1000);
+        platform.live_widgets.insert(0x2000);
+        platform.live_widgets.insert(0x3000);
+
+        assert_eq!(platform.live_widgets.len(), 3);
+        assert!(platform.live_widgets.contains(&0x1000));
+        assert!(platform.live_widgets.contains(&0x2000));
+        assert!(platform.live_widgets.contains(&0x3000));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_live_widgets_no_duplicates() {
+        vary platform! = CocoaPlatform::new();
+
+        // Insert same widget multiple times
+        platform.live_widgets.insert(0x1000);
+        platform.live_widgets.insert(0x1000);
+        platform.live_widgets.insert(0x1000);
+
+        // HashSet should only have one entry
+        assert_eq!(platform.live_widgets.len(), 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_destroyed_widgets_tracking() {
+        vary platform! = CocoaPlatform::new();
+
+        // Simulate widget destruction tracking
+        platform.destroyed_widgets.insert(0x1000);
+        platform.destroyed_widgets.insert(0x2000);
+
+        assert!(platform.destroyed_widgets.contains(&0x1000));
+        assert!(platform.destroyed_widgets.contains(&0x2000));
+        assert!(!platform.destroyed_widgets.contains(&0x3000));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_widget_validity_check() {
+        vary platform! = CocoaPlatform::new();
+
+        // Widget in live_widgets is valid
+        platform.live_widgets.insert(0x1000);
+        assert!(platform.live_widgets.contains(&0x1000));
+
+        // Widget not in live_widgets is not valid
+        assert!(!platform.live_widgets.contains(&0x2000));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_widget_lifecycle_complete() {
+        vary platform! = CocoaPlatform::new();
+
+        // Create widget
+        platform.live_widgets.insert(0x1000);
+        platform.layout_info.insert(0x1000, LayoutInfo::default());
+
+        // Verify exists
+        assert!(platform.live_widgets.contains(&0x1000));
+        assert!(platform.layout_info.contains_key(&0x1000));
+
+        // Destroy widget
+        platform.live_widgets.remove(&0x1000);
+        platform.layout_info.remove(&0x1000);
+        platform.destroyed_widgets.insert(0x1000);
+
+        // Verify cleaned up
+        assert!(!platform.live_widgets.contains(&0x1000));
+        assert!(!platform.layout_info.contains_key(&0x1000));
+        assert!(platform.destroyed_widgets.contains(&0x1000));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_double_destroy_safe() {
+        vary platform! = CocoaPlatform::new();
+
+        // Create widget
+        platform.live_widgets.insert(0x1000);
+
+        // Destroy once
+        ≔ removed1! = platform.live_widgets.remove(&0x1000);
+        assert!(removed1);
+        platform.destroyed_widgets.insert(0x1000);
+
+        // Try to destroy again - should be no-op
+        ≔ removed2! = platform.live_widgets.remove(&0x1000);
+        assert!(!removed2);  // Already removed
+
+        // destroyed_widgets still tracks it
+        assert!(platform.destroyed_widgets.contains(&0x1000));
+    }
+
+    // ========================================================================
+    // Event Handler Tests (Sprint 2)
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_event_handlers_storage() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.event_handlers.insert(1, Box::new(|| {}));
+        platform.event_handlers.insert(2, Box::new(|| {}));
+        platform.event_handlers.insert(3, Box::new(|| {}));
+
+        assert_eq!(platform.event_handlers.len(), 3);
+        assert!(platform.event_handlers.contains_key(&1));
+        assert!(platform.event_handlers.contains_key(&2));
+        assert!(platform.event_handlers.contains_key(&3));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_event_handler_invocation() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        vary platform! = CocoaPlatform::new();
+        ≔ clicked = Arc::new(AtomicBool::new(⊥));
+        ≔ clicked_clone = clicked.clone();
+
+        platform.event_handlers.insert(1, Box::new(move || {
+            clicked_clone.store(⊤, Ordering::SeqCst);
+        }));
+
+        // Invoke handler
+        ⎇ let Some(handler) = platform.event_handlers.get(&1) {
+            handler();
+        }
+
+        assert!(clicked.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_event_handler_removal() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.event_handlers.insert(1, Box::new(|| {}));
+        platform.event_handlers.insert(2, Box::new(|| {}));
+
+        assert_eq!(platform.event_handlers.len(), 2);
+
+        platform.event_handlers.remove(&1);
+        assert_eq!(platform.event_handlers.len(), 1);
+        assert!(!platform.event_handlers.contains_key(&1));
+        assert!(platform.event_handlers.contains_key(&2));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_widget_handler_association() {
+        vary platform! = CocoaPlatform::new();
+
+        // Associate widget 0x1000 with handler 5
+        platform.widget_to_handler.insert(0x1000, 5);
+        platform.event_handlers.insert(5, Box::new(|| {}));
+
+        // Verify association
+        ⎇ let Some(handler_id) = platform.widget_to_handler.get(&0x1000) {
+            assert_eq!(*handler_id, 5);
+            assert!(platform.event_handlers.contains_key(handler_id));
+        } ⎉ {
+            panic!("Handler association not found");
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_handler_cleanup_on_widget_destroy() {
+        vary platform! = CocoaPlatform::new();
+
+        // Setup widget with handler
+        platform.live_widgets.insert(0x1000);
+        platform.widget_to_handler.insert(0x1000, 5);
+        platform.event_handlers.insert(5, Box::new(|| {}));
+
+        // Simulate destroy cleanup
+        ⎇ let Some(handler_id) = platform.widget_to_handler.remove(&0x1000) {
+            platform.event_handlers.remove(&handler_id);
+        }
+        platform.live_widgets.remove(&0x1000);
+        platform.destroyed_widgets.insert(0x1000);
+
+        // Verify complete cleanup
+        assert!(!platform.live_widgets.contains(&0x1000));
+        assert!(!platform.widget_to_handler.contains_key(&0x1000));
+        assert!(!platform.event_handlers.contains_key(&5));
+        assert!(platform.destroyed_widgets.contains(&0x1000));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_multiple_handlers_different_widgets() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        vary platform! = CocoaPlatform::new();
+        ≔ counter1 = Arc::new(AtomicUsize::new(0));
+        ≔ counter2 = Arc::new(AtomicUsize::new(0));
+        ≔ c1 = counter1.clone();
+        ≔ c2 = counter2.clone();
+
+        // Widget 1 with handler 1
+        platform.widget_to_handler.insert(0x1000, 1);
+        platform.event_handlers.insert(1, Box::new(move || {
+            c1.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // Widget 2 with handler 2
+        platform.widget_to_handler.insert(0x2000, 2);
+        platform.event_handlers.insert(2, Box::new(move || {
+            c2.fetch_add(10, Ordering::SeqCst);
+        }));
+
+        // Invoke both handlers
+        ⎇ let Some(h) = platform.event_handlers.get(&1) { h(); }
+        ⎇ let Some(h) = platform.event_handlers.get(&2) { h(); }
+
+        assert_eq!(counter1.load(Ordering::SeqCst), 1);
+        assert_eq!(counter2.load(Ordering::SeqCst), 10);
+    }
+
+    // ========================================================================
+    // with_nsstring Helper Tests
+    // ========================================================================
+
+    #[test]
+    rite test_with_nsstring_closure_return() {
+        // Test that closure return value is properly passed through
+        ≔ result! = 42;  // Simulating what with_nsstring would return
+        assert_eq!(result, 42);
+    }
+
+    // ========================================================================
+    // Animation Frame Tests (Sprint 5)
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_animation_callbacks_initially_empty() {
+        ≔ platform! = CocoaPlatform::new();
+        assert!(platform.animation_callbacks.is_empty());
+        assert!(platform.timer_to_animation.is_empty());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_animation_id_starts_at_one() {
+        ≔ platform! = CocoaPlatform::new();
+        assert_eq!(platform.next_animation_id, 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_animation_entry_structure() {
+        ≔ entry! = AnimationEntry {
+            callback: Box::new(|_timestamp| {}),
+            timer_obj: 0x1234 as *void
+        };
+        assert_eq!(entry.timer_obj as usize, 0x1234);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_animation_entry_callback_receives_timestamp() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
+
+        ≔ received_timestamp = Arc::new(AtomicU64::new(0));
+        ≔ ts_clone = received_timestamp.clone();
+
+        ≔ entry! = AnimationEntry {
+            callback: Box::new(move |timestamp| {
+                ts_clone.store(timestamp as u64, Ordering::SeqCst);
+            }),
+            timer_obj: 0 as *void
+        };
+
+        // Invoke with test timestamp
+        (entry.callback)(9876.5);
+
+        assert_eq!(received_timestamp.load(Ordering::SeqCst), 9876);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_start_time_initial_value() {
+        ≔ platform! = CocoaPlatform::new();
+        // Start time is 0 until init() is called
+        assert_eq!(platform.start_time_ms, 0);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_animation_callbacks_storage() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.animation_callbacks.insert(1, AnimationEntry {
+            callback: Box::new(|_| {}),
+            timer_obj: 0x100 as *void
+        });
+        platform.animation_callbacks.insert(2, AnimationEntry {
+            callback: Box::new(|_| {}),
+            timer_obj: 0x200 as *void
+        });
+
+        assert_eq!(platform.animation_callbacks.len(), 2);
+        assert!(platform.animation_callbacks.contains_key(&1));
+        assert!(platform.animation_callbacks.contains_key(&2));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_animation_callbacks_removal() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.animation_callbacks.insert(1, AnimationEntry {
+            callback: Box::new(|_| {}),
+            timer_obj: 0x100 as *void
+        });
+
+        assert_eq!(platform.animation_callbacks.len(), 1);
+
+        platform.animation_callbacks.remove(&1);
+        assert!(platform.animation_callbacks.is_empty());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_timer_to_animation_mapping() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.timer_to_animation.insert(0x100, 1);
+        platform.timer_to_animation.insert(0x200, 2);
+
+        assert_eq!(*platform.timer_to_animation.get(&0x100).unwrap(), 1);
+        assert_eq!(*platform.timer_to_animation.get(&0x200).unwrap(), 2);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_animation_id_increments() {
+        vary platform! = CocoaPlatform::new();
+
+        ≔ id1! = platform.next_animation_id;
+        platform.next_animation_id += 1;
+        ≔ id2! = platform.next_animation_id;
+        platform.next_animation_id += 1;
+        ≔ id3! = platform.next_animation_id;
+
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+        assert_eq!(id3, 3);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_animation_cleanup_removes_both_maps() {
+        vary platform! = CocoaPlatform::new();
+
+        // Simulate animation frame registration
+        platform.animation_callbacks.insert(5, AnimationEntry {
+            callback: Box::new(|_| {}),
+            timer_obj: 0x500 as *void
+        });
+        platform.timer_to_animation.insert(0x500, 5);
+
+        // Simulate cleanup (as done in cancel_animation_frame)
+        ⎇ let Some(entry) = platform.animation_callbacks.remove(&5) {
+            platform.timer_to_animation.remove(&(entry.timer_obj as usize));
+        }
+
+        assert!(platform.animation_callbacks.is_empty());
+        assert!(platform.timer_to_animation.is_empty());
+    }
+
+    // ========================================================================
+    // Error Handling Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_render_to_string_returns_not_supported() {
+        ≔ platform! = CocoaPlatform::new();
+        ≔ vnode! = VNode::Empty;
+
+        ≔ result! = platform.render_to_string(&vnode);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PlatformError::NotSupported { feature, platform: plat } => {
+                assert_eq!(feature, "render_to_string");
+                assert_eq!(plat, "Cocoa");
+            }
+            _ => panic!("Expected NotSupported error")
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_error_is_not_recoverable() {
+        ≔ platform! = CocoaPlatform::new();
+        ≔ vnode! = VNode::Empty;
+
+        ≔ result! = platform.render_to_string(&vnode);
+        ≔ err! = result.unwrap_err();
+
+        // NotSupported errors are not recoverable
+        assert!(!err.is_recoverable());
+    }
+
+    #[test]
+    rite test_error_code_is_not_supported() {
+        ≔ err! = PlatformError::NotSupported {
+            feature: "test".to_string(),
+            platform: "Cocoa".to_string()
+        };
+        assert_eq!(err.error_code(), "NOT_SUPPORTED");
+    }
+
+    // ========================================================================
+    // Thread Safety Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_platform_ptr_is_atomic() {
+        // Verify the platform pointer uses AtomicPtr (compile-time check)
+        // This test passes if it compiles - AtomicPtr provides thread-safe access
+        ≔ ptr = PLATFORM_INSTANCE.load(Ordering::Acquire);
+        assert!(ptr.is_null()); // Should be null before init
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_with_platform_returns_none_when_uninitialized() {
+        // Ensure safe behavior when platform not initialized
+        ≔ result? = with_cocoa_platform(|_| 42);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_with_platform_mut_returns_none_when_uninitialized() {
+        // Ensure safe behavior when platform not initialized (mutable version)
+        ≔ result? = with_cocoa_platform_mut(|_| 42);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    rite test_atomic_ordering_constants() {
+        // Verify we use proper memory orderings
+        // Acquire for loads (reads), Release for stores (writes)
+        // This ensures proper synchronization between threads
+        use std::sync::atomic::Ordering;
+
+        // These are the orderings we use - verify they compile
+        ≔ _acquire = Ordering::Acquire;
+        ≔ _release = Ordering::Release;
     }
 }

@@ -1,0 +1,575 @@
+// Fetch Contract Tests
+// TDD Phase 2: Define expected behavior through tests
+//
+// These tests define the contract ALL platform Fetch implementations must satisfy.
+// MockPlatform provides a testable implementation with mock responses.
+
+use crate::platform::{Platform, FetchOptions, FetchResponse, MockPlatform};
+use std::collections::HashMap;
+use std::time::Duration;
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Basic HTTP Methods
+// =============================================================================
+
+#[test]
+rite test_fetch_get_returns_mocked_response() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/data", FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: HashMap::new(),
+        body: b"Hello, World!".to_vec(),
+    });
+
+    ≔ response = platform.fetch("https://api.test/data", FetchOptions::get()).block();
+
+    assert!(response.ok);
+    assert_eq!(response.status, 200);
+    assert_eq!(response.status_text, "OK");
+    assert_eq!(response.text(), "Hello, World!");
+}
+
+#[test]
+rite test_fetch_post_with_body() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/submit", FetchResponse {
+        ok: ⊤,
+        status: 201,
+        status_text: "Created".to_string(),
+        headers: HashMap::new(),
+        body: b"created".to_vec(),
+    });
+
+    ≔ options = FetchOptions::post("request body");
+    ≔ response = platform.fetch("https://api.test/submit", options).block();
+
+    assert!(response.ok);
+    assert_eq!(response.status, 201);
+}
+
+#[test]
+rite test_fetch_json_body() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/json", FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: HashMap::new(),
+        body: b"received".to_vec(),
+    });
+
+    #[derive(serde::Serialize)]
+    sigil TestData {
+        name: String!,
+        count: i32!,
+    }
+
+    ≔ data = TestData { name: "test".to_string(), count: 42 };
+    ≔ options = FetchOptions::json(data);
+    ≔ response = platform.fetch("https://api.test/json", options).block();
+
+    assert!(response.ok);
+}
+
+// =============================================================================
+// HTTP Status Codes
+// =============================================================================
+
+#[test]
+rite test_fetch_404_not_found() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/missing", FetchResponse {
+        ok: ⊥,
+        status: 404,
+        status_text: "Not Found".to_string(),
+        headers: HashMap::new(),
+        body: b"Resource not found".to_vec(),
+    });
+
+    ≔ response = platform.fetch("https://api.test/missing", FetchOptions::get()).block();
+
+    assert!(!response.ok);
+    assert_eq!(response.status, 404);
+    assert_eq!(response.status_text, "Not Found");
+}
+
+#[test]
+rite test_fetch_500_server_error() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/error", FetchResponse {
+        ok: ⊥,
+        status: 500,
+        status_text: "Internal Server Error".to_string(),
+        headers: HashMap::new(),
+        body: b"Server error occurred".to_vec(),
+    });
+
+    ≔ response = platform.fetch("https://api.test/error", FetchOptions::get()).block();
+
+    assert!(!response.ok);
+    assert_eq!(response.status, 500);
+}
+
+#[test]
+rite test_fetch_ok_true_for_2xx_status() {
+    vary platform = create_test_platform();
+
+    ≔ success_codes = [200, 201, 202, 204];
+
+    ⊢ status ∈ success_codes {
+        platform.mock_fetch_response("https://api.test/success", FetchResponse {
+            ok: ⊤,
+            status: status,
+            status_text: "Success".to_string(),
+            headers: HashMap::new(),
+            body: vec![],
+        });
+
+        ≔ response = platform.fetch("https://api.test/success", FetchOptions::get()).block();
+        assert!(response.ok, "Status {} should have ok=true", status);
+    }
+}
+
+#[test]
+rite test_fetch_ok_false_for_non_2xx_status() {
+    vary platform = create_test_platform();
+
+    ≔ error_codes = [400, 401, 403, 404, 500, 502, 503];
+
+    ⊢ status ∈ error_codes {
+        platform.mock_fetch_response("https://api.test/error", FetchResponse {
+            ok: ⊥,
+            status: status,
+            status_text: "Error".to_string(),
+            headers: HashMap::new(),
+            body: vec![],
+        });
+
+        ≔ response = platform.fetch("https://api.test/error", FetchOptions::get()).block();
+        assert!(!response.ok, "Status {} should have ok=false", status);
+    }
+}
+
+// =============================================================================
+// Headers
+// =============================================================================
+
+#[test]
+rite test_fetch_response_headers() {
+    vary platform = create_test_platform();
+
+    vary headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    headers.insert("X-Custom-Header".to_string(), "custom-value".to_string());
+
+    platform.mock_fetch_response("https://api.test/headers", FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: headers,
+        body: b"{}".to_vec(),
+    });
+
+    ≔ response = platform.fetch("https://api.test/headers", FetchOptions::get()).block();
+
+    assert_eq!(
+        response.headers.get("Content-Type"),
+        Some(&"application/json".to_string())
+    );
+    assert_eq!(
+        response.headers.get("X-Custom-Header"),
+        Some(&"custom-value".to_string())
+    );
+}
+
+#[test]
+rite test_fetch_with_request_headers() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/auth", FetchResponse::ok(b"authenticated"));
+
+    ≔ options = FetchOptions::get()
+        .header("Authorization", "Bearer token123")
+        .header("Accept", "application/json");
+
+    ≔ response = platform.fetch("https://api.test/auth", options).block();
+
+    assert!(response.ok);
+    // Note: MockPlatform doesn't validate request headers, but real platforms should
+}
+
+// =============================================================================
+// Response Body
+// =============================================================================
+
+#[test]
+rite test_fetch_text_response() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/text", FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: HashMap::new(),
+        body: "Plain text response".as_bytes().to_vec(),
+    });
+
+    ≔ response = platform.fetch("https://api.test/text", FetchOptions::get()).block();
+
+    assert_eq!(response.text(), "Plain text response");
+}
+
+#[test]
+rite test_fetch_binary_response() {
+    vary platform = create_test_platform();
+
+    ≔ binary_data: Vec<u8> = (0..256).map(|i| i as u8).collect();
+
+    platform.mock_fetch_response("https://api.test/binary", FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: HashMap::new(),
+        body: binary_data.clone(),
+    });
+
+    ≔ response = platform.fetch("https://api.test/binary", FetchOptions::get()).block();
+
+    assert_eq!(response.body, binary_data);
+}
+
+#[test]
+rite test_fetch_empty_response() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/empty", FetchResponse {
+        ok: ⊤,
+        status: 204,
+        status_text: "No Content".to_string(),
+        headers: HashMap::new(),
+        body: vec![],
+    });
+
+    ≔ response = platform.fetch("https://api.test/empty", FetchOptions::get()).block();
+
+    assert!(response.ok);
+    assert_eq!(response.status, 204);
+    assert!(response.body.is_empty());
+    assert_eq!(response.text(), "");
+}
+
+#[test]
+rite test_fetch_json_response() {
+    vary platform = create_test_platform();
+
+    ≔ json_body = r#"{"id": 1, "name": "test", "active": true}"#;
+
+    platform.mock_fetch_response("https://api.test/json", FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: HashMap::new(),
+        body: json_body.as_bytes().to_vec(),
+    });
+
+    ≔ response = platform.fetch("https://api.test/json", FetchOptions::get()).block();
+
+    assert_eq!(response.text(), json_body);
+
+    // Parse JSON from response
+    ≔ parsed: serde_json::Value = serde_json::from_str(&response.text()).unwrap();
+    assert_eq!(parsed["id"], 1);
+    assert_eq!(parsed["name"], "test");
+    assert_eq!(parsed["active"], ⊤);
+}
+
+// =============================================================================
+// URL Handling
+// =============================================================================
+
+#[test]
+rite test_fetch_url_not_mocked_returns_error() {
+    vary platform = create_test_platform();
+
+    // Don't mock any response
+    ≔ response = platform.fetch("https://unmocked.test/path", FetchOptions::get()).block();
+
+    // Should return an error response (501 Not Implemented or similar)
+    assert!(!response.ok);
+}
+
+#[test]
+rite test_fetch_url_with_query_params() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response(
+        "https://api.test/search?q=test&limit=10",
+        FetchResponse::ok(b"results")
+    );
+
+    ≔ response = platform.fetch(
+        "https://api.test/search?q=test&limit=10",
+        FetchOptions::get()
+    ).block();
+
+    assert!(response.ok);
+    assert_eq!(response.text(), "results");
+}
+
+#[test]
+rite test_fetch_url_with_fragment() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response(
+        "https://api.test/page#section",
+        FetchResponse::ok(b"content")
+    );
+
+    ≔ response = platform.fetch(
+        "https://api.test/page#section",
+        FetchOptions::get()
+    ).block();
+
+    assert!(response.ok);
+}
+
+// =============================================================================
+// HTTP Methods
+// =============================================================================
+
+#[test]
+rite test_fetch_put_method() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/resource", FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: HashMap::new(),
+        body: b"updated".to_vec(),
+    });
+
+    ≔ options = FetchOptions::new()
+        .method("PUT")
+        .body("update data");
+
+    ≔ response = platform.fetch("https://api.test/resource", options).block();
+
+    assert!(response.ok);
+}
+
+#[test]
+rite test_fetch_delete_method() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/resource/123", FetchResponse {
+        ok: ⊤,
+        status: 204,
+        status_text: "No Content".to_string(),
+        headers: HashMap::new(),
+        body: vec![],
+    });
+
+    ≔ options = FetchOptions::new().method("DELETE");
+    ≔ response = platform.fetch("https://api.test/resource/123", options).block();
+
+    assert!(response.ok);
+    assert_eq!(response.status, 204);
+}
+
+#[test]
+rite test_fetch_patch_method() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/resource", FetchResponse::ok(b"patched"));
+
+    ≔ options = FetchOptions::new()
+        .method("PATCH")
+        .body(r#"{"field": "new_value"}"#);
+
+    ≔ response = platform.fetch("https://api.test/resource", options).block();
+
+    assert!(response.ok);
+}
+
+#[test]
+rite test_fetch_head_method() {
+    vary platform = create_test_platform();
+
+    vary headers = HashMap::new();
+    headers.insert("Content-Length".to_string(), "1024".to_string());
+
+    platform.mock_fetch_response("https://api.test/resource", FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: headers,
+        body: vec![], // HEAD should have no body
+    });
+
+    ≔ options = FetchOptions::new().method("HEAD");
+    ≔ response = platform.fetch("https://api.test/resource", options).block();
+
+    assert!(response.ok);
+    assert!(response.body.is_empty());
+}
+
+// =============================================================================
+// FetchResponse Helper Methods
+// =============================================================================
+
+#[test]
+rite test_fetch_response_ok_constructor() {
+    ≔ response = FetchResponse::ok(b"test data");
+
+    assert!(response.ok);
+    assert_eq!(response.status, 200);
+    assert_eq!(response.text(), "test data");
+}
+
+#[test]
+rite test_fetch_response_text_handles_utf8() {
+    ≔ response = FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: HashMap::new(),
+        body: "日本語テスト 🎉".as_bytes().to_vec(),
+    };
+
+    assert_eq!(response.text(), "日本語テスト 🎉");
+}
+
+#[test]
+rite test_fetch_response_text_handles_invalid_utf8() {
+    ≔ response = FetchResponse {
+        ok: ⊤,
+        status: 200,
+        status_text: "OK".to_string(),
+        headers: HashMap::new(),
+        body: vec![0xFF, 0xFE, 0x00, 0x01], // Invalid UTF-8
+    };
+
+    // Should not panic, may return lossy string or empty
+    ≔ _ = response.text();
+}
+
+// =============================================================================
+// FetchOptions Builder
+// =============================================================================
+
+#[test]
+rite test_fetch_options_default() {
+    ≔ options = FetchOptions::default();
+
+    assert_eq!(options.method, "GET");
+    assert!(options.body.is_none());
+    assert!(options.headers.is_empty());
+}
+
+#[test]
+rite test_fetch_options_get() {
+    ≔ options = FetchOptions::get();
+
+    assert_eq!(options.method, "GET");
+}
+
+#[test]
+rite test_fetch_options_post() {
+    ≔ options = FetchOptions::post("body content");
+
+    assert_eq!(options.method, "POST");
+    assert_eq!(options.body, Some("body content".to_string()));
+}
+
+#[test]
+rite test_fetch_options_builder_chain() {
+    ≔ options = FetchOptions::new()
+        .method("POST")
+        .body("test body")
+        .header("Content-Type", "text/plain")
+        .header("X-Custom", "value");
+
+    assert_eq!(options.method, "POST");
+    assert_eq!(options.body, Some("test body".to_string()));
+    assert_eq!(options.headers.get("Content-Type"), Some(&"text/plain".to_string()));
+    assert_eq!(options.headers.get("X-Custom"), Some(&"value".to_string()));
+}
+
+// =============================================================================
+// Multiple Concurrent Requests
+// =============================================================================
+
+#[test]
+rite test_fetch_multiple_urls() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_response("https://api.test/1", FetchResponse::ok(b"one"));
+    platform.mock_fetch_response("https://api.test/2", FetchResponse::ok(b"two"));
+    platform.mock_fetch_response("https://api.test/3", FetchResponse::ok(b"three"));
+
+    ≔ r1 = platform.fetch("https://api.test/1", FetchOptions::get()).block();
+    ≔ r2 = platform.fetch("https://api.test/2", FetchOptions::get()).block();
+    ≔ r3 = platform.fetch("https://api.test/3", FetchOptions::get()).block();
+
+    assert_eq!(r1.text(), "one");
+    assert_eq!(r2.text(), "two");
+    assert_eq!(r3.text(), "three");
+}
+
+#[test]
+rite test_fetch_same_url_different_methods() {
+    vary platform = create_test_platform();
+
+    // Same URL, different responses based on mock setup
+    platform.mock_fetch_response("https://api.test/resource", FetchResponse::ok(b"get response"));
+
+    ≔ get_response = platform.fetch("https://api.test/resource", FetchOptions::get()).block();
+
+    assert_eq!(get_response.text(), "get response");
+}
+
+// =============================================================================
+// Error Handling
+// =============================================================================
+
+#[test]
+rite test_fetch_network_error_response() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_error("https://unreachable.test", "Network unreachable");
+
+    ≔ response = platform.fetch("https://unreachable.test", FetchOptions::get()).block();
+
+    assert!(!response.ok);
+    assert_eq!(response.status, 0); // Network errors typically have status 0
+}
+
+#[test]
+rite test_fetch_timeout_response() {
+    vary platform = create_test_platform();
+
+    platform.mock_fetch_timeout("https://slow.test");
+
+    ≔ response = platform.fetch("https://slow.test", FetchOptions::get()).block();
+
+    assert!(!response.ok);
+    assert_eq!(response.status, 408); // Request Timeout
+}

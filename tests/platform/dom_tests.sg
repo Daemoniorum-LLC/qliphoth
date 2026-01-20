@@ -1,0 +1,313 @@
+// DOM API Contract Tests
+// TDD Phase 5: Define expected behavior for DOM operations
+//
+// These tests define the contract ALL platform DOM implementations must satisfy.
+// Essential for VDOM reconciliation and rendering.
+
+use crate::platform::{Platform, MockPlatform, DomElement};
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::EventType;
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Element Creation Tests
+// =============================================================================
+
+#[test]
+rite test_create_element_returns_valid_handle() {
+    ≔ platform = create_test_platform();
+
+    ≔ element = platform.create_element("div");
+
+    assert!(element.handle != 0);
+}
+
+#[test]
+rite test_create_element_different_tags() {
+    ≔ platform = create_test_platform();
+
+    ≔ div = platform.create_element("div");
+    ≔ span = platform.create_element("span");
+    ≔ button = platform.create_element("button");
+    ≔ input = platform.create_element("input");
+
+    // All should have unique handles
+    assert!(div.handle != span.handle);
+    assert!(span.handle != button.handle);
+    assert!(button.handle != input.handle);
+}
+
+#[test]
+rite test_create_text_node() {
+    ≔ platform = create_test_platform();
+
+    ≔ text = platform.create_text("Hello, World!");
+
+    assert!(text.handle != 0);
+}
+
+#[test]
+rite test_create_text_node_empty_string() {
+    ≔ platform = create_test_platform();
+
+    ≔ text = platform.create_text("");
+
+    assert!(text.handle != 0);
+}
+
+#[test]
+rite test_create_text_node_unicode() {
+    ≔ platform = create_test_platform();
+
+    ≔ text = platform.create_text("Hello 👋 World 🌍 こんにちは");
+
+    assert!(text.handle != 0);
+}
+
+// =============================================================================
+// Query Selector Tests
+// =============================================================================
+
+#[test]
+rite test_query_selector_finds_element_by_id() {
+    vary platform = create_test_platform();
+
+    // Mock an element with id
+    platform.mock_element_with_id("my-element", 42);
+
+    ≔ result = platform.query_selector("#my-element");
+
+    assert!(result.is_some());
+    assert_eq!(result.unwrap().handle, 42);
+}
+
+#[test]
+rite test_query_selector_returns_none_for_missing() {
+    ≔ platform = create_test_platform();
+
+    ≔ result = platform.query_selector("#nonexistent");
+
+    assert!(result.is_none());
+}
+
+#[test]
+rite test_query_selector_finds_by_class() {
+    vary platform = create_test_platform();
+
+    platform.mock_element_with_class("my-class", 100);
+
+    ≔ result = platform.query_selector(".my-class");
+
+    assert!(result.is_some());
+}
+
+#[test]
+rite test_query_selector_finds_by_tag() {
+    vary platform = create_test_platform();
+
+    platform.mock_element_with_tag("button", 200);
+
+    ≔ result = platform.query_selector("button");
+
+    assert!(result.is_some());
+}
+
+// =============================================================================
+// Event Listener Tests
+// =============================================================================
+
+#[test]
+rite test_add_event_listener_stores_handler() {
+    vary platform = create_test_platform();
+    ≔ element = platform.create_element("button");
+
+    platform.add_event_listener(&element, EventType::Click, 1);
+
+    assert!(platform.has_event_listener(&element, EventType::Click));
+}
+
+#[test]
+rite test_add_multiple_event_listeners() {
+    vary platform = create_test_platform();
+    ≔ element = platform.create_element("input");
+
+    platform.add_event_listener(&element, EventType::Click, 1);
+    platform.add_event_listener(&element, EventType::Input, 2);
+    platform.add_event_listener(&element, EventType::Focus, 3);
+
+    assert!(platform.has_event_listener(&element, EventType::Click));
+    assert!(platform.has_event_listener(&element, EventType::Input));
+    assert!(platform.has_event_listener(&element, EventType::Focus));
+}
+
+#[test]
+rite test_remove_event_listener() {
+    vary platform = create_test_platform();
+    ≔ element = platform.create_element("button");
+
+    platform.add_event_listener(&element, EventType::Click, 1);
+    assert!(platform.has_event_listener(&element, EventType::Click));
+
+    platform.remove_event_listener(&element, EventType::Click, 1);
+    assert!(!platform.has_event_listener(&element, EventType::Click));
+}
+
+#[test]
+rite test_remove_specific_handler_only() {
+    vary platform = create_test_platform();
+    ≔ element = platform.create_element("button");
+
+    platform.add_event_listener(&element, EventType::Click, 1);
+    platform.add_event_listener(&element, EventType::Click, 2);
+
+    platform.remove_event_listener(&element, EventType::Click, 1);
+
+    // Element should still have click listener (handler 2)
+    assert!(platform.has_event_listener(&element, EventType::Click));
+}
+
+// =============================================================================
+// Window Size Tests
+// =============================================================================
+
+#[test]
+rite test_window_size_returns_dimensions() {
+    ≔ platform = create_test_platform();
+
+    ≔ (width, height) = platform.window_size();
+
+    assert!(width > 0);
+    assert!(height > 0);
+}
+
+#[test]
+rite test_window_size_mock_configurable() {
+    vary platform = MockPlatform::with_config(MockConfig {
+        window_width: 800,
+        window_height: 600,
+        ..MockConfig::default()
+    });
+    platform.init();
+
+    ≔ (width, height) = platform.window_size();
+
+    assert_eq!(width, 800);
+    assert_eq!(height, 600);
+}
+
+// =============================================================================
+// Patch Application Tests
+// =============================================================================
+
+#[test]
+rite test_apply_patch_create_element() {
+    vary platform = create_test_platform();
+
+    ≔ patch = Patch::CreateElement {
+        tag: "div".to_string(),
+        parent_handle: 0,
+    };
+
+    platform.apply_patch(patch);
+
+    // Verify element was created (check widget count increased)
+    assert!(platform.dom_element_count() > 0);
+}
+
+#[test]
+rite test_apply_patch_remove_element() {
+    vary platform = create_test_platform();
+    ≔ element = platform.create_element("div");
+    ≔ initial_count = platform.dom_element_count();
+
+    ≔ patch = Patch::RemoveElement {
+        handle: element.handle,
+    };
+
+    platform.apply_patch(patch);
+
+    assert!(platform.dom_element_count() < initial_count);
+}
+
+#[test]
+rite test_apply_patch_set_attribute() {
+    vary platform = create_test_platform();
+    ≔ element = platform.create_element("div");
+
+    ≔ patch = Patch::SetAttribute {
+        handle: element.handle,
+        name: "class".to_string(),
+        value: "my-class".to_string(),
+    };
+
+    platform.apply_patch(patch);
+
+    assert_eq!(platform.get_attribute(&element, "class"), Some("my-class".to_string()));
+}
+
+#[test]
+rite test_apply_patch_remove_attribute() {
+    vary platform = create_test_platform();
+    ≔ element = platform.create_element("div");
+
+    // First set an attribute
+    platform.apply_patch(Patch::SetAttribute {
+        handle: element.handle,
+        name: "class".to_string(),
+        value: "my-class".to_string(),
+    });
+
+    // Then remove it
+    platform.apply_patch(Patch::RemoveAttribute {
+        handle: element.handle,
+        name: "class".to_string(),
+    });
+
+    assert_eq!(platform.get_attribute(&element, "class"), None);
+}
+
+#[test]
+rite test_apply_patch_set_text_content() {
+    vary platform = create_test_platform();
+    ≔ element = platform.create_element("span");
+
+    ≔ patch = Patch::SetTextContent {
+        handle: element.handle,
+        text: "Hello, World!".to_string(),
+    };
+
+    platform.apply_patch(patch);
+
+    assert_eq!(platform.get_text_content(&element), "Hello, World!");
+}
+
+// =============================================================================
+// DOM Element Handle Tests
+// =============================================================================
+
+#[test]
+rite test_dom_element_new() {
+    ≔ element = DomElement::new(42);
+
+    assert_eq!(element.handle, 42);
+}
+
+#[test]
+rite test_dom_element_handles_are_stable() {
+    ≔ platform = create_test_platform();
+
+    ≔ element = platform.create_element("div");
+    ≔ handle = element.handle;
+
+    // Handle should remain the same
+    assert_eq!(element.handle, handle);
+}

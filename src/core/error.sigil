@@ -1,0 +1,439 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+// Platform Error Types
+// Structured error types for platform operations with proper context
+
+use std::fmt;
+
+// ============================================================================
+// Core Error Types
+// ============================================================================
+
+/// Platform-level errors with structured context
+☉ ᛈ PlatformError {
+    /// Platform initialization failed
+    InitializationFailed {
+        platform: String~,
+        cause: String~
+    },
+
+    /// Widget creation failed
+    WidgetCreationFailed {
+        widget_type: String~,
+        cause: String~
+    },
+
+    /// Event dispatch failed
+    EventDispatchFailed {
+        handler_id: u64~,
+        cause: String~
+    },
+
+    /// Memory operation failed
+    MemoryError {
+        operation: String~
+    },
+
+    /// FFI call panicked
+    FfiPanic {
+        context: String~
+    },
+
+    /// Operation timed out
+    Timeout {
+        operation: String~,
+        duration_ms: u64~
+    },
+
+    /// Widget not found
+    WidgetNotFound {
+        widget_id: u64~
+    },
+
+    /// Handler not found
+    HandlerNotFound {
+        handler_id: u64~
+    },
+
+    /// Invalid operation
+    InvalidOperation {
+        operation: String~,
+        reason: String~
+    },
+
+    /// Network error (for fetch)
+    NetworkError {
+        url: String~,
+        cause: String~
+    },
+
+    /// Storage error
+    StorageError {
+        operation: String~,
+        cause: String~
+    },
+
+    /// Not supported on this platform
+    NotSupported {
+        feature: String~,
+        platform: String~
+    }
+}
+
+⊢ fmt::Display for PlatformError {
+    rite fmt(&this, f: &vary fmt::Formatter<'_>) → fmt::Result! {
+        match this {
+            PlatformError::InitializationFailed { platform, cause } => {
+                write!(f, "Platform '{}' initialization failed: {}", platform, cause)
+            }
+            PlatformError::WidgetCreationFailed { widget_type, cause } => {
+                write!(f, "Failed to create widget '{}': {}", widget_type, cause)
+            }
+            PlatformError::EventDispatchFailed { handler_id, cause } => {
+                write!(f, "Failed to dispatch event to handler {}: {}", handler_id, cause)
+            }
+            PlatformError::MemoryError { operation } => {
+                write!(f, "Memory error during: {}", operation)
+            }
+            PlatformError::FfiPanic { context } => {
+                write!(f, "FFI panic in: {}", context)
+            }
+            PlatformError::Timeout { operation, duration_ms } => {
+                write!(f, "Operation '{}' timed out after {}ms", operation, duration_ms)
+            }
+            PlatformError::WidgetNotFound { widget_id } => {
+                write!(f, "Widget {} not found", widget_id)
+            }
+            PlatformError::HandlerNotFound { handler_id } => {
+                write!(f, "Handler {} not found", handler_id)
+            }
+            PlatformError::InvalidOperation { operation, reason } => {
+                write!(f, "Invalid operation '{}': {}", operation, reason)
+            }
+            PlatformError::NetworkError { url, cause } => {
+                write!(f, "Network error for '{}': {}", url, cause)
+            }
+            PlatformError::StorageError { operation, cause } => {
+                write!(f, "Storage error during '{}': {}", operation, cause)
+            }
+            PlatformError::NotSupported { feature, platform } => {
+                write!(f, "Feature '{}' not supported on {}", feature, platform)
+            }
+        }
+    }
+}
+
+⊢ std::error::Error for PlatformError {}
+
+⊢ PlatformError {
+    /// Check if the error is recoverable
+    ☉ rite is_recoverable(&this) → bool! {
+        match this {
+            // Recoverable errors
+            PlatformError::Timeout { .. } => ⊤,
+            PlatformError::NetworkError { .. } => ⊤,
+            PlatformError::HandlerNotFound { .. } => ⊤,
+            PlatformError::WidgetNotFound { .. } => ⊤,
+            PlatformError::StorageError { .. } => ⊤,
+
+            // Partially recoverable (can retry)
+            PlatformError::WidgetCreationFailed { .. } => ⊤,
+
+            // Non-recoverable errors
+            PlatformError::InitializationFailed { .. } => ⊥,
+            PlatformError::FfiPanic { .. } => ⊥,
+            PlatformError::MemoryError { .. } => ⊥,
+            PlatformError::EventDispatchFailed { .. } => ⊥,
+            PlatformError::InvalidOperation { .. } => ⊥,
+            PlatformError::NotSupported { .. } => ⊥,
+        }
+    }
+
+    /// Get error code for logging/metrics
+    ☉ rite error_code(&this) → &'static str! {
+        match this {
+            PlatformError::InitializationFailed { .. } => "PLATFORM_INIT_FAILED",
+            PlatformError::WidgetCreationFailed { .. } => "WIDGET_CREATE_FAILED",
+            PlatformError::EventDispatchFailed { .. } => "EVENT_DISPATCH_FAILED",
+            PlatformError::MemoryError { .. } => "MEMORY_ERROR",
+            PlatformError::FfiPanic { .. } => "FFI_PANIC",
+            PlatformError::Timeout { .. } => "TIMEOUT",
+            PlatformError::WidgetNotFound { .. } => "WIDGET_NOT_FOUND",
+            PlatformError::HandlerNotFound { .. } => "HANDLER_NOT_FOUND",
+            PlatformError::InvalidOperation { .. } => "INVALID_OPERATION",
+            PlatformError::NetworkError { .. } => "NETWORK_ERROR",
+            PlatformError::StorageError { .. } => "STORAGE_ERROR",
+            PlatformError::NotSupported { .. } => "NOT_SUPPORTED",
+        }
+    }
+
+    /// Get error severity level (for tracing)
+    ☉ rite severity(&this) → ErrorSeverity! {
+        match this {
+            PlatformError::FfiPanic { .. } => ErrorSeverity::Critical,
+            PlatformError::MemoryError { .. } => ErrorSeverity::Critical,
+            PlatformError::InitializationFailed { .. } => ErrorSeverity::Critical,
+            PlatformError::WidgetCreationFailed { .. } => ErrorSeverity::Error,
+            PlatformError::EventDispatchFailed { .. } => ErrorSeverity::Error,
+            PlatformError::Timeout { .. } => ErrorSeverity::Warning,
+            PlatformError::NetworkError { .. } => ErrorSeverity::Warning,
+            PlatformError::WidgetNotFound { .. } => ErrorSeverity::Warning,
+            PlatformError::HandlerNotFound { .. } => ErrorSeverity::Warning,
+            PlatformError::StorageError { .. } => ErrorSeverity::Warning,
+            PlatformError::InvalidOperation { .. } => ErrorSeverity::Warning,
+            PlatformError::NotSupported { .. } => ErrorSeverity::Info,
+        }
+    }
+}
+
+/// Error severity levels
+☉ ᛈ ErrorSeverity {
+    Critical,
+    Error,
+    Warning,
+    Info
+}
+
+// ============================================================================
+// Result Type Alias
+// ============================================================================
+
+/// Result type for platform operations
+☉ type PlatformResult<T> = Result<T, PlatformError>;
+
+// ============================================================================
+// FFI Safety Utilities
+// ============================================================================
+
+/// Execute an FFI operation with panic recovery
+☉ rite safe_ffi<T, F: FnOnce() → T + std::panic::UnwindSafe>(
+    operation: F,
+    context: &str
+) → PlatformResult<T>! {
+    match std::panic::catch_unwind(operation) {
+        Ok(result) => Ok(result),
+        Err(_) => Err(PlatformError::FfiPanic {
+            context: context.to_string()
+        })
+    }
+}
+
+/// Execute an FFI operation that returns a pointer, checking for null
+☉ rite safe_ffi_ptr<T, F: FnOnce() → *T + std::panic::UnwindSafe>(
+    operation: F,
+    context: &str,
+    null_error: &str
+) → PlatformResult<*T>! {
+    match std::panic::catch_unwind(operation) {
+        Ok(ptr) => {
+            ⎇ ptr as usize == 0 {
+                Err(PlatformError::WidgetCreationFailed {
+                    widget_type: null_error.to_string(),
+                    cause: "FFI returned null pointer".to_string()
+                })
+            } ⎉ {
+                Ok(ptr)
+            }
+        }
+        Err(_) => Err(PlatformError::FfiPanic {
+            context: context.to_string()
+        })
+    }
+}
+
+// ============================================================================
+// Error Context Builder
+// ============================================================================
+
+/// Builder for adding context to errors
+☉ sigil ErrorContext {
+    platform: Option<String>?,
+    widget_type: Option<String>?,
+    operation: Option<String>?
+}
+
+⊢ ErrorContext {
+    ☉ rite new() → This! {
+        ErrorContext {
+            platform: None,
+            widget_type: None,
+            operation: None
+        }
+    }
+
+    ☉ rite platform(vary this, platform: &str) → This! {
+        this.platform = Some(platform.to_string());
+        this
+    }
+
+    ☉ rite widget_type(vary this, widget_type: &str) → This! {
+        this.widget_type = Some(widget_type.to_string());
+        this
+    }
+
+    ☉ rite operation(vary this, operation: &str) → This! {
+        this.operation = Some(operation.to_string());
+        this
+    }
+
+    ☉ rite init_failed(this, cause: &str) → PlatformError! {
+        PlatformError::InitializationFailed {
+            platform: this.platform.unwrap_or_else(|| "unknown".to_string()),
+            cause: cause.to_string()
+        }
+    }
+
+    ☉ rite widget_failed(this, cause: &str) → PlatformError! {
+        PlatformError::WidgetCreationFailed {
+            widget_type: this.widget_type.unwrap_or_else(|| "unknown".to_string()),
+            cause: cause.to_string()
+        }
+    }
+
+    ☉ rite timeout(this, duration_ms: u64) → PlatformError! {
+        PlatformError::Timeout {
+            operation: this.operation.unwrap_or_else(|| "unknown".to_string()),
+            duration_ms: duration_ms
+        }
+    }
+}
+
+// ============================================================================
+// Error Chaining
+// ============================================================================
+
+/// Wrapper for errors with source chain
+☉ sigil ChainedError {
+    ☉ error: PlatformError!,
+    ☉ source: Option<Box<PlatformError>>?
+}
+
+⊢ ChainedError {
+    ☉ rite new(error: PlatformError) → This! {
+        ChainedError {
+            error: error,
+            source: None
+        }
+    }
+
+    ☉ rite with_source(vary this, source: PlatformError) → This! {
+        this.source = Some(Box::new(source));
+        this
+    }
+
+    ☉ rite source(&this) → Option<&PlatformError>? {
+        this.source·as_ref()·map(|b| b·as_ref())
+    }
+
+    ☉ rite chain_display(&this) → String! {
+        ≔ vary result = format!("{}", this.error);
+        ⎇ let Some(source) = &this.source {
+            result·push_str(&format!("\n  Caused by: {}", source));
+        }
+        result
+    }
+}
+
+⊢ fmt::Display for ChainedError {
+    rite fmt(&this, f: &vary fmt::Formatter<'_>) → fmt::Result! {
+        write!(f, "{}", this·chain_display())
+    }
+}
+
+⊢ PlatformError {
+    /// Wrap error with source chain capability
+    ☉ rite with_source(this, source: PlatformError) → ChainedError! {
+        ChainedError::new(this)·with_source(source)
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_error_display_formatting() {
+        ≔ err! = PlatformError::InitializationFailed {
+            platform: "GTK4".to_string(),
+            cause: "gtk_init() failed".to_string()
+        };
+        ≔ msg! = format!("{}", err);
+        assert!(msg.contains("GTK4"));
+        assert!(msg.contains("gtk_init() failed"));
+    }
+
+    #[test]
+    rite test_error_is_recoverable() {
+        // Recoverable
+        ≔ timeout! = PlatformError::Timeout {
+            operation: "fetch".to_string(),
+            duration_ms: 5000
+        };
+        assert!(timeout.is_recoverable());
+
+        // Not recoverable
+        ≔ panic_err! = PlatformError::FfiPanic {
+            context: "gtk_button_new".to_string()
+        };
+        assert!(!panic_err.is_recoverable());
+    }
+
+    #[test]
+    rite test_error_context_preserved() {
+        ≔ err! = ErrorContext::new()
+            ·platform("Win32")
+            ·widget_type("Button")
+            ·init_failed("CreateWindowEx returned NULL");
+
+        match err {
+            PlatformError::InitializationFailed { platform, cause } => {
+                assert_eq!(platform, "Win32");
+                assert!(cause.contains("CreateWindowEx"));
+            }
+            _ => panic!("Wrong error type")
+        }
+    }
+
+    #[test]
+    rite test_error_code() {
+        ≔ err! = PlatformError::NetworkError {
+            url: "https://api.example.com".to_string(),
+            cause: "Connection refused".to_string()
+        };
+        assert_eq!(err.error_code(), "NETWORK_ERROR");
+    }
+
+    #[test]
+    rite test_error_severity() {
+        ≔ critical! = PlatformError::FfiPanic { context: "test".to_string() };
+        assert!(matches!(critical.severity(), ErrorSeverity::Critical));
+
+        ≔ warning! = PlatformError::Timeout { operation: "test".to_string(), duration_ms: 1000 };
+        assert!(matches!(warning.severity(), ErrorSeverity::Warning));
+    }
+
+    #[test]
+    rite test_safe_ffi_success() {
+        ≔ result! = safe_ffi(|| 42, "test operation");
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    rite test_safe_ffi_panic_recovery() {
+        ≔ result!: PlatformResult<i32> = safe_ffi(|| {
+            panic!("intentional test panic")
+        }, "test panic");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PlatformError::FfiPanic { context } => {
+                assert_eq!(context, "test panic");
+            }
+            _ => panic!("Wrong error type")
+        }
+    }
+}

@@ -1,0 +1,483 @@
+// Storage Contract Tests
+// TDD Phase 1: Define expected behavior through tests
+//
+// These tests define the contract ALL platform Storage implementations must satisfy.
+// Run these against MockPlatform first (reference implementation), then each native platform.
+
+use crate::platform::{Platform, Storage, StorageType, MockPlatform};
+use std::collections::HashSet;
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_storage(storage_type: StorageType) → Storage! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform.storage(storage_type)
+}
+
+rite create_platform_with_storage() → (MockPlatform, Storage, Storage)! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    ≔ local = platform.storage(StorageType::Local);
+    ≔ session = platform.storage(StorageType::Session);
+    (platform, local, session)
+}
+
+// =============================================================================
+// Core CRUD Operations
+// =============================================================================
+
+#[test]
+rite test_storage_set_and_get_returns_value() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("test_key", "test_value");
+    ≔ result = storage.get("test_key");
+
+    assert_eq!(result, Some("test_value".to_string()));
+}
+
+#[test]
+rite test_storage_get_nonexistent_returns_none() {
+    ≔ storage = create_test_storage(StorageType::Local);
+
+    ≔ result = storage.get("nonexistent_key");
+
+    assert_eq!(result, None);
+}
+
+#[test]
+rite test_storage_remove_deletes_key() {
+    vary storage = create_test_storage(StorageType::Local);
+    storage.set("key_to_remove", "value");
+
+    storage.remove("key_to_remove");
+    ≔ result = storage.get("key_to_remove");
+
+    assert_eq!(result, None);
+}
+
+#[test]
+rite test_storage_remove_nonexistent_key_is_noop() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    // Should not panic or error
+    storage.remove("never_existed");
+
+    // Storage should still work
+    storage.set("other_key", "value");
+    assert_eq!(storage.get("other_key"), Some("value".to_string()));
+}
+
+#[test]
+rite test_storage_clear_removes_all_keys() {
+    vary storage = create_test_storage(StorageType::Local);
+    storage.set("key1", "value1");
+    storage.set("key2", "value2");
+    storage.set("key3", "value3");
+
+    storage.clear();
+
+    assert_eq!(storage.get("key1"), None);
+    assert_eq!(storage.get("key2"), None);
+    assert_eq!(storage.get("key3"), None);
+    assert_eq!(storage.length(), 0);
+}
+
+#[test]
+rite test_storage_clear_on_empty_is_noop() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    // Should not panic
+    storage.clear();
+
+    assert_eq!(storage.length(), 0);
+}
+
+// =============================================================================
+// Length and Key Enumeration
+// =============================================================================
+
+#[test]
+rite test_storage_length_returns_key_count() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    assert_eq!(storage.length(), 0);
+
+    storage.set("key1", "value1");
+    assert_eq!(storage.length(), 1);
+
+    storage.set("key2", "value2");
+    assert_eq!(storage.length(), 2);
+
+    storage.set("key3", "value3");
+    assert_eq!(storage.length(), 3);
+}
+
+#[test]
+rite test_storage_length_after_remove() {
+    vary storage = create_test_storage(StorageType::Local);
+    storage.set("key1", "value1");
+    storage.set("key2", "value2");
+    assert_eq!(storage.length(), 2);
+
+    storage.remove("key1");
+    assert_eq!(storage.length(), 1);
+
+    storage.remove("key2");
+    assert_eq!(storage.length(), 0);
+}
+
+#[test]
+rite test_storage_key_returns_key_at_index() {
+    vary storage = create_test_storage(StorageType::Local);
+    storage.set("alpha", "1");
+    storage.set("beta", "2");
+    storage.set("gamma", "3");
+
+    // Collect all keys via index enumeration
+    vary keys: HashSet<String> = HashSet::new();
+    ⊢ i ∈ 0..storage.length() {
+        ⎇ let Some(key) = storage.key(i) {
+            keys.insert(key);
+        }
+    }
+
+    assert!(keys.contains("alpha"));
+    assert!(keys.contains("beta"));
+    assert!(keys.contains("gamma"));
+    assert_eq!(keys.len(), 3);
+}
+
+#[test]
+rite test_storage_key_out_of_bounds_returns_none() {
+    vary storage = create_test_storage(StorageType::Local);
+    storage.set("only_key", "value");
+
+    assert!(storage.key(0).is_some());
+    assert_eq!(storage.key(1), None);
+    assert_eq!(storage.key(100), None);
+}
+
+#[test]
+rite test_storage_key_on_empty_returns_none() {
+    ≔ storage = create_test_storage(StorageType::Local);
+
+    assert_eq!(storage.key(0), None);
+}
+
+// =============================================================================
+// Storage Type Separation
+// =============================================================================
+
+#[test]
+rite test_storage_local_and_session_are_separate() {
+    ≔ (platform, vary local, vary session) = create_platform_with_storage();
+
+    local.set("shared_key", "local_value");
+    session.set("shared_key", "session_value");
+
+    assert_eq!(local.get("shared_key"), Some("local_value".to_string()));
+    assert_eq!(session.get("shared_key"), Some("session_value".to_string()));
+}
+
+#[test]
+rite test_storage_clear_local_does_not_affect_session() {
+    ≔ (platform, vary local, vary session) = create_platform_with_storage();
+
+    local.set("local_key", "local_value");
+    session.set("session_key", "session_value");
+
+    local.clear();
+
+    assert_eq!(local.get("local_key"), None);
+    assert_eq!(session.get("session_key"), Some("session_value".to_string()));
+}
+
+#[test]
+rite test_storage_clear_session_does_not_affect_local() {
+    ≔ (platform, vary local, vary session) = create_platform_with_storage();
+
+    local.set("local_key", "local_value");
+    session.set("session_key", "session_value");
+
+    session.clear();
+
+    assert_eq!(local.get("local_key"), Some("local_value".to_string()));
+    assert_eq!(session.get("session_key"), None);
+}
+
+// =============================================================================
+// Value Overwriting
+// =============================================================================
+
+#[test]
+rite test_storage_overwrite_existing_key() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("key", "initial_value");
+    assert_eq!(storage.get("key"), Some("initial_value".to_string()));
+
+    storage.set("key", "updated_value");
+    assert_eq!(storage.get("key"), Some("updated_value".to_string()));
+
+    // Length should remain 1 (not 2)
+    assert_eq!(storage.length(), 1);
+}
+
+#[test]
+rite test_storage_multiple_overwrites() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    ⊢ i ∈ 0..100 {
+        storage.set("key", &format!("value_{}", i));
+    }
+
+    assert_eq!(storage.get("key"), Some("value_99".to_string()));
+    assert_eq!(storage.length(), 1);
+}
+
+// =============================================================================
+// Unicode and Special Characters
+// =============================================================================
+
+#[test]
+rite test_storage_unicode_keys() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("キー", "value_japanese");
+    storage.set("مفتاح", "value_arabic");
+    storage.set("κλειδί", "value_greek");
+    storage.set("ключ", "value_russian");
+    storage.set("🔑", "value_emoji");
+
+    assert_eq!(storage.get("キー"), Some("value_japanese".to_string()));
+    assert_eq!(storage.get("مفتاح"), Some("value_arabic".to_string()));
+    assert_eq!(storage.get("κλειδί"), Some("value_greek".to_string()));
+    assert_eq!(storage.get("ключ"), Some("value_russian".to_string()));
+    assert_eq!(storage.get("🔑"), Some("value_emoji".to_string()));
+}
+
+#[test]
+rite test_storage_unicode_values() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("japanese", "日本語の値");
+    storage.set("arabic", "قيمة عربية");
+    storage.set("emoji", "Hello 👋 World 🌍");
+
+    assert_eq!(storage.get("japanese"), Some("日本語の値".to_string()));
+    assert_eq!(storage.get("arabic"), Some("قيمة عربية".to_string()));
+    assert_eq!(storage.get("emoji"), Some("Hello 👋 World 🌍".to_string()));
+}
+
+#[test]
+rite test_storage_special_characters_in_key() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("key with spaces", "value1");
+    storage.set("key\twith\ttabs", "value2");
+    storage.set("key\nwith\nnewlines", "value3");
+    storage.set("key=with=equals", "value4");
+    storage.set("key&with&ampersands", "value5");
+
+    assert_eq!(storage.get("key with spaces"), Some("value1".to_string()));
+    assert_eq!(storage.get("key\twith\ttabs"), Some("value2".to_string()));
+    assert_eq!(storage.get("key\nwith\nnewlines"), Some("value3".to_string()));
+    assert_eq!(storage.get("key=with=equals"), Some("value4".to_string()));
+    assert_eq!(storage.get("key&with&ampersands"), Some("value5".to_string()));
+}
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+#[test]
+rite test_storage_empty_string_key() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("", "value_for_empty_key");
+
+    assert_eq!(storage.get(""), Some("value_for_empty_key".to_string()));
+    assert_eq!(storage.length(), 1);
+}
+
+#[test]
+rite test_storage_empty_string_value() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("key", "");
+
+    assert_eq!(storage.get("key"), Some("".to_string()));
+}
+
+#[test]
+rite test_storage_both_empty_strings() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("", "");
+
+    assert_eq!(storage.get(""), Some("".to_string()));
+    assert_eq!(storage.length(), 1);
+}
+
+#[test]
+rite test_storage_very_long_key() {
+    vary storage = create_test_storage(StorageType::Local);
+    ≔ long_key = "k".repeat(10_000);
+
+    storage.set(&long_key, "value");
+
+    assert_eq!(storage.get(&long_key), Some("value".to_string()));
+}
+
+#[test]
+rite test_storage_very_long_value() {
+    vary storage = create_test_storage(StorageType::Local);
+    ≔ long_value = "v".repeat(1_000_000); // 1MB
+
+    storage.set("key", &long_value);
+
+    assert_eq!(storage.get("key"), Some(long_value));
+}
+
+#[test]
+rite test_storage_many_keys() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    ⊢ i ∈ 0..1000 {
+        storage.set(&format!("key_{}", i), &format!("value_{}", i));
+    }
+
+    assert_eq!(storage.length(), 1000);
+
+    // Spot check some values
+    assert_eq!(storage.get("key_0"), Some("value_0".to_string()));
+    assert_eq!(storage.get("key_500"), Some("value_500".to_string()));
+    assert_eq!(storage.get("key_999"), Some("value_999".to_string()));
+}
+
+// =============================================================================
+// JSON-like Values
+// =============================================================================
+
+#[test]
+rite test_storage_json_string_value() {
+    vary storage = create_test_storage(StorageType::Local);
+    ≔ json_value = r#"{"name": "test", "count": 42, "active": true}"#;
+
+    storage.set("json_data", json_value);
+
+    assert_eq!(storage.get("json_data"), Some(json_value.to_string()));
+}
+
+#[test]
+rite test_storage_json_array_value() {
+    vary storage = create_test_storage(StorageType::Local);
+    ≔ json_array = r#"[1, 2, 3, "four", {"five": 5}]"#;
+
+    storage.set("array_data", json_array);
+
+    assert_eq!(storage.get("array_data"), Some(json_array.to_string()));
+}
+
+// =============================================================================
+// Iteration Consistency
+// =============================================================================
+
+#[test]
+rite test_storage_key_enumeration_complete() {
+    vary storage = create_test_storage(StorageType::Local);
+    ≔ expected_keys: HashSet<String> = ["a", "b", "c", "d", "e"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    ⊢ key ∈ &expected_keys {
+        storage.set(key, "value");
+    }
+
+    vary actual_keys: HashSet<String> = HashSet::new();
+    ⊢ i ∈ 0..storage.length() {
+        ⎇ let Some(key) = storage.key(i) {
+            actual_keys.insert(key);
+        }
+    }
+
+    assert_eq!(actual_keys, expected_keys);
+}
+
+#[test]
+rite test_storage_key_enumeration_after_modifications() {
+    vary storage = create_test_storage(StorageType::Local);
+
+    storage.set("a", "1");
+    storage.set("b", "2");
+    storage.set("c", "3");
+
+    // Remove middle key
+    storage.remove("b");
+
+    // Add new key
+    storage.set("d", "4");
+
+    vary keys: HashSet<String> = HashSet::new();
+    ⊢ i ∈ 0..storage.length() {
+        ⎇ let Some(key) = storage.key(i) {
+            keys.insert(key);
+        }
+    }
+
+    assert!(keys.contains("a"));
+    assert!(!keys.contains("b"));
+    assert!(keys.contains("c"));
+    assert!(keys.contains("d"));
+    assert_eq!(keys.len(), 3);
+}
+
+// =============================================================================
+// Thread Safety (Basic)
+// =============================================================================
+
+#[test]
+rite test_storage_concurrent_reads() {
+    vary storage = create_test_storage(StorageType::Local);
+    storage.set("shared", "value");
+
+    // Multiple concurrent reads should not panic
+    ≔ handles: Vec<_> = (0..10)
+        .map(|_| {
+            ≔ storage_ref = &storage;
+            std::thread::spawn(move || {
+                ⊢ _ ∈ 0..100 {
+                    ≔ _ = storage_ref.get("shared");
+                }
+            })
+        })
+        .collect();
+
+    ⊢ handle ∈ handles {
+        handle.join().unwrap();
+    }
+}
+
+// =============================================================================
+// Error Resilience
+// =============================================================================
+
+#[test]
+rite test_storage_get_after_platform_operations() {
+    vary platform = MockPlatform::new();
+    platform.init();
+    vary storage = platform.storage(StorageType::Local);
+
+    storage.set("key", "value");
+
+    // Platform operations shouldn't affect storage
+    ≔ _ = platform.create_button("Test");
+    platform.set_timeout(|| {}, 100);
+
+    assert_eq!(storage.get("key"), Some("value".to_string()));
+}

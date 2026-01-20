@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use crate::core::vdom::{VNode, Patch};
 use crate::core::events::{Event, EventType};
+use crate::core::error::{PlatformError, PlatformResult};
 use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
 
 // ============================================================================
@@ -104,7 +105,7 @@ use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage
     rite quit(&this);
 
     /// Create main window
-    rite create_window(&this, title: !String, width: !i32, height: !i32) → NativeWidget!;
+    rite create_window(&vary this, title: !String, width: !i32, height: !i32) → NativeWidget!;
 
     /// Show widget
     rite show(&this, widget: &NativeWidget);
@@ -115,11 +116,22 @@ use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage
     /// Set widget property
     rite set_property(&this, widget: &NativeWidget, name: &str, value: &str);
 
-    /// Connect signal handler
-    rite connect(&this, widget: &NativeWidget, signal: &str, handler_id: u64);
+    /// Connect signal handler with callback
+    /// The callback will be stored and invoked when the signal fires
+    rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64, callback: Box<dyn Fn() + 'static>);
 
     /// Disconnect signal handler
-    rite disconnect(&this, widget: &NativeWidget, handler_id: u64);
+    rite disconnect(&vary this, widget: &NativeWidget, handler_id: u64);
+
+    /// Destroy a widget and clean up associated resources
+    /// This handles:
+    /// - Removing all connected signal handlers
+    /// - Releasing native platform resources
+    /// - Preventing double-free via widget tracking
+    rite destroy_widget(&vary this, widget: &NativeWidget);
+
+    /// Check if a widget is still valid (not destroyed)
+    rite is_widget_valid(&this, widget: &NativeWidget) → bool!;
 }
 
 /// Native widget builder
@@ -213,6 +225,131 @@ use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage
     End,
     Fill,
     Baseline
+}
+
+/// Input purpose hints for virtual keyboard
+☉ ᛈ InputPurpose {
+    FreeForm,
+    Alpha,
+    Digits,
+    Number,
+    Phone,
+    Url,
+    Email,
+    Name,
+    Password,
+    Pin,
+    Terminal
+}
+
+/// Input hint flags (bitflags style)
+☉ sigil InputHints {
+    value: u32!
+}
+
+⊢ InputHints {
+    ☉ rite none() → This! { InputHints { value: 0 } }
+    ☉ rite new(value: u32) → This! { InputHints { value } }
+    ☉ rite contains(&this, other: InputHints) → bool! {
+        (this.value & other.value) == other.value
+    }
+}
+
+// InputHints constants
+⊢ InputHints {
+    ☉ const NO_SPELLCHECK: InputHints = InputHints { value: 1 };
+    ☉ const NO_EMOJI: InputHints = InputHints { value: 2 };
+    ☉ const LOWERCASE: InputHints = InputHints { value: 4 };
+    ☉ const UPPERCASE: InputHints = InputHints { value: 8 };
+    ☉ const WORD_COMPLETION: InputHints = InputHints { value: 16 };
+    ☉ const PRIVATE: InputHints = InputHints { value: 32 };
+}
+
+// Bitwise OR for InputHints
+⊢ std::ops::BitOr for InputHints {
+    type Output = InputHints;
+    rite bitor(this, rhs: InputHints) → InputHints! {
+        InputHints { value: this.value | rhs.value }
+    }
+}
+
+// ============================================================================
+// Accessibility Types
+// ============================================================================
+
+/// ARIA accessible roles
+☉ ᛈ AccessibleRole {
+    None,
+    Button,
+    TextBox,
+    Label,
+    CheckBox,
+    Switch,
+    Link,
+    List,
+    ListItem,
+    Menu,
+    MenuItem,
+    Navigation,
+    Main,
+    Banner,
+    Complementary,
+    ContentInfo,
+    Form,
+    Search,
+    Region,
+    Group,
+    Alert,
+    AlertDialog,
+    Dialog,
+    ProgressBar,
+    Slider,
+    SpinButton,
+    Tab,
+    TabList,
+    TabPanel,
+    Tree,
+    TreeItem,
+    Grid,
+    GridCell,
+    Row,
+    RowHeader,
+    ColumnHeader
+}
+
+/// Accessible states
+☉ ᛈ AccessibleState {
+    Disabled,
+    Checked,
+    Expanded,
+    Collapsed,
+    Focused,
+    Required,
+    Invalid,
+    Selected,
+    Pressed,
+    Hidden,
+    Busy,
+    ReadOnly
+}
+
+/// Live region announcement level
+☉ ᛈ LiveRegion {
+    Off,
+    Polite,
+    Assertive
+}
+
+/// Announcement priority
+☉ ᛈ AnnouncePriority {
+    Polite,
+    Assertive
+}
+
+/// Accessibility announcement
+☉ sigil Announcement {
+    ☉ message: String!,
+    ☉ priority: AnnouncePriority!
 }
 
 // ============================================================================
@@ -457,25 +594,29 @@ use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage
 // ============================================================================
 
 /// Unified native platform that auto-selects the right backend
-☉ rite create_native_platform() → Box<dyn Platform>! {
+/// Returns an error on unsupported platforms instead of panicking
+☉ rite create_native_platform() → PlatformResult<Box<dyn Platform>>! {
     #[cfg(target_os = "linux")]
     {
-        Box::new(Gtk4Platform::new())
+        Ok(Box::new(Gtk4Platform::new()))
     }
 
     #[cfg(target_os = "windows")]
     {
-        Box::new(Win32Platform::new())
+        Ok(Box::new(Win32Platform::new()))
     }
 
     #[cfg(target_os = "macos")]
     {
-        Box::new(CocoaPlatform::new())
+        Ok(Box::new(CocoaPlatform::new()))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
-        panic!("Unsupported platform")
+        Err(PlatformError::NotSupported {
+            feature: "native_platform".to_string(),
+            platform: std::env::consts::OS.to_string()
+        })
     }
 }
 
@@ -504,5 +645,27 @@ mod tests {
     rite test_vnode_to_native_mapping() {
         ≔ mapper! = VNodeToNative::new();
         assert_eq!(mapper.next_id, 1);
+    }
+
+    // Error handling tests
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    rite test_create_native_platform_supported() {
+        // On supported platforms, should return Ok
+        ≔ result! = create_native_platform();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    rite test_not_supported_error_properties() {
+        ≔ err! = PlatformError::NotSupported {
+            feature: "test_feature".to_string(),
+            platform: "test_os".to_string()
+        };
+        assert!(!err.is_recoverable());
+        assert_eq!(err.error_code(), "NOT_SUPPORTED");
+        ≔ msg! = format!("{}", err);
+        assert!(msg.contains("test_feature"));
+        assert!(msg.contains("test_os"));
     }
 }

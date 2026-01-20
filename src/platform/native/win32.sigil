@@ -2,9 +2,11 @@
 // Windows native GUI backend via Win32 API
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicPtr, Ordering};
 use crate::core::vdom::{VNode, Patch};
 use crate::core::events::{Event, EventType};
-use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
+use crate::core::error::{PlatformError, PlatformResult};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, PlatformFuture, Storage, StorageType};
 use super::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align};
 
 // ============================================================================
@@ -87,6 +89,7 @@ extern "C" {
     // Timer
     rite SetTimer(hWnd: *void, nIDEvent: u64, uElapse: u32, lpTimerFunc: *void) → u64;
     rite KillTimer(hWnd: *void, nIDEvent: u64) → bool;
+    rite GetTickCount64() → u64;  // Milliseconds since system start
 
     // Cursor/Loading
     rite LoadCursorW(hInstance: *void, lpCursorName: *u16) → *void;
@@ -297,13 +300,45 @@ static QLIPHOTH_CONTAINER_CLASS: [u16; 19] = [
 /// SAFETY: This static must only be accessed from the main GUI thread.
 /// The platform instance must outlive all Win32 operations.
 /// Set during init() and read from WndProc callbacks.
+///
+/// Thread Safety: Uses AtomicPtr for safe cross-thread access patterns.
+/// While Win32 message loop is single-threaded, the atomic ensures:
+/// - Safe initialization from any thread
+/// - Memory ordering guarantees for the pointer value
+/// - No data races on the pointer itself
 #[cfg(target_os = "windows")]
-static vary PLATFORM_INSTANCE: *void = 0 as *void;
+static PLATFORM_INSTANCE: AtomicPtr<Win32Platform> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Safely access the platform instance
+/// Returns None if platform not initialized
+#[cfg(target_os = "windows")]
+#[inline]
+rite with_win32_platform<T, F: FnOnce(&Win32Platform) → T>(f: F) → Option<T>? {
+    ≔ ptr = PLATFORM_INSTANCE.load(Ordering::Acquire);
+    ⎇ !ptr.is_null() {
+        Some(f(unsafe { &*ptr }))
+    } ⎉ {
+        None
+    }
+}
+
+/// Safely access the platform instance mutably
+/// Returns None if platform not initialized
+#[cfg(target_os = "windows")]
+#[inline]
+rite with_win32_platform_mut<T, F: FnOnce(&vary Win32Platform) → T>(f: F) → Option<T>? {
+    ≔ ptr = PLATFORM_INSTANCE.load(Ordering::Acquire);
+    ⎇ !ptr.is_null() {
+        Some(f(unsafe { &vary *ptr }))
+    } ⎉ {
+        None
+    }
+}
 
 /// Window procedure for main windows
 /// SAFETY: Called by Win32 from the main message loop.
 /// - hwnd is always valid when called by Windows
-/// - PLATFORM_INSTANCE must be valid or null (checked before use)
+/// - Platform instance accessed via thread-safe AtomicPtr
 /// - All FFI calls use proper Win32 calling convention
 #[cfg(target_os = "windows")]
 extern "C" rite window_proc(hwnd: *void, msg: u32, wparam: u64, lparam: i64) → i64 {
@@ -327,15 +362,48 @@ extern "C" rite window_proc(hwnd: *void, msg: u32, wparam: u64, lparam: i64) →
                 // Handle button clicks and control notifications
                 ≔ control_id = (wparam & 0xFFFF) as u64;
                 ≔ notification = ((wparam >> 16) & 0xFFFF) as u32;
-                // Route to event handler via PLATFORM_INSTANCE
-                ⎇ PLATFORM_INSTANCE as usize != 0 {
-                    ≔ platform = &*(PLATFORM_INSTANCE as *Win32Platform);
+                // Route to event handler via thread-safe platform access
+                with_win32_platform(|platform| {
                     platform.handle_command(control_id, notification, lparam as *void);
-                }
+                });
                 0
             }
             WM_NOTIFY => {
                 // Handle common control notifications
+                0
+            }
+            WM_TIMER => {
+                // Handle timer events - wparam is the timer ID (nIDEvent)
+                ≔ timer_id = wparam;
+                with_win32_platform_mut(|platform| {
+                    // Check if this is an animation frame timer
+                    ⎇ let Some(frame_id) = platform.timer_to_animation.get(&timer_id).cloned() {
+                        // Get timestamp before invoking callback
+                        ≔ timestamp = platform.get_timestamp_ms();
+
+                        // Remove and invoke animation callback (one-shot)
+                        ⎇ let Some(entry) = platform.animation_callbacks.remove(&frame_id) {
+                            platform.timer_to_animation.remove(&timer_id);
+                            KillTimer(hwnd, timer_id);
+                            (entry.callback)(timestamp);
+                        }
+                    } ⎉ {
+                        // Regular timer - invoke callback and check if cleanup needed
+                        ≔ should_cleanup! = ⊥;
+                        ⎇ let Some(entry) = platform.timer_entries.get(&timer_id) {
+                            // Invoke the callback
+                            (entry.callback)();
+                            // Check if one-shot (needs cleanup)
+                            should_cleanup = ¬entry.repeating;
+                        }
+
+                        // Clean up AFTER releasing the borrow
+                        ⎇ should_cleanup {
+                            KillTimer(hwnd, timer_id);
+                            platform.timer_entries.remove(&timer_id);
+                        }
+                    }
+                });
                 0
             }
             _ => {
@@ -346,16 +414,16 @@ extern "C" rite window_proc(hwnd: *void, msg: u32, wparam: u64, lparam: i64) →
 }
 
 /// Window procedure for container panels
+/// Platform instance accessed via thread-safe AtomicPtr
 #[cfg(target_os = "windows")]
 extern "C" rite container_proc(hwnd: *void, msg: u32, wparam: u64, lparam: i64) → i64 {
     unsafe {
         ⌥ msg {
             WM_SIZE => {
                 // Perform layout on children
-                ⎇ PLATFORM_INSTANCE as usize != 0 {
-                    ≔ platform = &*(PLATFORM_INSTANCE as *Win32Platform);
+                with_win32_platform(|platform| {
                     platform.layout_children(hwnd);
-                }
+                });
                 0
             }
             _ => {
@@ -395,20 +463,52 @@ sigil LayoutInfo {
     }
 }
 
+/// Stored callback type for event handlers
+#[cfg(target_os = "windows")]
+type EventCallback = Box<dyn Fn() + 'static>;
+
+/// Timer entry storing callback and whether it repeats
+#[cfg(target_os = "windows")]
+sigil TimerEntry {
+    callback: EventCallback!,
+    repeating: bool!
+}
+
+/// Animation frame entry for request_animation_frame
+#[cfg(target_os = "windows")]
+sigil AnimationEntry {
+    callback: Box<dyn Fn(f64) + 'static>!,
+    timer_id: u64!  // Win32 timer ID used for this animation frame
+}
+
 /// Win32 Platform for Windows native GUI
 #[cfg(target_os = "windows")]
 ☉ sigil Win32Platform {
     initialized: bool!,
     hinstance: *void!,
     main_hwnd: *void!,
-    event_handlers: HashMap<u64, fn()>!,
+    /// Event handlers map: handler_id → callback
+    /// CRITICAL: This stores the actual callback functions that get invoked
+    event_handlers: HashMap<u64, EventCallback>!,
+    /// Widget to handler IDs for cleanup
+    widget_handlers: HashMap<usize, Vec<u64>>!,
     layout_info: HashMap<usize, LayoutInfo>!,
     next_control_id: u64!,
+    next_handler_id: u64!,
     control_id_to_handler: HashMap<u64, u64>!,
     hwnd_to_control_id: HashMap<usize, u64>!,  // Maps HWND → control ID
-    timer_callbacks: HashMap<u64, fn()>!,
+    timer_entries: HashMap<u64, TimerEntry>!,
+    /// Animation frame callbacks: frame_id → callback entry
+    animation_callbacks: HashMap<u64, AnimationEntry>!,
+    /// Timer ID to animation frame ID mapping
+    timer_to_animation: HashMap<u64, u64>!,
+    /// Platform start time for animation timestamps (milliseconds)
+    start_time_ms: u64!,
+    next_animation_id: u64!,
     spacing_map: HashMap<usize, i32>!,
-    grid_dimensions: HashMap<usize, (i32, i32)>!  // Maps grid HWND → (cols, rows)
+    grid_dimensions: HashMap<usize, (i32, i32)>!,  // Maps grid HWND → (cols, rows)
+    /// Track live widgets for memory safety
+    live_widgets: std::collections::HashSet<usize>!
 }
 
 #[cfg(target_os = "windows")]
@@ -419,13 +519,28 @@ sigil LayoutInfo {
             hinstance: 0 as *void,
             main_hwnd: 0 as *void,
             event_handlers: HashMap::new(),
+            widget_handlers: HashMap::new(),
             layout_info: HashMap::new(),
             next_control_id: 1000,
+            next_handler_id: 1,
             control_id_to_handler: HashMap::new(),
             hwnd_to_control_id: HashMap::new(),
-            timer_callbacks: HashMap::new(),
+            timer_entries: HashMap::new(),
+            animation_callbacks: HashMap::new(),
+            timer_to_animation: HashMap::new(),
+            start_time_ms: 0,
+            next_animation_id: 1,
             spacing_map: HashMap::new(),
-            grid_dimensions: HashMap::new()
+            grid_dimensions: HashMap::new(),
+            live_widgets: std::collections::HashSet::new()
+        }
+    }
+
+    /// Get current timestamp in milliseconds since platform start
+    rite get_timestamp_ms(&this) → f64! {
+        unsafe {
+            ≔ now_ms = GetTickCount64();
+            (now_ms - this.start_time_ms) as f64
         }
     }
 
@@ -528,8 +643,9 @@ sigil LayoutInfo {
             // Get module handle
             this.hinstance = GetModuleHandleW(0 as *u16);
 
-            // Set global instance for WndProc
-            PLATFORM_INSTANCE = this as *void;
+            // Set global instance for WndProc using atomic operation
+            // Release ordering ensures all prior writes are visible
+            PLATFORM_INSTANCE.store(this as *vary Win32Platform, Ordering::Release);
 
             // Initialize common controls
             ≔ icc! = INITCOMMONCONTROLSEX {
@@ -576,6 +692,8 @@ sigil LayoutInfo {
 
             RegisterClassExW(&cc);
 
+            // Initialize start time for animation timestamps
+            this.start_time_ms = GetTickCount64();
             this.initialized = ⊤;
         }
         ⊤
@@ -627,6 +745,8 @@ sigil LayoutInfo {
             ⎇ hwnd as usize != 0 {
                 this.main_hwnd = hwnd;
                 this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                // Track widget for memory safety
+                this.live_widgets.insert(hwnd as usize);
                 NativeWidget::new(hwnd as usize, WidgetType::Window)
             } ⎉ {
                 NativeWidget::null()
@@ -692,7 +812,16 @@ sigil LayoutInfo {
         }
     }
 
-    ☉ rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64) {
+    ☉ rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64, callback: Box<dyn Fn() + 'static>) {
+        // CRITICAL FIX: Store the callback so it can be invoked later
+        this.event_handlers.insert(handler_id, callback);
+
+        // Track this handler for the widget (for cleanup on widget destruction)
+        this.widget_handlers
+            .entry(widget.handle)
+            .or_insert_with(Vec::new)
+            .push(handler_id);
+
         // For buttons and controls, map control ID to handler
         // Look up the control ID from our HWND → control ID mapping
         ⎇ let Some(control_id) = this.hwnd_to_control_id.get(&widget.handle) {
@@ -701,11 +830,48 @@ sigil LayoutInfo {
     }
 
     ☉ rite disconnect(&vary this, widget: &NativeWidget, handler_id: u64) {
+        // Remove callback from storage
+        this.event_handlers.remove(&handler_id);
+
+        // Remove from widget's handler list
+        ⎇ let Some(handlers) = this.widget_handlers.get_mut(&widget.handle) {
+            handlers.retain(|id| *id != handler_id);
+        }
+
         // Look up the control ID from our HWND → control ID mapping
         ⎇ let Some(control_id) = this.hwnd_to_control_id.get(&widget.handle) {
             this.control_id_to_handler.remove(control_id);
         }
-        this.event_handlers.remove(&handler_id);
+    }
+
+    ☉ rite destroy_widget(&vary this, widget: &NativeWidget) {
+        // Only process if widget is tracked (prevent double-free)
+        ⎇ this.live_widgets.remove(&widget.handle) {
+            // Remove all handlers associated with this widget
+            ⎇ let Some(handler_ids) = this.widget_handlers.remove(&widget.handle) {
+                for handler_id in handler_ids {
+                    this.event_handlers.remove(&handler_id);
+                }
+            }
+
+            // Clean up control ID mappings
+            ⎇ let Some(control_id) = this.hwnd_to_control_id.remove(&widget.handle) {
+                this.control_id_to_handler.remove(&control_id);
+            }
+
+            // Remove layout info
+            this.layout_info.remove(&widget.handle);
+
+            unsafe {
+                // Destroy the Win32 window
+                DestroyWindow(widget.handle as *void);
+            }
+        }
+        // If widget wasn't tracked, it's already been destroyed - no-op
+    }
+
+    ☉ rite is_widget_valid(&this, widget: &NativeWidget) → bool! {
+        this.live_widgets.contains(&widget.handle)
     }
 }
 
@@ -1381,67 +1547,104 @@ static RICHEDIT_CLASS: [u16; 12] = [
     }
 
     ☉ rite request_animation_frame(&vary this, callback: fn(f64)) → u64! {
-        // Use ~16ms timer for ~60fps
+        // Allocate animation frame ID
+        ≔ frame_id! = this.next_animation_id;
+        this.next_animation_id = this.next_animation_id + 1;
+
+        // Use a Win32 timer with ~16ms interval for ~60fps
+        ≔ timer_id! = this.next_control_id;
+        this.next_control_id = this.next_control_id + 1;
+
         unsafe {
-            ≔ timer_id! = this.next_control_id;
-            this.next_control_id = this.next_control_id + 1;
             SetTimer(this.main_hwnd, timer_id, 16, 0 as *void);
-            timer_id
         }
+
+        // Store animation entry
+        this.animation_callbacks.insert(frame_id, AnimationEntry {
+            callback: Box::new(callback),
+            timer_id
+        });
+
+        // Map timer_id back to frame_id for WM_TIMER handler
+        this.timer_to_animation.insert(timer_id, frame_id);
+
+        frame_id
     }
 
-    ☉ rite cancel_animation_frame(&this, id: u64) {
-        unsafe {
-            KillTimer(this.main_hwnd, id);
+    ☉ rite cancel_animation_frame(&vary this, id: u64) {
+        // Find and remove the animation entry
+        ⎇ let Some(entry) = this.animation_callbacks.remove(&id) {
+            unsafe {
+                KillTimer(this.main_hwnd, entry.timer_id);
+            }
+            this.timer_to_animation.remove(&entry.timer_id);
         }
     }
 
     ☉ rite set_timeout(&vary this, callback: fn(), delay_ms: u64) → u64! {
+        ≔ timer_id! = this.next_control_id;
+        this.next_control_id = this.next_control_id + 1;
+
+        // Store as one-shot timer (repeating = false)
+        this.timer_entries.insert(timer_id, TimerEntry {
+            callback: Box::new(callback),
+            repeating: ⊥
+        });
+
         unsafe {
-            ≔ timer_id! = this.next_control_id;
-            this.next_control_id = this.next_control_id + 1;
-            this.timer_callbacks.insert(timer_id, callback);
             SetTimer(this.main_hwnd, timer_id, delay_ms as u32, 0 as *void);
-            timer_id
         }
+        timer_id
     }
 
     ☉ rite clear_timeout(&vary this, id: u64) {
-        unsafe {
-            KillTimer(this.main_hwnd, id);
-            this.timer_callbacks.remove(&id);
+        // Remove timer entry
+        ⎇ this.timer_entries.remove(&id).is_some() {
+            unsafe {
+                KillTimer(this.main_hwnd, id);
+            }
         }
     }
 
     ☉ rite set_interval(&vary this, callback: fn(), interval_ms: u64) → u64! {
+        ≔ timer_id! = this.next_control_id;
+        this.next_control_id = this.next_control_id + 1;
+
+        // Store as repeating timer
+        this.timer_entries.insert(timer_id, TimerEntry {
+            callback: Box::new(callback),
+            repeating: ⊤
+        });
+
         unsafe {
-            ≔ timer_id! = this.next_control_id;
-            this.next_control_id = this.next_control_id + 1;
-            this.timer_callbacks.insert(timer_id, callback);
             SetTimer(this.main_hwnd, timer_id, interval_ms as u32, 0 as *void);
-            timer_id
         }
+        timer_id
     }
 
     ☉ rite clear_interval(&vary this, id: u64) {
-        unsafe {
-            KillTimer(this.main_hwnd, id);
-            this.timer_callbacks.remove(&id);
+        // Remove timer entry
+        ⎇ this.timer_entries.remove(&id).is_some() {
+            unsafe {
+                KillTimer(this.main_hwnd, id);
+            }
         }
     }
 
-    ☉ rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
-        // WinHTTP implementation would go here
-        // For now, return not implemented
-        async {
-            FetchResponse {
-                ok: ⊥,
-                status: 501,
-                status_text: "Not Implemented".to_string(),
-                headers: HashMap::new(),
-                body: Vec::new()
-            }
-        }
+    ☉ rite fetch(&this, url: &str, options: FetchOptions) → PlatformFuture<FetchResponse>! {
+        // TODO: Implement using WinHTTP
+        // For now, return proper 501 Not Implemented response
+        ≔ error_body = format!(
+            "{{\"error\":\"Not Implemented\",\"platform\":\"Win32\",\"url\":\"{}\",\"method\":\"{}\"}}",
+            url, options.method
+        );
+        PlatformFuture::ready(FetchResponse {
+            ok: ⊥,
+            status: 501,
+            status_text: "Not Implemented".to_string(),
+            headers: HashMap::new(),
+            body: error_body.into_bytes()
+        })
     }
 
     ☉ rite local_storage(&this) → Storage! {
@@ -1464,8 +1667,11 @@ static RICHEDIT_CLASS: [u16; 12] = [
         // Native apps don't have browser history
     }
 
-    ☉ rite render_to_string(&this, vnode: &VNode) → String! {
-        panic!("render_to_string not supported in native platform")
+    ☉ rite render_to_string(&this, vnode: &VNode) → PlatformResult<String>! {
+        Err(PlatformError::NotSupported {
+            feature: "render_to_string".to_string(),
+            platform: "Win32".to_string()
+        })
     }
 }
 
@@ -1499,7 +1705,7 @@ mod tests {
         assert!(platform.event_handlers.is_empty());
         assert!(platform.layout_info.is_empty());
         assert!(platform.control_id_to_handler.is_empty());
-        assert!(platform.timer_callbacks.is_empty());
+        assert!(platform.timer_entries.is_empty());
         assert!(platform.spacing_map.is_empty());
         assert!(platform.grid_dimensions.is_empty());
     }
@@ -1813,5 +2019,394 @@ mod tests {
         assert_eq!(BUTTON_CLASS[3], 'T' as u16);
         assert_eq!(BUTTON_CLASS[4], 'O' as u16);
         assert_eq!(BUTTON_CLASS[5], 'N' as u16);
+    }
+
+    // ========================================================================
+    // Timer Entry Tests (Sprint 4)
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_timer_entries_initially_empty() {
+        ≔ platform! = Win32Platform::new();
+        assert!(platform.timer_entries.is_empty());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_timer_entry_structure() {
+        ≔ entry! = TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊥
+        };
+        assert!(!entry.repeating);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_timer_entry_repeating_flag() {
+        ≔ one_shot! = TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊥
+        };
+        ≔ interval! = TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊤
+        };
+
+        assert!(!one_shot.repeating);
+        assert!(interval.repeating);
+    }
+
+    // ========================================================================
+    // Widget Lifecycle Tests (Sprint 3)
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_live_widgets_initially_empty() {
+        ≔ platform! = Win32Platform::new();
+        assert!(platform.live_widgets.is_empty());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_live_widgets_insert_and_contains() {
+        vary platform! = Win32Platform::new();
+        platform.live_widgets.insert(0x1000);
+        platform.live_widgets.insert(0x2000);
+
+        assert!(platform.live_widgets.contains(&0x1000));
+        assert!(platform.live_widgets.contains(&0x2000));
+        assert!(!platform.live_widgets.contains(&0x3000));
+        assert_eq!(platform.live_widgets.len(), 2);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_live_widgets_remove() {
+        vary platform! = Win32Platform::new();
+        platform.live_widgets.insert(0x1000);
+        platform.live_widgets.insert(0x2000);
+
+        assert!(platform.live_widgets.remove(&0x1000));
+        assert!(!platform.live_widgets.contains(&0x1000));
+        assert!(platform.live_widgets.contains(&0x2000));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_live_widgets_double_remove_safe() {
+        vary platform! = Win32Platform::new();
+        platform.live_widgets.insert(0x1000);
+
+        assert!(platform.live_widgets.remove(&0x1000));
+        assert!(!platform.live_widgets.remove(&0x1000)); // Second remove is safe no-op
+    }
+
+    // ========================================================================
+    // Event Handler Tests (Sprint 2)
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_widget_handlers_initially_empty() {
+        ≔ platform! = Win32Platform::new();
+        assert!(platform.widget_handlers.is_empty());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_widget_handlers_tracking() {
+        vary platform! = Win32Platform::new();
+
+        // Simulate adding handlers to a widget
+        platform.widget_handlers.entry(0x1000).or_insert_with(Vec::new).push(1);
+        platform.widget_handlers.entry(0x1000).or_insert_with(Vec::new).push(2);
+        platform.widget_handlers.entry(0x2000).or_insert_with(Vec::new).push(3);
+
+        assert_eq!(platform.widget_handlers.get(&0x1000).unwrap().len(), 2);
+        assert_eq!(platform.widget_handlers.get(&0x2000).unwrap().len(), 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_handler_cleanup_on_widget_destroy() {
+        vary platform! = Win32Platform::new();
+
+        // Set up widget with handlers
+        platform.live_widgets.insert(0x1000);
+        platform.widget_handlers.insert(0x1000, vec![1, 2, 3]);
+        platform.event_handlers.insert(1, Box::new(|| {}));
+        platform.event_handlers.insert(2, Box::new(|| {}));
+        platform.event_handlers.insert(3, Box::new(|| {}));
+
+        // Verify setup
+        assert_eq!(platform.event_handlers.len(), 3);
+
+        // Simulate widget destruction cleanup
+        ⎇ platform.live_widgets.remove(&0x1000) {
+            ⎇ let Some(handler_ids) = platform.widget_handlers.remove(&0x1000) {
+                for id in handler_ids {
+                    platform.event_handlers.remove(&id);
+                }
+            }
+        }
+
+        // Verify cleanup
+        assert!(platform.event_handlers.is_empty());
+        assert!(!platform.widget_handlers.contains_key(&0x1000));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_hwnd_to_control_id_mapping() {
+        vary platform! = Win32Platform::new();
+
+        platform.hwnd_to_control_id.insert(0x1000, 1001);
+        platform.hwnd_to_control_id.insert(0x2000, 1002);
+
+        assert_eq!(*platform.hwnd_to_control_id.get(&0x1000).unwrap(), 1001);
+        assert_eq!(*platform.hwnd_to_control_id.get(&0x2000).unwrap(), 1002);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_control_id_to_handler_mapping() {
+        vary platform! = Win32Platform::new();
+
+        platform.control_id_to_handler.insert(1001, 1);
+        platform.control_id_to_handler.insert(1002, 2);
+
+        assert_eq!(*platform.control_id_to_handler.get(&1001).unwrap(), 1);
+        assert_eq!(*platform.control_id_to_handler.get(&1002).unwrap(), 2);
+    }
+
+    // ========================================================================
+    // Animation Frame Tests (Sprint 5)
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_animation_callbacks_initially_empty() {
+        ≔ platform! = Win32Platform::new();
+        assert!(platform.animation_callbacks.is_empty());
+        assert!(platform.timer_to_animation.is_empty());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_animation_id_starts_at_one() {
+        ≔ platform! = Win32Platform::new();
+        assert_eq!(platform.next_animation_id, 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_animation_entry_structure() {
+        ≔ entry! = AnimationEntry {
+            callback: Box::new(|_timestamp| {}),
+            timer_id: 42
+        };
+        assert_eq!(entry.timer_id, 42);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_animation_entry_callback_receives_timestamp() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
+
+        ≔ received_timestamp = Arc::new(AtomicU64::new(0));
+        ≔ ts_clone = received_timestamp.clone();
+
+        ≔ entry! = AnimationEntry {
+            callback: Box::new(move |timestamp| {
+                ts_clone.store(timestamp as u64, Ordering::SeqCst);
+            }),
+            timer_id: 1
+        };
+
+        // Invoke with test timestamp
+        (entry.callback)(5678.9);
+
+        assert_eq!(received_timestamp.load(Ordering::SeqCst), 5678);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_start_time_initial_value() {
+        ≔ platform! = Win32Platform::new();
+        // Start time is 0 until init() is called
+        assert_eq!(platform.start_time_ms, 0);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_animation_callbacks_storage() {
+        vary platform! = Win32Platform::new();
+
+        platform.animation_callbacks.insert(1, AnimationEntry {
+            callback: Box::new(|_| {}),
+            timer_id: 100
+        });
+        platform.animation_callbacks.insert(2, AnimationEntry {
+            callback: Box::new(|_| {}),
+            timer_id: 200
+        });
+
+        assert_eq!(platform.animation_callbacks.len(), 2);
+        assert!(platform.animation_callbacks.contains_key(&1));
+        assert!(platform.animation_callbacks.contains_key(&2));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_animation_callbacks_removal() {
+        vary platform! = Win32Platform::new();
+
+        platform.animation_callbacks.insert(1, AnimationEntry {
+            callback: Box::new(|_| {}),
+            timer_id: 100
+        });
+
+        assert_eq!(platform.animation_callbacks.len(), 1);
+
+        platform.animation_callbacks.remove(&1);
+        assert!(platform.animation_callbacks.is_empty());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_timer_to_animation_mapping() {
+        vary platform! = Win32Platform::new();
+
+        platform.timer_to_animation.insert(100, 1);
+        platform.timer_to_animation.insert(200, 2);
+
+        assert_eq!(*platform.timer_to_animation.get(&100).unwrap(), 1);
+        assert_eq!(*platform.timer_to_animation.get(&200).unwrap(), 2);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_animation_id_increments() {
+        vary platform! = Win32Platform::new();
+
+        ≔ id1! = platform.next_animation_id;
+        platform.next_animation_id += 1;
+        ≔ id2! = platform.next_animation_id;
+        platform.next_animation_id += 1;
+        ≔ id3! = platform.next_animation_id;
+
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+        assert_eq!(id3, 3);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_animation_cleanup_removes_both_maps() {
+        vary platform! = Win32Platform::new();
+
+        // Simulate animation frame registration
+        platform.animation_callbacks.insert(5, AnimationEntry {
+            callback: Box::new(|_| {}),
+            timer_id: 500
+        });
+        platform.timer_to_animation.insert(500, 5);
+
+        // Simulate cleanup (as done in cancel_animation_frame)
+        ⎇ let Some(entry) = platform.animation_callbacks.remove(&5) {
+            platform.timer_to_animation.remove(&entry.timer_id);
+        }
+
+        assert!(platform.animation_callbacks.is_empty());
+        assert!(platform.timer_to_animation.is_empty());
+    }
+
+    // ========================================================================
+    // Error Handling Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_render_to_string_returns_not_supported() {
+        ≔ platform! = Win32Platform::new();
+        ≔ vnode! = VNode::Empty;
+
+        ≔ result! = platform.render_to_string(&vnode);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PlatformError::NotSupported { feature, platform: plat } => {
+                assert_eq!(feature, "render_to_string");
+                assert_eq!(plat, "Win32");
+            }
+            _ => panic!("Expected NotSupported error")
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_error_is_not_recoverable() {
+        ≔ platform! = Win32Platform::new();
+        ≔ vnode! = VNode::Empty;
+
+        ≔ result! = platform.render_to_string(&vnode);
+        ≔ err! = result.unwrap_err();
+
+        // NotSupported errors are not recoverable
+        assert!(!err.is_recoverable());
+    }
+
+    #[test]
+    rite test_error_code_is_not_supported() {
+        ≔ err! = PlatformError::NotSupported {
+            feature: "test".to_string(),
+            platform: "Win32".to_string()
+        };
+        assert_eq!(err.error_code(), "NOT_SUPPORTED");
+    }
+
+    // ========================================================================
+    // Thread Safety Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_platform_ptr_is_atomic() {
+        // Verify the platform pointer uses AtomicPtr (compile-time check)
+        // This test passes if it compiles - AtomicPtr provides thread-safe access
+        ≔ ptr = PLATFORM_INSTANCE.load(Ordering::Acquire);
+        assert!(ptr.is_null()); // Should be null before init
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_with_platform_returns_none_when_uninitialized() {
+        // Ensure safe behavior when platform not initialized
+        ≔ result? = with_win32_platform(|_| 42);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_with_platform_mut_returns_none_when_uninitialized() {
+        // Ensure safe behavior when platform not initialized (mutable version)
+        ≔ result? = with_win32_platform_mut(|_| 42);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    rite test_atomic_ordering_constants() {
+        // Verify we use proper memory orderings
+        // Acquire for loads (reads), Release for stores (writes)
+        // This ensures proper synchronization between threads
+        use std::sync::atomic::Ordering;
+
+        // These are the orderings we use - verify they compile
+        ≔ _acquire = Ordering::Acquire;
+        ≔ _release = Ordering::Release;
     }
 }

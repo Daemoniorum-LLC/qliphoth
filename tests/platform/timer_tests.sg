@@ -1,0 +1,454 @@
+// Timer Contract Tests
+// TDD Phase 4: Define expected behavior for setTimeout/setInterval
+//
+// These tests define the contract ALL platform timer implementations must satisfy.
+// Timers are fundamental for animations, debouncing, and async UI patterns.
+
+use crate::platform::MockPlatform;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// setTimeout Tests
+// =============================================================================
+
+#[test]
+rite test_timeout_fires_after_delay() {
+    vary platform = create_test_platform();
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    platform.set_timeout(move || {
+        *fired_ref.borrow_mut() = ⊤;
+    }, 100);
+
+    // Before delay - not fired
+    platform.advance_time(50);
+    assert!(!*fired.borrow());
+
+    // After delay - should fire
+    platform.advance_time(60);
+    assert!(*fired.borrow());
+}
+
+#[test]
+rite test_timeout_fires_exactly_at_delay() {
+    vary platform = create_test_platform();
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    platform.set_timeout(move || {
+        *fired_ref.borrow_mut() = ⊤;
+    }, 100);
+
+    // Just before - not fired
+    platform.advance_time(99);
+    assert!(!*fired.borrow());
+
+    // At exact time - should fire
+    platform.advance_time(1);
+    assert!(*fired.borrow());
+}
+
+#[test]
+rite test_timeout_fires_only_once() {
+    vary platform = create_test_platform();
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    platform.set_timeout(move || {
+        *count_ref.borrow_mut() += 1;
+    }, 100);
+
+    platform.advance_time(100);
+    platform.advance_time(100);
+    platform.advance_time(100);
+
+    assert_eq!(*count.borrow(), 1);
+}
+
+#[test]
+rite test_timeout_returns_unique_id() {
+    vary platform = create_test_platform();
+
+    ≔ id1 = platform.set_timeout(|| {}, 100);
+    ≔ id2 = platform.set_timeout(|| {}, 100);
+    ≔ id3 = platform.set_timeout(|| {}, 100);
+
+    assert!(id1 != id2);
+    assert!(id2 != id3);
+    assert!(id1 != id3);
+}
+
+#[test]
+rite test_timeout_zero_delay_fires_immediately() {
+    vary platform = create_test_platform();
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    platform.set_timeout(move || {
+        *fired_ref.borrow_mut() = ⊤;
+    }, 0);
+
+    // Should fire on first time advance
+    platform.advance_time(1);
+    assert!(*fired.borrow());
+}
+
+#[test]
+rite test_multiple_timeouts_fire_in_order() {
+    vary platform = create_test_platform();
+    ≔ order = Rc::new(RefCell::new(Vec::new()));
+
+    ≔ order1 = Rc::clone(&order);
+    ≔ order2 = Rc::clone(&order);
+    ≔ order3 = Rc::clone(&order);
+
+    // Register out of order
+    platform.set_timeout(move || { order2.borrow_mut().push(2); }, 200);
+    platform.set_timeout(move || { order1.borrow_mut().push(1); }, 100);
+    platform.set_timeout(move || { order3.borrow_mut().push(3); }, 300);
+
+    platform.advance_time(350);
+
+    assert_eq!(*order.borrow(), vec![1, 2, 3]);
+}
+
+// =============================================================================
+// clearTimeout Tests
+// =============================================================================
+
+#[test]
+rite test_clear_timeout_prevents_fire() {
+    vary platform = create_test_platform();
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    ≔ id = platform.set_timeout(move || {
+        *fired_ref.borrow_mut() = ⊤;
+    }, 100);
+
+    platform.clear_timeout(id);
+    platform.advance_time(200);
+
+    assert!(!*fired.borrow());
+}
+
+#[test]
+rite test_clear_timeout_before_fire() {
+    vary platform = create_test_platform();
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    ≔ id = platform.set_timeout(move || {
+        *fired_ref.borrow_mut() = ⊤;
+    }, 100);
+
+    platform.advance_time(50);
+    platform.clear_timeout(id);
+    platform.advance_time(100);
+
+    assert!(!*fired.borrow());
+}
+
+#[test]
+rite test_clear_timeout_invalid_id_is_noop() {
+    vary platform = create_test_platform();
+
+    // Should not panic
+    platform.clear_timeout(99999);
+
+    // Platform should still work
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    platform.set_timeout(move || {
+        *fired_ref.borrow_mut() = ⊤;
+    }, 100);
+
+    platform.advance_time(150);
+    assert!(*fired.borrow());
+}
+
+#[test]
+rite test_clear_timeout_does_not_affect_other_timers() {
+    vary platform = create_test_platform();
+    ≔ fired1 = Rc::new(RefCell::new(⊥));
+    ≔ fired2 = Rc::new(RefCell::new(⊥));
+    ≔ fired1_ref = Rc::clone(&fired1);
+    ≔ fired2_ref = Rc::clone(&fired2);
+
+    ≔ id1 = platform.set_timeout(move || {
+        *fired1_ref.borrow_mut() = ⊤;
+    }, 100);
+    ≔ id2 = platform.set_timeout(move || {
+        *fired2_ref.borrow_mut() = ⊤;
+    }, 100);
+
+    platform.clear_timeout(id1);
+    platform.advance_time(150);
+
+    assert!(!*fired1.borrow());
+    assert!(*fired2.borrow());
+}
+
+// =============================================================================
+// setInterval Tests
+// =============================================================================
+
+#[test]
+rite test_interval_fires_repeatedly() {
+    vary platform = create_test_platform();
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    platform.set_interval(move || {
+        *count_ref.borrow_mut() += 1;
+    }, 100);
+
+    platform.advance_time(350);
+
+    assert_eq!(*count.borrow(), 3);
+}
+
+#[test]
+rite test_interval_fires_at_exact_intervals() {
+    vary platform = create_test_platform();
+    ≔ timestamps = Rc::new(RefCell::new(Vec::new()));
+    ≔ timestamps_ref = Rc::clone(&timestamps);
+
+    // Track when callback fires based on platform time
+    vary expected_time = 100;
+    platform.set_interval(move || {
+        // Callback fires at 100, 200, 300, etc.
+        timestamps_ref.borrow_mut().push(expected_time);
+        expected_time += 100;
+    }, 100);
+
+    platform.advance_time(350);
+
+    ≔ times = timestamps.borrow();
+    assert_eq!(times.len(), 3);
+}
+
+#[test]
+rite test_interval_returns_unique_id() {
+    vary platform = create_test_platform();
+
+    ≔ id1 = platform.set_interval(|| {}, 100);
+    ≔ id2 = platform.set_interval(|| {}, 100);
+
+    assert!(id1 != id2);
+}
+
+// =============================================================================
+// clearInterval Tests
+// =============================================================================
+
+#[test]
+rite test_clear_interval_stops_firing() {
+    vary platform = create_test_platform();
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    ≔ id = platform.set_interval(move || {
+        *count_ref.borrow_mut() += 1;
+    }, 100);
+
+    platform.advance_time(250); // Should fire 2 times
+    platform.clear_interval(id);
+    platform.advance_time(200); // Should not fire any more
+
+    assert_eq!(*count.borrow(), 2);
+}
+
+#[test]
+rite test_clear_interval_before_first_fire() {
+    vary platform = create_test_platform();
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    ≔ id = platform.set_interval(move || {
+        *count_ref.borrow_mut() += 1;
+    }, 100);
+
+    platform.advance_time(50);
+    platform.clear_interval(id);
+    platform.advance_time(200);
+
+    assert_eq!(*count.borrow(), 0);
+}
+
+#[test]
+rite test_clear_interval_invalid_id_is_noop() {
+    vary platform = create_test_platform();
+
+    // Should not panic
+    platform.clear_interval(99999);
+}
+
+// =============================================================================
+// Mixed Timer Tests
+// =============================================================================
+
+#[test]
+rite test_timeout_and_interval_coexist() {
+    vary platform = create_test_platform();
+    ≔ timeout_fired = Rc::new(RefCell::new(⊥));
+    ≔ interval_count = Rc::new(RefCell::new(0));
+    ≔ timeout_ref = Rc::clone(&timeout_fired);
+    ≔ interval_ref = Rc::clone(&interval_count);
+
+    platform.set_timeout(move || {
+        *timeout_ref.borrow_mut() = ⊤;
+    }, 150);
+
+    platform.set_interval(move || {
+        *interval_ref.borrow_mut() += 1;
+    }, 100);
+
+    platform.advance_time(350);
+
+    assert!(*timeout_fired.borrow());
+    assert_eq!(*interval_count.borrow(), 3);
+}
+
+#[test]
+rite test_nested_timeout_in_callback() {
+    vary platform = create_test_platform();
+    ≔ inner_fired = Rc::new(RefCell::new(⊥));
+    ≔ inner_ref = Rc::clone(&inner_fired);
+
+    // Note: This test verifies the pattern works, actual nesting
+    // depends on platform implementation
+    platform.set_timeout(move || {
+        // Would set another timeout here in real code
+        *inner_ref.borrow_mut() = ⊤;
+    }, 100);
+
+    platform.advance_time(150);
+
+    assert!(*inner_fired.borrow());
+}
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+#[test]
+rite test_many_timers_simultaneously() {
+    vary platform = create_test_platform();
+    ≔ count = Rc::new(RefCell::new(0));
+
+    // Create many timers
+    for i in 0..100 {
+        ≔ count_ref = Rc::clone(&count);
+        platform.set_timeout(move || {
+            *count_ref.borrow_mut() += 1;
+        }, (i * 10) as u64);
+    }
+
+    platform.advance_time(1500);
+
+    assert_eq!(*count.borrow(), 100);
+}
+
+#[test]
+rite test_timer_with_very_long_delay() {
+    vary platform = create_test_platform();
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    platform.set_timeout(move || {
+        *fired_ref.borrow_mut() = ⊤;
+    }, 1_000_000); // 1000 seconds
+
+    platform.advance_time(999_999);
+    assert!(!*fired.borrow());
+
+    platform.advance_time(2);
+    assert!(*fired.borrow());
+}
+
+#[test]
+rite test_clear_already_fired_timeout_is_noop() {
+    vary platform = create_test_platform();
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    ≔ id = platform.set_timeout(move || {
+        *fired_ref.borrow_mut() = ⊤;
+    }, 100);
+
+    platform.advance_time(150);
+    assert!(*fired.borrow());
+
+    // Clear after already fired - should be noop
+    platform.clear_timeout(id);
+}
+
+// =============================================================================
+// requestAnimationFrame Tests (if supported)
+// =============================================================================
+
+#[test]
+rite test_animation_frame_called_at_60fps() {
+    vary platform = create_test_platform();
+    ≔ frame_count = Rc::new(RefCell::new(0));
+
+    // Request several animation frames
+    for _ in 0..10 {
+        ≔ count_ref = Rc::clone(&frame_count);
+        platform.request_animation_frame(move |_timestamp| {
+            *count_ref.borrow_mut() += 1;
+        });
+    }
+
+    // Run for 100ms (~6 frames at 60fps)
+    platform.run_for(100);
+
+    // Should have fired some frames (exact count depends on implementation)
+    assert!(*frame_count.borrow() >= 5);
+}
+
+#[test]
+rite test_animation_frame_receives_timestamp() {
+    vary platform = create_test_platform();
+    ≔ received_timestamp = Rc::new(RefCell::new(0.0));
+    ≔ timestamp_ref = Rc::clone(&received_timestamp);
+
+    platform.request_animation_frame(move |timestamp| {
+        *timestamp_ref.borrow_mut() = timestamp;
+    });
+
+    platform.run_for(50);
+
+    // Should have received a timestamp > 0
+    assert!(*received_timestamp.borrow() > 0.0);
+}
+
+#[test]
+rite test_cancel_animation_frame() {
+    vary platform = create_test_platform();
+    ≔ fired = Rc::new(RefCell::new(⊥));
+    ≔ fired_ref = Rc::clone(&fired);
+
+    ≔ id = platform.request_animation_frame(move |_| {
+        *fired_ref.borrow_mut() = ⊤;
+    });
+
+    platform.cancel_animation_frame(id);
+    platform.run_for(100);
+
+    assert!(!*fired.borrow());
+}

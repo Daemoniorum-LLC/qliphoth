@@ -1,0 +1,267 @@
+# Qliphoth Platform Simulacra Tests
+# Sprint 8: Integration Testing - User Scenario Tests
+#
+# These tests simulate real user interactions with different archetypes
+
+tests:
+  # Button Click Interaction Test
+  - id: button-click-interaction
+    name: Button Click Interaction
+    description: Verify button clicks work for all user types
+    targetArchetypes:
+      - first-time-user
+      - power-user
+      - keyboard-only-user
+    page: /playground
+    steps:
+      - id: locate-run-button
+        action: locate
+        target: "[data-testid='run-btn']"
+
+      - id: click-run-button
+        action: click
+        target: "[data-testid='run-btn']"
+
+      - id: verify-response
+        action: verify
+        target: "[data-testid='playground']"
+        assertion: visible
+
+    successCriteria:
+      - handler-invoked-within-100ms
+      - visual-feedback-provided
+      - ui-remains-stable
+
+  # Editor Typing Test
+  - id: editor-typing
+    name: Editor Typing Test
+    description: Verify editor handles text input correctly
+    targetArchetypes:
+      - first-time-user
+      - power-user
+    page: /playground
+    steps:
+      - id: focus-editor
+        action: focus
+        target: "[data-testid='editor-textarea']"
+
+      - id: clear-content
+        action: clear
+        target: "[data-testid='editor-textarea']"
+
+      - id: type-sigil-code
+        action: type
+        target: "[data-testid='editor-textarea']"
+        value: "rite hello() {\n    println(\"Hello, World!\");\n}"
+
+      - id: verify-content
+        action: verify
+        target: "[data-testid='editor-textarea']"
+        assertion: contains
+        value: "rite hello()"
+
+    successCriteria:
+      - content-preserved
+      - sigil-symbols-work
+      - no-input-lag
+
+  # Tab Navigation Test
+  - id: tab-navigation
+    name: Tab Navigation Test
+    description: Verify keyboard navigation works
+    targetArchetypes:
+      - screen-reader-user
+      - keyboard-only-user
+    page: /playground
+    steps:
+      - id: start-at-body
+        action: focus
+        target: "body"
+
+      - id: tab-to-first-interactive
+        action: keyboard
+        key: Tab
+        repeat: 1
+
+      - id: verify-focus-visible
+        action: verify
+        target: ":focus"
+        assertion: visible
+
+      - id: tab-through-controls
+        action: keyboard
+        key: Tab
+        repeat: 5
+
+      - id: verify-still-focused
+        action: verify
+        target: ":focus"
+        assertion: exists
+
+    successCriteria:
+      - all-controls-focusable
+      - focus-indicator-visible
+      - logical-tab-order
+
+  # Screen Reader Accessibility Test
+  - id: screen-reader-accessibility
+    name: Screen Reader Accessibility
+    description: Verify screen reader compatibility
+    targetArchetypes:
+      - screen-reader-user
+    page: /playground
+    steps:
+      - id: check-heading-structure
+        action: verify
+        target: "h1, h2"
+        assertion: exists
+
+      - id: check-button-labels
+        action: verify
+        target: "[data-testid='run-btn']"
+        assertion: has-text
+
+      - id: check-form-labels
+        action: verify
+        target: "[data-testid='example-select']"
+        assertion: has-accessible-name
+
+    successCriteria:
+      - semantic-headings
+      - labeled-buttons
+      - accessible-forms
+
+  # Mobile Touch Test
+  - id: mobile-touch
+    name: Mobile Touch Interaction
+    description: Verify touch interactions work on mobile
+    targetArchetypes:
+      - mobile-user
+    page: /playground
+    viewport:
+      width: 375
+      height: 667
+    steps:
+      - id: verify-responsive-layout
+        action: verify
+        target: "[data-testid='playground']"
+        assertion: fits-viewport
+
+      - id: tap-run-button
+        action: tap
+        target: "[data-testid='run-btn']"
+
+      - id: verify-tap-response
+        action: verify
+        target: "[data-testid='playground']"
+        assertion: visible
+
+      - id: check-touch-target-size
+        action: verify
+        target: "[data-testid='run-btn']"
+        assertion: min-size
+        value: 44  # 44px minimum for touch targets
+
+    successCriteria:
+      - responsive-layout
+      - touch-targets-adequate
+      - no-hover-required
+
+  # Rapid Interaction Test
+  - id: rapid-interaction
+    name: Rapid Interaction Stress Test
+    description: Verify UI handles rapid interactions
+    targetArchetypes:
+      - impatient-user
+      - power-user
+    page: /playground
+    steps:
+      - id: rapid-tab-clicks
+        action: click
+        target: "[data-testid='output-tab']"
+        repeat: 10
+        delay_ms: 50
+
+      - id: verify-stability
+        action: verify
+        target: "[data-testid='output-panel']"
+        assertion: visible
+
+      - id: rapid-typing
+        action: type
+        target: "[data-testid='editor-textarea']"
+        value: "rapid test input"
+        speed_wpm: 200
+
+      - id: verify-content-accurate
+        action: verify
+        target: "[data-testid='editor-textarea']"
+        assertion: contains
+        value: "rapid test input"
+
+    successCriteria:
+      - no-ui-freeze
+      - no-dropped-inputs
+      - consistent-state
+
+  # Example Selection Test
+  - id: example-selection
+    name: Example Selection Flow
+    description: Verify example selector works for all users
+    targetArchetypes:
+      - first-time-user
+      - power-user
+    page: /playground
+    steps:
+      - id: locate-selector
+        action: locate
+        target: "[data-testid='example-select']"
+
+      - id: select-fibonacci
+        action: select
+        target: "[data-testid='example-select']"
+        value: "fibonacci"
+
+      - id: verify-selection
+        action: verify
+        target: "[data-testid='example-select']"
+        assertion: value-equals
+        value: "fibonacci"
+
+    successCriteria:
+      - selection-updates
+      - editor-content-changes
+      - no-errors
+
+  # Error Handling Test
+  - id: error-handling
+    name: Error Handling User Experience
+    description: Verify errors are handled gracefully
+    targetArchetypes:
+      - first-time-user
+    page: /playground
+    steps:
+      - id: enter-invalid-code
+        action: type
+        target: "[data-testid='editor-textarea']"
+        value: "rite broken( { syntax error here"
+        clear_first: true
+
+      - id: click-run
+        action: click
+        target: "[data-testid='run-btn']"
+
+      - id: verify-ui-stable
+        action: verify
+        target: "[data-testid='playground']"
+        assertion: visible
+
+      - id: verify-error-message
+        action: verify
+        target: "[data-testid='output-console']"
+        assertion: exists
+
+    successCriteria:
+      - ui-remains-stable
+      - error-displayed
+      - can-continue-editing

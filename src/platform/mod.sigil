@@ -5,12 +5,19 @@
 // Cross-platform bindings for browser, SSR, and native environments
 
 use std::collections::HashMap;
+use std::rc::Rc;
+use std::cell::RefCell;
 use crate::core::vdom::{VNode, Patch};
 use crate::core::events::{Event, EventDelegator, EventType};
+use crate::core::error::{PlatformError, PlatformResult};
 
 // Native platform backends (GTK4, Win32, Cocoa)
 ☉ mod native;
 ☉ use native::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, VNodeToNative};
+
+// Mock platform for testing
+☉ mod mock;
+☉ use mock::MockPlatform;
 
 #[cfg(target_os = "linux")]
 ☉ use native::Gtk4Platform;
@@ -45,25 +52,25 @@ use crate::core::events::{Event, EventDelegator, EventType};
     rite window_size(&this) → (i32, i32)!;
 
     /// Request animation frame
-    rite request_animation_frame(&this, callback: fn(f64)) → u64!;
+    rite request_animation_frame(&vary this, callback: fn(f64)) → u64!;
 
     /// Cancel animation frame
-    rite cancel_animation_frame(&this, id: u64);
+    rite cancel_animation_frame(&vary this, id: u64);
 
     /// Set timeout
-    rite set_timeout(&this, callback: fn(), delay_ms: u64) → u64!;
+    rite set_timeout(&vary this, callback: fn(), delay_ms: u64) → u64!;
 
     /// Clear timeout
-    rite clear_timeout(&this, id: u64);
+    rite clear_timeout(&vary this, id: u64);
 
     /// Set interval
-    rite set_interval(&this, callback: fn(), interval_ms: u64) → u64!;
+    rite set_interval(&vary this, callback: fn(), interval_ms: u64) → u64!;
 
     /// Clear interval
-    rite clear_interval(&this, id: u64);
+    rite clear_interval(&vary this, id: u64);
 
     /// Fetch URL
-    rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>!;
+    rite fetch(&this, url: &str, options: FetchOptions) → PlatformFuture<FetchResponse>!;
 
     /// Get local storage
     rite local_storage(&this) → Storage!;
@@ -81,7 +88,34 @@ use crate::core::events::{Event, EventDelegator, EventType};
     rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>);
 
     /// Render to string (for SSR)
-    rite render_to_string(&this, vnode: &VNode) → String!;
+    /// Returns NotSupported error on platforms that don't support SSR
+    rite render_to_string(&this, vnode: &VNode) → PlatformResult<String>!;
+}
+
+/// Platform-aware Future for async operations
+/// This provides a simple wrapper that can be blocked on for testing.
+/// For real async use, call `.await` (when Sigil async is fully supported).
+/// For synchronous testing, call `.block()` to immediately get the result.
+☉ sigil PlatformFuture<T> {
+    value: T!
+}
+
+⊢<T> PlatformFuture<T> {
+    /// Create a ready future that immediately holds a value
+    ☉ rite ready(value: T) → This! {
+        PlatformFuture { value }
+    }
+
+    /// Block and wait for the result synchronously
+    /// For use in tests - allows sync execution of async APIs
+    ☉ rite block(this) → T! {
+        this.value
+    }
+
+    /// Map the inner value to a new type
+    ☉ rite map<U>(this, f: fn(T) → U) → PlatformFuture<U>! {
+        PlatformFuture::ready(f(this.value))
+    }
 }
 
 /// DOM element handle
@@ -108,6 +142,7 @@ use crate::core::events::{Event, EventDelegator, EventType};
 }
 
 ⊢ FetchOptions {
+    /// Create default fetch options (GET, no body)
     ☉ rite default() → This! {
         FetchOptions {
             method: "GET".to_string(),
@@ -120,10 +155,17 @@ use crate::core::events::{Event, EventDelegator, EventType};
         }
     }
 
-    ☉ rite get(url: &str) → This! {
+    /// Alias for default() - create a new FetchOptions builder
+    ☉ rite new() → This! {
         FetchOptions::default()
     }
 
+    /// Create GET request options
+    ☉ rite get() → This! {
+        FetchOptions::default()
+    }
+
+    /// Create POST request with body
     ☉ rite post(body: &str) → This! {
         FetchOptions {
             method: "POST".to_string(),
@@ -132,14 +174,92 @@ use crate::core::events::{Event, EventDelegator, EventType};
         }
     }
 
+    /// Create PUT request with body
+    ☉ rite put(body: &str) → This! {
+        FetchOptions {
+            method: "PUT".to_string(),
+            body: Some(body.to_string()),
+            ..FetchOptions::default()
+        }
+    }
+
+    /// Create PATCH request with body
+    ☉ rite patch(body: &str) → This! {
+        FetchOptions {
+            method: "PATCH".to_string(),
+            body: Some(body.to_string()),
+            ..FetchOptions::default()
+        }
+    }
+
+    /// Create DELETE request
+    ☉ rite delete() → This! {
+        FetchOptions {
+            method: "DELETE".to_string(),
+            ..FetchOptions::default()
+        }
+    }
+
+    /// Create HEAD request
+    ☉ rite head() → This! {
+        FetchOptions {
+            method: "HEAD".to_string(),
+            ..FetchOptions::default()
+        }
+    }
+
+    /// Create POST request with JSON body
     ☉ rite json(body: impl serde::Serialize) → This! {
         ≔ vary opts! = FetchOptions {
             method: "POST".to_string(),
-            body: Some(serde_json::to_string(&body)·unwrap()),
+            body: Some(serde_json::to_string(&body)
+                ·expect("FetchOptions::json: body must be JSON serializable")),
             ..FetchOptions::default()
         }
         opts.headers·insert("Content-Type".to_string(), "application/json".to_string())
         opts
+    }
+
+    /// Set the HTTP method (builder pattern)
+    ☉ rite method(vary this, method: &str) → This! {
+        this.method = method.to_string();
+        this
+    }
+
+    /// Set the request body (builder pattern)
+    ☉ rite body(vary this, body: &str) → This! {
+        this.body = Some(body.to_string());
+        this
+    }
+
+    /// Add a header (builder pattern)
+    ☉ rite header(vary this, key: &str, value: &str) → This! {
+        this.headers.insert(key.to_string(), value.to_string());
+        this
+    }
+
+    /// Set fetch mode (builder pattern)
+    ☉ rite mode(vary this, mode: FetchMode) → This! {
+        this.mode = mode;
+        this
+    }
+
+    /// Set credentials mode (builder pattern)
+    ☉ rite credentials(vary this, credentials: FetchCredentials) → This! {
+        this.credentials = credentials;
+        this
+    }
+
+    /// Set cache mode (builder pattern)
+    ☉ rite cache(vary this, cache: FetchCache) → This! {
+        this.cache = cache;
+        this
+    }
+
+    /// Set redirect mode (builder pattern)
+    ☉ rite redirect(vary this, redirect: FetchRedirect) → This! {
+        this.redirect = redirect;
+        this
     }
 }
 
@@ -180,6 +300,50 @@ use crate::core::events::{Event, EventDelegator, EventType};
 }
 
 ⊢ FetchResponse {
+    /// Create a successful (200 OK) response with the given body
+    ☉ rite ok(body: &[u8]) → This! {
+        FetchResponse {
+            ok: ⊤,
+            status: 200,
+            status_text: "OK".to_string(),
+            headers: HashMap::new(),
+            body: body.to_vec(),
+        }
+    }
+
+    /// Create an error response with the given status
+    ☉ rite error(status: u16, status_text: &str) → This! {
+        FetchResponse {
+            ok: ⊥,
+            status: status,
+            status_text: status_text.to_string(),
+            headers: HashMap::new(),
+            body: Vec::new(),
+        }
+    }
+
+    /// Create a network error response (status 0)
+    ☉ rite network_error(message: &str) → This! {
+        FetchResponse {
+            ok: ⊥,
+            status: 0,
+            status_text: message.to_string(),
+            headers: HashMap::new(),
+            body: Vec::new(),
+        }
+    }
+
+    /// Create a timeout response (status 408)
+    ☉ rite timeout() → This! {
+        FetchResponse {
+            ok: ⊥,
+            status: 408,
+            status_text: "Request Timeout".to_string(),
+            headers: HashMap::new(),
+            body: Vec::new(),
+        }
+    }
+
     /// Get response as text
     ☉ rite text(&this) → String! {
         String::from_utf8(this.body·clone())·unwrap_or_default()
@@ -198,8 +362,14 @@ use crate::core::events::{Event, EventDelegator, EventType};
 }
 
 /// Storage abstraction
+/// Storage provides a key-value store interface that works across platforms.
+/// For browser, it maps to localStorage/sessionStorage.
+/// For native platforms, it uses platform-specific persistence.
+/// For testing, MockPlatform provides an in-memory implementation.
 ☉ sigil Storage {
-    storage_type: StorageType!
+    storage_type: StorageType!,
+    /// Shared reference to the underlying data store
+    data: Rc<RefCell<HashMap<String, String>>>!,
 }
 
 ☉ enum StorageType {
@@ -208,31 +378,39 @@ use crate::core::events::{Event, EventDelegator, EventType};
 }
 
 ⊢ Storage {
+    /// Create a new Storage instance with the given type and data store
+    ☉ rite new(storage_type: StorageType, data: Rc<RefCell<HashMap<String, String>>>) → This! {
+        Storage { storage_type, data }
+    }
+
+    /// Get a value by key
     ☉ rite get(&this, key: &str) → Option<String>? {
-        // Platform-specific implementation
-        None
+        this.data.borrow().get(key).cloned()
     }
 
+    /// Set a key-value pair
     ☉ rite set(&this, key: &str, value: &str) {
-        // Platform-specific implementation
+        this.data.borrow_mut().insert(key.to_string(), value.to_string());
     }
 
+    /// Remove a key
     ☉ rite remove(&this, key: &str) {
-        // Platform-specific implementation
+        this.data.borrow_mut().remove(key);
     }
 
+    /// Clear all keys
     ☉ rite clear(&this) {
-        // Platform-specific implementation
+        this.data.borrow_mut().clear();
     }
 
+    /// Get the number of keys
     ☉ rite length(&this) → usize! {
-        // Platform-specific implementation
-        0
+        this.data.borrow().len()
     }
 
+    /// Get the key at a given index (order is not guaranteed)
     ☉ rite key(&this, index: usize) → Option<String>? {
-        // Platform-specific implementation
-        None
+        this.data.borrow().keys().nth(index).cloned()
     }
 }
 
@@ -242,13 +420,18 @@ use crate::core::events::{Event, EventDelegator, EventType};
 
 /// Browser platform implementation
 ☉ sigil BrowserPlatform {
-    event_delegator: EventDelegator!
+    event_delegator: EventDelegator!,
+    /// In-memory storage (TODO: Use JS FFI for real persistence)
+    local_storage_data: Rc<RefCell<HashMap<String, String>>>!,
+    session_storage_data: Rc<RefCell<HashMap<String, String>>>!,
 }
 
 ⊢ BrowserPlatform {
     ☉ rite new() → This! {
         BrowserPlatform {
-            event_delegator: EventDelegator::new()
+            event_delegator: EventDelegator::new(),
+            local_storage_data: Rc::new(RefCell::new(HashMap::new())),
+            session_storage_data: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 }
@@ -380,33 +563,34 @@ use crate::core::events::{Event, EventDelegator, EventType};
         unsafe { js_clear_interval(id) }
     }
 
-    rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
-        async {
-            extern "js" {
-                async rite js_fetch(url: &str, method: &str, headers: &str, body: Option<&str>) → (bool, u16, String, String, Vec<u8>);
-            }
-
-            ≔ headers_json! = serde_json::to_string(&options.headers)·unwrap()
-            ≔ result! = unsafe {
-                js_fetch(url, &options.method, &headers_json, options.body·as_deref())·await
-            }
-
-            FetchResponse {
-                ok: result.0,
-                status: result.1,
-                status_text: result.2,
-                headers: serde_json::from_str(&result.3)·unwrap_or_default(),
-                body: result.4
-            }
+    rite fetch(&this, url: &str, options: FetchOptions) → PlatformFuture<FetchResponse>! {
+        // NOTE: Browser platform uses sync FFI call that internally handles async JS
+        // For true async, use browser's native fetch with Promises
+        extern "js" {
+            rite js_fetch_sync(url: &str, method: &str, headers: &str, body: Option<&str>) → (bool, u16, String, String, Vec<u8>);
         }
+
+        ≔ headers_json! = serde_json::to_string(&options.headers)
+            ·expect("fetch: headers must be JSON serializable");
+        ≔ result! = unsafe {
+            js_fetch_sync(url, &options.method, &headers_json, options.body·as_deref())
+        };
+
+        PlatformFuture::ready(FetchResponse {
+            ok: result.0,
+            status: result.1,
+            status_text: result.2,
+            headers: serde_json::from_str(&result.3)·unwrap_or_default(),
+            body: result.4
+        })
     }
 
     rite local_storage(&this) → Storage! {
-        Storage { storage_type: StorageType::Local }
+        Storage::new(StorageType::Local, Rc::clone(&this.local_storage_data))
     }
 
     rite session_storage(&this) → Storage! {
-        Storage { storage_type: StorageType::Session }
+        Storage::new(StorageType::Session, Rc::clone(&this.session_storage_data))
     }
 
     rite current_url(&this) → String! {
@@ -420,7 +604,8 @@ use crate::core::events::{Event, EventDelegator, EventType};
         extern "js" {
             rite js_push_state(state: Option<&str>, url: &str);
         }
-        ≔ state_json? = state·map(|s| serde_json::to_string(&s)·unwrap())
+        ≔ state_json? = state·map(|s| serde_json::to_string(&s)
+            ·expect("push_history: state must be JSON serializable"))
         unsafe { js_push_state(state_json·as_deref(), url) }
     }
 
@@ -428,13 +613,17 @@ use crate::core::events::{Event, EventDelegator, EventType};
         extern "js" {
             rite js_replace_state(state: Option<&str>, url: &str);
         }
-        ≔ state_json? = state·map(|s| serde_json::to_string(&s)·unwrap())
+        ≔ state_json? = state·map(|s| serde_json::to_string(&s)
+            ·expect("replace_history: state must be JSON serializable"))
         unsafe { js_replace_state(state_json·as_deref(), url) }
     }
 
-    rite render_to_string(&this, vnode: &VNode) → String! {
+    rite render_to_string(&this, vnode: &VNode) → PlatformResult<String>! {
         // Browser doesn't support SSR rendering
-        panic!("render_to_string not supported in browser")
+        Err(PlatformError::NotSupported {
+            feature: "render_to_string".to_string(),
+            platform: "browser".to_string()
+        })
     }
 }
 
@@ -443,11 +632,18 @@ use crate::core::events::{Event, EventDelegator, EventType};
 // ============================================================================
 
 /// Server-side rendering platform
-☉ sigil ServerPlatform {}
+☉ sigil ServerPlatform {
+    /// In-memory storage for SSR context
+    local_storage_data: Rc<RefCell<HashMap<String, String>>>!,
+    session_storage_data: Rc<RefCell<HashMap<String, String>>>!,
+}
 
 ⊢ ServerPlatform {
     ☉ rite new() → This! {
-        ServerPlatform {}
+        ServerPlatform {
+            local_storage_data: Rc::new(RefCell::new(HashMap::new())),
+            session_storage_data: Rc::new(RefCell::new(HashMap::new())),
+        }
     }
 }
 
@@ -498,26 +694,24 @@ use crate::core::events::{Event, EventDelegator, EventType};
 
     rite clear_interval(&this, _id: u64) {}
 
-    rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
-        // Use native HTTP client
-        async {
-            // Server-side fetch implementation
-            FetchResponse {
-                ok: nay,
-                status: 0,
-                status_text: "Not implemented".to_string(),
-                headers: HashMap::new(),
-                body: Vec::new()
-            }
-        }
+    rite fetch(&this, url: &str, options: FetchOptions) → PlatformFuture<FetchResponse>! {
+        // Server-side fetch implementation - returns 501 Not Implemented
+        // TODO: Implement using native HTTP client (reqwest, hyper, etc.)
+        PlatformFuture::ready(FetchResponse {
+            ok: ⊥,
+            status: 501,
+            status_text: "Not Implemented".to_string(),
+            headers: HashMap::new(),
+            body: Vec::new()
+        })
     }
 
     rite local_storage(&this) → Storage! {
-        Storage { storage_type: StorageType::Local }
+        Storage::new(StorageType::Local, Rc::clone(&this.local_storage_data))
     }
 
     rite session_storage(&this) → Storage! {
-        Storage { storage_type: StorageType::Session }
+        Storage::new(StorageType::Session, Rc::clone(&this.session_storage_data))
     }
 
     rite current_url(&this) → String! {
@@ -532,8 +726,8 @@ use crate::core::events::{Event, EventDelegator, EventType};
         // No-op on server
     }
 
-    rite render_to_string(&this, vnode: &VNode) → String! {
-        render_vnode_to_string(vnode)
+    rite render_to_string(&this, vnode: &VNode) → PlatformResult<String>! {
+        Ok(render_vnode_to_string(vnode))
     }
 }
 
@@ -650,25 +844,29 @@ rite escape_attr(s: &str) → String! {
 }
 
 /// Detect native platform based on OS
-☉ rite detect_native_platform() → Box<dyn Platform>! {
+/// Returns an error on unsupported platforms instead of panicking
+☉ rite detect_native_platform() → PlatformResult<Box<dyn Platform>>! {
     #[cfg(target_os = "linux")]
     {
-        Box::new(Gtk4Platform::new())
+        Ok(Box::new(Gtk4Platform::new()))
     }
 
     #[cfg(target_os = "windows")]
     {
-        Box::new(Win32Platform::new())
+        Ok(Box::new(Win32Platform::new()))
     }
 
     #[cfg(target_os = "macos")]
     {
-        Box::new(CocoaPlatform::new())
+        Ok(Box::new(CocoaPlatform::new()))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
-        panic!("Unsupported native platform. Use Browser or Server target instead.")
+        Err(PlatformError::NotSupported {
+            feature: "native_platform".to_string(),
+            platform: std::env::consts::OS.to_string()
+        })
     }
 }
 

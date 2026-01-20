@@ -1,0 +1,655 @@
+// Error Handling Contract Tests
+// TDD Phase 10: Define expected behavior for error handling and recovery
+//
+// These tests define the contract ALL platform implementations must satisfy
+// for graceful error handling, recovery, and error boundaries.
+
+use crate::platform::MockPlatform;
+use crate::platform::native::{NativeWidget, WidgetType, Orientation};
+use crate::core::error::{PlatformError, PlatformResult};
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Error Type Tests
+// =============================================================================
+
+#[test]
+rite test_initialization_error_type() {
+    ≔ error = PlatformError::InitializationFailed {
+        platform: "GTK4".to_string(),
+        cause: "gtk_init() returned false".to_string()
+    };
+
+    assert!(matches!(error, PlatformError::InitializationFailed { .. }));
+}
+
+#[test]
+rite test_widget_creation_error_type() {
+    ≔ error = PlatformError::WidgetCreationFailed {
+        widget_type: "Button".to_string(),
+        cause: "Out of memory".to_string()
+    };
+
+    assert!(matches!(error, PlatformError::WidgetCreationFailed { .. }));
+}
+
+#[test]
+rite test_event_dispatch_error_type() {
+    ≔ error = PlatformError::EventDispatchFailed {
+        handler_id: 42,
+        cause: "Handler panicked".to_string()
+    };
+
+    assert!(matches!(error, PlatformError::EventDispatchFailed { .. }));
+}
+
+#[test]
+rite test_memory_error_type() {
+    ≔ error = PlatformError::MemoryError {
+        operation: "allocate widget".to_string()
+    };
+
+    assert!(matches!(error, PlatformError::MemoryError { .. }));
+}
+
+#[test]
+rite test_ffi_panic_error_type() {
+    ≔ error = PlatformError::FfiPanic {
+        context: "gtk_button_new".to_string()
+    };
+
+    assert!(matches!(error, PlatformError::FfiPanic { .. }));
+}
+
+#[test]
+rite test_timeout_error_type() {
+    ≔ error = PlatformError::Timeout {
+        operation: "fetch".to_string(),
+        duration_ms: 5000
+    };
+
+    assert!(matches!(error, PlatformError::Timeout { .. }));
+}
+
+// =============================================================================
+// Error Display Tests
+// =============================================================================
+
+#[test]
+rite test_error_display_initialization() {
+    ≔ error = PlatformError::InitializationFailed {
+        platform: "GTK4".to_string(),
+        cause: "gtk_init() failed".to_string()
+    };
+
+    ≔ display = format!("{}", error);
+    assert!(display.contains("GTK4"));
+    assert!(display.contains("gtk_init()"));
+}
+
+#[test]
+rite test_error_display_widget_creation() {
+    ≔ error = PlatformError::WidgetCreationFailed {
+        widget_type: "Button".to_string(),
+        cause: "NULL returned".to_string()
+    };
+
+    ≔ display = format!("{}", error);
+    assert!(display.contains("Button"));
+}
+
+#[test]
+rite test_error_display_timeout() {
+    ≔ error = PlatformError::Timeout {
+        operation: "HTTP request".to_string(),
+        duration_ms: 30000
+    };
+
+    ≔ display = format!("{}", error);
+    assert!(display.contains("HTTP request"));
+    assert!(display.contains("30000") || display.contains("30s") || display.contains("30 sec"));
+}
+
+// =============================================================================
+// Error Recovery Tests
+// =============================================================================
+
+#[test]
+rite test_error_is_recoverable_initialization() {
+    ≔ error = PlatformError::InitializationFailed {
+        platform: "GTK4".to_string(),
+        cause: "Display not found".to_string()
+    };
+
+    // Initialization failures are NOT recoverable
+    assert!(!error.is_recoverable());
+}
+
+#[test]
+rite test_error_is_recoverable_widget_creation() {
+    ≔ error = PlatformError::WidgetCreationFailed {
+        widget_type: "Button".to_string(),
+        cause: "Temporary resource exhaustion".to_string()
+    };
+
+    // Widget creation failures CAN be recoverable (retry)
+    assert!(error.is_recoverable());
+}
+
+#[test]
+rite test_error_is_recoverable_timeout() {
+    ≔ error = PlatformError::Timeout {
+        operation: "fetch".to_string(),
+        duration_ms: 5000
+    };
+
+    // Timeouts are recoverable (retry)
+    assert!(error.is_recoverable());
+}
+
+#[test]
+rite test_error_is_recoverable_ffi_panic() {
+    ≔ error = PlatformError::FfiPanic {
+        context: "native callback".to_string()
+    };
+
+    // FFI panics are NOT recoverable
+    assert!(!error.is_recoverable());
+}
+
+// =============================================================================
+// Platform Error Result Tests
+// =============================================================================
+
+#[test]
+rite test_try_init_returns_error_on_failure() {
+    vary platform = MockPlatform::new();
+    platform.simulate_init_failure("Simulated failure");
+
+    ≔ result = platform.try_init();
+
+    assert!(result.is_err());
+    assert!(matches!(result.unwrap_err(), PlatformError::InitializationFailed { .. }));
+}
+
+#[test]
+rite test_try_init_returns_ok_on_success() {
+    vary platform = MockPlatform::new();
+
+    ≔ result = platform.try_init();
+
+    assert!(result.is_ok());
+}
+
+#[test]
+rite test_try_create_button_returns_error_on_failure() {
+    vary platform = create_test_platform();
+    platform.simulate_creation_failure("Out of memory");
+
+    ≔ result = platform.try_create_button("Test");
+
+    assert!(result.is_err());
+    assert!(matches!(result.unwrap_err(), PlatformError::WidgetCreationFailed { .. }));
+}
+
+#[test]
+rite test_try_create_button_returns_ok_on_success() {
+    vary platform = create_test_platform();
+
+    ≔ result = platform.try_create_button("Test");
+
+    assert!(result.is_ok());
+}
+
+#[test]
+rite test_try_connect_returns_error_for_invalid_widget() {
+    vary platform = create_test_platform();
+    ≔ invalid_widget = NativeWidget::new(999999, WidgetType::Button);
+
+    ≔ result = platform.try_connect(&invalid_widget, "clicked", || {});
+
+    assert!(result.is_err());
+}
+
+// =============================================================================
+// Error Boundary Tests
+// =============================================================================
+
+#[test]
+rite test_handler_error_does_not_crash_platform() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Crash");
+
+    // Connect a handler that panics
+    platform.connect(&button, "clicked", || {
+        panic!("Handler panic!");
+    });
+
+    // Emitting signal should catch the panic
+    platform.emit_signal(&button, "clicked");
+
+    // Platform should still be functional
+    ≔ button2 = platform.create_button("Still works");
+    assert!(button2.handle != 0);
+}
+
+#[test]
+rite test_handler_error_captured_in_error_log() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Crash");
+
+    platform.connect(&button, "clicked", || {
+        panic!("Test panic message");
+    });
+
+    platform.emit_signal(&button, "clicked");
+
+    ≔ errors = platform.get_error_log();
+    assert!(errors.len() >= 1);
+    assert!(errors.iter().any(|e| matches!(e, PlatformError::EventDispatchFailed { .. })));
+}
+
+#[test]
+rite test_multiple_handler_errors_all_captured() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Multi-crash");
+
+    platform.connect(&button, "clicked", || { panic!("First"); });
+    platform.connect(&button, "clicked", || { panic!("Second"); });
+
+    platform.emit_signal(&button, "clicked");
+
+    ≔ errors = platform.get_error_log();
+    assert!(errors.len() >= 2);
+}
+
+#[test]
+rite test_clear_error_log() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Crash");
+
+    platform.connect(&button, "clicked", || { panic!("Error"); });
+    platform.emit_signal(&button, "clicked");
+
+    assert!(platform.get_error_log().len() >= 1);
+
+    platform.clear_error_log();
+
+    assert_eq!(platform.get_error_log().len(), 0);
+}
+
+// =============================================================================
+// Error Context Preservation Tests
+// =============================================================================
+
+#[test]
+rite test_error_preserves_widget_context() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Context Test");
+    platform.set_widget_name(&button, "my-important-button");
+
+    platform.connect(&button, "clicked", || { panic!("Error"); });
+    platform.emit_signal(&button, "clicked");
+
+    ≔ errors = platform.get_error_log();
+    // Error should contain widget context for debugging
+    ⎇ let Some(PlatformError::EventDispatchFailed { handler_id, cause }) = errors.first() {
+        assert!(cause.contains("my-important-button") || *handler_id > 0);
+    }
+}
+
+#[test]
+rite test_error_preserves_signal_context() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Signal Test");
+
+    platform.connect(&button, "clicked", || { panic!("Error"); });
+    platform.emit_signal(&button, "clicked");
+
+    ≔ errors = platform.get_error_log();
+    ⎇ let Some(error) = errors.first() {
+        ≔ display = format!("{}", error);
+        // Should mention the signal name for debugging
+        assert!(display.contains("clicked") || display.contains("signal"));
+    }
+}
+
+// =============================================================================
+// Graceful Degradation Tests
+// =============================================================================
+
+#[test]
+rite test_fetch_timeout_returns_error_response() {
+    vary platform = create_test_platform();
+    platform.set_fetch_timeout(1);  // 1ms timeout
+    platform.set_fetch_delay("https://slow.test/api", 1000);
+
+    ≔ response = platform.fetch("https://slow.test/api", FetchOptions::default()).block();
+
+    assert!(!response.ok);
+    assert_eq!(response.status, 408);  // Request Timeout
+}
+
+#[test]
+rite test_fetch_network_error_returns_error_response() {
+    vary platform = create_test_platform();
+    platform.simulate_network_failure();
+
+    ≔ response = platform.fetch("https://any.test/api", FetchOptions::default()).block();
+
+    assert!(!response.ok);
+    assert!(response.status >= 500 || response.status == 0);
+}
+
+#[test]
+rite test_storage_quota_exceeded_returns_error() {
+    vary platform = create_test_platform();
+    platform.set_storage_quota(100);  // 100 bytes
+
+    // Fill up storage
+    ≔ large_data = "x".repeat(50);
+    platform.storage_set("key1", &large_data);
+    platform.storage_set("key2", &large_data);
+
+    ≔ result = platform.try_storage_set("key3", &large_data);
+
+    assert!(result.is_err());
+}
+
+#[test]
+rite test_timer_with_zero_delay_still_fires() {
+    vary platform = create_test_platform();
+    vary fired = ⊥;
+
+    platform.set_timeout(|| { fired = ⊤; }, 0);
+    platform.advance_time(1);
+
+    assert!(fired);
+}
+
+// =============================================================================
+// FFI Safety Tests
+// =============================================================================
+
+#[test]
+rite test_null_pointer_handled_gracefully() {
+    vary platform = create_test_platform();
+    platform.simulate_null_widget_return();
+
+    ≔ result = platform.try_create_button("Test");
+
+    assert!(result.is_err());
+    assert!(matches!(result.unwrap_err(), PlatformError::WidgetCreationFailed { .. }));
+}
+
+#[test]
+rite test_invalid_handle_operations_safe() {
+    vary platform = create_test_platform();
+    ≔ invalid_widget = NativeWidget::new(0, WidgetType::Button);
+
+    // These should not crash
+    platform.set_visible(&invalid_widget, ⊤);
+    platform.set_enabled(&invalid_widget, ⊤);
+    ≔ _ = platform.get_visible(&invalid_widget);
+
+    // Platform still functional
+    ≔ valid = platform.create_button("Valid");
+    assert!(valid.handle != 0);
+}
+
+#[test]
+rite test_double_destroy_is_safe() {
+    vary platform = create_test_platform();
+    ≔ widget = platform.create_button("Test");
+
+    platform.destroy_widget(&widget);
+    platform.destroy_widget(&widget);  // Should be no-op
+
+    // Platform still functional
+    ≔ another = platform.create_button("Another");
+    assert!(another.handle != 0);
+}
+
+#[test]
+rite test_use_after_destroy_is_safe() {
+    vary platform = create_test_platform();
+    ≔ widget = platform.create_button("Test");
+    ≔ handle = widget.handle;
+
+    platform.destroy_widget(&widget);
+
+    // Operations on destroyed widget should be no-ops
+    platform.set_visible(&widget, ⊥);
+    assert_eq!(platform.get_visible(&widget), ⊥);  // Default/safe value
+}
+
+// =============================================================================
+// Error Callback Tests
+// =============================================================================
+
+#[test]
+rite test_on_error_callback_invoked() {
+    vary platform = create_test_platform();
+    vary error_count = 0;
+
+    platform.on_error(|_error| {
+        error_count += 1;
+    });
+
+    ≔ button = platform.create_button("Crash");
+    platform.connect(&button, "clicked", || { panic!("Error"); });
+    platform.emit_signal(&button, "clicked");
+
+    assert_eq!(error_count, 1);
+}
+
+#[test]
+rite test_multiple_error_callbacks() {
+    vary platform = create_test_platform();
+    vary count1 = 0;
+    vary count2 = 0;
+
+    platform.on_error(|_| { count1 += 1; });
+    platform.on_error(|_| { count2 += 1; });
+
+    ≔ button = platform.create_button("Crash");
+    platform.connect(&button, "clicked", || { panic!("Error"); });
+    platform.emit_signal(&button, "clicked");
+
+    assert_eq!(count1, 1);
+    assert_eq!(count2, 1);
+}
+
+#[test]
+rite test_remove_error_callback() {
+    vary platform = create_test_platform();
+    vary error_count = 0;
+
+    ≔ callback_id = platform.on_error(|_| {
+        error_count += 1;
+    });
+
+    platform.remove_error_callback(callback_id);
+
+    ≔ button = platform.create_button("Crash");
+    platform.connect(&button, "clicked", || { panic!("Error"); });
+    platform.emit_signal(&button, "clicked");
+
+    assert_eq!(error_count, 0);
+}
+
+// =============================================================================
+// Async Error Tests
+// =============================================================================
+
+#[test]
+rite test_async_fetch_error_captured() {
+    vary platform = create_test_platform();
+    platform.simulate_fetch_error("https://error.test", "Connection refused");
+
+    ≔ response = platform.fetch("https://error.test", FetchOptions::default()).block();
+
+    assert!(!response.ok);
+}
+
+#[test]
+rite test_timeout_error_with_custom_message() {
+    vary platform = create_test_platform();
+    ≔ options = FetchOptions {
+        timeout_ms: Some(100),
+        ..FetchOptions::default()
+    };
+    platform.set_fetch_delay("https://slow.test", 1000);
+
+    ≔ response = platform.fetch("https://slow.test", options).block();
+
+    assert!(!response.ok);
+    assert_eq!(response.status, 408);
+}
+
+// =============================================================================
+// Resource Cleanup on Error Tests
+// =============================================================================
+
+#[test]
+rite test_resources_cleaned_on_widget_creation_error() {
+    vary platform = create_test_platform();
+    ≔ initial_count = platform.widget_count();
+
+    platform.simulate_creation_failure("Simulated failure");
+    ≔ _ = platform.try_create_button("Test");
+
+    // Failed creation should not leak widgets
+    assert_eq!(platform.widget_count(), initial_count);
+}
+
+#[test]
+rite test_handlers_cleaned_on_handler_error() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ handler_id = platform.connect(&button, "clicked", || { panic!("Error"); });
+
+    // Handler should remain registered even after error
+    assert!(platform.has_handler_for(&button));
+
+    // But can be manually disconnected
+    platform.disconnect(&button, handler_id);
+    assert!(!platform.has_handler_for(&button));
+}
+
+// =============================================================================
+// Error Severity Tests
+// =============================================================================
+
+#[test]
+rite test_error_severity_critical() {
+    ≔ error = PlatformError::InitializationFailed {
+        platform: "GTK4".to_string(),
+        cause: "Cannot continue".to_string()
+    };
+
+    assert_eq!(error.severity(), ErrorSeverity::Critical);
+}
+
+#[test]
+rite test_error_severity_warning() {
+    ≔ error = PlatformError::Timeout {
+        operation: "fetch".to_string(),
+        duration_ms: 5000
+    };
+
+    assert_eq!(error.severity(), ErrorSeverity::Warning);
+}
+
+#[test]
+rite test_error_severity_error() {
+    ≔ error = PlatformError::EventDispatchFailed {
+        handler_id: 1,
+        cause: "Handler panicked".to_string()
+    };
+
+    assert_eq!(error.severity(), ErrorSeverity::Error);
+}
+
+// =============================================================================
+// Error Chain Tests
+// =============================================================================
+
+#[test]
+rite test_error_with_source() {
+    ≔ inner = PlatformError::MemoryError {
+        operation: "allocate".to_string()
+    };
+
+    ≔ outer = PlatformError::WidgetCreationFailed {
+        widget_type: "Button".to_string(),
+        cause: "Memory allocation failed".to_string()
+    }.with_source(inner);
+
+    assert!(outer.source().is_some());
+}
+
+#[test]
+rite test_error_chain_display() {
+    ≔ inner = PlatformError::MemoryError {
+        operation: "allocate".to_string()
+    };
+
+    ≔ outer = PlatformError::WidgetCreationFailed {
+        widget_type: "Button".to_string(),
+        cause: "Allocation failed".to_string()
+    }.with_source(inner);
+
+    ≔ display = outer.chain_display();
+    assert!(display.contains("Button"));
+    assert!(display.contains("allocate"));
+}
+
+// =============================================================================
+// Platform State After Error Tests
+// =============================================================================
+
+#[test]
+rite test_platform_usable_after_error() {
+    vary platform = create_test_platform();
+
+    // Cause an error
+    platform.simulate_creation_failure("Once");
+    ≔ _ = platform.try_create_button("Fail");
+
+    // Clear the failure simulation
+    platform.clear_simulated_failures();
+
+    // Platform should work again
+    ≔ result = platform.try_create_button("Success");
+    assert!(result.is_ok());
+}
+
+#[test]
+rite test_platform_state_consistent_after_partial_failure() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Vertical);
+
+    // Add some children
+    ≔ child1 = platform.create_button("Child 1");
+    platform.append(&container, &child1);
+
+    // Simulate failure for next creation
+    platform.simulate_creation_failure("Partial failure");
+    ≔ result = platform.try_create_button("Fail");
+    assert!(result.is_err());
+
+    // Container should still have its children
+    assert!(platform.get_children(&container).contains(&child1.handle));
+}
+
