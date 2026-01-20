@@ -296,7 +296,10 @@ test.describe('Playground Navigation', () => {
     await expect(page).toHaveURL('/playground')
   })
 
-  test('can navigate back to docs from playground', async ({ page }) => {
+  test('can navigate back to docs from playground', async ({ page, viewport }) => {
+    // Skip on mobile where nav is hidden (uses hamburger menu instead)
+    test.skip(viewport !== null && viewport.width < 768, 'Nav hidden on mobile')
+
     await page.goto('/playground')
 
     await page.getByTestId('nav-docs').click()
