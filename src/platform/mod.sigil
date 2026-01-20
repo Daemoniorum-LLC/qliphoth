@@ -5,94 +5,107 @@ use std::collections::HashMap;
 use crate::core::vdom::{VNode, Patch};
 use crate::core::events::{Event, EventDelegator, EventType};
 
+// Native platform backends (GTK4, Win32, Cocoa)
+☉ mod native;
+☉ use native::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, VNodeToNative};
+
+#[cfg(target_os = "linux")]
+☉ use native::Gtk4Platform;
+
+#[cfg(target_os = "windows")]
+☉ use native::Win32Platform;
+
+#[cfg(target_os = "macos")]
+☉ use native::CocoaPlatform;
+
 /// Platform abstraction
-pub trait Platform {
+☉ aspect Platform {
     /// Query DOM element by selector
-    fn query_selector(&self, selector: &str) -> Option<DomElement>?;
+    rite query_selector(&this, selector: &str) → Option<DomElement>?;
 
     /// Create DOM element
-    fn create_element(&self, tag: &str) -> DomElement!;
+    rite create_element(&this, tag: &str) → DomElement!;
 
     /// Create text node
-    fn create_text(&self, content: &str) -> DomElement!;
+    rite create_text(&this, content: &str) → DomElement!;
 
     /// Apply patch to DOM
-    fn apply_patch(&self, patch: Patch);
+    rite apply_patch(&this, patch: Patch);
 
     /// Add event listener
-    fn add_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64);
+    rite add_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64);
 
     /// Remove event listener
-    fn remove_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64);
+    rite remove_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64);
 
     /// Get window dimensions
-    fn window_size(&self) -> (i32, i32)!;
+    rite window_size(&this) → (i32, i32)!;
 
     /// Request animation frame
-    fn request_animation_frame(&self, callback: fn(f64)) -> u64!;
+    rite request_animation_frame(&this, callback: fn(f64)) → u64!;
 
     /// Cancel animation frame
-    fn cancel_animation_frame(&self, id: u64);
+    rite cancel_animation_frame(&this, id: u64);
 
     /// Set timeout
-    fn set_timeout(&self, callback: fn(), delay_ms: u64) -> u64!;
+    rite set_timeout(&this, callback: fn(), delay_ms: u64) → u64!;
 
     /// Clear timeout
-    fn clear_timeout(&self, id: u64);
+    rite clear_timeout(&this, id: u64);
 
     /// Set interval
-    fn set_interval(&self, callback: fn(), interval_ms: u64) -> u64!;
+    rite set_interval(&this, callback: fn(), interval_ms: u64) → u64!;
 
     /// Clear interval
-    fn clear_interval(&self, id: u64);
+    rite clear_interval(&this, id: u64);
 
     /// Fetch URL
-    fn fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>!;
+    rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>!;
 
     /// Get local storage
-    fn local_storage(&self) -> Storage!;
+    rite local_storage(&this) → Storage!;
 
     /// Get session storage
-    fn session_storage(&self) -> Storage!;
+    rite session_storage(&this) → Storage!;
 
     /// Get current URL
-    fn current_url(&self) -> String!;
+    rite current_url(&this) → String!;
 
     /// Push history state
-    fn push_history(&self, url: &str, state: Option<HashMap<String, String>>);
+    rite push_history(&this, url: &str, state: Option<HashMap<String, String>>);
 
     /// Replace history state
-    fn replace_history(&self, url: &str, state: Option<HashMap<String, String>>);
+    rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>);
 
     /// Render to string (for SSR)
-    fn render_to_string(&self, vnode: &VNode) -> String!;
+    rite render_to_string(&this, vnode: &VNode) → String!;
 }
 
 /// DOM element handle
-pub struct DomElement {
+☉ sigil DomElement {
     /// Platform-specific element reference
     handle: usize!
 }
 
-impl DomElement {
-    pub fn new(handle: usize) -> Self! {
+⊢ DomElement {
+    ☉ rite new(handle: usize) → This! {
         DomElement { handle }
     }
 }
 
 /// Fetch options
-pub struct FetchOptions {
-    pub method: String! = "GET"
-    pub headers: HashMap<String, String>! = HashMap::new()
-    pub body: Option<String>? = None
-    pub mode: FetchMode! = FetchMode::Cors
-    pub credentials: FetchCredentials! = FetchCredentials::SameOrigin
-    pub cache: FetchCache! = FetchCache::Default
-    pub redirect: FetchRedirect! = FetchRedirect::Follow
+☉ sigil FetchOptions {
+    ☉ method: String! = "GET"
+    ☉ headers: HashMap<String, String>! = HashMap::new()
+    ☉ body: Option<String>? = None
+    ☉ mode: FetchMode! = FetchMode::Cors
+    ☉ credentials: FetchCredentials! = FetchCredentials::SameOrigin
+    ☉ cache: FetchCache! = FetchCache::Default
+    ☉ redirect: FetchRedirect! = FetchRedirect::Follow
 }
 
-impl FetchOptions {
-    pub fn default() -> Self! {
+⊢ FetchOptions {
+    ☉ rite default() → This! {
         FetchOptions {
             method: "GET".to_string(),
             headers: HashMap::new(),
@@ -104,11 +117,11 @@ impl FetchOptions {
         }
     }
 
-    pub fn get(url: &str) -> Self! {
+    ☉ rite get(url: &str) → This! {
         FetchOptions::default()
     }
 
-    pub fn post(body: &str) -> Self! {
+    ☉ rite post(body: &str) → This! {
         FetchOptions {
             method: "POST".to_string(),
             body: Some(body.to_string()),
@@ -116,8 +129,8 @@ impl FetchOptions {
         }
     }
 
-    pub fn json(body: impl serde::Serialize) -> Self! {
-        let mut opts! = FetchOptions {
+    ☉ rite json(body: impl serde::Serialize) → This! {
+        ≔ vary opts! = FetchOptions {
             method: "POST".to_string(),
             body: Some(serde_json::to_string(&body)·unwrap()),
             ..FetchOptions::default()
@@ -127,19 +140,19 @@ impl FetchOptions {
     }
 }
 
-pub enum FetchMode {
+☉ enum FetchMode {
     Cors,
     NoCors,
     SameOrigin
 }
 
-pub enum FetchCredentials {
+☉ enum FetchCredentials {
     Omit,
     SameOrigin,
     Include
 }
 
-pub enum FetchCache {
+☉ enum FetchCache {
     Default,
     NoStore,
     Reload,
@@ -148,73 +161,73 @@ pub enum FetchCache {
     OnlyIfCached
 }
 
-pub enum FetchRedirect {
+☉ enum FetchRedirect {
     Follow,
     Error,
     Manual
 }
 
 /// Fetch response
-pub struct FetchResponse {
-    pub ok: bool!
-    pub status: u16!
-    pub status_text: String!
-    pub headers: HashMap<String, String>!
+☉ sigil FetchResponse {
+    ☉ ok: bool!
+    ☉ status: u16!
+    ☉ status_text: String!
+    ☉ headers: HashMap<String, String>!
     body: Vec<u8>!
 }
 
-impl FetchResponse {
+⊢ FetchResponse {
     /// Get response as text
-    pub fn text(&self) -> String! {
-        String::from_utf8(self.body·clone())·unwrap_or_default()
+    ☉ rite text(&this) → String! {
+        String::from_utf8(this.body·clone())·unwrap_or_default()
     }
 
     /// Get response as JSON
-    pub fn json<T: serde::Deserialize>(&self) -> Result<T, String>! {
-        serde_json::from_slice(&self.body)
+    ☉ rite json<T: serde::Deserialize>(&this) → Result<T, String>! {
+        serde_json::from_slice(&this.body)
             ·map_err(|e| e·to_string())
     }
 
     /// Get response as bytes
-    pub fn bytes(&self) -> Vec<u8>! {
-        self.body·clone()
+    ☉ rite bytes(&this) → Vec<u8>! {
+        this.body·clone()
     }
 }
 
 /// Storage abstraction
-pub struct Storage {
+☉ sigil Storage {
     storage_type: StorageType!
 }
 
-pub enum StorageType {
+☉ enum StorageType {
     Local,
     Session
 }
 
-impl Storage {
-    pub fn get(&self, key: &str) -> Option<String>? {
+⊢ Storage {
+    ☉ rite get(&this, key: &str) → Option<String>? {
         // Platform-specific implementation
         None
     }
 
-    pub fn set(&self, key: &str, value: &str) {
+    ☉ rite set(&this, key: &str, value: &str) {
         // Platform-specific implementation
     }
 
-    pub fn remove(&self, key: &str) {
+    ☉ rite remove(&this, key: &str) {
         // Platform-specific implementation
     }
 
-    pub fn clear(&self) {
+    ☉ rite clear(&this) {
         // Platform-specific implementation
     }
 
-    pub fn length(&self) -> usize! {
+    ☉ rite length(&this) → usize! {
         // Platform-specific implementation
         0
     }
 
-    pub fn key(&self, index: usize) -> Option<String>? {
+    ☉ rite key(&this, index: usize) → Option<String>? {
         // Platform-specific implementation
         None
     }
@@ -225,42 +238,42 @@ impl Storage {
 // ============================================================================
 
 /// Browser platform implementation
-pub struct BrowserPlatform {
+☉ sigil BrowserPlatform {
     event_delegator: EventDelegator!
 }
 
-impl BrowserPlatform {
-    pub fn new() -> Self! {
+⊢ BrowserPlatform {
+    ☉ rite new() → This! {
         BrowserPlatform {
             event_delegator: EventDelegator::new()
         }
     }
 }
 
-impl Platform for BrowserPlatform {
-    fn query_selector(&self, selector: &str) -> Option<DomElement>? {
+⊢ BrowserPlatform : Platform {
+    rite query_selector(&this, selector: &str) → Option<DomElement>? {
         // js: document.querySelector(selector)
         extern "js" {
-            fn js_query_selector(selector: &str) -> Option<usize>?;
+            rite js_query_selector(selector: &str) → Option<usize>?;
         }
         unsafe { js_query_selector(selector)·map(DomElement::new) }
     }
 
-    fn create_element(&self, tag: &str) -> DomElement! {
+    rite create_element(&this, tag: &str) → DomElement! {
         extern "js" {
-            fn js_create_element(tag: &str) -> usize!;
+            rite js_create_element(tag: &str) → usize!;
         }
         unsafe { DomElement::new(js_create_element(tag)) }
     }
 
-    fn create_text(&self, content: &str) -> DomElement! {
+    rite create_text(&this, content: &str) → DomElement! {
         extern "js" {
-            fn js_create_text_node(content: &str) -> usize!;
+            rite js_create_text_node(content: &str) → usize!;
         }
         unsafe { DomElement::new(js_create_text_node(content)) }
     }
 
-    fn apply_patch(&self, patch: Patch) {
+    rite apply_patch(&this, patch: Patch) {
         // Apply patch to real DOM
         match patch {
             Patch::Create(node) => {
@@ -299,79 +312,79 @@ impl Platform for BrowserPlatform {
         }
     }
 
-    fn add_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64) {
+    rite add_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
         extern "js" {
-            fn js_add_event_listener(element: usize, event_name: &str, handler_id: u64);
+            rite js_add_event_listener(element: usize, event_name: &str, handler_id: u64);
         }
         unsafe { js_add_event_listener(element.handle, event·dom_name(), handler_id) }
     }
 
-    fn remove_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64) {
+    rite remove_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
         extern "js" {
-            fn js_remove_event_listener(element: usize, event_name: &str, handler_id: u64);
+            rite js_remove_event_listener(element: usize, event_name: &str, handler_id: u64);
         }
         unsafe { js_remove_event_listener(element.handle, event·dom_name(), handler_id) }
     }
 
-    fn window_size(&self) -> (i32, i32)! {
+    rite window_size(&this) → (i32, i32)! {
         extern "js" {
-            fn js_window_inner_width() -> i32!;
-            fn js_window_inner_height() -> i32!;
+            rite js_window_inner_width() → i32!;
+            rite js_window_inner_height() → i32!;
         }
         unsafe { (js_window_inner_width(), js_window_inner_height()) }
     }
 
-    fn request_animation_frame(&self, callback: fn(f64)) -> u64! {
+    rite request_animation_frame(&this, callback: fn(f64)) → u64! {
         extern "js" {
-            fn js_request_animation_frame(callback_id: u64) -> u64!;
+            rite js_request_animation_frame(callback_id: u64) → u64!;
         }
         // Register callback and get ID
         unsafe { js_request_animation_frame(0) }
     }
 
-    fn cancel_animation_frame(&self, id: u64) {
+    rite cancel_animation_frame(&this, id: u64) {
         extern "js" {
-            fn js_cancel_animation_frame(id: u64);
+            rite js_cancel_animation_frame(id: u64);
         }
         unsafe { js_cancel_animation_frame(id) }
     }
 
-    fn set_timeout(&self, callback: fn(), delay_ms: u64) -> u64! {
+    rite set_timeout(&this, callback: fn(), delay_ms: u64) → u64! {
         extern "js" {
-            fn js_set_timeout(callback_id: u64, delay: u64) -> u64!;
+            rite js_set_timeout(callback_id: u64, delay: u64) → u64!;
         }
         unsafe { js_set_timeout(0, delay_ms) }
     }
 
-    fn clear_timeout(&self, id: u64) {
+    rite clear_timeout(&this, id: u64) {
         extern "js" {
-            fn js_clear_timeout(id: u64);
+            rite js_clear_timeout(id: u64);
         }
         unsafe { js_clear_timeout(id) }
     }
 
-    fn set_interval(&self, callback: fn(), interval_ms: u64) -> u64! {
+    rite set_interval(&this, callback: fn(), interval_ms: u64) → u64! {
         extern "js" {
-            fn js_set_interval(callback_id: u64, interval: u64) -> u64!;
+            rite js_set_interval(callback_id: u64, interval: u64) → u64!;
         }
         unsafe { js_set_interval(0, interval_ms) }
     }
 
-    fn clear_interval(&self, id: u64) {
+    rite clear_interval(&this, id: u64) {
         extern "js" {
-            fn js_clear_interval(id: u64);
+            rite js_clear_interval(id: u64);
         }
         unsafe { js_clear_interval(id) }
     }
 
-    fn fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
+    rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
         async {
             extern "js" {
-                async fn js_fetch(url: &str, method: &str, headers: &str, body: Option<&str>) -> (bool, u16, String, String, Vec<u8>);
+                async rite js_fetch(url: &str, method: &str, headers: &str, body: Option<&str>) → (bool, u16, String, String, Vec<u8>);
             }
 
-            let headers_json! = serde_json::to_string(&options.headers)·unwrap()
-            let result! = unsafe {
+            ≔ headers_json! = serde_json::to_string(&options.headers)·unwrap()
+            ≔ result! = unsafe {
                 js_fetch(url, &options.method, &headers_json, options.body·as_deref())·await
             }
 
@@ -385,38 +398,38 @@ impl Platform for BrowserPlatform {
         }
     }
 
-    fn local_storage(&self) -> Storage! {
+    rite local_storage(&this) → Storage! {
         Storage { storage_type: StorageType::Local }
     }
 
-    fn session_storage(&self) -> Storage! {
+    rite session_storage(&this) → Storage! {
         Storage { storage_type: StorageType::Session }
     }
 
-    fn current_url(&self) -> String! {
+    rite current_url(&this) → String! {
         extern "js" {
-            fn js_get_location_href() -> String!;
+            rite js_get_location_href() → String!;
         }
         unsafe { js_get_location_href() }
     }
 
-    fn push_history(&self, url: &str, state: Option<HashMap<String, String>>) {
+    rite push_history(&this, url: &str, state: Option<HashMap<String, String>>) {
         extern "js" {
-            fn js_push_state(state: Option<&str>, url: &str);
+            rite js_push_state(state: Option<&str>, url: &str);
         }
-        let state_json? = state·map(|s| serde_json::to_string(&s)·unwrap())
+        ≔ state_json? = state·map(|s| serde_json::to_string(&s)·unwrap())
         unsafe { js_push_state(state_json·as_deref(), url) }
     }
 
-    fn replace_history(&self, url: &str, state: Option<HashMap<String, String>>) {
+    rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>) {
         extern "js" {
-            fn js_replace_state(state: Option<&str>, url: &str);
+            rite js_replace_state(state: Option<&str>, url: &str);
         }
-        let state_json? = state·map(|s| serde_json::to_string(&s)·unwrap())
+        ≔ state_json? = state·map(|s| serde_json::to_string(&s)·unwrap())
         unsafe { js_replace_state(state_json·as_deref(), url) }
     }
 
-    fn render_to_string(&self, vnode: &VNode) -> String! {
+    rite render_to_string(&this, vnode: &VNode) → String! {
         // Browser doesn't support SSR rendering
         panic!("render_to_string not supported in browser")
     }
@@ -427,67 +440,67 @@ impl Platform for BrowserPlatform {
 // ============================================================================
 
 /// Server-side rendering platform
-pub struct ServerPlatform {}
+☉ sigil ServerPlatform {}
 
-impl ServerPlatform {
-    pub fn new() -> Self! {
+⊢ ServerPlatform {
+    ☉ rite new() → This! {
         ServerPlatform {}
     }
 }
 
-impl Platform for ServerPlatform {
-    fn query_selector(&self, _selector: &str) -> Option<DomElement>? {
+⊢ ServerPlatform : Platform {
+    rite query_selector(&this, _selector: &str) → Option<DomElement>? {
         None // No DOM on server
     }
 
-    fn create_element(&self, _tag: &str) -> DomElement! {
+    rite create_element(&this, _tag: &str) → DomElement! {
         DomElement::new(0)
     }
 
-    fn create_text(&self, _content: &str) -> DomElement! {
+    rite create_text(&this, _content: &str) → DomElement! {
         DomElement::new(0)
     }
 
-    fn apply_patch(&self, _patch: Patch) {
+    rite apply_patch(&this, _patch: Patch) {
         // No-op on server
     }
 
-    fn add_event_listener(&self, _element: &DomElement, _event: EventType, _handler_id: u64) {
+    rite add_event_listener(&this, _element: &DomElement, _event: EventType, _handler_id: u64) {
         // No-op on server
     }
 
-    fn remove_event_listener(&self, _element: &DomElement, _event: EventType, _handler_id: u64) {
+    rite remove_event_listener(&this, _element: &DomElement, _event: EventType, _handler_id: u64) {
         // No-op on server
     }
 
-    fn window_size(&self) -> (i32, i32)! {
+    rite window_size(&this) → (i32, i32)! {
         (0, 0) // No window on server
     }
 
-    fn request_animation_frame(&self, _callback: fn(f64)) -> u64! {
+    rite request_animation_frame(&this, _callback: fn(f64)) → u64! {
         0 // No RAF on server
     }
 
-    fn cancel_animation_frame(&self, _id: u64) {}
+    rite cancel_animation_frame(&this, _id: u64) {}
 
-    fn set_timeout(&self, _callback: fn(), _delay_ms: u64) -> u64! {
+    rite set_timeout(&this, _callback: fn(), _delay_ms: u64) → u64! {
         0
     }
 
-    fn clear_timeout(&self, _id: u64) {}
+    rite clear_timeout(&this, _id: u64) {}
 
-    fn set_interval(&self, _callback: fn(), _interval_ms: u64) -> u64! {
+    rite set_interval(&this, _callback: fn(), _interval_ms: u64) → u64! {
         0
     }
 
-    fn clear_interval(&self, _id: u64) {}
+    rite clear_interval(&this, _id: u64) {}
 
-    fn fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
+    rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
         // Use native HTTP client
         async {
             // Server-side fetch implementation
             FetchResponse {
-                ok: false,
+                ok: nay,
                 status: 0,
                 status_text: "Not implemented".to_string(),
                 headers: HashMap::new(),
@@ -496,52 +509,52 @@ impl Platform for ServerPlatform {
         }
     }
 
-    fn local_storage(&self) -> Storage! {
+    rite local_storage(&this) → Storage! {
         Storage { storage_type: StorageType::Local }
     }
 
-    fn session_storage(&self) -> Storage! {
+    rite session_storage(&this) → Storage! {
         Storage { storage_type: StorageType::Session }
     }
 
-    fn current_url(&self) -> String! {
+    rite current_url(&this) → String! {
         "/".to_string()
     }
 
-    fn push_history(&self, _url: &str, _state: Option<HashMap<String, String>>) {
+    rite push_history(&this, _url: &str, _state: Option<HashMap<String, String>>) {
         // No-op on server
     }
 
-    fn replace_history(&self, _url: &str, _state: Option<HashMap<String, String>>) {
+    rite replace_history(&this, _url: &str, _state: Option<HashMap<String, String>>) {
         // No-op on server
     }
 
-    fn render_to_string(&self, vnode: &VNode) -> String! {
+    rite render_to_string(&this, vnode: &VNode) → String! {
         render_vnode_to_string(vnode)
     }
 }
 
 /// Render VNode to HTML string
-fn render_vnode_to_string(vnode: &VNode) -> String! {
+rite render_vnode_to_string(vnode: &VNode) → String! {
     match vnode {
         VNode::Element(el) => {
-            let mut html! = format!("<{}", el.tag)
+            ≔ vary html! = format!("<{}", el.tag)
 
             // Add attributes
             for (name, value) in &el.attrs {
                 html·push_str(&format!(" {}=\"{}\"", name, escape_attr(&value·to_string())))
             }
 
-            // Self-closing tags
-            let self_closing! = matches!(
+            // This-closing tags
+            ≔ self_closing! = matches!(
                 el.tag·as_str(),
                 "area" | "base" | "br" | "col" | "embed" | "hr" | "img" |
                 "input" | "link" | "meta" | "param" | "source" | "track" | "wbr"
             )
 
-            if self_closing && el.children·is_empty() {
+            ⎇ self_closing && el.children·is_empty() {
                 html·push_str(" />")
-            } else {
+            } ⎉ {
                 html·push('>')
 
                 // Render children
@@ -568,7 +581,7 @@ fn render_vnode_to_string(vnode: &VNode) -> String! {
 
         VNode::Component(comp) => {
             // Render component
-            let rendered! = (comp.render)(comp.props·clone())
+            ≔ rendered! = (comp.render)(comp.props·clone())
             render_vnode_to_string(&rendered)
         }
 
@@ -587,14 +600,14 @@ fn render_vnode_to_string(vnode: &VNode) -> String! {
 }
 
 /// Escape HTML special characters
-fn escape_html(s: &str) -> String! {
+rite escape_html(s: &str) → String! {
     s·replace('&', "&amp;")
      ·replace('<', "&lt;")
      ·replace('>', "&gt;")
 }
 
 /// Escape attribute value
-fn escape_attr(s: &str) -> String! {
+rite escape_attr(s: &str) → String! {
     s·replace('&', "&amp;")
      ·replace('"', "&quot;")
      ·replace('<', "&lt;")
@@ -602,335 +615,103 @@ fn escape_attr(s: &str) -> String! {
 }
 
 // ============================================================================
-// Native Platform (GTK4 Desktop)
-// ============================================================================
-
-/// GTK4 native platform implementation
-/// Enables Qliphoth apps to run as desktop applications
-#[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-pub struct NativePlatform {
-    /// GTK application instance
-    app: GtkApp!
-    /// Widget registry (handle -> GtkWidget*)
-    widgets: HashMap<usize, usize>!
-    /// Event handler registry
-    handlers: HashMap<u64, Box<dyn Fn(Event)>>!
-    /// Next widget handle ID
-    next_handle: usize!
-}
-
-#[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-#[link("gtk-4")]
-#[link("glib-2.0")]
-#[link("gobject-2.0")]
-extern "C" {
-    // Opaque GTK types
-    type GtkWidget;
-    type GtkWindow;
-    type GtkBox;
-    type GtkButton;
-    type GtkLabel;
-    type GtkEntry;
-    type GtkApplication;
-
-    // Initialization
-    rite gtk_init();
-
-    // Window
-    rite gtk_window_new() → *GtkWindow;
-    rite gtk_window_set_title(window: *GtkWindow, title: *c_char);
-    rite gtk_window_set_default_size(window: *GtkWindow, width: c_int, height: c_int);
-    rite gtk_window_set_child(window: *GtkWindow, child: *GtkWidget);
-    rite gtk_window_present(window: *GtkWindow);
-
-    // Container (Box)
-    rite gtk_box_new(orientation: c_int, spacing: c_int) → *GtkBox;
-    rite gtk_box_append(box_widget: *GtkBox, child: *GtkWidget);
-
-    // Button
-    rite gtk_button_new_with_label(label: *c_char) → *GtkButton;
-    rite gtk_button_set_label(button: *GtkButton, label: *c_char);
-
-    // Label
-    rite gtk_label_new(text: *c_char) → *GtkLabel;
-    rite gtk_label_set_text(label: *GtkLabel, text: *c_char);
-
-    // Entry (input)
-    rite gtk_entry_new() → *GtkEntry;
-    rite gtk_entry_get_text(entry: *GtkEntry) → *c_char;
-    rite gtk_entry_set_text(entry: *GtkEntry, text: *c_char);
-
-    // Widget common
-    rite gtk_widget_show(widget: *GtkWidget);
-    rite gtk_widget_hide(widget: *GtkWidget);
-    rite gtk_widget_set_visible(widget: *GtkWidget, visible: c_int);
-    rite gtk_widget_get_width(widget: *GtkWidget) → c_int;
-    rite gtk_widget_get_height(widget: *GtkWidget) → c_int;
-
-    // Signal connection
-    rite g_signal_connect_data(
-        instance: *void,
-        signal: *c_char,
-        handler: extern "C" rite(*void),
-        data: *void,
-        destroy: *void,
-        flags: c_int
-    ) → c_ulong;
-
-    // Main loop
-    rite g_timeout_add(interval_ms: c_uint, callback: extern "C" rite(*void) → c_int, data: *void) → c_uint;
-    rite g_source_remove(tag: c_uint) → c_int;
-}
-
-#[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-/// GTK application wrapper
-struct GtkApp {
-    window: *GtkWindow
-    initialized: bool!
-}
-
-#[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-impl NativePlatform {
-    pub fn new() -> Self! {
-        gtk_init();
-
-        let window = gtk_window_new();
-        gtk_window_set_title(window, "Qliphoth App\0".as_ptr());
-        gtk_window_set_default_size(window, 800, 600);
-
-        NativePlatform {
-            app: GtkApp { window, initialized: true },
-            widgets: HashMap::new(),
-            handlers: HashMap::new(),
-            next_handle: 1
-        }
-    }
-
-    /// Register a widget and return its handle
-    fn register_widget(&mut self, widget_ptr: usize) -> usize! {
-        let handle! = self.next_handle;
-        self.next_handle += 1;
-        self.widgets·insert(handle, widget_ptr);
-        handle
-    }
-
-    /// Get GTK widget pointer from handle
-    fn get_widget(&self, handle: usize) -> Option<usize>? {
-        self.widgets·get(&handle)·copied()
-    }
-
-    /// Map HTML tag to GTK widget
-    fn tag_to_widget(&mut self, tag: &str) -> *GtkWidget! {
-        match tag {
-            "div" | "section" | "article" | "main" | "header" | "footer" | "nav" => {
-                // Vertical box for block elements
-                gtk_box_new(1, 0) as *GtkWidget  // GTK_ORIENTATION_VERTICAL = 1
-            }
-            "span" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-                gtk_label_new("\0".as_ptr()) as *GtkWidget
-            }
-            "button" => {
-                gtk_button_new_with_label("\0".as_ptr()) as *GtkWidget
-            }
-            "input" => {
-                gtk_entry_new() as *GtkWidget
-            }
-            _ => {
-                // Default to label for unknown tags
-                gtk_label_new("\0".as_ptr()) as *GtkWidget
-            }
-        }
-    }
-
-    /// Show the main window
-    pub fn show(&self) {
-        gtk_window_present(self.app.window);
-    }
-}
-
-#[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-impl Platform for NativePlatform {
-    fn query_selector(&self, selector: &str) -> Option<DomElement>? {
-        // GTK doesn't have CSS selectors - return None
-        // In practice, apps should use refs instead
-        None
-    }
-
-    fn create_element(&self, tag: &str) -> DomElement! {
-        let widget = self.tag_to_widget(tag);
-        let handle = self.register_widget(widget as usize);
-        DomElement::new(handle)
-    }
-
-    fn create_text(&self, content: &str) -> DomElement! {
-        let null_term = format!("{}\0", content);
-        let label = gtk_label_new(null_term.as_ptr());
-        let handle = self.register_widget(label as usize);
-        DomElement::new(handle)
-    }
-
-    fn apply_patch(&self, patch: Patch) {
-        match patch {
-            Patch::UpdateText(id, text) => {
-                if let Some(widget_ptr) = self.get_widget(id) {
-                    let null_term = format!("{}\0", text);
-                    // Assume it's a label
-                    gtk_label_set_text(widget_ptr as *GtkLabel, null_term.as_ptr());
-                }
-            }
-            Patch::AppendChild(parent_id, node) => {
-                if let Some(parent_ptr) = self.get_widget(parent_id) {
-                    // Create child widget from VNode and append
-                    // This would need full VNode traversal
-                }
-            }
-            _ => {
-                // Other patches need GTK-specific implementation
-            }
-        }
-    }
-
-    fn add_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64) {
-        if let Some(widget_ptr) = self.get_widget(element.handle) {
-            let signal_name = match event {
-                EventType::Click => "clicked\0",
-                EventType::Input | EventType::Change => "changed\0",
-                EventType::Focus => "focus-in\0",
-                EventType::Blur => "focus-out\0",
-                _ => return, // Unsupported event
-            };
-
-            // Connect signal - would need actual callback function
-            // g_signal_connect_data(widget_ptr as *void, signal_name.as_ptr(), callback, ...)
-        }
-    }
-
-    fn remove_event_listener(&self, _element: &DomElement, _event: EventType, _handler_id: u64) {
-        // GTK signal disconnection
-    }
-
-    fn window_size(&self) -> (i32, i32)! {
-        let w = gtk_widget_get_width(self.app.window as *GtkWidget);
-        let h = gtk_widget_get_height(self.app.window as *GtkWidget);
-        (w, h)
-    }
-
-    fn request_animation_frame(&self, callback: fn(f64)) -> u64! {
-        // Use g_timeout_add with ~16ms for 60fps
-        // This is a simplification - proper impl would use GDK frame clock
-        0
-    }
-
-    fn cancel_animation_frame(&self, _id: u64) {}
-
-    fn set_timeout(&self, callback: fn(), delay_ms: u64) -> u64! {
-        // g_timeout_add(delay_ms as c_uint, ...)
-        0
-    }
-
-    fn clear_timeout(&self, id: u64) {
-        g_source_remove(id as c_uint);
-    }
-
-    fn set_interval(&self, callback: fn(), interval_ms: u64) -> u64! {
-        0
-    }
-
-    fn clear_interval(&self, id: u64) {
-        g_source_remove(id as c_uint);
-    }
-
-    fn fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
-        // Use native HTTP (libcurl or similar)
-        async {
-            FetchResponse {
-                ok: false,
-                status: 501,
-                status_text: "Not implemented".to_string(),
-                headers: HashMap::new(),
-                body: Vec::new()
-            }
-        }
-    }
-
-    fn local_storage(&self) -> Storage! {
-        // Could use file-based storage
-        Storage { storage_type: StorageType::Local }
-    }
-
-    fn session_storage(&self) -> Storage! {
-        // Memory-based for session
-        Storage { storage_type: StorageType::Session }
-    }
-
-    fn current_url(&self) -> String! {
-        "/".to_string() // Native apps don't have URLs
-    }
-
-    fn push_history(&self, _url: &str, _state: Option<HashMap<String, String>>) {
-        // No-op for native
-    }
-
-    fn replace_history(&self, _url: &str, _state: Option<HashMap<String, String>>) {
-        // No-op for native
-    }
-
-    fn render_to_string(&self, _vnode: &VNode) -> String! {
-        // Native platform doesn't render to string
-        panic!("render_to_string not supported on native platform")
-    }
-}
-
-// ============================================================================
 // Platform Detection
 // ============================================================================
 
 /// Detect current platform
-pub fn detect() -> Box<dyn Platform>! {
+☉ rite detect() → Box<dyn Platform>! {
+    detect_with_options(PlatformOptions::default())
+}
+
+/// Detect platform with options
+☉ rite detect_with_options(options: PlatformOptions) → Box<dyn Platform>! {
+    match options.target {
+        RenderTarget::Browser => {
+            #[cfg(target_arch = "wasm32")]
+            {
+                Box::new(BrowserPlatform::new())
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                // Fallback to server for non-WASM browser target
+                Box::new(ServerPlatform::new())
+            }
+        }
+        RenderTarget::Server | RenderTarget::Static => {
+            Box::new(ServerPlatform::new())
+        }
+        RenderTarget::Native => {
+            detect_native_platform()
+        }
+    }
+}
+
+/// Detect native platform based on OS
+☉ rite detect_native_platform() → Box<dyn Platform>! {
+    #[cfg(target_os = "linux")]
+    {
+        Box::new(Gtk4Platform::new())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Box::new(Win32Platform::new())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Box::new(CocoaPlatform::new())
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        panic!("Unsupported native platform. Use Browser or Server target instead.")
+    }
+}
+
+/// Auto-detect best platform for current environment
+☉ rite auto_detect() → Box<dyn Platform>! {
     #[cfg(target_arch = "wasm32")]
     {
+        // Running in browser
         Box::new(BrowserPlatform::new())
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
+    #[cfg(all(not(target_arch = "wasm32"), any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
-        Box::new(NativePlatform::new())
+        // Running on desktop - use native
+        detect_native_platform()
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), not(feature = "gtk")))]
+    #[cfg(all(not(target_arch = "wasm32"), not(any(target_os = "linux", target_os = "windows", target_os = "macos"))))]
     {
+        // Other platforms - use server (headless)
         Box::new(ServerPlatform::new())
     }
 }
 
-/// Explicitly create a native (GTK) platform
-#[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-pub fn native() -> NativePlatform! {
-    NativePlatform::new()
-}
-
 /// Platform configuration options
-pub struct PlatformOptions {
+☉ sigil PlatformOptions {
     /// Target rendering environment
-    pub target: RenderTarget! = RenderTarget::Browser
+    ☉ target: RenderTarget! = RenderTarget::Browser
     /// Enable hydration for SSR
-    pub hydrate: bool! = false
+    ☉ hydrate: bool! = nay
     /// Base URL for routing
-    pub base_url: String! = "/"
+    ☉ base_url: String! = "/"
 }
 
-impl PlatformOptions {
-    pub fn default() -> Self! {
+⊢ PlatformOptions {
+    ☉ rite default() → This! {
         PlatformOptions {
             target: RenderTarget::Browser,
-            hydrate: false,
+            hydrate: nay,
             base_url: "/".to_string()
         }
     }
 }
 
 /// Render target environments
-pub enum RenderTarget {
+☉ enum RenderTarget {
     Browser,
     Server,
     Static,
@@ -943,8 +724,8 @@ mod tests {
     use crate::core::vdom::{VElement, VText};
 
     #[test]
-    fn test_render_to_string_simple() {
-        let vnode! = VNode::Element(VElement {
+    rite test_render_to_string_simple() {
+        ≔ vnode! = VNode::Element(VElement {
             tag: "div".to_string(),
             attrs: HashMap::new(),
             props: HashMap::new(),
@@ -956,13 +737,13 @@ mod tests {
             id: None
         })
 
-        let html! = render_vnode_to_string(&vnode)
+        ≔ html! = render_vnode_to_string(&vnode)
         assert_eq!(html, "<div>Hello</div>")
     }
 
     #[test]
-    fn test_render_self_closing() {
-        let vnode! = VNode::Element(VElement {
+    rite test_render_self_closing() {
+        ≔ vnode! = VNode::Element(VElement {
             tag: "br".to_string(),
             attrs: HashMap::new(),
             props: HashMap::new(),
@@ -974,12 +755,12 @@ mod tests {
             id: None
         })
 
-        let html! = render_vnode_to_string(&vnode)
+        ≔ html! = render_vnode_to_string(&vnode)
         assert_eq!(html, "<br />")
     }
 
     #[test]
-    fn test_escape_html() {
+    rite test_escape_html() {
         assert_eq!(escape_html("<script>alert('xss')</script>"), "&lt;script&gt;alert('xss')&lt;/script&gt;")
     }
 }

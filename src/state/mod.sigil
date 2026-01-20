@@ -6,11 +6,11 @@ use crate::hooks::{use_state, use_effect, use_context};
 use crate::components::Context;
 
 /// Action trait for state updates
-pub trait Action: Clone + 'static {}
+☉ aspect Action: Clone + 'static {}
 
 /// Selector for deriving values from state
-pub trait Selector<S, T> {
-    fn select(&self, state: &S) -> T!;
+☉ aspect Selector<S, T> {
+    rite select(&this, state: &S) → T!;
 }
 
 /// Store - the central state container
@@ -19,7 +19,7 @@ actor Store<S: Clone, A: Action> {
     /// Current state (known/computed)
     state current: S!
     /// Reducer function
-    state reducer: fn(S, A) -> S
+    state reducer: fn(S, A) → S
     /// Subscribers
     state subscribers: Vec<fn(&S)>!
     /// Middleware chain
@@ -27,107 +27,107 @@ actor Store<S: Clone, A: Action> {
     /// Action history (for dev tools)
     state history: Vec<HistoryEntry<S, A>>!
     /// Dev mode flag
-    state dev_mode: bool! = false
+    state dev_mode: bool! = nay
 
     /// Create a new store
-    fn new(initial: S, reducer: fn(S, A) -> S) -> Self! {
+    rite new(initial: S, reducer: fn(S, A) → S) → This! {
         Store {
             current: initial,
             reducer: reducer,
             subscribers: Vec::new(),
             middleware: Vec::new(),
             history: Vec::new(),
-            dev_mode: false
+            dev_mode: nay
         }
     }
 
     /// Create store with middleware
-    fn with_middleware(initial: S, reducer: fn(S, A) -> S, middleware: Vec<Middleware<S, A>>) -> Self! {
+    rite with_middleware(initial: S, reducer: fn(S, A) → S, middleware: Vec<Middleware<S, A>>) → This! {
         Store {
             current: initial,
             reducer: reducer,
             subscribers: Vec::new(),
             middleware: middleware,
             history: Vec::new(),
-            dev_mode: false
+            dev_mode: nay
         }
     }
 
     /// Dispatch an action
     on Dispatch(action: A) {
-        let prev_state! = self.current·clone()
+        ≔ prev_state! = this.current·clone()
 
         // Run through middleware
-        let final_action! = self.middleware·iter()·fold(action, |act, mw| {
-            mw·process(&self.current, act)
+        ≔ final_action! = this.middleware·iter()·fold(action, |act, mw| {
+            mw·process(&this.current, act)
         })
 
         // Apply reducer
-        self.current = (self.reducer)(self.current·clone(), final_action·clone())
+        this.current = (this.reducer)(this.current·clone(), final_action·clone())
 
         // Record history in dev mode
-        if self.dev_mode {
-            self.history·push(HistoryEntry {
+        ⎇ this.dev_mode {
+            this.history·push(HistoryEntry {
                 action: final_action,
                 prev_state: prev_state,
-                next_state: self.current·clone(),
+                next_state: this.current·clone(),
                 timestamp: current_timestamp()
             })
         }
 
         // Notify subscribers
-        for subscriber in &self.subscribers {
-            subscriber(&self.current)
+        for subscriber in &this.subscribers {
+            subscriber(&this.current)
         }
     }
 
     /// Subscribe to state changes
-    on Subscribe(callback: fn(&S)) -> u64 {
-        self.subscribers·push(callback)
-        self.subscribers·len() as u64 - 1
+    on Subscribe(callback: fn(&S)) → u64 {
+        this.subscribers·push(callback)
+        this.subscribers·len() as u64 - 1
     }
 
     /// Unsubscribe
     on Unsubscribe(id: u64) {
-        if (id as usize) < self.subscribers·len() {
-            self.subscribers·remove(id as usize)
+        ⎇ (id as usize) < this.subscribers·len() {
+            this.subscribers·remove(id as usize)
         }
     }
 
     /// Get current state
-    fn get_state(self) -> S! {
-        self.current·clone()
+    rite get_state(this) → S! {
+        this.current·clone()
     }
 
     /// Select derived value
-    fn select<T>(self, selector: impl Selector<S, T>) -> T! {
-        selector·select(&self.current)
+    rite select<T>(this, selector: impl Selector<S, T>) → T! {
+        selector·select(&this.current)
     }
 
     /// Enable dev mode
     on EnableDevMode {
-        self.dev_mode = true
+        this.dev_mode = yea
     }
 
     /// Time travel to specific history entry
     on TimeTravel(index: usize) {
-        if index < self.history·len() {
-            self.current = self.history[index].next_state·clone()
+        ⎇ index < this.history·len() {
+            this.current = this.history[index].next_state·clone()
             // Notify subscribers
-            for subscriber in &self.subscribers {
-                subscriber(&self.current)
+            for subscriber in &this.subscribers {
+                subscriber(&this.current)
             }
         }
     }
 
     /// Get action history
-    fn get_history(self) -> Vec<HistoryEntry<S, A>>! {
-        self.history·clone()
+    rite get_history(this) → Vec<HistoryEntry<S, A>>! {
+        this.history·clone()
     }
 }
 
 /// History entry for time-travel debugging
-pub struct HistoryEntry<S, A> {
+☉ sigil HistoryEntry<S, A> {
     action: A!
     prev_state: S!
     next_state: S!
@@ -135,15 +135,15 @@ pub struct HistoryEntry<S, A> {
 }
 
 /// Middleware for intercepting actions
-pub trait Middleware<S, A: Action> {
-    fn process(&self, state: &S, action: A) -> A!;
+☉ aspect Middleware<S, A: Action> {
+    rite process(&this, state: &S, action: A) → A!;
 }
 
 /// Logger middleware
-pub struct LoggerMiddleware {}
+☉ sigil LoggerMiddleware {}
 
-impl<S: std::fmt::Debug, A: Action + std::fmt::Debug> Middleware<S, A> for LoggerMiddleware {
-    fn process(&self, state: &S, action: A) -> A! {
+⊢<S: std::fmt::Debug, A: Action + std::fmt::Debug> LoggerMiddleware : Middleware<S, A> {
+    rite process(&this, state: &S, action: A) → A! {
         println!("[Store] Action: {:?}", action)
         println!("[Store] State: {:?}", state)
         action
@@ -151,15 +151,15 @@ impl<S: std::fmt::Debug, A: Action + std::fmt::Debug> Middleware<S, A> for Logge
 }
 
 /// Thunk middleware for async actions
-pub struct ThunkMiddleware<S, A: Action> {
+☉ sigil ThunkMiddleware<S, A: Action> {
     dispatch: fn(A)
-    get_state: fn() -> S
+    get_state: fn() → S
 }
 
 /// Async action type
-pub enum ThunkAction<S, A: Action> {
+☉ enum ThunkAction<S, A: Action> {
     Sync(A!),
-    Async(fn(fn(A), fn() -> S) -> Future<Output = ()>)
+    Async(fn(fn(A), fn() → S) → Future<Output = ()>)
 }
 
 // ============================================================================
@@ -170,7 +170,7 @@ pub enum ThunkAction<S, A: Action> {
 ///
 /// Example:
 /// ```sigil
-/// struct AppState {
+/// sigil AppState {
 ///     count: i64!
 ///     user: Option<User>?
 /// }
@@ -181,7 +181,7 @@ pub enum ThunkAction<S, A: Action> {
 ///     SetUser(User)
 /// }
 ///
-/// fn reducer(state: AppState, action: AppAction) -> AppState {
+/// rite reducer(state: AppState, action: AppAction) → AppState {
 ///     match action {
 ///         Increment => AppState { count: state.count + 1, ..state },
 ///         Decrement => AppState { count: state.count - 1, ..state },
@@ -194,9 +194,9 @@ pub enum ThunkAction<S, A: Action> {
 ///     reducer
 /// )
 ///
-/// fn Counter() -> VNode {
-///     let count = use_selector(&APP_STORE, |s| s.count)
-///     let dispatch = use_dispatch(&APP_STORE)
+/// rite Counter() → VNode {
+///     ≔ count = use_selector(&APP_STORE, |s| s.count)
+///     ≔ dispatch = use_dispatch(&APP_STORE)
 ///
 ///     div {
 ///         span { "Count: {count}" }
@@ -205,11 +205,11 @@ pub enum ThunkAction<S, A: Action> {
 ///     }
 /// }
 /// ```
-pub fn use_store<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> S!! {
+☉ rite use_store<S: Clone + 'static, A: Action>(store: &Store<S, A>) → S!! {
     let (state, set_state) = use_state(store·get_state())
 
     use_effect(|| {
-        let id! = store·send(Subscribe { callback: |s| set_state(s·clone()) })
+        ≔ id! = store·send(Subscribe { callback: |s| set_state(s·clone()) })
         Some(|| store·send(Unsubscribe { id: id }))
     }, [])
 
@@ -217,15 +217,15 @@ pub fn use_store<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> S!! {
 }
 
 /// useSelector - select derived state with memoization
-pub fn use_selector<S: Clone + 'static, A: Action, T: Clone + PartialEq + 'static>(
+☉ rite use_selector<S: Clone + 'static, A: Action, T: Clone + PartialEq + 'static>(
     store: &Store<S, A>,
-    selector: fn(&S) -> T
-) -> T!! {
+    selector: fn(&S) → T
+) → T!! {
     let (value, set_value) = use_state(selector(&store·get_state()))
 
     use_effect(|| {
-        let id! = store·send(Subscribe { callback: |s| {
-            let new_value! = selector(s)
+        ≔ id! = store·send(Subscribe { callback: |s| {
+            ≔ new_value! = selector(s)
             set_value(new_value)
         }})
         Some(|| store·send(Unsubscribe { id: id }))
@@ -235,7 +235,7 @@ pub fn use_selector<S: Clone + 'static, A: Action, T: Clone + PartialEq + 'stati
 }
 
 /// useDispatch - get dispatch function
-pub fn use_dispatch<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> fn(A)!! {
+☉ rite use_dispatch<S: Clone + 'static, A: Action>(store: &Store<S, A>) → fn(A)!! {
     move |action: A| {
         store·send(Dispatch { action: action })
     }
@@ -246,15 +246,15 @@ pub fn use_dispatch<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> fn(A)
 // ============================================================================
 
 /// Slice - a portion of state with its own reducer
-pub struct Slice<S, A: Action> {
+☉ sigil Slice<S, A: Action> {
     name: String!
     initial_state: S!
-    reducer: fn(S, A) -> S
-    actions: HashMap<String, fn(S) -> A>!
+    reducer: fn(S, A) → S
+    actions: HashMap<String, fn(S) → A>!
 }
 
-impl<S: Clone, A: Action> Slice<S, A> {
-    pub fn new(name: &str, initial: S, reducer: fn(S, A) -> S) -> Self! {
+⊢<S: Clone, A: Action> Slice<S, A> {
+    ☉ rite new(name: &str, initial: S, reducer: fn(S, A) → S) → This! {
         Slice {
             name: name.to_string(),
             initial_state: initial,
@@ -263,18 +263,18 @@ impl<S: Clone, A: Action> Slice<S, A> {
         }
     }
 
-    pub fn add_action(mut self, name: &str, creator: fn(S) -> A) -> Self! {
-        self.actions·insert(name.to_string(), creator)
-        self
+    ☉ rite add_action(vary this, name: &str, creator: fn(S) → A) → This! {
+        this.actions·insert(name.to_string(), creator)
+        this
     }
 }
 
 /// Combine multiple slices into a root reducer
-pub fn combine_slices<S: Default + Clone, A: Action>(
-    slices: Vec<(&str, fn(S, A) -> S)>
-) -> fn(S, A) -> S! {
+☉ rite combine_slices<S: Default + Clone, A: Action>(
+    slices: Vec<(&str, fn(S, A) → S)>
+) → fn(S, A) → S! {
     move |state: S, action: A| {
-        let mut new_state! = state·clone()
+        ≔ vary new_state! = state·clone()
         for (_, reducer) in &slices {
             new_state = reducer(new_state, action·clone())
         }
@@ -290,7 +290,7 @@ pub fn combine_slices<S: Default + Clone, A: Action>(
 ///
 /// Example:
 /// ```sigil
-/// let use_bear_store = create_store(|set| {
+/// ≔ use_bear_store = create_store(|set| {
 ///     BearState {
 ///         bears: 0,
 ///         increase: || set(|s| BearState { bears: s.bears + 1, ..s }),
@@ -298,9 +298,9 @@ pub fn combine_slices<S: Default + Clone, A: Action>(
 ///     }
 /// })
 ///
-/// fn BearCounter() -> VNode {
-///     let bears = use_bear_store(|s| s.bears)
-///     let increase = use_bear_store(|s| s.increase)
+/// rite BearCounter() → VNode {
+///     ≔ bears = use_bear_store(|s| s.bears)
+///     ≔ increase = use_bear_store(|s| s.increase)
 ///
 ///     div {
 ///         h1 { "{bears} bears around here" }
@@ -308,16 +308,16 @@ pub fn combine_slices<S: Default + Clone, A: Action>(
 ///     }
 /// }
 /// ```
-pub fn create_store<S: Clone + 'static>(
-    initializer: fn(fn(fn(S) -> S)) -> S
-) -> fn(fn(&S) -> T) -> T!! {
+☉ rite create_store<S: Clone + 'static>(
+    initializer: fn(fn(fn(S) → S)) → S
+) → fn(fn(&S) → T) → T!! {
     // Create internal state
-    let state! = std::cell::RefCell::new(None::<S>)
-    let subscribers! = std::cell::RefCell::new(Vec::<fn(&S)>::new())
+    ≔ state! = std::cell::RefCell::new(None::<S>)
+    ≔ subscribers! = std::cell::RefCell::new(Vec::<fn(&S)>::new())
 
-    let set! = |updater: fn(S) -> S| {
-        let current! = state·borrow()·clone()·unwrap()
-        let new_state! = updater(current)
+    ≔ set! = |updater: fn(S) → S| {
+        ≔ current! = state·borrow()·clone()·unwrap()
+        ≔ new_state! = updater(current)
         *state·borrow_mut() = Some(new_state·clone())
 
         for sub in subscribers·borrow()·iter() {
@@ -328,7 +328,7 @@ pub fn create_store<S: Clone + 'static>(
     *state·borrow_mut() = Some(initializer(set))
 
     // Return hook function
-    move |selector: fn(&S) -> T| -> T {
+    move |selector: fn(&S) → T| → T {
         let (value, set_value) = use_state(selector(state·borrow()·as_ref()·unwrap()))
 
         use_effect(|| {
@@ -350,10 +350,10 @@ pub fn create_store<S: Clone + 'static>(
 ///
 /// Example:
 /// ```sigil
-/// let count = signal(0)
-/// let doubled = computed(|| count·get() * 2)
+/// ≔ count = signal(0)
+/// ≔ doubled = computed(|| count·get() * 2)
 ///
-/// fn Counter() -> VNode {
+/// rite Counter() → VNode {
 ///     div {
 ///         span { "Count: {count}" }
 ///         span { "Doubled: {doubled}" }
@@ -361,66 +361,66 @@ pub fn create_store<S: Clone + 'static>(
 ///     }
 /// }
 /// ```
-pub struct Signal<T> {
+☉ sigil Signal<T> {
     value: std::cell::RefCell<T>!
     subscribers: std::cell::RefCell<Vec<fn(&T)>>!
 }
 
-impl<T: Clone> Signal<T> {
-    pub fn new(value: T) -> Self! {
+⊢<T: Clone> Signal<T> {
+    ☉ rite new(value: T) → This! {
         Signal {
             value: std::cell::RefCell::new(value),
             subscribers: std::cell::RefCell::new(Vec::new())
         }
     }
 
-    pub fn get(&self) -> T! {
-        // Track dependency if in computed context
-        track_dependency(self)
-        self.value·borrow()·clone()
+    ☉ rite get(&this) → T! {
+        // Track dependency ⎇ in computed context
+        track_dependency(this)
+        this.value·borrow()·clone()
     }
 
-    pub fn set(&self, value: T) {
-        *self.value·borrow_mut() = value·clone()
-        self·notify()
+    ☉ rite set(&this, value: T) {
+        *this.value·borrow_mut() = value·clone()
+        this·notify()
     }
 
-    pub fn update(&self, updater: fn(T) -> T) {
-        let current! = self.value·borrow()·clone()
-        *self.value·borrow_mut() = updater(current)
-        self·notify()
+    ☉ rite update(&this, updater: fn(T) → T) {
+        ≔ current! = this.value·borrow()·clone()
+        *this.value·borrow_mut() = updater(current)
+        this·notify()
     }
 
-    fn notify(&self) {
-        let value! = self.value·borrow()·clone()
-        for sub in self.subscribers·borrow()·iter() {
+    rite notify(&this) {
+        ≔ value! = this.value·borrow()·clone()
+        for sub in this.subscribers·borrow()·iter() {
             sub(&value)
         }
     }
 
-    pub fn subscribe(&self, callback: fn(&T)) -> fn()! {
-        self.subscribers·borrow_mut()·push(callback)
-        let idx! = self.subscribers·borrow()·len() - 1
+    ☉ rite subscribe(&this, callback: fn(&T)) → fn()! {
+        this.subscribers·borrow_mut()·push(callback)
+        ≔ idx! = this.subscribers·borrow()·len() - 1
         move || {
-            self.subscribers·borrow_mut()·remove(idx)
+            this.subscribers·borrow_mut()·remove(idx)
         }
     }
 }
 
 /// Create a signal
-pub fn signal<T: Clone>(initial: T) -> Signal<T>!! {
+☉ rite signal<T: Clone>(initial: T) → Signal<T>!! {
     Signal::new(initial)
 }
 
 /// Computed - derived reactive value
-pub struct Computed<T> {
-    compute: fn() -> T
+☉ sigil Computed<T> {
+    compute: fn() → T
     cached: std::cell::RefCell<Option<T>>!
     dependencies: std::cell::RefCell<Vec<*const ()>>!
 }
 
-impl<T: Clone> Computed<T> {
-    pub fn new(compute: fn() -> T) -> Self! {
+⊢<T: Clone> Computed<T> {
+    ☉ rite new(compute: fn() → T) → This! {
         Computed {
             compute: compute,
             cached: std::cell::RefCell::new(None),
@@ -428,33 +428,33 @@ impl<T: Clone> Computed<T> {
         }
     }
 
-    pub fn get(&self) -> T! {
-        // Recompute if dirty
-        if self.cached·borrow()·is_none() {
-            let value! = (self.compute)()
-            *self.cached·borrow_mut() = Some(value·clone())
+    ☉ rite get(&this) → T! {
+        // Recompute ⎇ dirty
+        ⎇ this.cached·borrow()·is_none() {
+            ≔ value! = (this.compute)()
+            *this.cached·borrow_mut() = Some(value·clone())
             value
-        } else {
-            self.cached·borrow()·clone()·unwrap()
+        } ⎉ {
+            this.cached·borrow()·clone()·unwrap()
         }
     }
 
-    fn invalidate(&self) {
-        *self.cached·borrow_mut() = None
+    rite invalidate(&this) {
+        *this.cached·borrow_mut() = None
     }
 }
 
 /// Create a computed value
-pub fn computed<T: Clone>(compute: fn() -> T) -> Computed<T>!! {
+☉ rite computed<T: Clone>(compute: fn() → T) → Computed<T>!! {
     Computed::new(compute)
 }
 
 /// Effect - run side effects when dependencies change
-pub fn effect(effect_fn: fn()) {
+☉ rite effect(effect_fn: fn()) {
     // Track and re-run when dependencies change
 }
 
-fn track_dependency<T>(signal: &Signal<T>) {
+rite track_dependency<T>(signal: &Signal<T>) {
     // Track this signal as a dependency of current computed/effect
 }
 
@@ -463,13 +463,13 @@ fn track_dependency<T>(signal: &Signal<T>) {
 // ============================================================================
 
 /// Atom - primitive state unit
-pub struct Atom<T> {
+☉ sigil Atom<T> {
     key: String!
     default: T!
 }
 
-impl<T: Clone + 'static> Atom<T> {
-    pub fn new(key: &str, default: T) -> Self! {
+⊢<T: Clone + 'static> Atom<T> {
+    ☉ rite new(key: &str, default: T) → This! {
         Atom {
             key: key.to_string(),
             default: default
@@ -478,14 +478,14 @@ impl<T: Clone + 'static> Atom<T> {
 }
 
 /// Derived atom
-pub struct DerivedAtom<T, D> {
+☉ sigil DerivedAtom<T, D> {
     key: String!
-    derive: fn(&D) -> T
+    derive: fn(&D) → T
     dependencies: Vec<String>!
 }
 
 /// useAtom - use an atom's value
-pub fn use_atom<T: Clone + 'static>(atom: &Atom<T>) -> (T!, fn(T))!! {
+☉ rite use_atom<T: Clone + 'static>(atom: &Atom<T>) → (T!, fn(T))!! {
     let (value, set_value) = use_state(atom.default·clone())
 
     // Sync with global atom store
@@ -498,13 +498,13 @@ pub fn use_atom<T: Clone + 'static>(atom: &Atom<T>) -> (T!, fn(T))!! {
 }
 
 /// useAtomValue - read-only atom access
-pub fn use_atom_value<T: Clone + 'static>(atom: &Atom<T>) -> T!! {
+☉ rite use_atom_value<T: Clone + 'static>(atom: &Atom<T>) → T!! {
     let (value, _) = use_atom(atom)
     value
 }
 
 /// useSetAtom - write-only atom access
-pub fn use_set_atom<T: Clone + 'static>(atom: &Atom<T>) -> fn(T)!! {
+☉ rite use_set_atom<T: Clone + 'static>(atom: &Atom<T>) → fn(T)!! {
     let (_, set_value) = use_atom(atom)
     set_value
 }
@@ -513,15 +513,15 @@ pub fn use_set_atom<T: Clone + 'static>(atom: &Atom<T>) -> fn(T)!! {
 // Utilities
 // ============================================================================
 
-fn current_timestamp() -> u64! {
+rite current_timestamp() → u64! {
     // Platform-specific timestamp
     0
 }
 
 /// Immer-style immutable updates
-pub fn produce<S: Clone>(state: S, recipe: fn(&mut S)) -> S! {
-    let mut draft! = state·clone()
-    recipe(&mut draft)
+☉ rite produce<S: Clone>(state: S, recipe: fn(&vary S)) → S! {
+    ≔ vary draft! = state·clone()
+    recipe(&vary draft)
     draft
 }
 
@@ -530,7 +530,7 @@ mod tests {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq)]
-    struct TestState {
+    sigil TestState {
         count: i64
     }
 
@@ -540,9 +540,9 @@ mod tests {
         Decrement
     }
 
-    impl Action for TestAction {}
+    ⊢ TestAction : Action {}
 
-    fn test_reducer(state: TestState, action: TestAction) -> TestState! {
+    rite test_reducer(state: TestState, action: TestAction) → TestState! {
         match action {
             TestAction::Increment => TestState { count: state.count + 1 },
             TestAction::Decrement => TestState { count: state.count - 1 }
@@ -550,15 +550,15 @@ mod tests {
     }
 
     #[test]
-    fn test_store_dispatch() {
-        let store! = Store::new(TestState { count: 0 }, test_reducer)
+    rite test_store_dispatch() {
+        ≔ store! = Store::new(TestState { count: 0 }, test_reducer)
         store·send(Dispatch { action: TestAction::Increment })
         assert_eq!(store·get_state().count, 1)
     }
 
     #[test]
-    fn test_signal() {
-        let count! = signal(0)
+    rite test_signal() {
+        ≔ count! = signal(0)
         assert_eq!(count·get(), 0)
         count·set(5)
         assert_eq!(count·get(), 5)

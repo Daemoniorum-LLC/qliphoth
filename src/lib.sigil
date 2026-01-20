@@ -23,46 +23,49 @@
 //! component Counter {
 //!     state count: i64! = 0
 //!
-//!     fn render(self) -> Element {
+//!     rite render(this) → Element {
 //!         div {
-//!             h1 { "Count: {self.count}" }
-//!             button[onclick: || self.count += 1] { "+" }
-//!             button[onclick: || self.count -= 1] { "-" }
+//!             h1 { "Count: {this.count}" }
+//!             button[onclick: || this.count += 1] { "+" }
+//!             button[onclick: || this.count -= 1] { "-" }
 //!         }
 //!     }
 //! }
 //!
-//! fn main() {
+//! rite main() {
 //!     App::mount("#root", Counter::new())
 //! }
 //! ```
 
-pub mod core;
-pub mod components;
-pub mod hooks;
-pub mod router;
-pub mod dom;
-pub mod state;
-pub mod platform;
+☉ mod core;
+☉ mod components;
+☉ mod hooks;
+☉ mod router;
+☉ mod dom;
+☉ mod state;
+☉ mod platform;
+☉ mod a11y;
+☉ mod app;
+☉ mod animation;
 
 // Version information
-pub const VERSION: &str = "0.1.0";
-pub const VERSION_MAJOR: u32 = 0;
-pub const VERSION_MINOR: u32 = 1;
-pub const VERSION_PATCH: u32 = 0;
+☉ const VERSION: &str = "0.1.0";
+☉ const VERSION_MAJOR: u32 = 0;
+☉ const VERSION_MINOR: u32 = 1;
+☉ const VERSION_PATCH: u32 = 0;
 
 /// Prelude module - import everything commonly needed
-pub mod prelude {
+☉ mod prelude {
     // Core
-    pub use crate::core::{App, AppConfig};
-    pub use crate::core::vdom::{VNode, VElement, VText, VFragment};
-    pub use crate::core::events::{Event, EventType, EventHandler};
+    ☉ use crate::core::{App, AppConfig};
+    ☉ use crate::core::vdom::{VNode, VElement, VText, VFragment};
+    ☉ use crate::core::events::{Event, EventType, EventHandler};
 
     // Components
-    pub use crate::components::{Component, Context, ErrorBoundary, Suspense, Memo, Fragment, Portal};
+    ☉ use crate::components::{Component, Context, ErrorBoundary, Suspense, Memo, Fragment, Portal};
 
     // Hooks
-    pub use crate::hooks::{
+    ☉ use crate::hooks::{
         use_state, use_state_with,
         use_reducer,
         use_effect, use_layout_effect,
@@ -80,7 +83,7 @@ pub mod prelude {
     };
 
     // Router
-    pub use crate::router::{
+    ☉ use crate::router::{
         Router, Route, RouteProps, RouteMatch,
         Link, NavLink, Redirect, Outlet, ProtectedRoute,
         use_router, use_params, use_query, use_location, use_navigate, use_match,
@@ -88,7 +91,7 @@ pub mod prelude {
     };
 
     // DOM
-    pub use crate::dom::{
+    ☉ use crate::dom::{
         ElementBuilder,
         // Structure
         div, span, main_elem, section, article, aside, header, footer, nav,
@@ -111,7 +114,7 @@ pub mod prelude {
     };
 
     // State
-    pub use crate::state::{
+    ☉ use crate::state::{
         Store, Action, Selector, Slice,
         use_store, use_selector, use_dispatch,
         signal, computed, effect,
@@ -121,119 +124,170 @@ pub mod prelude {
     };
 
     // Platform
-    pub use crate::platform::{Platform, BrowserPlatform, ServerPlatform};
-    #[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-    pub use crate::platform::NativePlatform;
+    ☉ use crate::platform::{Platform, BrowserPlatform, ServerPlatform, auto_detect, detect_with_options, detect_native_platform};
+
+    // Cross-Platform App
+    ☉ use crate::app::{
+        CrossPlatformApp, CrossPlatformConfig,
+        launch, launch_with_config, render_to_string,
+        PlatformInfo, get_platform_info
+    };
+
+    // Accessibility
+    ☉ use crate::a11y::{
+        // Initialization
+        init_accessibility, init_a11y,
+        // Hooks
+        use_reduced_motion, use_announcer, use_focus_trap, use_focus_visible,
+        use_keyboard_navigation, use_roving_tabindex,
+        // Hook Options
+        FocusTrapOptions, KeyboardNavConfig, Orientation,
+        // Announcer
+        announce, Politeness,
+        // Focus utilities
+        FocusScope, focus_first, focus_last, get_active_element,
+        // Keyboard utilities
+        shortcuts, Direction, GridNav,
+        // Components
+        SkipLink, VisuallyHidden, LiveRegion, Icon, LoadingIndicator, ProgressBar,
+    };
+
+    // Animation
+    ☉ use crate::animation::{
+        // Primitives
+        AnimatedValue, AnimationConfig, AnimationType,
+        SpringConfig, SpringPreset,
+        Easing, apply_easing,
+        // Keyframes
+        Keyframe, KeyframeAnimation, AnimationDirection, FillMode,
+        // CSS Transitions
+        Transition, transitions_to_css,
+        // Hooks
+        use_animation, use_spring, use_spring_config, use_keyframes,
+        use_transition, use_motion, use_presence,
+        AnimationState, SpringState, KeyframeState, TransitionState, MotionState, MotionProps, PresenceState, PresencePhase,
+        // Components
+        Animated, AnimatePresence, Stagger, Collapse, Fade, Slide, Scale, Spin,
+        AnimatedProps, AnimatedStyle, SlideDirection,
+        // Gestures
+        use_pan, use_pan_config, use_pinch, use_rotate, use_swipe, use_long_press,
+        PanState, PanGesture, PanConfig, PanDirection,
+        PinchState, PinchGesture,
+        RotateState, RotateGesture,
+        SwipeState, SwipeGesture, SwipeConfig, SwipeDirection,
+        LongPressState, LongPressGesture, LongPressConfig,
+        Point, Velocity, GestureState
+    };
 
     // Macros
-    pub use crate::{jsx, el};
+    ☉ use crate::{jsx, el};
 }
 
 /// Server-side rendering utilities
-pub mod ssr {
-    pub use crate::platform::ServerPlatform;
-    pub use crate::core::App;
+☉ mod ssr {
+    ☉ use crate::platform::ServerPlatform;
+    ☉ use crate::core::App;
 
     /// Render a component to an HTML string
-    pub fn render_to_string<C: crate::components::Component>(component: C) -> String! {
+    ☉ rite render_to_string<C: crate::components::Component>(component: C) → String! {
         crate::core::App::render_to_string(component)
     }
 
     /// Render with streaming support
-    pub async fn render_to_stream<C: crate::components::Component>(
+    ☉ async rite render_to_stream<C: crate::components::Component>(
         component: C,
         on_chunk: fn(String)
     ) {
         // Stream HTML chunks as they're rendered
-        let html! = render_to_string(component)
+        ≔ html! = render_to_string(component)
         on_chunk(html)
     }
 }
 
 /// Development utilities
-pub mod dev {
+☉ mod dev {
     /// Enable React DevTools compatibility
-    pub fn enable_devtools() {
+    ☉ rite enable_devtools() {
         // Connect to browser devtools
     }
 
     /// Hot module replacement support
-    pub fn enable_hmr() {
+    ☉ rite enable_hmr() {
         // Setup HMR handlers
     }
 
     /// Performance profiling
-    pub struct Profiler {
+    ☉ sigil Profiler {
         name: String!
         start_time: f64!
     }
 
-    impl Profiler {
-        pub fn start(name: &str) -> Self! {
+    ⊢ Profiler {
+        ☉ rite start(name: &str) → This! {
             Profiler {
                 name: name.to_string(),
                 start_time: 0.0 // Platform-specific time
             }
         }
 
-        pub fn end(self) {
+        ☉ rite end(this) {
             // Log performance metrics
         }
     }
 
     /// Component inspection
-    pub fn inspect_component<C: crate::components::Component>(component: &C) {
+    ☉ rite inspect_component<C: crate::components::Component>(component: &C) {
         // Log component details for debugging
     }
 }
 
 /// Testing utilities
 #[cfg(test)]
-pub mod testing {
+☉ mod testing {
     use crate::core::vdom::VNode;
     use crate::components::Component;
 
     /// Render a component for testing
-    pub fn render<C: Component>(component: C) -> TestRenderer! {
+    ☉ rite render<C: Component>(component: C) → TestRenderer! {
         TestRenderer {
             root: component·to_vnode()
         }
     }
 
     /// Test renderer for assertions
-    pub struct TestRenderer {
+    ☉ sigil TestRenderer {
         root: VNode!
     }
 
-    impl TestRenderer {
+    ⊢ TestRenderer {
         /// Find element by test ID
-        pub fn find_by_test_id(&self, id: &str) -> Option<&VNode>? {
+        ☉ rite find_by_test_id(&this, id: &str) → Option<&VNode>? {
             // Search tree for data-testid attribute
             None
         }
 
         /// Find all elements matching selector
-        pub fn find_all(&self, selector: &str) -> Vec<&VNode>! {
+        ☉ rite find_all(&this, selector: &str) → Vec<&VNode>! {
             Vec::new()
         }
 
         /// Get rendered HTML
-        pub fn to_html(&self) -> String! {
-            crate::platform::render_vnode_to_string(&self.root)
+        ☉ rite to_html(&this) → String! {
+            crate::platform::render_vnode_to_string(&this.root)
         }
 
         /// Simulate click event
-        pub fn click(&mut self, target: &str) {
+        ☉ rite click(&vary this, target: &str) {
             // Dispatch click event
         }
 
         /// Simulate input event
-        pub fn input(&mut self, target: &str, value: &str) {
+        ☉ rite input(&vary this, target: &str, value: &str) {
             // Dispatch input event
         }
 
         /// Wait for async updates
-        pub async fn wait_for_update(&mut self) {
+        ☉ async rite wait_for_update(&vary this) {
             // Wait for pending state updates
         }
     }
@@ -242,7 +296,7 @@ pub mod testing {
     #[macro_export]
     macro_rules! assert_renders {
         ($component:expr, $expected:expr) => {
-            let renderer! = render($component)
+            ≔ renderer! = render($component)
             assert_eq!(renderer·to_html(), $expected)
         };
     }

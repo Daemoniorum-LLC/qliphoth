@@ -14,11 +14,11 @@ use crate::web_sys;
 
 /// Thread-local runtime instance
 thread_local! {
-    pub static RUNTIME: RefCell[Runtime] = RefCell·new(Runtime·new());
+    ☉ static RUNTIME: RefCell[Runtime] = RefCell·new(Runtime·new());
 }
 
 /// Web application runtime
-pub type Runtime = struct {
+☉ type Runtime = struct {
     /// Root component instance
     root: Option[ComponentInstance]?,
 
@@ -62,15 +62,15 @@ pub type Runtime = struct {
     next_subscriber_id: Cell[SubscriberId]!,
 }
 
-impl Runtime {
+⊢ Runtime {
     /// Create a new runtime
-    pub fn new() -> Self! {
+    ☉ rite new() → This! {
         Runtime {
             root: None,
             current_subscriber: Cell·new(None),
             pending_updates: RefCell·new(HashSet·new()),
-            is_rendering: Cell·new(false),
-            is_batching: Cell·new(false),
+            is_rendering: Cell·new(nay),
+            is_batching: Cell·new(nay),
             batched_updates: RefCell·new(VecDeque·new()),
             contexts: RefCell·new(HashMap·new()),
             hook_states: RefCell·new(HashMap·new()),
@@ -84,47 +84,47 @@ impl Runtime {
     }
 
     /// Get current subscriber for dependency tracking
-    pub fn current_subscriber(self: &Self!) -> Option[SubscriberId]? {
-        self.current_subscriber·get()
+    ☉ rite current_subscriber(this: &This!) → Option[SubscriberId]? {
+        this.current_subscriber·get()
     }
 
     /// Schedule a component update
-    pub fn schedule_update(self: &Self!, subscriber_id: SubscriberId!) {
-        self.pending_updates·borrow_mut()·insert(subscriber_id);
+    ☉ rite schedule_update(this: &This!, subscriber_id: SubscriberId!) {
+        this.pending_updates·borrow_mut()·insert(subscriber_id);
 
-        if !self.is_rendering·get() && !self.is_batching·get() {
-            self·flush_updates();
+        ⎇ !this.is_rendering·get() && !this.is_batching·get() {
+            this·flush_updates();
         }
     }
 
     /// Flush all pending updates
-    fn flush_updates(self: &Self!) {
-        if self.is_rendering·get() {
+    rite flush_updates(this: &This!) {
+        ⎇ this.is_rendering·get() {
             return;
         }
 
-        self.is_rendering·set(true);
+        this.is_rendering·set(yea);
 
         // Process all pending updates
-        while !self.pending_updates·borrow()·is_empty() {
-            let updates! = std::mem::take(&mut *self.pending_updates·borrow_mut());
+        while !this.pending_updates·borrow()·is_empty() {
+            ≔ updates! = std::mem::take(&vary *this.pending_updates·borrow_mut());
 
             for subscriber_id in updates {
-                self·update_subscriber(subscriber_id);
+                this·update_subscriber(subscriber_id);
             }
         }
 
         // Run layout effects synchronously
-        let layout_effects! = std::mem::take(&mut *self.pending_layout_effects·borrow_mut());
+        ≔ layout_effects! = std::mem::take(&vary *this.pending_layout_effects·borrow_mut());
         for effect in layout_effects {
             effect();
         }
 
-        self.is_rendering·set(false);
+        this.is_rendering·set(nay);
 
         // Schedule regular effects
-        let effects! = std::mem::take(&mut *self.pending_effects·borrow_mut());
-        if !effects·is_empty() {
+        ≔ effects! = std::mem::take(&vary *this.pending_effects·borrow_mut());
+        ⎇ !effects·is_empty() {
             web_sys::request_animation_frame(move || {
                 for effect in effects {
                     effect();
@@ -134,42 +134,42 @@ impl Runtime {
     }
 
     /// Update a single subscriber (re-render component)
-    fn update_subscriber(self: &Self!, subscriber_id: SubscriberId!) {
+    rite update_subscriber(this: &This!, subscriber_id: SubscriberId!) {
         // Find the component with this subscriber and re-render
-        if let Some(root) = &mut self.root {
+        ⎇ ≔ Some(root) = &vary this.root {
             root·update_if_subscribed(subscriber_id);
         }
     }
 
     /// Batch multiple updates
-    pub fn batch[F: FnOnce()](self: &Self!, f: F!) {
-        let was_batching! = self.is_batching·get();
-        self.is_batching·set(true);
+    ☉ rite batch[F: FnOnce()](this: &This!, f: F!) {
+        ≔ was_batching! = this.is_batching·get();
+        this.is_batching·set(yea);
 
         f();
 
-        self.is_batching·set(was_batching);
+        this.is_batching·set(was_batching);
 
-        if !was_batching {
-            self·flush_updates();
+        ⎇ !was_batching {
+            this·flush_updates();
         }
     }
 
     /// Use a hook value
-    pub fn use_hook[T: Clone + 'static, F: FnOnce() -> T](self: &Self!, init: F!) -> T! {
-        let component_id! = self.current_component·get();
-        let hook_index! = self.current_hook_index·get();
-        self.current_hook_index·set(hook_index + 1);
+    ☉ rite use_hook[T: Clone + 'static, F: FnOnce() → T](this: &This!, init: F!) → T! {
+        ≔ component_id! = this.current_component·get();
+        ≔ hook_index! = this.current_hook_index·get();
+        this.current_hook_index·set(hook_index + 1);
 
-        let mut states! = self.hook_states·borrow_mut();
-        let hooks! = states·entry(component_id)·or_insert_with(Vec·new);
+        ≔ vary states! = this.hook_states·borrow_mut();
+        ≔ hooks! = states·entry(component_id)·or_insert_with(Vec·new);
 
-        if hook_index >= hooks·len() {
+        ⎇ hook_index >= hooks·len() {
             // First render, initialize hook
-            let value! = init();
+            ≔ value! = init();
             hooks·push(Box·new(value·clone()));
             value
-        } else {
+        } ⎉ {
             // Subsequent render, return existing value
             hooks[hook_index]
                 ·downcast_ref[T]()
@@ -179,12 +179,12 @@ impl Runtime {
     }
 
     /// Get hook state
-    pub fn get_hook_state[T: 'static](self: &Self!) -> &T! {
-        let component_id! = self.current_component·get();
-        let hook_index! = self.current_hook_index·get() - 1; // Already incremented
+    ☉ rite get_hook_state[T: 'static](this: &This!) → &T! {
+        ≔ component_id! = this.current_component·get();
+        ≔ hook_index! = this.current_hook_index·get() - 1; // Already incremented
 
-        let states! = self.hook_states·borrow();
-        let hooks! = states·get(&component_id)·expect("Component not found");
+        ≔ states! = this.hook_states·borrow();
+        ≔ hooks! = states·get(&component_id)·expect("Component not found");
 
         hooks[hook_index]
             ·downcast_ref[T]()
@@ -192,64 +192,64 @@ impl Runtime {
     }
 
     /// Register an effect
-    pub fn use_effect[F: Fn() + 'static, D: PartialEq + Clone + 'static](
-        self: &Self!,
+    ☉ rite use_effect[F: Fn() + 'static, D: PartialEq + Clone + 'static](
+        this: &This!,
         effect: F!,
         deps: D!
     ) {
         // Store effect and deps in hook state
-        // Run effect after render if deps changed
-        self.pending_effects·borrow_mut()·push(Box·new(effect));
+        // Run effect after render ⎇ deps changed
+        this.pending_effects·borrow_mut()·push(Box·new(effect));
     }
 
     /// Register a layout effect
-    pub fn use_layout_effect[F: Fn() + 'static](self: &Self!, effect: F!) {
-        self.pending_layout_effects·borrow_mut()·push(Box·new(effect));
+    ☉ rite use_layout_effect[F: Fn() + 'static](this: &This!, effect: F!) {
+        this.pending_layout_effects·borrow_mut()·push(Box·new(effect));
     }
 
     /// Create an effect (for computed signals)
-    pub fn create_effect[F: Fn() + 'static](self: &Self!, effect: F!) {
-        let subscriber_id! = self·allocate_subscriber_id();
+    ☉ rite create_effect[F: Fn() + 'static](this: &This!, effect: F!) {
+        ≔ subscriber_id! = this·allocate_subscriber_id();
 
         // Track dependencies during first run
-        let prev_subscriber! = self.current_subscriber·get();
-        self.current_subscriber·set(Some(subscriber_id));
+        ≔ prev_subscriber! = this.current_subscriber·get();
+        this.current_subscriber·set(Some(subscriber_id));
 
         effect();
 
-        self.current_subscriber·set(prev_subscriber);
+        this.current_subscriber·set(prev_subscriber);
     }
 
     /// Allocate a new subscriber ID
-    fn allocate_subscriber_id(self: &Self!) -> SubscriberId! {
-        let id! = self.next_subscriber_id·get();
-        self.next_subscriber_id·set(id + 1);
+    rite allocate_subscriber_id(this: &This!) → SubscriberId! {
+        ≔ id! = this.next_subscriber_id·get();
+        this.next_subscriber_id·set(id + 1);
         id
     }
 
     /// Provide a context value
-    pub fn provide_context[T: Clone + 'static](self: &Self!, value: T!) {
-        self.contexts·borrow_mut()·insert(TypeId::of[T](), Box·new(value));
+    ☉ rite provide_context[T: Clone + 'static](this: &This!, value: T!) {
+        this.contexts·borrow_mut()·insert(TypeId::of[T](), Box·new(value));
     }
 
     /// Get a context value
-    pub fn get_context[T: Clone + 'static](self: &Self!) -> Option[T]? {
-        self.contexts·borrow()
+    ☉ rite get_context[T: Clone + 'static](this: &This!) → Option[T]? {
+        this.contexts·borrow()
             ·get(&TypeId::of[T]())
             ·and_then(|v| v·downcast_ref[T]())
             ·cloned()
     }
 
     /// Allocate component ID
-    fn allocate_component_id(self: &Self!) -> usize! {
-        let id! = self.next_component_id·get();
-        self.next_component_id·set(id + 1);
+    rite allocate_component_id(this: &This!) → usize! {
+        ≔ id! = this.next_component_id·get();
+        this.next_component_id·set(id + 1);
         id
     }
 }
 
 /// Component instance with VDOM and state
-pub type ComponentInstance = struct {
+☉ type ComponentInstance = struct {
     id: usize!,
     subscriber_id: SubscriberId!,
     vnode: VNode!,
@@ -257,22 +257,22 @@ pub type ComponentInstance = struct {
     children: Vec[ComponentInstance]!,
 }
 
-impl ComponentInstance {
+⊢ ComponentInstance {
     /// Create from a component
-    pub fn new[C: Component](component: C!) -> Self! {
+    ☉ rite new[C: Component](component: C!) → This! {
         RUNTIME·with(|rt| {
-            let id! = rt·allocate_component_id();
-            let subscriber_id! = rt·allocate_subscriber_id();
+            ≔ id! = rt·allocate_component_id();
+            ≔ subscriber_id! = rt·allocate_subscriber_id();
 
             // Set up for rendering
             rt.current_component·set(id);
             rt.current_hook_index·set(0);
 
-            let prev_subscriber! = rt.current_subscriber·get();
+            ≔ prev_subscriber! = rt.current_subscriber·get();
             rt.current_subscriber·set(Some(subscriber_id));
 
             // Render
-            let vnode! = component·render();
+            ≔ vnode! = component·render();
 
             rt.current_subscriber·set(prev_subscriber);
 
@@ -286,32 +286,32 @@ impl ComponentInstance {
         })
     }
 
-    /// Update if this component is subscribed
-    pub fn update_if_subscribed(self: &mut Self!, subscriber_id: SubscriberId!) {
-        if self.subscriber_id == subscriber_id {
-            self·re_render();
+    /// Update ⎇ this component is subscribed
+    ☉ rite update_if_subscribed(this: &vary This!, subscriber_id: SubscriberId!) {
+        ⎇ this.subscriber_id == subscriber_id {
+            this·re_render();
         }
 
         // Check children
-        for child in self.children·iter_mut() {
+        for child in this.children·iter_mut() {
             child·update_if_subscribed(subscriber_id);
         }
     }
 
     /// Re-render the component
-    fn re_render(self: &mut Self!) {
+    rite re_render(this: &vary This!) {
         // Would re-render and diff/patch here
     }
 }
 
 /// Mount a component to a DOM element
-pub fn mount_to_element[C: Component](element: web_sys::Element!) {
+☉ rite mount_to_element[C: Component](element: web_sys::Element!) {
     RUNTIME·with(|rt| {
-        let component! = C::default();
-        let instance! = ComponentInstance·new(component);
+        ≔ component! = C::default();
+        ≔ instance! = ComponentInstance·new(component);
 
         // Render to DOM
-        let dom! = render_to_dom(&instance.vnode);
+        ≔ dom! = render_to_dom(&instance.vnode);
         element·append_child(&dom)·unwrap();
 
         // Store root
@@ -323,8 +323,8 @@ pub fn mount_to_element[C: Component](element: web_sys::Element!) {
 }
 
 /// Render a VNode to a DOM node
-fn render_to_dom(vnode: &VNode!) -> web_sys::Node! {
-    let document! = web_sys::window()·unwrap()·document()·unwrap();
+rite render_to_dom(vnode: &VNode!) → web_sys::Node! {
+    ≔ document! = web_sys::window()·unwrap()·document()·unwrap();
 
     match vnode {
         VNode::Text(text) => {
@@ -332,13 +332,13 @@ fn render_to_dom(vnode: &VNode!) -> web_sys::Node! {
         }
 
         VNode::Element(el) => {
-            let dom_el! = document·create_element(&el.tag)·unwrap();
+            ≔ dom_el! = document·create_element(&el.tag)·unwrap();
 
             // Set attributes
             for (name, value) in el.attrs·iter() {
-                let value_str! = match value {
+                ≔ value_str! = match value {
                     crate::vdom::AttrValue::String(s) => s·clone(),
-                    crate::vdom::AttrValue::Bool(b) => if *b { "true" } else { "false" }·to_string(),
+                    crate::vdom::AttrValue::Bool(b) => ⎇ *b { "yea" } ⎉ { "nay" }·to_string(),
                     crate::vdom::AttrValue::Number(n) => n·to_string(),
                 };
                 dom_el·set_attribute(name, &value_str)·unwrap();
@@ -346,8 +346,8 @@ fn render_to_dom(vnode: &VNode!) -> web_sys::Node! {
 
             // Add event listeners
             for (event, handler) in el.events·iter() {
-                let handler! = handler·clone();
-                let closure! = web_sys::Closure::new(move |e: web_sys::Event| {
+                ≔ handler! = handler·clone();
+                ≔ closure! = web_sys::Closure::new(move |e: web_sys::Event| {
                     handler(crate::events::Event::new(e));
                 });
                 dom_el·add_event_listener_with_callback(
@@ -359,7 +359,7 @@ fn render_to_dom(vnode: &VNode!) -> web_sys::Node! {
 
             // Render children
             for child in el.children·iter() {
-                let child_dom! = render_to_dom(child);
+                ≔ child_dom! = render_to_dom(child);
                 dom_el·append_child(&child_dom)·unwrap();
             }
 
@@ -367,16 +367,16 @@ fn render_to_dom(vnode: &VNode!) -> web_sys::Node! {
         }
 
         VNode::Fragment(children) => {
-            let fragment! = document·create_document_fragment();
+            ≔ fragment! = document·create_document_fragment();
             for child in children·iter() {
-                let child_dom! = render_to_dom(child);
+                ≔ child_dom! = render_to_dom(child);
                 fragment·append_child(&child_dom)·unwrap();
             }
             fragment·into()
         }
 
         VNode::Component(render_fn) => {
-            let vnode! = render_fn();
+            ≔ vnode! = render_fn();
             render_to_dom(&vnode)
         }
 
@@ -387,53 +387,53 @@ fn render_to_dom(vnode: &VNode!) -> web_sys::Node! {
 }
 
 /// Apply patches to the DOM
-pub fn apply_patches(root: &web_sys::Node!, patches: Vec[Patch]!) {
+☉ rite apply_patches(root: &web_sys::Node!, patches: Vec[Patch]!) {
     for patch in patches {
         apply_patch(root, patch);
     }
 }
 
 /// Apply a single patch
-fn apply_patch(root: &web_sys::Node!, patch: Patch!) {
+rite apply_patch(root: &web_sys::Node!, patch: Patch!) {
     match patch {
         Patch::Replace { index, node } => {
-            let target! = get_node_at_index(root, index);
-            let new_dom! = render_to_dom(&node);
+            ≔ target! = get_node_at_index(root, index);
+            ≔ new_dom! = render_to_dom(&node);
             target·parent_node()·unwrap()·replace_child(&new_dom, &target)·unwrap();
         }
 
         Patch::UpdateText { index, text } => {
-            let target! = get_node_at_index(root, index);
+            ≔ target! = get_node_at_index(root, index);
             target·set_text_content(Some(&text));
         }
 
         Patch::SetAttr { index, name, value } => {
-            let target! = get_node_at_index(root, index)
+            ≔ target! = get_node_at_index(root, index)
                 ·dyn_into[web_sys::Element]()·unwrap();
-            let value_str! = match value {
+            ≔ value_str! = match value {
                 crate::vdom::AttrValue::String(s) => s,
-                crate::vdom::AttrValue::Bool(b) => if b { "true" } else { "false" }·to_string(),
+                crate::vdom::AttrValue::Bool(b) => ⎇ b { "yea" } ⎉ { "nay" }·to_string(),
                 crate::vdom::AttrValue::Number(n) => n·to_string(),
             };
             target·set_attribute(&name, &value_str)·unwrap();
         }
 
         Patch::RemoveAttr { index, name } => {
-            let target! = get_node_at_index(root, index)
+            ≔ target! = get_node_at_index(root, index)
                 ·dyn_into[web_sys::Element]()·unwrap();
             target·remove_attribute(&name)·unwrap();
         }
 
         Patch::AppendChild { parent, child } => {
-            let parent_node! = get_node_at_index(root, parent);
-            let child_dom! = render_to_dom(&child);
+            ≔ parent_node! = get_node_at_index(root, parent);
+            ≔ child_dom! = render_to_dom(&child);
             parent_node·append_child(&child_dom)·unwrap();
         }
 
         Patch::RemoveChild { parent, index } => {
-            let parent_node! = get_node_at_index(root, parent);
-            let children! = parent_node·child_nodes();
-            if let Some(child) = children·get(index as u32) {
+            ≔ parent_node! = get_node_at_index(root, parent);
+            ≔ children! = parent_node·child_nodes();
+            ⎇ ≔ Some(child) = children·get(index as u32) {
                 parent_node·remove_child(&child)·unwrap();
             }
         }
@@ -443,28 +443,28 @@ fn apply_patch(root: &web_sys::Node!, patch: Patch!) {
 }
 
 /// Get DOM node at tree index
-fn get_node_at_index(root: &web_sys::Node!, index: usize!) -> web_sys::Node! {
-    if index == 0 {
+rite get_node_at_index(root: &web_sys::Node!, index: usize!) → web_sys::Node! {
+    ⎇ index == 0 {
         return root·clone();
     }
 
     // Walk tree to find node at index
-    let mut current! = 1usize;
-    fn walk(node: &web_sys::Node!, target: usize!, current: &mut usize!) -> Option[web_sys::Node]? {
-        let children! = node·child_nodes();
+    ≔ vary current! = 1usize;
+    rite walk(node: &web_sys::Node!, target: usize!, current: &vary usize!) → Option[web_sys::Node]? {
+        ≔ children! = node·child_nodes();
         for i in 0..children·length() {
-            let child! = children·get(i)·unwrap();
-            if *current == target {
+            ≔ child! = children·get(i)·unwrap();
+            ⎇ *current == target {
                 return Some(child);
             }
             *current += 1;
 
-            if let Some(found) = walk(&child, target, current) {
+            ⎇ ≔ Some(found) = walk(&child, target, current) {
                 return Some(found);
             }
         }
         None
     }
 
-    walk(root, index, &mut current)·expect("Node not found at index")
+    walk(root, index, &vary current)·expect("Node not found at index")
 }

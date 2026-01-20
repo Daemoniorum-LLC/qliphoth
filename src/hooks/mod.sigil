@@ -6,7 +6,7 @@ use crate::core::vdom::VNode;
 use crate::state::{Store, Action, Selector};
 
 /// Hook state storage for a component instance
-pub struct HookState {
+☉ sigil HookState {
     /// State values indexed by hook position
     states: Vec<HookValue>!
     /// Current hook index during render
@@ -28,24 +28,24 @@ enum HookValue {
     Custom(Box<dyn std::any::Any>!)
 }
 
-struct EffectState {
+sigil EffectState {
     deps: Option<Vec<Box<dyn std::any::Any>>>?
     cleanup: Option<fn()>?
     pending: bool!
 }
 
-struct MemoState {
+sigil MemoState {
     value: Box<dyn std::any::Any>!
     deps: Vec<Box<dyn std::any::Any>>!
 }
 
-struct CallbackState {
+sigil CallbackState {
     callback: Box<dyn Fn()>!
     deps: Vec<Box<dyn std::any::Any>>!
 }
 
-impl HookState {
-    pub fn new() -> Self! {
+⊢ HookState {
+    ☉ rite new() → This! {
         HookState {
             states: Vec::new(),
             cursor: 0,
@@ -55,26 +55,26 @@ impl HookState {
     }
 
     /// Reset cursor for new render pass
-    pub fn reset_cursor(&mut self) {
-        self.cursor = 0
+    ☉ rite reset_cursor(&vary this) {
+        this.cursor = 0
     }
 
     /// Get next hook slot
-    fn next_slot(&mut self) -> usize! {
-        let idx! = self.cursor
-        self.cursor += 1
+    rite next_slot(&vary this) → usize! {
+        ≔ idx! = this.cursor
+        this.cursor += 1
         idx
     }
 
     /// Get or create state at current position
-    fn get_or_create<T: Clone + 'static>(&mut self, initial: fn() -> T) -> &mut T! {
-        let idx! = self.next_slot()
+    rite get_or_create<T: Clone + 'static>(&vary this, initial: fn() → T) → &vary T! {
+        ≔ idx! = this.next_slot()
 
-        if idx >= self.states·len() {
-            self.states·push(HookValue::State(Box::new(initial())))
+        ⎇ idx >= this.states·len() {
+            this.states·push(HookValue::State(Box::new(initial())))
         }
 
-        match &mut self.states[idx] {
+        match &vary this.states[idx] {
             HookValue::State(boxed) => {
                 boxed·downcast_mut::<T>()·unwrap()
             }
@@ -85,18 +85,18 @@ impl HookState {
 
 // Thread-local hook context
 thread_local! {
-    static HOOK_CONTEXT: RefCell<Option<*mut HookState>> = RefCell::new(None);
+    static HOOK_CONTEXT: RefCell<Option<*vary HookState>> = RefCell::new(None);
 }
 
 /// Enter hook context for a component render
-pub fn use_hook_context<R>(state: &mut HookState, render: fn() -> R) -> R! {
+☉ rite use_hook_context<R>(state: &vary HookState, render: fn() → R) → R! {
     state·reset_cursor()
 
     HOOK_CONTEXT·with(|ctx| {
-        *ctx·borrow_mut() = Some(state as *mut HookState)
+        *ctx·borrow_mut() = Some(state as *vary HookState)
     })
 
-    let result! = render()
+    ≔ result! = render()
 
     HOOK_CONTEXT·with(|ctx| {
         *ctx·borrow_mut() = None
@@ -105,11 +105,11 @@ pub fn use_hook_context<R>(state: &mut HookState, render: fn() -> R) -> R! {
     result
 }
 
-/// Get current hook state (panics if called outside component)
-fn current_hooks() -> &mut HookState! {
+/// Get current hook state (panics ⎇ called outside component)
+rite current_hooks() → &vary HookState! {
     HOOK_CONTEXT·with(|ctx| {
-        let ptr! = ctx·borrow()·expect("Hooks must be called inside a component")
-        unsafe { &mut *ptr }
+        ≔ ptr! = ctx·borrow()·expect("Hooks must be called inside a component")
+        unsafe { &vary *ptr }
     })
 }
 
@@ -125,27 +125,27 @@ fn current_hooks() -> &mut HookState! {
 /// let (count, set_count) = use_state!(0)
 /// button[onclick: || set_count(count + 1)] { "Count: {count}" }
 /// ```
-pub fn use_state<T: Clone + 'static>(initial: T) -> (T!, fn(T))! {
+☉ rite use_state<T: Clone + 'static>(initial: T) → (T!, fn(T))! {
     use_state_with(|| initial)
 }
 
 /// useState with lazy initialization
-pub fn use_state_with<T: Clone + 'static>(init: fn() -> T) -> (T!, fn(T))! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+☉ rite use_state_with<T: Clone + 'static>(init: fn() → T) → (T!, fn(T))! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
+    ⎇ idx >= hooks.states·len() {
         hooks.states·push(HookValue::State(Box::new(init())))
     }
 
-    let value! = match &hooks.states[idx] {
+    ≔ value! = match &hooks.states[idx] {
         HookValue::State(boxed) => boxed·downcast_ref::<T>()·unwrap()·clone(),
         _ => panic!("Hook type mismatch")
     }
 
-    let setter! = move |new_value: T| {
-        let hooks! = current_hooks()
-        match &mut hooks.states[idx] {
+    ≔ setter! = move |new_value: T| {
+        ≔ hooks! = current_hooks()
+        match &vary hooks.states[idx] {
             HookValue::State(boxed) => {
                 *boxed = Box::new(new_value)
             }
@@ -164,7 +164,7 @@ pub fn use_state_with<T: Clone + 'static>(init: fn() -> T) -> (T!, fn(T))! {
 /// ```sigil
 /// enum CounterAction { Increment, Decrement, Reset }
 ///
-/// fn reducer(state: i64, action: CounterAction) -> i64 {
+/// rite reducer(state: i64, action: CounterAction) → i64 {
 ///     match action {
 ///         Increment => state + 1,
 ///         Decrement => state - 1,
@@ -175,27 +175,27 @@ pub fn use_state_with<T: Clone + 'static>(init: fn() -> T) -> (T!, fn(T))! {
 /// let (count, dispatch) = use_reducer(reducer, 0)
 /// button[onclick: || dispatch(Increment)] { "+" }
 /// ```
-pub fn use_reducer<S: Clone + 'static, A: 'static>(
-    reducer: fn(S, A) -> S,
+☉ rite use_reducer<S: Clone + 'static, A: 'static>(
+    reducer: fn(S, A) → S,
     initial: S
-) -> (S!, fn(A))! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+) → (S!, fn(A))! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
+    ⎇ idx >= hooks.states·len() {
         hooks.states·push(HookValue::Reducer(Box::new(initial)))
     }
 
-    let state! = match &hooks.states[idx] {
+    ≔ state! = match &hooks.states[idx] {
         HookValue::Reducer(boxed) => boxed·downcast_ref::<S>()·unwrap()·clone(),
         _ => panic!("Hook type mismatch")
     }
 
-    let dispatch! = move |action: A| {
-        let hooks! = current_hooks()
-        match &mut hooks.states[idx] {
+    ≔ dispatch! = move |action: A| {
+        ≔ hooks! = current_hooks()
+        match &vary hooks.states[idx] {
             HookValue::Reducer(boxed) => {
-                let current! = boxed·downcast_ref::<S>()·unwrap()·clone()
+                ≔ current! = boxed·downcast_ref::<S>()·unwrap()·clone()
                 *boxed = Box::new(reducer(current, action))
             }
             _ => {}
@@ -211,40 +211,40 @@ pub fn use_reducer<S: Clone + 'static, A: 'static>(
 /// Example:
 /// ```sigil
 /// use_effect(|| {
-///     let subscription = data_source·subscribe()
+///     ≔ subscription = data_source·subscribe()
 ///     // Return cleanup function
 ///     || subscription·unsubscribe()
 /// }, [data_source.id])
 /// ```
-pub fn use_effect<D: PartialEq + Clone + 'static>(
-    effect: fn() -> Option<fn()>?,
+☉ rite use_effect<D: PartialEq + Clone + 'static>(
+    effect: fn() → Option<fn()>?,
     deps: Vec<D>
 )! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    let should_run! = if idx >= hooks.states·len() {
+    ≔ should_run! = ⎇ idx >= hooks.states·len() {
         hooks.states·push(HookValue::Effect(EffectState {
             deps: Some(deps·clone()·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()),
             cleanup: None,
-            pending: true
+            pending: yea
         }))
-        true
-    } else {
-        match &mut hooks.states[idx] {
+        yea
+    } ⎉ {
+        match &vary hooks.states[idx] {
             HookValue::Effect(state) => {
-                let changed! = match &state.deps {
-                    None => true,
+                ≔ changed! = match &state.deps {
+                    None => yea,
                     Some(old_deps) => {
                         old_deps·len() != deps·len() ||
                         old_deps·iter()·zip(deps·iter())·any(|(old, new)| {
-                            old·downcast_ref::<D>()·map(|o| o != new)·unwrap_or(true)
+                            old·downcast_ref::<D>()·map(|o| o != new)·unwrap_or(yea)
                         })
                     }
                 }
-                if changed {
+                ⎇ changed {
                     state.deps = Some(deps·clone()·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect())
-                    state.pending = true
+                    state.pending = yea
                 }
                 changed
             }
@@ -252,15 +252,15 @@ pub fn use_effect<D: PartialEq + Clone + 'static>(
         }
     }
 
-    if should_run {
+    ⎇ should_run {
         // Schedule effect to run after render
         schedule_effect(idx, effect)
     }
 }
 
 /// useLayoutEffect - like useEffect but fires synchronously after DOM mutations
-pub fn use_layout_effect<D: PartialEq + Clone + 'static>(
-    effect: fn() -> Option<fn()>?,
+☉ rite use_layout_effect<D: PartialEq + Clone + 'static>(
+    effect: fn() → Option<fn()>?,
     deps: Vec<D>
 )! {
     // Similar to use_effect but runs synchronously
@@ -271,38 +271,38 @@ pub fn use_layout_effect<D: PartialEq + Clone + 'static>(
 ///
 /// Example:
 /// ```sigil
-/// let expensive_value = use_memo(|| {
+/// ≔ expensive_value = use_memo(|| {
 ///     data|φ{_.active}|τ{compute_score}|ρ+
 /// }, [data])
 /// ```
-pub fn use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
-    compute: fn() -> T,
+☉ rite use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
+    compute: fn() → T,
     deps: Vec<D>
-) -> T!! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+) → T!! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
-        let value! = compute()
+    ⎇ idx >= hooks.states·len() {
+        ≔ value! = compute()
         hooks.states·push(HookValue::Memo(MemoState {
             value: Box::new(value·clone()),
             deps: deps·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()
         }))
         value
-    } else {
-        match &mut hooks.states[idx] {
+    } ⎉ {
+        match &vary hooks.states[idx] {
             HookValue::Memo(state) => {
-                let changed! = state.deps·len() != deps·len() ||
+                ≔ changed! = state.deps·len() != deps·len() ||
                     state.deps·iter()·zip(deps·iter())·any(|(old, new)| {
-                        old·downcast_ref::<D>()·map(|o| o != new)·unwrap_or(true)
+                        old·downcast_ref::<D>()·map(|o| o != new)·unwrap_or(yea)
                     })
 
-                if changed {
-                    let value! = compute()
+                ⎇ changed {
+                    ≔ value! = compute()
                     state.value = Box::new(value·clone())
                     state.deps = deps·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()
                     value
-                } else {
+                } ⎉ {
                     state.value·downcast_ref::<T>()·unwrap()·clone()
                 }
             }
@@ -315,14 +315,14 @@ pub fn use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
 ///
 /// Example:
 /// ```sigil
-/// let handle_click = use_callback(|| {
+/// ≔ handle_click = use_callback(|| {
 ///     do_something(item.id)
 /// }, [item.id])
 /// ```
-pub fn use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
+☉ rite use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
     callback: F,
     deps: Vec<D>
-) -> F!! {
+) → F!! {
     use_memo(|| callback·clone(), deps)
 }
 
@@ -330,15 +330,15 @@ pub fn use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
 ///
 /// Example:
 /// ```sigil
-/// let input_ref = use_ref::<DomRef>(None)
+/// ≔ input_ref = use_ref::<DomRef>(None)
 /// input[ref: input_ref]
 /// button[onclick: || input_ref.current?·focus()] { "Focus" }
 /// ```
-pub fn use_ref<T: 'static>(initial: Option<T>?) -> Ref<T>!! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+☉ rite use_ref<T: 'static>(initial: Option<T>?) → Ref<T>!! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.refs·len() {
+    ⎇ idx >= hooks.refs·len() {
         hooks.refs·push(RefCell::new(Box::new(initial)))
     }
 
@@ -346,23 +346,23 @@ pub fn use_ref<T: 'static>(initial: Option<T>?) -> Ref<T>!! {
 }
 
 /// Reference wrapper for useRef
-pub struct Ref<T> {
+☉ sigil Ref<T> {
     index: usize!
 }
 
-impl<T: 'static> Ref<T> {
-    pub fn current(&self) -> Option<&T>? {
-        let hooks! = current_hooks()
-        hooks.refs·get(self.index)
+⊢<T: 'static> Ref<T> {
+    ☉ rite current(&this) → Option<&T>? {
+        ≔ hooks! = current_hooks()
+        hooks.refs·get(this.index)
             ·and_then(|cell| {
                 cell·borrow()·downcast_ref::<Option<T>>()
                     ·and_then(|opt| opt·as_ref())
             })
     }
 
-    pub fn set(&self, value: T) {
-        let hooks! = current_hooks()
-        if let Some(cell) = hooks.refs·get(self.index) {
+    ☉ rite set(&this, value: T) {
+        ≔ hooks! = current_hooks()
+        ⎇ ≔ Some(cell) = hooks.refs·get(this.index) {
             *cell·borrow_mut() = Box::new(Some(value))
         }
     }
@@ -372,10 +372,10 @@ impl<T: 'static> Ref<T> {
 ///
 /// Example:
 /// ```sigil
-/// let theme = use_context(ThemeContext)
+/// ≔ theme = use_context(ThemeContext)
 /// div[class: "container {theme.mode}"] { ... }
 /// ```
-pub fn use_context<T: Clone + 'static>(context: &crate::components::Context<T>) -> T!! {
+☉ rite use_context<T: Clone + 'static>(context: &crate::components::Context<T>) → T!! {
     context·consume()
 }
 
@@ -384,7 +384,7 @@ pub fn use_context<T: Clone + 'static>(context: &crate::components::Context<T>) 
 // ============================================================================
 
 /// Async data state with evidentiality
-pub enum AsyncState<T> {
+☉ enum AsyncState<T> {
     /// Initial state, not yet fetched
     Idle,
     /// Currently fetching
@@ -395,28 +395,28 @@ pub enum AsyncState<T> {
     Error(String~)
 }
 
-impl<T> AsyncState<T> {
-    pub fn is_loading(&self) -> bool! {
-        matches!(self, AsyncState::Loading)
+⊢<T> AsyncState<T> {
+    ☉ rite is_loading(&this) → bool! {
+        matches!(this, AsyncState::Loading)
     }
 
-    pub fn is_success(&self) -> bool! {
-        matches!(self, AsyncState::Success(_))
+    ☉ rite is_success(&this) → bool! {
+        matches!(this, AsyncState::Success(_))
     }
 
-    pub fn is_error(&self) -> bool! {
-        matches!(self, AsyncState::Error(_))
+    ☉ rite is_error(&this) → bool! {
+        matches!(this, AsyncState::Error(_))
     }
 
-    pub fn data(&self) -> Option<&T>? {
-        match self {
+    ☉ rite data(&this) → Option<&T~>? {
+        match this {
             AsyncState::Success(data) => Some(data),
             _ => None
         }
     }
 
-    pub fn error(&self) -> Option<&str>? {
-        match self {
+    ☉ rite error(&this) → Option<&str~>? {
+        match this {
             AsyncState::Error(e) => Some(e),
             _ => None
         }
@@ -427,7 +427,7 @@ impl<T> AsyncState<T> {
 ///
 /// Example:
 /// ```sigil
-/// let users~ = use_fetch::<Vec<User>>("/api/users")
+/// ≔ users~ = use_fetch::<Vec<User>>("/api/users")
 ///
 /// match users~ {
 ///     Loading => Spinner {},
@@ -435,12 +435,12 @@ impl<T> AsyncState<T> {
 ///     Success(data~) => UserList { users: data~ }
 /// }
 /// ```
-pub fn use_fetch<T: serde::Deserialize + Clone + 'static>(url: &str) -> AsyncState<T>!! {
+☉ rite use_fetch<T: serde::Deserialize + Clone + 'static>(url: &str) → AsyncState<T>!! {
     use_fetch_with(url, FetchOptions::default())
 }
 
 /// Fetch options
-pub struct FetchOptions {
+☉ sigil FetchOptions {
     method: String! = "GET"
     headers: HashMap<String, String>! = HashMap::new()
     body: Option<String>? = None
@@ -448,21 +448,21 @@ pub struct FetchOptions {
     retry: RetryPolicy! = RetryPolicy::default()
 }
 
-pub enum CachePolicy {
+☉ enum CachePolicy {
     Default,
     NoCache,
     ForceCache,
     StaleWhileRevalidate(u64!)
 }
 
-pub struct RetryPolicy {
+☉ sigil RetryPolicy {
     max_attempts: u32! = 3
     delay_ms: u64! = 1000
     backoff: f64! = 2.0
 }
 
-impl RetryPolicy {
-    pub fn default() -> Self! {
+⊢ RetryPolicy {
+    ☉ rite default() → This! {
         RetryPolicy {
             max_attempts: 3,
             delay_ms: 1000,
@@ -472,12 +472,12 @@ impl RetryPolicy {
 }
 
 /// useFetch with options
-pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
+☉ rite use_fetch_with<T: serde::Deserialize + Clone + 'static>(
     url: &str,
     options: FetchOptions
-) -> AsyncState<T>!! {
+) → AsyncState<T>!! {
     let (state, set_state) = use_state(AsyncState::Idle)
-    let url_string! = url.to_string()
+    ≔ url_string! = url.to_string()
 
     use_effect(|| {
         set_state(AsyncState::Loading)
@@ -506,12 +506,12 @@ pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
 ///
 /// button[onclick: || mutate(CreateUserInput { name: "John" })] { "Create User" }
 /// ```
-pub fn use_mutation<T: Clone + 'static, I: 'static>(
-    mutation_fn: fn(I) -> Future<Output = Result<T~, String~>>
-) -> (fn(I), AsyncState<T>)!! {
+☉ rite use_mutation<T: Clone + 'static, I: 'static>(
+    mutation_fn: fn(I) → Future<Output = Result<T~, String~>>
+) → (fn(I), AsyncState<T>)!! {
     let (state, set_state) = use_state(AsyncState::Idle)
 
-    let mutate! = move |input: I| {
+    ≔ mutate! = move |input: I| {
         set_state(AsyncState::Loading)
 
         spawn_async(async {
@@ -534,16 +534,16 @@ pub fn use_mutation<T: Clone + 'static, I: 'static>(
 /// Example:
 /// ```sigil
 /// let (search, set_search) = use_state("")
-/// let debounced? = use_debounce(search, 300)
+/// ≔ debounced? = use_debounce(search, 300)
 ///
 /// // debounced only updates 300ms after last search change
 /// use_effect(|| { fetch_results(debounced?) }, [debounced?])
 /// ```
-pub fn use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> T?! {
+☉ rite use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) → T?! {
     let (debounced, set_debounced) = use_state(value·clone())
 
     use_effect(|| {
-        let timer_id! = set_timeout(delay_ms, || {
+        ≔ timer_id! = set_timeout(delay_ms, || {
             set_debounced(value·clone())
         })
 
@@ -555,13 +555,13 @@ pub fn use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> 
 }
 
 /// useThrottle - throttle a value
-pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
+☉ rite use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) → T!! {
     let (throttled, set_throttled) = use_state(value·clone())
-    let last_run! = use_ref(0u64)
+    ≔ last_run! = use_ref(0u64)
 
     use_effect(|| {
-        let now! = current_time_ms()
-        if now - last_run·current()·unwrap_or(0) >= limit_ms {
+        ≔ now! = current_time_ms()
+        ⎇ now - last_run·current()·unwrap_or(0) >= limit_ms {
             set_throttled(value·clone())
             last_run·set(now)
         }
@@ -577,11 +577,11 @@ pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
 /// ```sigil
 /// let (theme, set_theme) = use_local_storage("theme", "light")
 /// ```
-pub fn use_local_storage<T: serde::Serialize + serde::Deserialize + Clone + 'static>(
+☉ rite use_local_storage<T: serde::Serialize + serde::Deserialize + Clone + 'static>(
     key: &str,
     default: T
-) -> (T!, fn(T))!! {
-    let initial! = || {
+) → (T!, fn(T))!! {
+    ≔ initial! = || {
         match local_storage·get_item(key) {
             Some(json) => serde_json::from_str(&json)·unwrap_or(default·clone()),
             None => default·clone()
@@ -589,10 +589,10 @@ pub fn use_local_storage<T: serde::Serialize + serde::Deserialize + Clone + 'sta
     }
 
     let (value, set_value) = use_state_with(initial)
-    let key_string! = key.to_string()
+    ≔ key_string! = key.to_string()
 
-    let set_stored! = move |new_value: T| {
-        let json! = serde_json::to_string(&new_value)·unwrap()
+    ≔ set_stored! = move |new_value: T| {
+        ≔ json! = serde_json::to_string(&new_value)·unwrap()
         local_storage·set_item(&key_string, &json)
         set_value(new_value)
     }
@@ -604,18 +604,18 @@ pub fn use_local_storage<T: serde::Serialize + serde::Deserialize + Clone + 'sta
 ///
 /// Example:
 /// ```sigil
-/// let is_mobile = use_media_query("(max-width: 768px)")
-/// if is_mobile { MobileNav {} } else { DesktopNav {} }
+/// ≔ is_mobile = use_media_query("(max-width: 768px)")
+/// ⎇ is_mobile { MobileNav {} } ⎉ { DesktopNav {} }
 /// ```
-pub fn use_media_query(query: &str) -> bool!! {
-    let (matches, set_matches) = use_state(false)
-    let query_string! = query.to_string()
+☉ rite use_media_query(query: &str) → bool!! {
+    let (matches, set_matches) = use_state(nay)
+    ≔ query_string! = query.to_string()
 
     use_effect(|| {
-        let mql! = window·match_media(&query_string)
+        ≔ mql! = window·match_media(&query_string)
         set_matches(mql·matches())
 
-        let listener! = |e: MediaQueryListEvent| {
+        ≔ listener! = |e: MediaQueryListEvent| {
             set_matches(e·matches())
         }
         mql·add_listener(listener)
@@ -627,11 +627,11 @@ pub fn use_media_query(query: &str) -> bool!! {
 }
 
 /// useWindowSize - track window dimensions
-pub fn use_window_size() -> (i32!, i32!)!! {
+☉ rite use_window_size() → (i32!, i32!)!! {
     let (size, set_size) = use_state((window·inner_width(), window·inner_height()))
 
     use_effect(|| {
-        let listener! = || {
+        ≔ listener! = || {
             set_size((window·inner_width(), window·inner_height()))
         }
         window·add_event_listener("resize", listener)
@@ -643,12 +643,12 @@ pub fn use_window_size() -> (i32!, i32!)!! {
 }
 
 /// useOnline - track online/offline status
-pub fn use_online() -> bool!! {
+☉ rite use_online() → bool!! {
     let (online, set_online) = use_state(navigator·online())
 
     use_effect(|| {
-        let handle_online! = || set_online(true)
-        let handle_offline! = || set_online(false)
+        ≔ handle_online! = || set_online(yea)
+        ≔ handle_offline! = || set_online(nay)
 
         window·add_event_listener("online", handle_online)
         window·add_event_listener("offline", handle_offline)
@@ -663,15 +663,15 @@ pub fn use_online() -> bool!! {
 }
 
 /// useIntersection - observe element intersection
-pub fn use_intersection(options: IntersectionOptions) -> (Ref<DomRef>!, bool!)!! {
-    let ref_! = use_ref::<DomRef>(None)
-    let (is_intersecting, set_intersecting) = use_state(false)
+☉ rite use_intersection(options: IntersectionOptions) → (Ref<DomRef>!, bool!)!! {
+    ≔ ref_! = use_ref::<DomRef>(None)
+    let (is_intersecting, set_intersecting) = use_state(nay)
 
     use_effect(|| {
-        let element? = ref_·current()
+        ≔ element? = ref_·current()
         match element? {
             Some(el) => {
-                let observer! = IntersectionObserver::new(|entries| {
+                ≔ observer! = IntersectionObserver::new(|entries| {
                     for entry in entries {
                         set_intersecting(entry·is_intersecting())
                     }
@@ -688,7 +688,7 @@ pub fn use_intersection(options: IntersectionOptions) -> (Ref<DomRef>!, bool!)!!
     (ref_, is_intersecting)
 }
 
-pub struct IntersectionOptions {
+☉ sigil IntersectionOptions {
     root: Option<String>? = None
     root_margin: String! = "0px"
     threshold: f64! = 0.0
@@ -699,15 +699,15 @@ pub struct IntersectionOptions {
 // ============================================================================
 
 /// useTransition - manage transition state for async updates
-pub fn use_transition() -> (bool!, fn(fn()))!! {
-    let (is_pending, set_pending) = use_state(false)
+☉ rite use_transition() → (bool!, fn(fn()))!! {
+    let (is_pending, set_pending) = use_state(nay)
 
-    let start_transition! = |callback: fn()| {
-        set_pending(true)
+    ≔ start_transition! = |callback: fn()| {
+        set_pending(yea)
         // Schedule low-priority update
         schedule_transition(|| {
             callback()
-            set_pending(false)
+            set_pending(nay)
         })
     }
 
@@ -715,7 +715,7 @@ pub fn use_transition() -> (bool!, fn(fn()))!! {
 }
 
 /// useDeferredValue - defer updating a value
-pub fn use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
+☉ rite use_deferred_value<T: Clone + 'static>(value: T) → T!! {
     let (deferred, set_deferred) = use_state(value·clone())
     let (_, start_transition) = use_transition()
 
@@ -728,15 +728,15 @@ pub fn use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
 }
 
 /// useAnimationFrame - run callback on animation frame
-pub fn use_animation_frame(callback: fn(f64))! {
-    let saved_callback! = use_ref(Some(callback))
+☉ rite use_animation_frame(callback: fn(f64))! {
+    ≔ saved_callback! = use_ref(Some(callback))
     saved_callback·set(callback)
 
     use_effect(|| {
-        let frame_id! = use_ref(0u64)
+        ≔ frame_id! = use_ref(0u64)
 
-        let animate! = |timestamp: f64| {
-            if let Some(cb) = saved_callback·current() {
+        ≔ animate! = |timestamp: f64| {
+            ⎇ ≔ Some(cb) = saved_callback·current() {
                 cb(timestamp)
             }
             frame_id·set(request_animation_frame(animate))
@@ -749,95 +749,935 @@ pub fn use_animation_frame(callback: fn(f64))! {
 }
 
 // ============================================================================
+// Evidential Form Hooks
+// ============================================================================
+
+/// Form field state with evidential typing
+/// Input values are ~ (reported), validated values are ! (known)
+☉ sigil FormField<T> {
+    /// Current input value (reported - unvalidated user input)
+    value: T~,
+    /// Validated value (known - passed validation)
+    validated: Option<T!>?,
+    /// Validation error message
+    error: Option<String>?,
+    /// Whether field has been touched
+    touched: bool!,
+    /// Whether field is currently being validated
+    validating: bool!,
+}
+
+/// Form state containing all fields
+☉ sigil FormState<T> {
+    /// Field values
+    values: T~,
+    /// Per-field errors
+    errors: HashMap<String, String>!,
+    /// Whether form is valid (all fields validated)
+    is_valid: bool!,
+    /// Whether form is submitting
+    is_submitting: bool!,
+    /// Whether any field has been touched
+    is_dirty: bool!,
+    /// Submission error
+    submit_error: Option<String>?,
+}
+
+/// Form field definition for use_form
+☉ sigil FieldDef<I, O> {
+    /// Initial value
+    initial: I~,
+    /// Validation function: input → Result<output, error>
+    validate: fn(I~) → Result<O!, String>!,
+    /// Optional transformation before validation
+    transform: Option<fn(I~) → I~>?,
+    /// Whether field is required
+    required: bool!,
+}
+
+/// Form configuration for use_form
+☉ sigil FormConfig<T> {
+    /// Initial form values
+    initial_values: T~,
+    /// Validation mode
+    validation_mode: ValidationMode!,
+    /// Aegis security options
+    aegis: Option<FormAegisOptions>?,
+}
+
+☉ enum ValidationMode {
+    /// Validate on blur
+    OnBlur,
+    /// Validate on change
+    OnChange,
+    /// Validate on submit only
+    OnSubmit,
+    /// Validate on blur and change
+    OnBlurAndChange,
+}
+
+/// Aegis security options for forms
+☉ sigil FormAegisOptions {
+    /// Enable audit logging
+    audit: bool!,
+    /// Check for injection attacks
+    injection_check: bool!,
+    /// Require identity verification
+    require_identity: bool!,
+}
+
+/// Form actions returned by use_form
+☉ sigil FormActions<T> {
+    /// Set a field value (marks as dirty)
+    set_field: fn(field: &str, value: dyn std::any::Any~),
+    /// Blur a field (trigger validation if mode requires)
+    blur_field: fn(field: &str),
+    /// Reset form to initial values
+    reset: fn(),
+    /// Submit the form
+    submit: fn() → Future<Output = Result<T!, String~>>,
+    /// Set a field error manually
+    set_error: fn(field: &str, error: String),
+    /// Clear a field error
+    clear_error: fn(field: &str),
+    /// Validate all fields
+    validate_all: fn() → bool!,
+}
+
+/// useForm - manage form state with evidential validation
+///
+/// Forms track the evidential transition from user input (~) to validated data (!).
+/// This ensures that unvalidated user input is never treated as trusted.
+///
+/// Example:
+/// ```sigil
+/// sigil LoginForm {
+///     email: String~,
+///     password: String~,
+/// }
+///
+/// rite LoginPage() → VNode! {
+///     ≔ (form, actions) = use_form::<LoginForm>(FormConfig {
+///         initial_values: LoginForm { email: "", password: "" },
+///         validation_mode: ValidationMode::OnBlur,
+///         aegis: Some(FormAegisOptions {
+///             audit: yea,
+///             injection_check: yea,
+///             require_identity: nay,
+///         }),
+///     })
+///
+///     ≔ handle_submit = async || {
+///         match actions·submit()·await {
+///             Ok(validated!) => {
+///                 // validated is LoginForm with ! evidence
+///                 api·login(validated·email!, validated·password!)·await
+///             }
+///             Err(e~) => show_error(e~)
+///         }
+///     }
+///
+///     ⟨form[on_submit: handle_submit]⟩
+///         ⟨Input[
+///             value: form·values·email~,
+///             on_change: |v~| actions·set_field("email", v~),
+///             on_blur: || actions·blur_field("email"),
+///             error: form·errors·get("email")
+///         ]/⟩
+///         ⟨Input[
+///             type: "password",
+///             value: form·values·password~,
+///             on_change: |v~| actions·set_field("password", v~),
+///             on_blur: || actions·blur_field("password"),
+///             error: form·errors·get("password")
+///         ]/⟩
+///         ⟨Button[type: "submit", disabled: form·is_submitting]⟩
+///             "Login"
+///         ⟨/Button⟩
+///     ⟨/form⟩
+/// }
+/// ```
+☉ rite use_form<T: Clone + FormValidatable + 'static>(
+    config: FormConfig<T>
+) → (FormState<T>!, FormActions<T>!)!! {
+    // Initialize form state
+    let (state, set_state) = use_state(FormState {
+        values: config·initial_values·clone(),
+        errors: HashMap::new(),
+        is_valid: nay,
+        is_submitting: nay,
+        is_dirty: nay,
+        submit_error: None,
+    })
+
+    // Store config in ref to avoid dependency issues
+    ≔ config_ref! = use_ref(config)
+
+    // Validate a single field
+    ≔ validate_field! = |field: &str, value: &dyn std::any::Any~| → Option<String>? {
+        // Delegate to T's validation implementation
+        T::validate_field(field, value)
+    }
+
+    // Set field value
+    ≔ set_field! = move |field: &str, value: dyn std::any::Any~| {
+        set_state(|prev| {
+            ≔ vary new_state = prev·clone()
+            new_state·is_dirty = yea
+
+            // Update the value in T
+            T::set_field(&vary new_state·values, field, value)
+
+            // Validate if mode requires
+            ≔ mode = config_ref·current()·unwrap()·validation_mode
+            ⎇ matches!(mode, ValidationMode::OnChange | ValidationMode::OnBlurAndChange) {
+                match validate_field(field, &value) {
+                    Some(error) => {
+                        new_state·errors·insert(field·to_string(), error)
+                        new_state·is_valid = nay
+                    }
+                    None => {
+                        new_state·errors·remove(field)
+                        new_state·is_valid = new_state·errors·is_empty()
+                    }
+                }
+            }
+
+            new_state
+        })
+    }
+
+    // Blur field (trigger validation)
+    ≔ blur_field! = move |field: &str| {
+        ≔ mode = config_ref·current()·unwrap()·validation_mode
+        ⎇ matches!(mode, ValidationMode::OnBlur | ValidationMode::OnBlurAndChange) {
+            set_state(|prev| {
+                ≔ vary new_state = prev·clone()
+                ≔ value = T::get_field(&new_state·values, field)
+
+                match validate_field(field, &value) {
+                    Some(error) => {
+                        new_state·errors·insert(field·to_string(), error)
+                        new_state·is_valid = nay
+                    }
+                    None => {
+                        new_state·errors·remove(field)
+                        new_state·is_valid = new_state·errors·is_empty()
+                    }
+                }
+
+                new_state
+            })
+        }
+    }
+
+    // Reset form
+    ≔ reset! = move || {
+        ≔ initial = config_ref·current()·unwrap()·initial_values·clone()
+        set_state(FormState {
+            values: initial,
+            errors: HashMap::new(),
+            is_valid: nay,
+            is_submitting: nay,
+            is_dirty: nay,
+            submit_error: None,
+        })
+    }
+
+    // Validate all fields
+    ≔ validate_all! = move || → bool! {
+        ≔ vary all_valid = yea
+        set_state(|prev| {
+            ≔ vary new_state = prev·clone()
+            new_state·errors·clear()
+
+            // Validate each field
+            for field_name in T::field_names() {
+                ≔ value = T::get_field(&new_state·values, field_name)
+                match validate_field(field_name, &value) {
+                    Some(error) => {
+                        new_state·errors·insert(field_name·to_string(), error)
+                        all_valid = nay
+                    }
+                    None => {}
+                }
+            }
+
+            new_state·is_valid = all_valid
+            new_state
+        })
+        all_valid
+    }
+
+    // Submit form
+    ≔ submit! = async move || → Result<T!, String~>! {
+        // Start submission
+        set_state(|prev| {
+            ≔ vary new_state = prev·clone()
+            new_state·is_submitting = yea
+            new_state·submit_error = None
+            new_state
+        })
+
+        // Validate all fields first
+        ⎇ ¬validate_all() {
+            set_state(|prev| {
+                ≔ vary new_state = prev·clone()
+                new_state·is_submitting = nay
+                new_state
+            })
+            ⤺ Err("Validation failed"·to_string())
+        }
+
+        // Check Aegis security if configured
+        ⎇ ≔ Some(aegis) = config_ref·current()·unwrap()·aegis {
+            ⎇ aegis·injection_check {
+                // Check for injection attacks in field values
+                for field_name in T::field_names() {
+                    ≔ value = T::get_field(&state·values, field_name)
+                    ⎇ aegis::check_injection(&value) {
+                        set_state(|prev| {
+                            ≔ vary new_state = prev·clone()
+                            new_state·is_submitting = nay
+                            new_state·submit_error = Some("Potential injection detected"·to_string())
+                            new_state
+                        })
+                        ⤺ Err("Security check failed"·to_string())
+                    }
+                }
+            }
+
+            ⎇ aegis·audit {
+                // Log form submission to audit trail
+                aegis::log_submission::<T>(&state·values)
+            }
+        }
+
+        // Convert reported values to known values
+        ≔ validated! = T::promote_evidence(&state·values)
+
+        set_state(|prev| {
+            ≔ vary new_state = prev·clone()
+            new_state·is_submitting = nay
+            new_state
+        })
+
+        Ok(validated)
+    }
+
+    // Set error manually
+    ≔ set_error! = move |field: &str, error: String| {
+        set_state(|prev| {
+            ≔ vary new_state = prev·clone()
+            new_state·errors·insert(field·to_string(), error)
+            new_state·is_valid = nay
+            new_state
+        })
+    }
+
+    // Clear error
+    ≔ clear_error! = move |field: &str| {
+        set_state(|prev| {
+            ≔ vary new_state = prev·clone()
+            new_state·errors·remove(field)
+            new_state·is_valid = new_state·errors·is_empty()
+            new_state
+        })
+    }
+
+    ≔ actions! = FormActions {
+        set_field,
+        blur_field,
+        reset,
+        submit,
+        set_error,
+        clear_error,
+        validate_all,
+    }
+
+    (state, actions)
+}
+
+/// Trait for types that can be used with use_form
+/// Implement this for your form struct to enable evidential form handling
+☉ aspect FormValidatable {
+    /// Get list of field names
+    rite field_names() → Vec<&'static str>!;
+
+    /// Validate a single field
+    rite validate_field(field: &str, value: &dyn std::any::Any~) → Option<String>?;
+
+    /// Get a field value
+    rite get_field(&this, field: &str) → Box<dyn std::any::Any~>~;
+
+    /// Set a field value
+    rite set_field(&vary this, field: &str, value: dyn std::any::Any~);
+
+    /// Promote evidence from ~ to ! after validation
+    rite promote_evidence(reported: &This~) → This!;
+}
+
+/// useFormField - hook for individual form field with validation
+///
+/// Example:
+/// ```sigil
+/// ≔ email = use_form_field("", |v~| {
+///     ⎇ v·contains("@") ∧ v·contains(".") {
+///         Ok(v·trim()·to_lowercase()!)
+///     } ⎉ {
+///         Err("Invalid email format")
+///     }
+/// })
+///
+/// ⟨Input[
+///     value: email·value~,
+///     on_change: email·on_change,
+///     on_blur: email·on_blur,
+///     error: email·error
+/// ]/⟩
+/// ```
+☉ rite use_form_field<I: Clone + 'static, O: Clone + 'static>(
+    initial: I~,
+    validate: fn(I~) → Result<O!, String>
+) → FormFieldHandle<I, O>!! {
+    let (field, set_field) = use_state(FormField {
+        value: initial,
+        validated: None,
+        error: None,
+        touched: nay,
+        validating: nay,
+    })
+
+    ≔ on_change! = move |value: I~| {
+        set_field(|prev| FormField {
+            value,
+            validated: None, // Clear validated on change
+            error: None,
+            touched: yea,
+            validating: nay,
+        })
+    }
+
+    ≔ on_blur! = move || {
+        set_field(|prev| {
+            ≔ vary new_field = prev·clone()
+            new_field·touched = yea
+            new_field·validating = yea
+            new_field
+        })
+
+        // Run validation
+        match validate(field·value·clone()) {
+            Ok(validated!) => {
+                set_field(|prev| FormField {
+                    value: prev·value,
+                    validated: Some(validated),
+                    error: None,
+                    touched: yea,
+                    validating: nay,
+                })
+            }
+            Err(error~) => {
+                set_field(|prev| FormField {
+                    value: prev·value,
+                    validated: None,
+                    error: Some(error),
+                    touched: yea,
+                    validating: nay,
+                })
+            }
+        }
+    }
+
+    ≔ reset! = move || {
+        set_field(FormField {
+            value: initial·clone(),
+            validated: None,
+            error: None,
+            touched: nay,
+            validating: nay,
+        })
+    }
+
+    FormFieldHandle {
+        value: field·value·clone(),
+        validated: field·validated·clone(),
+        error: field·error·clone(),
+        touched: field·touched,
+        is_valid: field·validated·is_some(),
+        on_change,
+        on_blur,
+        reset,
+    }
+}
+
+/// Handle returned by use_form_field
+☉ sigil FormFieldHandle<I, O> {
+    /// Current input value (reported)
+    value: I~,
+    /// Validated value (known) if validation passed
+    validated: Option<O!>?,
+    /// Error message if validation failed
+    error: Option<String>?,
+    /// Whether field has been touched
+    touched: bool!,
+    /// Whether field is valid
+    is_valid: bool!,
+    /// Change handler
+    on_change: fn(I~),
+    /// Blur handler
+    on_blur: fn(),
+    /// Reset handler
+    reset: fn(),
+}
+
+// Aegis integration module
+mod aegis {
+    /// Check for injection attacks in a value
+    ☉ rite check_injection(value: &dyn std::any::Any~) → bool! {
+        // Delegate to Aegis InjectionDetector
+        // Returns true if injection detected
+        nay
+    }
+
+    /// Log form submission to audit trail
+    ☉ rite log_submission<T>(values: &T~) {
+        // Delegate to Aegis AuditChain
+    }
+}
+
+// ============================================================================
+// Type-Safe Internationalization (i18n)
+// ============================================================================
+//
+// Usage:
+// ```sigil
+// // Define locale enum with metadata
+// locale enum Locale {
+//     En { code: "en", name: "English" },
+//     Es { code: "es", name: "Español" },
+// }
+//
+// // Define translations with type-safe match expressions
+// translations Rights {
+//     locale: Locale,
+//
+//     miranda_title: String! = match locale {
+//         En => "Your Miranda Rights",
+//         Es => "Sus Derechos Miranda",
+//     }
+//
+//     greeting(name: String): String! = match locale {
+//         En => "Hello, {name}!",
+//         Es => "¡Hola, {name}!",
+//     }
+// }
+//
+// // Use in components
+// rite MyComponent() → VNode! {
+//     ≔ t = use_i18n::<Rights>()
+//
+//     <h1> "{t·miranda_title}" </h1>
+//     <p> "{t·greeting(user·name)}" </p>
+// }
+// ```
+
+/// Current locale state - stored in context
+☉ sigil LocaleState<L: LocaleEnum> {
+    /// Current locale
+    current: L!,
+    /// Available locales
+    available: Vec<L>!,
+    /// Default locale (fallback)
+    default: L!,
+}
+
+/// Trait for locale enums generated by the `locale enum` construct
+☉ aspect LocaleEnum: Clone + PartialEq {
+    /// Get BCP-47 language code
+    rite code(&this) → &str;
+
+    /// Get human-readable display name
+    rite display_name(&this) → &str;
+
+    /// Check if right-to-left text direction
+    rite is_rtl(&this) → bool { nay }
+
+    /// Get fallback locale if any
+    rite fallback(&this) → Option<This>? { None }
+
+    /// Get all variants
+    rite all() → Vec<This>;
+}
+
+/// Trait for translations generated by the `translations` construct
+☉ aspect Translations<L: LocaleEnum> {
+    /// Create translations for a specific locale
+    rite new(locale: L) → This;
+
+    /// Get the current locale
+    rite locale(&this) → &L;
+}
+
+/// Hook to access translations with current locale from context
+///
+/// # Example
+/// ```sigil
+/// rite MyComponent() → VNode! {
+///     ≔ t = use_i18n::<RightsTranslations>()
+///
+///     <div>
+///         <h1> "{t·miranda_title}" </h1>
+///     </div>
+/// }
+/// ```
+☉ rite use_i18n<T, L>() → T! where T: Translations<L>, L: LocaleEnum {
+    ≔ locale_ctx = use_context::<LocaleState<L>>()
+
+    ⎇ locale_ctx·is_none() {
+        panic!("use_i18n: LocaleProvider not found in component tree")
+    }
+
+    ≔ locale = locale_ctx·unwrap()·current·clone()
+    T::new(locale)
+}
+
+/// Hook to access and modify the current locale
+///
+/// # Example
+/// ```sigil
+/// rite LanguageSelector() → VNode! {
+///     ≔ (locale, set_locale, available) = use_locale::<Locale>()
+///
+///     <select[on_change: |e| set_locale(Locale::from_code(e·target·value))]>
+///         { available |> tau{l ->
+///             <option[value: l·code(), selected: l == locale]>
+///                 "{l·display_name()}"
+///             </option>
+///         }}
+///     </select>
+/// }
+/// ```
+☉ rite use_locale<L: LocaleEnum>() → (L!, fn(L), Vec<L>!) {
+    ≔ locale_ctx = use_context::<LocaleState<L>>()
+
+    ⎇ locale_ctx·is_none() {
+        panic!("use_locale: LocaleProvider not found in component tree")
+    }
+
+    ≔ state = locale_ctx·unwrap()
+    ≔ set_locale_ctx = use_set_context::<LocaleState<L>>()
+
+    ≔ set_locale = |new_locale: L| {
+        set_locale_ctx(LocaleState {
+            current: new_locale,
+            available: state·available·clone(),
+            default: state·default·clone(),
+        })
+    }
+
+    (state·current·clone(), set_locale, state·available·clone())
+}
+
+/// Provider component for locale context
+///
+/// # Example
+/// ```sigil
+/// rite App() → VNode! {
+///     <LocaleProvider[locale: Locale::En, available: Locale::all()]>
+///         <Router />
+///     </LocaleProvider>
+/// }
+/// ```
+☉ sigil LocaleProviderProps<L: LocaleEnum> {
+    /// Initial/current locale
+    locale: L!,
+    /// Available locales
+    available: Vec<L>!,
+    /// Children components
+    children: VNode!,
+}
+
+☉ rite LocaleProvider<L: LocaleEnum>(props: LocaleProviderProps<L>) → VNode! {
+    ≔ state = LocaleState {
+        current: props·locale·clone(),
+        available: props·available·clone(),
+        default: props·locale·clone(),
+    }
+
+    provide_context(state)
+    props·children
+}
+
+/// Get text direction based on current locale
+///
+/// # Example
+/// ```sigil
+/// rite MyComponent() → VNode! {
+///     ≔ dir = use_text_direction::<Locale>()
+///
+///     <div[dir: dir]>
+///         // Content
+///     </div>
+/// }
+/// ```
+☉ rite use_text_direction<L: LocaleEnum>() → &str! {
+    ≔ (locale, _, _) = use_locale::<L>()
+    ⎇ locale·is_rtl() { "rtl" } ⎉ { "ltr" }
+}
+
+/// Format numbers according to locale
+///
+/// # Example
+/// ```sigil
+/// ≔ formatted = use_number_format::<Locale>(1234.56, NumberFormatOptions::default())
+/// // En: "1,234.56"
+/// // Es: "1.234,56"
+/// ```
+☉ sigil NumberFormatOptions {
+    /// Minimum integer digits
+    min_integer_digits: Option<u32>?,
+    /// Minimum fraction digits
+    min_fraction_digits: Option<u32>?,
+    /// Maximum fraction digits
+    max_fraction_digits: Option<u32>?,
+    /// Use grouping separators
+    use_grouping: bool!,
+    /// Currency code (for currency formatting)
+    currency: Option<String>?,
+    /// Currency display style
+    currency_display: CurrencyDisplay!,
+}
+
+☉ enum CurrencyDisplay {
+    Symbol,
+    NarrowSymbol,
+    Code,
+    Name,
+}
+
+⊢ NumberFormatOptions {
+    ☉ rite default() → This! {
+        NumberFormatOptions {
+            min_integer_digits: None,
+            min_fraction_digits: None,
+            max_fraction_digits: None,
+            use_grouping: yea,
+            currency: None,
+            currency_display: CurrencyDisplay::Symbol,
+        }
+    }
+
+    ☉ rite currency(code: &str) → This! {
+        NumberFormatOptions {
+            currency: Some(code·to_string()),
+            ..This::default()
+        }
+    }
+}
+
+☉ rite use_number_format<L: LocaleEnum>(value: f64, options: NumberFormatOptions) → String! {
+    ≔ (locale, _, _) = use_locale::<L>()
+    format_number(value, locale·code(), &options)
+}
+
+rite format_number(value: f64, locale_code: &str, options: &NumberFormatOptions) → String! {
+    // Delegate to platform-specific number formatting
+    // In WASM: Intl.NumberFormat
+    // Fallback: simple formatting
+    match locale_code {
+        "es" | "de" | "fr" => {
+            // European format: 1.234,56
+            ≔ parts = value·to_string()·split('.')·collect::<Vec<_>>()
+            ≔ integer = parts[0]
+            ≔ fraction = ⎇ parts·len() > 1 { parts[1] } ⎉ { "00" }
+            // Add thousands separators
+            format!("{},{}", integer, fraction)
+        }
+        _ => {
+            // US/UK format: 1,234.56
+            format!("{:.2}", value)
+        }
+    }
+}
+
+/// Format dates according to locale
+///
+/// # Example
+/// ```sigil
+/// ≔ formatted = use_date_format::<Locale>(timestamp, DateFormatOptions::date_only())
+/// // En: "January 19, 2026"
+/// // Es: "19 de enero de 2026"
+/// ```
+☉ sigil DateFormatOptions {
+    date_style: Option<DateStyle>?,
+    time_style: Option<TimeStyle>?,
+}
+
+☉ enum DateStyle {
+    Full,
+    Long,
+    Medium,
+    Short,
+}
+
+☉ enum TimeStyle {
+    Full,
+    Long,
+    Medium,
+    Short,
+}
+
+⊢ DateFormatOptions {
+    ☉ rite default() → This! {
+        DateFormatOptions {
+            date_style: Some(DateStyle::Medium),
+            time_style: None,
+        }
+    }
+
+    ☉ rite date_only() → This! {
+        DateFormatOptions {
+            date_style: Some(DateStyle::Long),
+            time_style: None,
+        }
+    }
+
+    ☉ rite time_only() → This! {
+        DateFormatOptions {
+            date_style: None,
+            time_style: Some(TimeStyle::Short),
+        }
+    }
+
+    ☉ rite datetime() → This! {
+        DateFormatOptions {
+            date_style: Some(DateStyle::Medium),
+            time_style: Some(TimeStyle::Short),
+        }
+    }
+}
+
+☉ rite use_date_format<L: LocaleEnum>(timestamp: i64, options: DateFormatOptions) → String! {
+    ≔ (locale, _, _) = use_locale::<L>()
+    format_date(timestamp, locale·code(), &options)
+}
+
+rite format_date(timestamp: i64, locale_code: &str, options: &DateFormatOptions) → String! {
+    // Delegate to platform-specific date formatting
+    // In WASM: Intl.DateTimeFormat
+    // Fallback: simple ISO format
+    format!("{}", timestamp) // Placeholder
+}
+
+/// Pluralization support
+///
+/// # Example
+/// ```sigil
+/// ≔ message = use_plural::<Locale>(
+///     count,
+///     |n| match n {
+///         0 => "No items",
+///         1 => "One item",
+///         _ => "{n} items",
+///     }
+/// )
+/// ```
+☉ rite use_plural<L: LocaleEnum>(count: i64, format: fn(i64) → &str) → String! {
+    ≔ template = format(count)
+    template·replace("{n}", &count·to_string())
+}
+
+// ============================================================================
 // Internal Utilities
 // ============================================================================
 
-fn schedule_update() {
+rite schedule_update() {
     // Signal runtime to schedule re-render
 }
 
-fn schedule_effect(idx: usize, effect: fn() -> Option<fn()>?) {
+rite schedule_effect(idx: usize, effect: fn() → Option<fn()>?) {
     // Queue effect for post-render execution
 }
 
-fn schedule_transition(callback: fn()) {
+rite schedule_transition(callback: fn()) {
     // Schedule low-priority transition
 }
 
-fn spawn_async<F: Future<Output = ()>>(future: F) {
+rite spawn_async<F: Future<Output = ()>>(future: F) {
     // Spawn async task
 }
 
-async fn fetch_json<T: serde::Deserialize>(url: &str, options: &FetchOptions) -> Result<T~, String~>! {
+async rite fetch_json<T: serde::Deserialize>(url: &str, options: &FetchOptions) → Result<T~, String~>! {
     // Platform-specific fetch implementation
     Err("Not implemented".to_string())
 }
 
-fn set_timeout(delay_ms: u64, callback: fn()) -> u64! {
+rite set_timeout(delay_ms: u64, callback: fn()) → u64! {
     // Platform-specific timer
     0
 }
 
-fn clear_timeout(id: u64) {
+rite clear_timeout(id: u64) {
     // Platform-specific timer cancellation
 }
 
-fn current_time_ms() -> u64! {
+rite current_time_ms() → u64! {
     // Platform-specific time
     0
 }
 
-fn request_animation_frame(callback: fn(f64)) -> u64! {
+rite request_animation_frame(callback: fn(f64)) → u64! {
     // Platform-specific RAF
     0
 }
 
-fn cancel_animation_frame(id: u64) {
+rite cancel_animation_frame(id: u64) {
     // Platform-specific RAF cancellation
 }
 
-// Platform bindings
+// Platform bindings (all values from browser are Reported)
 mod window {
-    pub fn inner_width() -> i32! { 0 }
-    pub fn inner_height() -> i32! { 0 }
-    pub fn add_event_listener(event: &str, handler: fn()) {}
-    pub fn remove_event_listener(event: &str, handler: fn()) {}
-    pub fn match_media(query: &str) -> MediaQueryList! { MediaQueryList {} }
+    ☉ rite inner_width() → ~i32 { 0 }
+    ☉ rite inner_height() → ~i32 { 0 }
+    ☉ rite add_event_listener(event: &str, handler: fn()) {}
+    ☉ rite remove_event_listener(event: &str, handler: fn()) {}
+    ☉ rite match_media(query: &str) → MediaQueryList! { MediaQueryList {} }
 }
 
 mod navigator {
-    pub fn online() -> bool! { true }
+    ☉ rite online() → ~bool { yea }
 }
 
 mod local_storage {
-    pub fn get_item(key: &str) -> Option<String>? { None }
-    pub fn set_item(key: &str, value: &str) {}
+    ☉ rite get_item(key: &str) → Option<~String>? { None }
+    ☉ rite set_item(key: &str, value: &str) {}
 }
 
-struct MediaQueryList {}
-impl MediaQueryList {
-    fn matches(&self) -> bool! { false }
-    fn add_listener(&self, handler: fn(MediaQueryListEvent)) {}
-    fn remove_listener(&self, handler: fn(MediaQueryListEvent)) {}
+sigil MediaQueryList {}
+⊢ MediaQueryList {
+    rite matches(&this) → ~bool { nay }
+    rite add_listener(&this, handler: fn(MediaQueryListEvent)) {}
+    rite remove_listener(&this, handler: fn(MediaQueryListEvent)) {}
 }
 
-struct MediaQueryListEvent {}
-impl MediaQueryListEvent {
-    fn matches(&self) -> bool! { false }
+sigil MediaQueryListEvent {}
+⊢ MediaQueryListEvent {
+    rite matches(&this) → ~bool { nay }
 }
 
-struct IntersectionObserver {}
-impl IntersectionObserver {
-    fn new(callback: fn(Vec<IntersectionEntry>), options: IntersectionOptions) -> Self! {
+sigil IntersectionObserver {}
+⊢ IntersectionObserver {
+    rite new(callback: fn(Vec<~IntersectionEntry>), options: IntersectionOptions) → This! {
         IntersectionObserver {}
     }
-    fn observe(&self, element: &DomRef) {}
-    fn disconnect(&self) {}
+    rite observe(&this, element: &DomRef) {}
+    rite disconnect(&this) {}
 }
 
-struct IntersectionEntry {}
-impl IntersectionEntry {
-    fn is_intersecting(&self) -> bool! { false }
+sigil IntersectionEntry {}
+⊢ IntersectionEntry {
+    rite is_intersecting(&this) → ~bool { nay }
 }
 
 use crate::core::vdom::DomRef;
@@ -847,12 +1687,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_use_state_initial() {
+    rite test_use_state_initial() {
         // Test useState initialization
     }
 
     #[test]
-    fn test_use_memo_caching() {
+    rite test_use_memo_caching() {
         // Test useMemo caching behavior
     }
 }

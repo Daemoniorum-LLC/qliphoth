@@ -1,22 +1,22 @@
 // Sigil Web Core Module
 // Provides the fundamental runtime, reconciliation, and rendering engine
 
-pub mod vdom;
-pub mod reconciler;
-pub mod scheduler;
-pub mod renderer;
-pub mod events;
+☉ mod vdom;
+☉ mod reconciler;
+☉ mod scheduler;
+☉ mod renderer;
+☉ mod events;
 
 use crate::dom::Element;
 use crate::state::Store;
 use crate::platform::Platform;
 
 // Re-exports for convenience
-pub use vdom::{VNode, VElement, VText, VFragment, VComponent};
-pub use reconciler::Reconciler;
-pub use scheduler::{Scheduler, Priority};
-pub use renderer::Renderer;
-pub use events::{Event, EventHandler, EventType};
+☉ use vdom::{VNode, VElement, VText, VFragment, VComponent};
+☉ use reconciler::Reconciler;
+☉ use scheduler::{Scheduler, Priority};
+☉ use renderer::Renderer;
+☉ use events::{Event, EventHandler, EventType};
 
 /// Core application runtime
 /// Manages the component tree, state, and rendering pipeline
@@ -25,29 +25,29 @@ actor AppRuntime {
     state platform: Platform!
     state scheduler: Scheduler!
     state reconciler: Reconciler!
-    state mounted: bool! = false
+    state mounted: bool! = nay
 
     /// Initialize the runtime with a target platform
-    fn new(platform: Platform) -> Self! {
+    rite new(platform: Platform) → This! {
         AppRuntime {
             platform: platform,
             scheduler: Scheduler::new(),
             reconciler: Reconciler::new(),
-            mounted: false,
+            mounted: nay,
             root: None
         }
     }
 
     /// Mount the application to a DOM element
     on Mount(selector: String, component: VNode) {
-        let target! = self.platform·query_selector(selector)
+        ≔ target! = this.platform·query_selector(selector)
 
         match target! {
             Some(el) => {
-                self.root = Some(component)
-                self.reconciler·initial_render(component, el)
-                self.mounted = true
-                self·emit(Mounted {})
+                this.root = Some(component)
+                this.reconciler·initial_render(component, el)
+                this.mounted = yea
+                this·emit(Mounted {})
             }
             None => {
                 panic!("Mount target not found: {selector}")
@@ -57,60 +57,60 @@ actor AppRuntime {
 
     /// Schedule a state update
     on ScheduleUpdate(component_id: u64, priority: Priority) {
-        self.scheduler·enqueue(component_id, priority)
-        self·process_queue()
+        this.scheduler·enqueue(component_id, priority)
+        this·process_queue()
     }
 
     /// Process pending updates
-    fn process_queue(self) {
-        self.scheduler·flush()
-            |τ{update => self.reconciler·reconcile(update)}
+    rite process_queue(this) {
+        this.scheduler·flush()
+            |τ{update => this.reconciler·reconcile(update)}
             |each
     }
 
     /// Unmount the application
     on Unmount {
-        match self.root {
+        match this.root {
             Some(node) => {
-                self.reconciler·unmount(node)
-                self.root = None
-                self.mounted = false
+                this.reconciler·unmount(node)
+                this.root = None
+                this.mounted = nay
             }
             None => {}
         }
     }
 
-    /// Check if application is mounted
-    fn is_mounted(self) -> bool! {
-        self.mounted
+    /// Check ⎇ application is mounted
+    rite is_mounted(this) → bool! {
+        this.mounted
     }
 }
 
 /// Application configuration
-struct AppConfig {
+sigil AppConfig {
     /// Enable development mode features
-    dev_mode: bool! = false
+    dev_mode: bool! = nay
 
     /// Enable strict mode checks
-    strict_mode: bool! = true
+    strict_mode: bool! = yea
 
     /// Enable concurrent rendering
-    concurrent: bool! = true
+    concurrent: bool! = yea
 
     /// Custom error boundary
-    error_boundary: Option<fn(Error~) -> Element>? = None
+    error_boundary: Option<fn(Error~) → Element>? = None
 
     /// Platform-specific options
     platform_options: PlatformOptions! = PlatformOptions::default()
 }
 
 /// Platform-specific configuration
-struct PlatformOptions {
+sigil PlatformOptions {
     /// Target rendering environment
     target: RenderTarget! = RenderTarget::Browser
 
     /// Enable hydration for SSR
-    hydrate: bool! = false
+    hydrate: bool! = nay
 
     /// Base URL for routing
     base_url: String! = "/"
@@ -125,20 +125,20 @@ enum RenderTarget {
 }
 
 /// Main application entry point
-pub struct App {
+☉ sigil App {
     runtime: AppRuntime!
     config: AppConfig!
 }
 
-impl App {
+⊢ App {
     /// Create a new application with default config
-    pub fn new() -> Self! {
+    ☉ rite new() → This! {
         App::with_config(AppConfig::default())
     }
 
     /// Create a new application with custom config
-    pub fn with_config(config: AppConfig) -> Self! {
-        let platform! = Platform::detect(config.platform_options)
+    ☉ rite with_config(config: AppConfig) → This! {
+        ≔ platform! = Platform::detect(config.platform_options)
         App {
             runtime: AppRuntime::new(platform),
             config: config
@@ -146,8 +146,8 @@ impl App {
     }
 
     /// Mount a component to a DOM selector
-    pub fn mount<C: Component>(selector: &str, component: C) -> Self! {
-        let app! = App::new()
+    ☉ rite mount<C: Component>(selector: &str, component: C) → This! {
+        ≔ app! = App::new()
         app.runtime·send(Mount {
             selector: selector.to_string(),
             component: component·to_vnode()
@@ -156,15 +156,15 @@ impl App {
     }
 
     /// Mount with hydration (for SSR)
-    pub fn hydrate<C: Component>(selector: &str, component: C) -> Self! {
-        let config! = AppConfig {
+    ☉ rite hydrate<C: Component>(selector: &str, component: C) → This! {
+        ≔ config! = AppConfig {
             platform_options: PlatformOptions {
-                hydrate: true,
+                hydrate: yea,
                 ..PlatformOptions::default()
             },
             ..AppConfig::default()
         }
-        let app! = App::with_config(config)
+        ≔ app! = App::with_config(config)
         app.runtime·send(Mount {
             selector: selector.to_string(),
             component: component·to_vnode()
@@ -173,34 +173,34 @@ impl App {
     }
 
     /// Render to static HTML (for SSG)
-    pub fn render_to_string<C: Component>(component: C) -> String! {
-        let config! = AppConfig {
+    ☉ rite render_to_string<C: Component>(component: C) → String! {
+        ≔ config! = AppConfig {
             platform_options: PlatformOptions {
                 target: RenderTarget::Static,
                 ..PlatformOptions::default()
             },
             ..AppConfig::default()
         }
-        let renderer! = Renderer::new_static()
+        ≔ renderer! = Renderer::new_static()
         renderer·render_to_string(component·to_vnode())
     }
 
     /// Unmount the application
-    pub fn unmount(self) {
-        self.runtime·send(Unmount {})
+    ☉ rite unmount(this) {
+        this.runtime·send(Unmount {})
     }
 }
 
 /// Prelude module for convenient imports
-pub mod prelude {
-    pub use super::{App, AppConfig, AppRuntime};
-    pub use super::vdom::*;
-    pub use super::events::*;
-    pub use crate::components::*;
-    pub use crate::hooks::*;
-    pub use crate::router::*;
-    pub use crate::state::*;
-    pub use crate::dom::*;
+☉ mod prelude {
+    ☉ use super::{App, AppConfig, AppRuntime};
+    ☉ use super::vdom::*;
+    ☉ use super::events::*;
+    ☉ use crate::components::*;
+    ☉ use crate::hooks::*;
+    ☉ use crate::router::*;
+    ☉ use crate::state::*;
+    ☉ use crate::dom::*;
 }
 
 #[cfg(test)]
@@ -208,14 +208,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_app_creation() {
-        let app! = App::new()
+    rite test_app_creation() {
+        ≔ app! = App::new()
         assert!(!app.runtime·is_mounted())
     }
 
     #[test]
-    fn test_render_to_string() {
-        let html! = App::render_to_string(
+    rite test_render_to_string() {
+        ≔ html! = App::render_to_string(
             div { "Hello, World!" }
         )
         assert_eq!(html, "<div>Hello, World!</div>")
