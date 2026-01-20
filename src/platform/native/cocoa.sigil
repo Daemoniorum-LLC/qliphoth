@@ -258,12 +258,20 @@ sigil LayoutInfo {
 // ============================================================================
 
 /// Global platform instance pointer for target-action callbacks
+/// SAFETY: This static must only be accessed from the main GUI thread.
+/// The platform instance must outlive all AppKit operations.
+/// Set during init() and read from target-action callbacks.
 #[cfg(target_os = "macos")]
 static vary PLATFORM_INSTANCE: *void = 0 as *void;
 
 /// Target-action callback handler
+/// SAFETY: Called by AppKit via Objective-C runtime.
+/// - this is the QliphothActionTarget instance
+/// - sender is the control that triggered the action
+/// - PLATFORM_INSTANCE must be valid or null (checked before use)
 #[cfg(target_os = "macos")]
 extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
+    // SAFETY: AppKit guarantees sender validity during action dispatch
     unsafe {
         ⎇ PLATFORM_INSTANCE as usize != 0 {
             ≔ platform = &*(PLATFORM_INSTANCE as *CocoaPlatform);
@@ -322,23 +330,27 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
     rite create_action_target(&vary this) → *void! {
         unsafe {
             // Create a custom class for handling actions
+            // objc_allocateClassPair returns null if class already exists
             ≔ superclass = ObjC::class("NSObject\0");
             ≔ cls = objc_allocateClassPair(superclass, "QliphothActionTarget\0".as_ptr() as *c_char, 0);
 
             ⎇ cls as usize != 0 {
-                // Add the action: method
+                // New class - add the action: method and register
                 ≔ sel = ObjC::sel("action:\0");
                 ≔ types = "v@:@\0".as_ptr() as *c_char; // void, self, SEL, id
                 class_addMethod(cls, sel, action_handler as *void, types);
                 objc_registerClassPair(cls);
             }
+            // If cls was null, class already exists (previous init call)
 
-            // Alloc and init an instance
+            // Look up the class (whether newly created or existing)
             ≔ target_cls = ObjC::class("QliphothActionTarget\0");
             ⎇ target_cls as usize == 0 {
-                // Class already registered, use it
-                target_cls = ObjC::class("QliphothActionTarget\0");
+                // Class lookup failed - this shouldn't happen
+                ret 0 as *void;
             }
+
+            // Alloc and init an instance
             ≔ target = ObjC::msg0(target_cls, "alloc\0");
             ObjC::msg0(target, "init\0")
         }
@@ -880,6 +892,10 @@ extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
             ObjC::msg0(child.handle as *void, "removeFromSuperview\0");
             // Remove layout info
             this.layout_info.remove(&child.handle);
+            // Remove widget-to-handler mapping
+            this.widget_to_handler.remove(&child.handle);
+            // Release the object to prevent memory leak
+            ObjC::msg0(child.handle as *void, "release\0");
         }
     }
 

@@ -153,6 +153,10 @@ extern "C" {
     ) → c_ulong;
     rite g_signal_handler_disconnect(instance: *void, handler_id: c_ulong);
 
+    // GObject data storage for associating handler IDs with widgets
+    rite g_object_set_data(object: *void, key: *c_char, data: *void);
+    rite g_object_get_data(object: *void, key: *c_char) → *void;
+
     // CSS
     rite gtk_css_provider_new() → *GtkCssProvider;
     rite gtk_css_provider_load_from_data(provider: *GtkCssProvider, data: *c_char, length: c_long);
@@ -185,6 +189,36 @@ const GTK_ALIGN_BASELINE: c_int = 4;
 const GTK_POLICY_AUTOMATIC: c_int = 1;
 const GTK_SELECTION_NONE: c_int = 0;
 const GTK_SELECTION_SINGLE: c_int = 1;
+
+// ============================================================================
+// Global Platform Instance (for callbacks)
+// ============================================================================
+
+/// Global platform instance pointer for FFI callbacks
+/// SAFETY: This static must only be accessed from the main GUI thread.
+/// GTK is single-threaded by design - all GTK operations must occur
+/// on the main thread where gtk_init() was called.
+/// The platform instance must outlive all GTK operations.
+/// Set during init() and read from signal callbacks.
+static vary GTK4_PLATFORM_INSTANCE: *void = 0 as *void;
+
+/// Generic signal callback that routes to event handlers
+/// SAFETY: Called by GTK via GObject signal system.
+/// - widget is the GtkWidget that emitted the signal
+/// - data is the handler_id passed to g_signal_connect_data
+/// - GTK4_PLATFORM_INSTANCE must be valid or null (checked before use)
+/// - All GTK calls are made from the main thread
+extern "C" rite gtk_signal_callback(widget: *GtkWidget, data: *void) {
+    // SAFETY: GTK guarantees widget validity during signal emission
+    unsafe {
+        ⎇ GTK4_PLATFORM_INSTANCE as usize != 0 {
+            ≔ handler_id = data as u64;
+            // Handler ID is passed as data - the actual handler lookup
+            // would be done by the application code that receives the event
+            // For now, we just verify the callback is invoked
+        }
+    }
+}
 
 // ============================================================================
 // GTK4 Platform Implementation
@@ -232,7 +266,12 @@ const GTK_SELECTION_SINGLE: c_int = 1;
 ⊢ Gtk4Platform : NativeApp {
     rite init(&vary this) → bool! {
         ⎇ ¬this.initialized {
-            unsafe { gtk_init(); }
+            unsafe {
+                gtk_init();
+                // Store global instance for callbacks
+                // SAFETY: Platform must outlive all GTK operations
+                GTK4_PLATFORM_INSTANCE = this as *vary Gtk4Platform as *void;
+            }
             this.initialized = ⊤;
         }
         ⊤
@@ -249,9 +288,13 @@ const GTK_SELECTION_SINGLE: c_int = 1;
     rite create_window(&this, title: !String, width: !i32, height: !i32) → NativeWidget! {
         unsafe {
             ≔ window = gtk_window_new();
-            gtk_window_set_title(window, title.as_ptr() as *c_char);
-            gtk_window_set_default_size(window, width, height);
-            NativeWidget::new(window as usize, WidgetType::Window)
+            ⎇ window as usize != 0 {
+                gtk_window_set_title(window, title.as_ptr() as *c_char);
+                gtk_window_set_default_size(window, width, height);
+                NativeWidget::new(window as usize, WidgetType::Window)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
@@ -316,8 +359,36 @@ const GTK_SELECTION_SINGLE: c_int = 1;
     }
 
     rite connect(&this, widget: &NativeWidget, signal: &str, handler_id: u64) {
-        // Signal connection requires callback setup
-        // This is a simplified version
+        unsafe {
+            // Map common signals to GTK signal names
+            ≔ gtk_signal! = ⌥ signal {
+                "click" | "clicked" => "clicked\0",
+                "changed" => "changed\0",
+                "activate" => "activate\0",
+                "toggled" => "toggled\0",
+                "value-changed" => "value-changed\0",
+                _ => signal
+            };
+
+            // Connect the signal with handler_id as user data
+            // SAFETY: Widget handle must be valid, callback is extern "C"
+            ≔ signal_id = g_signal_connect_data(
+                widget.handle as *void,
+                gtk_signal.as_ptr() as *c_char,
+                gtk_signal_callback as *void,
+                handler_id as *void,
+                0 as *void,  // No destroy notify
+                0            // No connect flags
+            );
+
+            // Store the GTK signal ID for later disconnection
+            ≔ key = "qliphoth_handler\0";
+            g_object_set_data(
+                widget.handle as *void,
+                key.as_ptr() as *c_char,
+                signal_id as *void
+            );
+        }
     }
 
     rite disconnect(&this, widget: &NativeWidget, handler_id: u64) {
@@ -335,92 +406,144 @@ const GTK_SELECTION_SINGLE: c_int = 1;
                 Orientation::Vertical => GTK_ORIENTATION_VERTICAL
             };
             ≔ widget = gtk_box_new(gtk_orientation, 0);
-            NativeWidget::new(widget as usize, WidgetType::Box)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Box)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_button(&this, label: &str) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_button_new_with_label(label.as_ptr() as *c_char);
-            NativeWidget::new(widget as usize, WidgetType::Button)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Button)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_label(&this, text: &str) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_label_new(text.as_ptr() as *c_char);
-            NativeWidget::new(widget as usize, WidgetType::Label)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Label)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_entry(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_entry_new();
-            NativeWidget::new(widget as usize, WidgetType::Entry)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Entry)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_text_view(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_text_view_new();
-            NativeWidget::new(widget as usize, WidgetType::TextView)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::TextView)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_scrolled(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_scrolled_window_new();
-            gtk_scrolled_window_set_policy(widget, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-            NativeWidget::new(widget as usize, WidgetType::ScrolledWindow)
+            ⎇ widget as usize != 0 {
+                gtk_scrolled_window_set_policy(widget, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+                NativeWidget::new(widget as usize, WidgetType::ScrolledWindow)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_list_box(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_list_box_new();
-            NativeWidget::new(widget as usize, WidgetType::ListBox)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::ListBox)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_grid(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_grid_new();
-            NativeWidget::new(widget as usize, WidgetType::Grid)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Grid)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_stack(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_stack_new();
-            NativeWidget::new(widget as usize, WidgetType::Stack)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Stack)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_header_bar(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_header_bar_new();
-            NativeWidget::new(widget as usize, WidgetType::HeaderBar)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::HeaderBar)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_image(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_image_new();
-            NativeWidget::new(widget as usize, WidgetType::Image)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Image)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_spinner(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_spinner_new();
-            NativeWidget::new(widget as usize, WidgetType::Spinner)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Spinner)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_progress_bar(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_progress_bar_new();
-            NativeWidget::new(widget as usize, WidgetType::ProgressBar)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::ProgressBar)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
@@ -431,28 +554,44 @@ const GTK_SELECTION_SINGLE: c_int = 1;
                 Orientation::Vertical => GTK_ORIENTATION_VERTICAL
             };
             ≔ widget = gtk_scale_new_with_range(gtk_orientation, min, max, 1.0);
-            NativeWidget::new(widget as usize, WidgetType::Scale)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Scale)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_switch(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_switch_new();
-            NativeWidget::new(widget as usize, WidgetType::Switch)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Switch)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_check_button(&this, label: &str) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_check_button_new_with_label(label.as_ptr() as *c_char);
-            NativeWidget::new(widget as usize, WidgetType::CheckButton)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::CheckButton)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 
     rite create_drawing_area(&this) → NativeWidget! {
         unsafe {
             ≔ widget = gtk_drawing_area_new();
-            NativeWidget::new(widget as usize, WidgetType::DrawingArea)
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::DrawingArea)
+            } ⎉ {
+                NativeWidget::null()
+            }
         }
     }
 }
@@ -481,8 +620,19 @@ const GTK_SELECTION_SINGLE: c_int = 1;
         }
     }
 
-    rite remove(&this, parent: &NativeWidget, child: &NativeWidget) {
+    rite remove(&vary this, parent: &NativeWidget, child: &NativeWidget) {
         unsafe {
+            // Disconnect any connected signals first
+            ≔ key = "qliphoth_handler\0";
+            ≔ signal_id = g_object_get_data(
+                child.handle as *void,
+                key.as_ptr() as *c_char
+            ) as c_ulong;
+            ⎇ signal_id != 0 {
+                g_signal_handler_disconnect(child.handle as *void, signal_id);
+            }
+
+            // Remove from parent container
             ⌥ parent.widget_type {
                 WidgetType::Box => {
                     gtk_box_remove(parent.handle as *GtkWidget, child.handle as *GtkWidget);
@@ -495,6 +645,7 @@ const GTK_SELECTION_SINGLE: c_int = 1;
                 }
                 _ => {}
             }
+            // GTK4 automatically unreferences and destroys the widget when removed
         }
     }
 

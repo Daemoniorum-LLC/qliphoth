@@ -294,12 +294,20 @@ static QLIPHOTH_CONTAINER_CLASS: [u16; 19] = [
 ];
 
 /// Global platform instance pointer for WndProc callback
+/// SAFETY: This static must only be accessed from the main GUI thread.
+/// The platform instance must outlive all Win32 operations.
+/// Set during init() and read from WndProc callbacks.
 #[cfg(target_os = "windows")]
 static vary PLATFORM_INSTANCE: *void = 0 as *void;
 
 /// Window procedure for main windows
+/// SAFETY: Called by Win32 from the main message loop.
+/// - hwnd is always valid when called by Windows
+/// - PLATFORM_INSTANCE must be valid or null (checked before use)
+/// - All FFI calls use proper Win32 calling convention
 #[cfg(target_os = "windows")]
 extern "C" rite window_proc(hwnd: *void, msg: u32, wparam: u64, lparam: i64) → i64 {
+    // SAFETY: Win32 guarantees hwnd validity during WndProc
     unsafe {
         ⌥ msg {
             WM_DESTROY => {
@@ -397,8 +405,10 @@ sigil LayoutInfo {
     layout_info: HashMap<usize, LayoutInfo>!,
     next_control_id: u64!,
     control_id_to_handler: HashMap<u64, u64>!,
+    hwnd_to_control_id: HashMap<usize, u64>!,  // Maps HWND → control ID
     timer_callbacks: HashMap<u64, fn()>!,
-    spacing_map: HashMap<usize, i32>!
+    spacing_map: HashMap<usize, i32>!,
+    grid_dimensions: HashMap<usize, (i32, i32)>!  // Maps grid HWND → (cols, rows)
 }
 
 #[cfg(target_os = "windows")]
@@ -412,8 +422,10 @@ sigil LayoutInfo {
             layout_info: HashMap::new(),
             next_control_id: 1000,
             control_id_to_handler: HashMap::new(),
+            hwnd_to_control_id: HashMap::new(),
             timer_callbacks: HashMap::new(),
-            spacing_map: HashMap::new()
+            spacing_map: HashMap::new(),
+            grid_dimensions: HashMap::new()
         }
     }
 
@@ -682,14 +694,17 @@ sigil LayoutInfo {
 
     ☉ rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64) {
         // For buttons and controls, map control ID to handler
-        // The control ID was stored when creating the widget
-        ≔ control_id! = widget.handle as u64 & 0xFFFF;
-        this.control_id_to_handler.insert(control_id, handler_id);
+        // Look up the control ID from our HWND → control ID mapping
+        ⎇ let Some(control_id) = this.hwnd_to_control_id.get(&widget.handle) {
+            this.control_id_to_handler.insert(*control_id, handler_id);
+        }
     }
 
     ☉ rite disconnect(&vary this, widget: &NativeWidget, handler_id: u64) {
-        ≔ control_id! = widget.handle as u64 & 0xFFFF;
-        this.control_id_to_handler.remove(&control_id);
+        // Look up the control ID from our HWND → control ID mapping
+        ⎇ let Some(control_id) = this.hwnd_to_control_id.get(&widget.handle) {
+            this.control_id_to_handler.remove(control_id);
+        }
         this.event_handlers.remove(&handler_id);
     }
 }
@@ -761,6 +776,7 @@ static RICHEDIT_CLASS: [u16; 12] = [
 
             ⎇ hwnd as usize != 0 {
                 this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                this.hwnd_to_control_id.insert(hwnd as usize, control_id);
                 NativeWidget::new(hwnd as usize, WidgetType::Button)
             } ⎉ {
                 NativeWidget::null()
@@ -810,6 +826,7 @@ static RICHEDIT_CLASS: [u16; 12] = [
 
             ⎇ hwnd as usize != 0 {
                 this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                this.hwnd_to_control_id.insert(hwnd as usize, control_id);
                 NativeWidget::new(hwnd as usize, WidgetType::Entry)
             } ⎉ {
                 NativeWidget::null()
@@ -835,6 +852,7 @@ static RICHEDIT_CLASS: [u16; 12] = [
 
             ⎇ hwnd as usize != 0 {
                 this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                this.hwnd_to_control_id.insert(hwnd as usize, control_id);
                 NativeWidget::new(hwnd as usize, WidgetType::TextView)
             } ⎉ {
                 NativeWidget::null()
@@ -884,6 +902,7 @@ static RICHEDIT_CLASS: [u16; 12] = [
 
             ⎇ hwnd as usize != 0 {
                 this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                this.hwnd_to_control_id.insert(hwnd as usize, control_id);
                 NativeWidget::new(hwnd as usize, WidgetType::ListBox)
             } ⎉ {
                 NativeWidget::null()
@@ -1070,6 +1089,7 @@ static RICHEDIT_CLASS: [u16; 12] = [
                 ≔ range_packed = ((max as i32) << 16) | (min as i32 & 0xFFFF);
                 SendMessageW(hwnd, TBM_SETRANGE, 1, range_packed as i64);
                 this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                this.hwnd_to_control_id.insert(hwnd as usize, control_id);
                 NativeWidget::new(hwnd as usize, WidgetType::Scale)
             } ⎉ {
                 NativeWidget::null()
@@ -1095,6 +1115,7 @@ static RICHEDIT_CLASS: [u16; 12] = [
 
             ⎇ hwnd as usize != 0 {
                 this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                this.hwnd_to_control_id.insert(hwnd as usize, control_id);
                 NativeWidget::new(hwnd as usize, WidgetType::Switch)
             } ⎉ {
                 NativeWidget::null()
@@ -1120,6 +1141,7 @@ static RICHEDIT_CLASS: [u16; 12] = [
 
             ⎇ hwnd as usize != 0 {
                 this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                this.hwnd_to_control_id.insert(hwnd as usize, control_id);
                 NativeWidget::new(hwnd as usize, WidgetType::CheckButton)
             } ⎉ {
                 NativeWidget::null()
@@ -1186,6 +1208,11 @@ static RICHEDIT_CLASS: [u16; 12] = [
             SetParent(child.handle as *void, 0 as *void);
             // Remove layout info
             this.layout_info.remove(&(child.handle));
+            // Remove hwnd-to-control-id mapping
+            ⎇ let Some(control_id) = this.hwnd_to_control_id.remove(&child.handle) {
+                // Also remove any associated handler
+                this.control_id_to_handler.remove(&control_id);
+            }
             // Destroy the window
             DestroyWindow(child.handle as *void);
         }
@@ -1196,15 +1223,24 @@ static RICHEDIT_CLASS: [u16; 12] = [
             // Re-parent
             SetParent(child.handle as *void, grid.handle as *void);
 
+            // Update grid dimensions based on this attachment
+            ≔ needed_cols! = col + width;
+            ≔ needed_rows! = row + height;
+            ≔ (current_cols, current_rows)! = this.grid_dimensions
+                .get(&(grid.handle))
+                .cloned()
+                .unwrap_or((1, 1));
+            ≔ new_cols! = ⎇ needed_cols > current_cols { needed_cols } ⎉ { current_cols };
+            ≔ new_rows! = ⎇ needed_rows > current_rows { needed_rows } ⎉ { current_rows };
+            this.grid_dimensions.insert(grid.handle, (new_cols, new_rows));
+
             // Get grid client size
             ≔ rect! = RECT { left: 0, top: 0, right: 0, bottom: 0 };
             GetClientRect(grid.handle as *void, &vary rect);
 
-            // Calculate cell size (assume 3x3 grid by default)
-            ≔ grid_cols! = 3;
-            ≔ grid_rows! = 3;
-            ≔ cell_width! = (rect.right - rect.left) / grid_cols;
-            ≔ cell_height! = (rect.bottom - rect.top) / grid_rows;
+            // Calculate cell size using actual grid dimensions
+            ≔ cell_width! = (rect.right - rect.left) / new_cols;
+            ≔ cell_height! = (rect.bottom - rect.top) / new_rows;
 
             // Position child
             ≔ x! = col * cell_width;
@@ -1465,6 +1501,7 @@ mod tests {
         assert!(platform.control_id_to_handler.is_empty());
         assert!(platform.timer_callbacks.is_empty());
         assert!(platform.spacing_map.is_empty());
+        assert!(platform.grid_dimensions.is_empty());
     }
 
     // ========================================================================
