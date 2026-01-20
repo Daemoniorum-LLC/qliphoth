@@ -1,0 +1,324 @@
+// Qliphoth Component: Footer
+// Bottom section with links, copyright, and social
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Footer component properties
+struct Footer {
+    logo: Option<String>,
+    logo_alt: Option<String>,
+    tagline: Option<String>,
+    copyright: Option<String>,
+    variant: String,        // simple, centered, columns, stacked
+    theme: String,          // light, dark, transparent
+    newsletter: Bool,
+    newsletter_title: Option<String>,
+    newsletter_description: Option<String>,
+    language_selector: Bool,
+    languages: List<LanguageConfig>,
+    current_language: String,
+    social: List<SocialLinkConfig>,
+    legal: List<LinkConfig>,
+    app_badges: List<AppBadgeConfig>,
+    aria_label: Option<String>,
+    onsubscribe: Option<Fn(String)>,
+    onlanguage: Option<Fn(String)>,
+    children: List<VNode>,
+}
+
+struct LanguageConfig {
+    code: String,
+    label: String,
+}
+
+struct SocialLinkConfig {
+    icon: String,
+    href: String,
+    label: String,
+}
+
+struct LinkConfig {
+    label: String,
+    href: String,
+}
+
+struct AppBadgeConfig {
+    store: String,  // apple, google
+    href: String,
+}
+
+impl Footer {
+    rite new() -> Footer {
+        Footer {
+            logo: None,
+            logo_alt: None,
+            tagline: None,
+            copyright: None,
+            variant: "columns",
+            theme: "dark",
+            newsletter: nay,
+            newsletter_title: None,
+            newsletter_description: None,
+            language_selector: nay,
+            languages: List·new(),
+            current_language: "en",
+            social: List·new(),
+            legal: List·new(),
+            app_badges: List·new(),
+            aria_label: None,
+            onsubscribe: None,
+            onlanguage: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for Footer {
+    rite render(self) -> VNode {
+        ≔ node = h("footer")
+            .class("footer")
+            .class("footer-" + self.variant)
+            .class("footer-" + self.theme);
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { node = node.attr("aria-label", label); },
+            None => {}
+        }
+
+        // Logo
+        ⌥ self.logo {
+            Some(logo_src) => {
+                node = node.child(
+                    h("div")
+                        .class("footer-logo")
+                        .child(
+                            h("img")
+                                .attr("src", logo_src)
+                                .attr("alt", self.logo_alt.unwrap_or("Logo"))
+                                .build()
+                        )
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Tagline
+        ⌥ self.tagline {
+            Some(tagline_text) => {
+                node = node.child(
+                    h("p")
+                        .class("footer-tagline")
+                        .text(tagline_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Children (sections)
+        node = node.children(self.children);
+
+        // Newsletter
+        ⌥ self.newsletter {
+            yay => {
+                ≔ newsletter_section = h("div").class("footer-newsletter");
+
+                ⌥ self.newsletter_title {
+                    Some(title) => {
+                        newsletter_section = newsletter_section.child(
+                            h("h4").text(title).build()
+                        );
+                    },
+                    None => {}
+                }
+
+                ⌥ self.newsletter_description {
+                    Some(desc) => {
+                        newsletter_section = newsletter_section.child(
+                            h("p").text(desc).build()
+                        );
+                    },
+                    None => {}
+                }
+
+                newsletter_section = newsletter_section.child(
+                    h("form")
+                        .child(
+                            h("input")
+                                .attr("type", "email")
+                                .attr("placeholder", "Enter your email")
+                                .build()
+                        )
+                        .child(
+                            h("button")
+                                .attr("type", "submit")
+                                .text("Subscribe")
+                                .build()
+                        )
+                        .build()
+                );
+
+                node = node.child(newsletter_section.build());
+            },
+            nay => {}
+        }
+
+        // Social links
+        ⌥ self.social.len() > 0 {
+            yay => {
+                ≔ social_section = h("div").class("footer-social");
+
+                ⌽ social_link ∈ self.social {
+                    social_section = social_section.child(
+                        h("a")
+                            .class("footer-social-link")
+                            .attr("href", social_link.href)
+                            .attr("aria-label", social_link.label)
+                            .attr("target", "_blank")
+                            .attr("rel", "noopener noreferrer")
+                            .build()
+                    );
+                }
+
+                node = node.child(social_section.build());
+            },
+            nay => {}
+        }
+
+        // App badges
+        ⌥ self.app_badges.len() > 0 {
+            yay => {
+                ≔ badges_section = h("div").class("footer-app-badges");
+
+                ⌽ badge ∈ self.app_badges {
+                    badges_section = badges_section.child(
+                        h("a")
+                            .class("footer-app-badge")
+                            .attr("href", badge.href)
+                            .attr("data-store", badge.store)
+                            .build()
+                    );
+                }
+
+                node = node.child(badges_section.build());
+            },
+            nay => {}
+        }
+
+        // Legal links
+        ⌥ self.legal.len() > 0 {
+            yay => {
+                ≔ legal_section = h("div").class("footer-legal");
+
+                ⌽ link ∈ self.legal {
+                    legal_section = legal_section.child(
+                        h("a")
+                            .attr("href", link.href)
+                            .text(link.label)
+                            .build()
+                    );
+                }
+
+                node = node.child(legal_section.build());
+            },
+            nay => {}
+        }
+
+        // Language selector
+        ⌥ self.language_selector {
+            yay => {
+                ≔ lang_section = h("div").class("footer-language");
+                // Add language dropdown
+                node = node.child(lang_section.build());
+            },
+            nay => {}
+        }
+
+        // Copyright
+        ⌥ self.copyright {
+            Some(copyright_text) => {
+                node = node.child(
+                    h("p")
+                        .class("footer-copyright")
+                        .text(copyright_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        node.build()
+    }
+}
+
+/// FooterSection for grouped links
+struct FooterSection {
+    title: Option<String>,
+    children: List<VNode>,
+}
+
+impl FooterSection {
+    rite new() -> FooterSection {
+        FooterSection {
+            title: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for FooterSection {
+    rite render(self) -> VNode {
+        ≔ node = h("div").class("footer-section");
+
+        ⌥ self.title {
+            Some(title_text) => {
+                node = node.child(
+                    h("h4")
+                        .class("footer-section-title")
+                        .text(title_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        node = node.children(self.children);
+        node.build()
+    }
+}
+
+/// FooterLinks for navigation links
+struct FooterLinks {
+    items: List<LinkConfig>,
+}
+
+impl FooterLinks {
+    rite new() -> FooterLinks {
+        FooterLinks { items: List·new() }
+    }
+}
+
+impl Component for FooterLinks {
+    rite render(self) -> VNode {
+        ≔ node = h("ul").class("footer-links");
+
+        ⌽ item ∈ self.items {
+            node = node.child(
+                h("li")
+                    .child(
+                        h("a")
+                            .attr("href", item.href)
+                            .text(item.label)
+                            .build()
+                    )
+                    .build()
+            );
+        }
+
+        node.build()
+    }
+}

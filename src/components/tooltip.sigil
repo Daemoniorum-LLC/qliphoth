@@ -1,0 +1,142 @@
+// Qliphoth Component: Tooltip
+// Hover hint component displaying helpful text
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Tooltip component
+struct Tooltip {
+    content: String,
+    title: Option<String>,
+    children: List<VNode>,
+    position: String,          // top, bottom, left, right
+    alignment: String,         // start, center, end
+    trigger: String,           // hover, click, focus, manual
+    open: Bool,                // For manual trigger
+    delay: i32,                // ms before showing
+    arrow: Bool,
+    variant: String,           // dark, light, error, warning, success
+    max_width: Option<i32>,
+    disabled: Bool,
+    id: Option<String>,
+    touch_trigger: Option<String>, // long-press, tap
+    animation: String,         // fade, scale, none
+}
+
+impl Tooltip {
+    rite new(content: String) -> Tooltip {
+        Tooltip {
+            content: content,
+            title: None,
+            children: List·new(),
+            position: "top",
+            alignment: "center",
+            trigger: "hover",
+            open: nay,
+            delay: 0,
+            arrow: yay,
+            variant: "dark",
+            max_width: None,
+            disabled: nay,
+            id: None,
+            touch_trigger: None,
+            animation: "fade",
+        }
+    }
+}
+
+impl Component for Tooltip {
+    rite render(self) -> VNode {
+        ≔ wrapper = h("div")
+            .class("tooltip-wrapper")
+            .class("tooltip-animation-" + self.animation)
+            .attr("data-trigger", self.trigger);
+
+        // Delay
+        ⌥ self.delay > 0 {
+            yay => { wrapper = wrapper.attr("data-delay", self.delay.to_string()); },
+            nay => {}
+        }
+
+        // Touch trigger
+        ⌥ self.touch_trigger {
+            Some(tt) => { wrapper = wrapper.attr("data-touch-trigger", tt); },
+            None => {}
+        }
+
+        // Trigger element (children)
+        ≔ trigger_node = h("div").class("tooltip-trigger");
+
+        // ID reference for accessibility
+        ⌥ self.id {
+            Some(id) => { trigger_node = trigger_node.attr("aria-describedby", id); },
+            None => {}
+        }
+
+        trigger_node = trigger_node.children(self.children);
+        wrapper = wrapper.child(trigger_node.build());
+
+        // Tooltip content (if not disabled)
+        ⌥ self.disabled == nay {
+            yay => {
+                ≔ tooltip_content = h("div")
+                    .class("tooltip-content")
+                    .class("tooltip-" + self.position)
+                    .class("tooltip-align-" + self.alignment)
+                    .class("tooltip-" + self.variant)
+                    .attr("role", "tooltip");
+
+                // ID
+                ⌥ self.id {
+                    Some(id) => { tooltip_content = tooltip_content.attr("id", id); },
+                    None => {}
+                }
+
+                // Max width
+                ⌥ self.max_width {
+                    Some(width) => {
+                        tooltip_content = tooltip_content.attr("style", "max-width: " + width.to_string() + "px");
+                    },
+                    None => {}
+                }
+
+                // Title (for rich tooltips)
+                ⌥ self.title {
+                    Some(title_text) => {
+                        tooltip_content = tooltip_content.child(
+                            h("div")
+                                .class("tooltip-title")
+                                .text(title_text)
+                                .build()
+                        );
+                        tooltip_content = tooltip_content.child(
+                            h("div")
+                                .class("tooltip-body")
+                                .text(self.content)
+                                .build()
+                        );
+                    },
+                    None => {
+                        tooltip_content = tooltip_content.text(self.content);
+                    }
+                }
+
+                // Arrow
+                ⌥ self.arrow {
+                    yay => {
+                        tooltip_content = tooltip_content.child(
+                            h("div").class("tooltip-arrow").build()
+                        );
+                    },
+                    nay => {}
+                }
+
+                wrapper = wrapper.child(tooltip_content.build());
+            },
+            nay => {}
+        }
+
+        wrapper.build()
+    }
+}

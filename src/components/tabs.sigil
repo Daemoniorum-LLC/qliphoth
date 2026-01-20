@@ -1,0 +1,234 @@
+// Qliphoth Component: Tabs
+// Tab navigation with switchable panels
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Tab component (individual tab button)
+struct Tab {
+    label: String,
+    id: Option<String>,
+    disabled: Bool,
+    icon: Option<String>,
+    badge: Option<i32>,
+}
+
+impl Tab {
+    rite new(label: String) -> Tab {
+        Tab {
+            label: label,
+            id: None,
+            disabled: nay,
+            icon: None,
+            badge: None,
+        }
+    }
+}
+
+impl Component for Tab {
+    rite render(self) -> VNode {
+        ≔ node = h("button")
+            .class("tab")
+            .attr("role", "tab")
+            .attr("type", "button");
+
+        // ID
+        ⌥ self.id {
+            Some(id) => { node = node.attr("id", id); },
+            None => {}
+        }
+
+        // Disabled state
+        ⌥ self.disabled {
+            yay => {
+                node = node.attr("disabled", "true");
+                node = node.attr("aria-disabled", "true");
+            },
+            nay => {}
+        }
+
+        // Icon
+        ⌥ self.icon {
+            Some(icon_name) => {
+                node = node.child(
+                    h("span")
+                        .class("tab-icon")
+                        .text(icon_name)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Label
+        node = node.child(
+            h("span").class("tab-label").text(self.label).build()
+        );
+
+        // Badge
+        ⌥ self.badge {
+            Some(count) => {
+                node = node.child(
+                    h("span")
+                        .class("tab-badge")
+                        .text(count.to_string())
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        node.build()
+    }
+}
+
+/// TabList component (container for tabs)
+struct TabList {
+    children: List<Tab>,
+    aria_label: Option<String>,
+}
+
+impl TabList {
+    rite new() -> TabList {
+        TabList {
+            children: List·new(),
+            aria_label: None,
+        }
+    }
+}
+
+impl Component for TabList {
+    rite render(self) -> VNode {
+        ≔ node = h("div")
+            .class("tab-list")
+            .attr("role", "tablist");
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { node = node.attr("aria-label", label); },
+            None => {}
+        }
+
+        // Render tabs
+        ⌽ tab ∈ self.children {
+            node = node.child(tab.render());
+        }
+
+        node.build()
+    }
+}
+
+/// TabPanel component (content for a tab)
+struct TabPanel {
+    children: List<VNode>,
+    id: Option<String>,
+}
+
+impl TabPanel {
+    rite new() -> TabPanel {
+        TabPanel {
+            children: List·new(),
+            id: None,
+        }
+    }
+}
+
+impl Component for TabPanel {
+    rite render(self) -> VNode {
+        ≔ node = h("div")
+            .class("tab-panel")
+            .attr("role", "tabpanel");
+
+        // ID
+        ⌥ self.id {
+            Some(id) => { node = node.attr("id", id); },
+            None => {}
+        }
+
+        // Children
+        node = node.children(self.children);
+
+        node.build()
+    }
+}
+
+/// TabPanels component (container for panels)
+struct TabPanels {
+    children: List<TabPanel>,
+}
+
+impl TabPanels {
+    rite new() -> TabPanels {
+        TabPanels {
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for TabPanels {
+    rite render(self) -> VNode {
+        ≔ node = h("div").class("tab-panels");
+
+        ⌽ panel ∈ self.children {
+            node = node.child(panel.render());
+        }
+
+        node.build()
+    }
+}
+
+/// Tabs component (main container)
+struct Tabs {
+    children: List<VNode>,     // Contains TabList and TabPanels
+    index: i32,                // Active tab index
+    onchange: Option<Fn(i32)>,
+    variant: String,           // line, enclosed, soft-rounded, solid-rounded, unstyled
+    size: String,              // sm, md, lg
+    orientation: String,       // horizontal, vertical
+    alignment: String,         // start, center, end, stretch
+    lazy: Bool,                // Lazy load panels
+    keyboard_activation: String, // automatic, manual
+    id: Option<String>,
+}
+
+impl Tabs {
+    rite new() -> Tabs {
+        Tabs {
+            children: List·new(),
+            index: 0,
+            onchange: None,
+            variant: "line",
+            size: "md",
+            orientation: "horizontal",
+            alignment: "start",
+            lazy: nay,
+            keyboard_activation: "automatic",
+            id: None,
+        }
+    }
+}
+
+impl Component for Tabs {
+    rite render(self) -> VNode {
+        ≔ node = h("div")
+            .class("tabs")
+            .class("tabs-" + self.variant)
+            .class("tabs-" + self.size)
+            .class("tabs-" + self.orientation)
+            .class("tabs-align-" + self.alignment)
+            .attr("data-keyboard-activation", self.keyboard_activation);
+
+        // ID
+        ⌥ self.id {
+            Some(id) => { node = node.attr("id", id); },
+            None => {}
+        }
+
+        // Render children (TabList and TabPanels)
+        // In actual implementation, this would apply aria-selected, aria-controls, etc.
+        node = node.children(self.children);
+
+        node.build()
+    }
+}

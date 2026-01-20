@@ -1,0 +1,242 @@
+// Qliphoth Component: Switch
+// Toggle control for binary on/off settings
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Switch component properties
+struct Switch {
+    name: String,
+    id: Option<String>,
+    checked: Bool,
+    label: Option<String>,
+    label_position: String, // left, right
+    on_label: Option<String>,
+    off_label: Option<String>,
+    on_icon: Option<String>,
+    off_icon: Option<String>,
+    description: Option<String>,
+    size: String,           // sm, md, lg
+    color: String,          // success, warning, danger
+    disabled: Bool,
+    loading: Bool,
+    required: Bool,
+    aria_label: Option<String>,
+    onchange: Option<Fn(Bool)>,
+}
+
+impl Switch {
+    rite new() -> Switch {
+        Switch {
+            name: "",
+            id: None,
+            checked: nay,
+            label: None,
+            label_position: "right",
+            on_label: None,
+            off_label: None,
+            on_icon: None,
+            off_icon: None,
+            description: None,
+            size: "md",
+            color: "success",
+            disabled: nay,
+            loading: nay,
+            required: nay,
+            aria_label: None,
+            onchange: None,
+        }
+    }
+}
+
+impl Component for Switch {
+    rite render(self) -> VNode {
+        ≔ switch_id = self.id.unwrap_or(self.name + "-switch");
+        ≔ wrapper = h("div")
+            .class("switch-wrapper")
+            .class("switch-label-" + self.label_position);
+
+        // Label (left position)
+        ⌥ self.label {
+            Some(label_text) => {
+                ⌥ self.label_position == "left" {
+                    yay => {
+                        wrapper = wrapper.child(
+                            h("label")
+                                .class("switch-label")
+                                .attr("for", switch_id)
+                                .text(label_text)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Switch input
+        ≔ input_node = h("input")
+            .class("switch")
+            .class("switch-" + self.size)
+            .class("switch-" + self.color)
+            .attr("type", "checkbox")
+            .attr("role", "switch")
+            .attr("name", self.name)
+            .attr("id", switch_id);
+
+        // Checked state
+        ⌥ self.checked {
+            yay => {
+                input_node = input_node
+                    .attr("checked", "true")
+                    .attr("aria-checked", "true");
+            },
+            nay => {
+                input_node = input_node.attr("aria-checked", "false");
+            }
+        }
+
+        // Disabled
+        ⌥ self.disabled ∨ self.loading {
+            yay => {
+                input_node = input_node
+                    .class("switch-disabled")
+                    .attr("disabled", "true");
+            },
+            nay => {}
+        }
+
+        // Loading
+        ⌥ self.loading {
+            yay => {
+                input_node = input_node.class("switch-loading");
+            },
+            nay => {}
+        }
+
+        // Required
+        ⌥ self.required {
+            yay => {
+                input_node = input_node
+                    .attr("required", "true")
+                    .attr("aria-required", "true");
+            },
+            nay => {}
+        }
+
+        // Description aria
+        ⌥ self.description {
+            Some(_) => {
+                input_node = input_node.attr("aria-describedby", switch_id + "-description");
+            },
+            None => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { input_node = input_node.attr("aria-label", label); },
+            None => {}
+        }
+
+        wrapper = wrapper.child(input_node.build());
+
+        // Loading spinner
+        ⌥ self.loading {
+            yay => {
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("switch-spinner")
+                        .build()
+                );
+            },
+            nay => {}
+        }
+
+        // State labels
+        ⌥ self.on_label {
+            Some(on_text) => {
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("switch-label-on")
+                        .text(on_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        ⌥ self.off_label {
+            Some(off_text) => {
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("switch-label-off")
+                        .text(off_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // State icons
+        ⌥ self.on_icon {
+            Some(icon_name) => {
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("switch-icon-on")
+                        .attr("data-icon", icon_name)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        ⌥ self.off_icon {
+            Some(icon_name) => {
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("switch-icon-off")
+                        .attr("data-icon", icon_name)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Label (right position)
+        ⌥ self.label {
+            Some(label_text) => {
+                ⌥ self.label_position == "right" {
+                    yay => {
+                        wrapper = wrapper.child(
+                            h("label")
+                                .class("switch-label")
+                                .attr("for", switch_id)
+                                .text(label_text)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Description
+        ⌥ self.description {
+            Some(desc_text) => {
+                wrapper = wrapper.child(
+                    h("p")
+                        .class("switch-description")
+                        .attr("id", switch_id + "-description")
+                        .text(desc_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        wrapper.build()
+    }
+}

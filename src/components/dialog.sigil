@@ -1,0 +1,211 @@
+// Qliphoth Component: Dialog
+// Accessible modal overlay for important content
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Dialog component properties
+struct Dialog {
+    open: Bool,
+    size: String,           // sm, md, lg, xl, full
+    position: String,       // center, top, bottom
+    alert: Bool,            // alertdialog role
+    hide_close: Bool,
+    static_backdrop: Bool,
+    close_on_escape: Bool,
+    scrollable: Bool,
+    initial_focus: Option<String>,
+    aria_describedby: Option<String>,
+    onclose: Option<Fn()>,
+    children: List<VNode>,
+}
+
+impl Dialog {
+    rite new() -> Dialog {
+        Dialog {
+            open: nay,
+            size: "md",
+            position: "center",
+            alert: nay,
+            hide_close: nay,
+            static_backdrop: nay,
+            close_on_escape: yay,
+            scrollable: nay,
+            initial_focus: None,
+            aria_describedby: None,
+            onclose: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for Dialog {
+    rite render(self) -> VNode {
+        ≔ role = ⌥ self.alert {
+            yay => "alertdialog",
+            nay => "dialog",
+        };
+
+        ≔ node = h("div")
+            .class("dialog")
+            .class("dialog-" + self.size)
+            .class("dialog-" + self.position)
+            .attr("role", role)
+            .attr("aria-modal", "true")
+            .attr("data-close-on-escape", self.close_on_escape.to_string());
+
+        // Backdrop
+        ≔ backdrop = h("div").class("dialog-backdrop");
+        ⌥ self.static_backdrop {
+            yay => { backdrop = backdrop.class("dialog-backdrop-static"); },
+            nay => {}
+        }
+        node = node.child(backdrop.build());
+
+        // Content wrapper
+        ≔ content = h("div").class("dialog-content");
+
+        // Scrollable
+        ⌥ self.scrollable {
+            yay => { content = content.class("dialog-content-scrollable"); },
+            nay => {}
+        }
+
+        // Close button
+        ⌥ self.hide_close {
+            nay => {
+                content = content.child(
+                    h("button")
+                        .class("dialog-close")
+                        .attr("type", "button")
+                        .attr("aria-label", "Close")
+                        .text("×")
+                        .build()
+                );
+            },
+            yay => {}
+        }
+
+        // Children
+        content = content.children(self.children);
+
+        node = node.child(content.build());
+
+        // Initial focus
+        ⌥ self.initial_focus {
+            Some(selector) => {
+                node = node.attr("data-initial-focus", selector);
+            },
+            None => {}
+        }
+
+        // Aria describedby
+        ⌥ self.aria_describedby {
+            Some(id) => { node = node.attr("aria-describedby", id); },
+            None => {}
+        }
+
+        node.build()
+    }
+}
+
+/// DialogHeader component
+struct DialogHeader {
+    title: Option<String>,
+    subtitle: Option<String>,
+    children: List<VNode>,
+}
+
+impl DialogHeader {
+    rite new() -> DialogHeader {
+        DialogHeader {
+            title: None,
+            subtitle: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for DialogHeader {
+    rite render(self) -> VNode {
+        ≔ node = h("div").class("dialog-header");
+
+        ⌥ self.title {
+            Some(title_text) => {
+                node = node.child(
+                    h("h2")
+                        .class("dialog-title")
+                        .attr("id", "dialog-title")
+                        .text(title_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        ⌥ self.subtitle {
+            Some(subtitle_text) => {
+                node = node.child(
+                    h("p")
+                        .class("dialog-subtitle")
+                        .text(subtitle_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        node = node.children(self.children);
+        node.build()
+    }
+}
+
+/// DialogBody component
+struct DialogBody {
+    id: Option<String>,
+    children: List<VNode>,
+}
+
+impl DialogBody {
+    rite new() -> DialogBody {
+        DialogBody {
+            id: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for DialogBody {
+    rite render(self) -> VNode {
+        ≔ node = h("div").class("dialog-body");
+
+        ⌥ self.id {
+            Some(id_val) => { node = node.attr("id", id_val); },
+            None => {}
+        }
+
+        node = node.children(self.children);
+        node.build()
+    }
+}
+
+/// DialogFooter component
+struct DialogFooter {
+    children: List<VNode>,
+}
+
+impl DialogFooter {
+    rite new() -> DialogFooter {
+        DialogFooter { children: List·new() }
+    }
+}
+
+impl Component for DialogFooter {
+    rite render(self) -> VNode {
+        h("div")
+            .class("dialog-footer")
+            .children(self.children)
+            .build()
+    }
+}

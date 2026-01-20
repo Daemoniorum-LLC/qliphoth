@@ -1,0 +1,288 @@
+// Qliphoth Component: Hero
+// Prominent banner section for landing pages
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Hero component properties
+struct Hero {
+    title: String,
+    subtitle: Option<String>,
+    title_level: i32,       // 1-6 for h1-h6
+    variant: String,        // centered, split, fullscreen, minimal
+    size: String,           // sm, md, lg, xl
+    alignment: String,      // left, center, right
+    theme: String,          // light, dark, brand
+    background_image: Option<String>,
+    background_video: Option<String>,
+    video_poster: Option<String>,
+    background_overlay: Option<f32>,
+    gradient: Option<String>,
+    image: Option<String>,
+    image_alt: Option<String>,
+    image_position: String, // left, right
+    cta_primary: Option<CtaConfig>,
+    cta_secondary: Option<CtaConfig>,
+    announcement: Option<AnnouncementConfig>,
+    social_proof: Option<SocialProofConfig>,
+    scroll_indicator: Bool,
+}
+
+struct CtaConfig {
+    label: String,
+    href: String,
+}
+
+struct AnnouncementConfig {
+    text: String,
+    href: Option<String>,
+}
+
+struct SocialProofConfig {
+    text: String,
+    logos: List<String>,
+}
+
+impl Hero {
+    rite new() -> Hero {
+        Hero {
+            title: "",
+            subtitle: None,
+            title_level: 1,
+            variant: "centered",
+            size: "lg",
+            alignment: "center",
+            theme: "light",
+            background_image: None,
+            background_video: None,
+            video_poster: None,
+            background_overlay: None,
+            gradient: None,
+            image: None,
+            image_alt: None,
+            image_position: "right",
+            cta_primary: None,
+            cta_secondary: None,
+            announcement: None,
+            social_proof: None,
+            scroll_indicator: nay,
+        }
+    }
+}
+
+impl Component for Hero {
+    rite render(self) -> VNode {
+        ≔ node = h("section")
+            .class("hero")
+            .class("hero-" + self.variant)
+            .class("hero-" + self.size)
+            .class("hero-align-" + self.alignment)
+            .class("hero-" + self.theme);
+
+        // Background image
+        ⌥ self.background_image {
+            Some(img_url) => {
+                node = node
+                    .class("hero-with-background")
+                    .attr("style", "background-image: url(" + img_url + ");");
+
+                // Overlay
+                ⌥ self.background_overlay {
+                    Some(opacity) => {
+                        node = node.child(
+                            h("div")
+                                .class("hero-overlay")
+                                .attr("style", "opacity: " + opacity.to_string() + ";")
+                                .build()
+                        );
+                    },
+                    None => {}
+                }
+            },
+            None => {}
+        }
+
+        // Background video
+        ⌥ self.background_video {
+            Some(video_url) => {
+                ≔ video_node = h("video")
+                    .attr("autoplay", "true")
+                    .attr("muted", "true")
+                    .attr("loop", "true")
+                    .attr("playsinline", "true");
+
+                ⌥ self.video_poster {
+                    Some(poster) => { video_node = video_node.attr("poster", poster); },
+                    None => {}
+                }
+
+                video_node = video_node.child(
+                    h("source")
+                        .attr("src", video_url)
+                        .attr("type", "video/mp4")
+                        .build()
+                );
+
+                node = node.child(
+                    h("div")
+                        .class("hero-video")
+                        .child(video_node.build())
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Gradient background
+        ⌥ self.gradient {
+            Some(gradient_css) => {
+                node = node.attr("style", "background: " + gradient_css + ";");
+            },
+            None => {}
+        }
+
+        // Content wrapper
+        ≔ content = h("div").class("hero-content");
+
+        // Announcement
+        ⌥ self.announcement {
+            Some(announcement) => {
+                ≔ announcement_node = h("div").class("hero-announcement");
+
+                ⌥ announcement.href {
+                    Some(href) => {
+                        announcement_node = announcement_node.child(
+                            h("a")
+                                .attr("href", href)
+                                .text(announcement.text)
+                                .build()
+                        );
+                    },
+                    None => {
+                        announcement_node = announcement_node.text(announcement.text);
+                    }
+                }
+
+                content = content.child(announcement_node.build());
+            },
+            None => {}
+        }
+
+        // Title
+        ≔ title_tag = "h" + self.title_level.to_string();
+        content = content.child(
+            h(title_tag)
+                .class("hero-title")
+                .text(self.title)
+                .build()
+        );
+
+        // Subtitle
+        ⌥ self.subtitle {
+            Some(subtitle_text) => {
+                content = content.child(
+                    h("p")
+                        .class("hero-subtitle")
+                        .text(subtitle_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // CTAs
+        ⌥ self.cta_primary.is_some() ∨ self.cta_secondary.is_some() {
+            yay => {
+                ≔ cta_wrapper = h("div").class("hero-cta");
+
+                ⌥ self.cta_primary {
+                    Some(cta) => {
+                        cta_wrapper = cta_wrapper.child(
+                            h("a")
+                                .class("btn")
+                                .class("btn-primary")
+                                .attr("href", cta.href)
+                                .text(cta.label)
+                                .build()
+                        );
+                    },
+                    None => {}
+                }
+
+                ⌥ self.cta_secondary {
+                    Some(cta) => {
+                        cta_wrapper = cta_wrapper.child(
+                            h("a")
+                                .class("btn")
+                                .class("btn-secondary")
+                                .attr("href", cta.href)
+                                .text(cta.label)
+                                .build()
+                        );
+                    },
+                    None => {}
+                }
+
+                content = content.child(cta_wrapper.build());
+            },
+            nay => {}
+        }
+
+        // Social proof
+        ⌥ self.social_proof {
+            Some(proof) => {
+                ≔ proof_node = h("div").class("hero-social-proof");
+                proof_node = proof_node.child(
+                    h("p").text(proof.text).build()
+                );
+
+                ⌽ logo ∈ proof.logos {
+                    proof_node = proof_node.child(
+                        h("img")
+                            .attr("src", logo)
+                            .attr("alt", "")
+                            .build()
+                    );
+                }
+
+                content = content.child(proof_node.build());
+            },
+            None => {}
+        }
+
+        node = node.child(content.build());
+
+        // Hero image (split layout)
+        ⌥ self.image {
+            Some(img_src) => {
+                node = node.child(
+                    h("div")
+                        .class("hero-image")
+                        .child(
+                            h("img")
+                                .attr("src", img_src)
+                                .attr("alt", self.image_alt.unwrap_or(""))
+                                .build()
+                        )
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Scroll indicator
+        ⌥ self.scroll_indicator {
+            yay => {
+                node = node.child(
+                    h("div")
+                        .class("hero-scroll-indicator")
+                        .build()
+                );
+            },
+            nay => {}
+        }
+
+        node.build()
+    }
+}

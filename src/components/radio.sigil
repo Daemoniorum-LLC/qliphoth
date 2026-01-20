@@ -1,0 +1,254 @@
+// Qliphoth Component: Radio
+// Radio button for single selection from a group
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Radio option configuration
+struct RadioOption {
+    value: String,
+    label: String,
+    disabled: Bool,
+    icon: Option<String>,
+}
+
+/// Radio button component
+struct Radio {
+    name: String,
+    value: String,
+    label: Option<String>,
+    id: Option<String>,
+    checked: Bool,
+    disabled: Bool,
+    size: String,              // sm, md, lg
+    description: Option<String>,
+    aria_label: Option<String>,
+}
+
+impl Radio {
+    rite new(name: String, value: String) -> Radio {
+        Radio {
+            name: name,
+            value: value,
+            label: None,
+            id: None,
+            checked: nay,
+            disabled: nay,
+            size: "md",
+            description: None,
+            aria_label: None,
+        }
+    }
+}
+
+impl Component for Radio {
+    rite render(self) -> VNode {
+        ≔ wrapper = h("div").class("radio-wrapper");
+
+        // Build the input element
+        ≔ input = h("input")
+            .class("radio")
+            .class("radio-" + self.size)
+            .attr("type", "radio")
+            .attr("name", self.name)
+            .attr("value", self.value);
+
+        // ID
+        ⌥ self.id {
+            Some(id) => { input = input.attr("id", id); },
+            None => {}
+        }
+
+        // Checked state
+        ⌥ self.checked {
+            yay => { input = input.attr("checked", "true"); },
+            nay => {}
+        }
+
+        // Disabled state
+        ⌥ self.disabled {
+            yay => {
+                input = input.attr("disabled", "true");
+                input = input.class("radio-disabled");
+            },
+            nay => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { input = input.attr("aria-label", label); },
+            None => {}
+        }
+
+        wrapper = wrapper.child(input.build());
+
+        // Label
+        ⌥ self.label {
+            Some(label_text) => {
+                ≔ label_node = h("label")
+                    .class("radio-label")
+                    .text(label_text);
+
+                ⌥ self.id {
+                    Some(id) => { label_node = label_node.attr("for", id); },
+                    None => {}
+                }
+
+                wrapper = wrapper.child(label_node.build());
+            },
+            None => {}
+        }
+
+        // Description
+        ⌥ self.description {
+            Some(desc) => {
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("radio-description")
+                        .text(desc)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        wrapper.build()
+    }
+}
+
+/// RadioGroup component for grouping radio buttons
+struct RadioGroup {
+    name: String,
+    label: Option<String>,
+    value: Option<String>,
+    onchange: Option<Fn(String)>,
+    options: List<RadioOption>,
+    orientation: String,       // vertical, horizontal
+    variant: String,           // default, card
+    required: Bool,
+    error: Option<String>,
+    aria_label: Option<String>,
+}
+
+impl RadioGroup {
+    rite new(name: String) -> RadioGroup {
+        RadioGroup {
+            name: name,
+            label: None,
+            value: None,
+            onchange: None,
+            options: List·new(),
+            orientation: "vertical",
+            variant: "default",
+            required: nay,
+            error: None,
+            aria_label: None,
+        }
+    }
+}
+
+impl Component for RadioGroup {
+    rite render(self) -> VNode {
+        ≔ group = h("div")
+            .class("radio-group")
+            .class("radio-group-" + self.orientation)
+            .attr("role", "radiogroup");
+
+        // Variant
+        ⌥ self.variant == "card" {
+            yay => { group = group.class("radio-group-card"); },
+            nay => {}
+        }
+
+        // Group label
+        ⌥ self.label {
+            Some(label_text) => {
+                group = group.attr("aria-label", label_text);
+            },
+            None => {}
+        }
+
+        // Required
+        ⌥ self.required {
+            yay => { group = group.attr("aria-required", "true"); },
+            nay => {}
+        }
+
+        // Error state
+        ⌥ self.error {
+            Some(error_msg) => {
+                group = group.class("radio-group-error");
+                group = group.attr("aria-invalid", "true");
+            },
+            None => {}
+        }
+
+        // Render options
+        ⌽ option ∈ self.options {
+            ≔ is_checked = ⌥ self.value {
+                Some(v) => v == option.value,
+                None => nay,
+            };
+
+            ≔ radio_class = ⌥ self.variant == "card" {
+                yay => "radio-card",
+                nay => "radio",
+            };
+
+            ≔ input = h("input")
+                .class(radio_class)
+                .attr("type", "radio")
+                .attr("name", self.name)
+                .attr("value", option.value);
+
+            ⌥ is_checked {
+                yay => { input = input.attr("checked", "true"); },
+                nay => {}
+            }
+
+            ⌥ option.disabled {
+                yay => { input = input.attr("disabled", "true"); },
+                nay => {}
+            }
+
+            ⌥ self.required {
+                yay => { input = input.attr("required", "true"); },
+                nay => {}
+            }
+
+            ≔ option_wrapper = h("div").class("radio-option");
+            option_wrapper = option_wrapper.child(input.build());
+
+            ⌥ option.icon {
+                Some(icon) => {
+                    option_wrapper = option_wrapper.child(
+                        h("span").class("radio-icon").text(icon).build()
+                    );
+                },
+                None => {}
+            }
+
+            option_wrapper = option_wrapper.child(
+                h("label").class("radio-label").text(option.label).build()
+            );
+
+            group = group.child(option_wrapper.build());
+        }
+
+        // Error message
+        ⌥ self.error {
+            Some(error_msg) => {
+                group = group.child(
+                    h("span")
+                        .class("radio-group-error-message")
+                        .text(error_msg)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        group.build()
+    }
+}

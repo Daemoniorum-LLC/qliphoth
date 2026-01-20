@@ -1,0 +1,214 @@
+// Qliphoth Component: Textarea
+// Multi-line text input with auto-resize support
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Textarea component
+struct Textarea {
+    name: String,
+    value: Option<String>,
+    placeholder: Option<String>,
+    label: Option<String>,
+    id: Option<String>,
+    rows: i32,
+    auto_resize: Bool,
+    min_rows: i32,
+    max_rows: i32,
+    required: Bool,
+    disabled: Bool,
+    readonly: Bool,
+    error: Option<String>,
+    helper: Option<String>,
+    max_length: Option<i32>,
+    show_counter: Bool,
+    size: String,              // sm, md, lg
+    resize: String,            // none, vertical, horizontal, both
+    aria_label: Option<String>,
+    onchange: Option<Fn(String)>,
+}
+
+impl Textarea {
+    rite new(name: String) -> Textarea {
+        Textarea {
+            name: name,
+            value: None,
+            placeholder: None,
+            label: None,
+            id: None,
+            rows: 3,
+            auto_resize: nay,
+            min_rows: 3,
+            max_rows: 10,
+            required: nay,
+            disabled: nay,
+            readonly: nay,
+            error: None,
+            helper: None,
+            max_length: None,
+            show_counter: nay,
+            size: "md",
+            resize: "vertical",
+            aria_label: None,
+            onchange: None,
+        }
+    }
+}
+
+impl Component for Textarea {
+    rite render(self) -> VNode {
+        ≔ wrapper = h("div").class("textarea-wrapper");
+
+        // Label
+        ⌥ self.label {
+            Some(label_text) => {
+                ≔ label_node = h("label")
+                    .class("textarea-label")
+                    .text(label_text);
+
+                ⌥ self.id {
+                    Some(id) => { label_node = label_node.attr("for", id); },
+                    None => {}
+                }
+
+                wrapper = wrapper.child(label_node.build());
+            },
+            None => {}
+        }
+
+        // Build textarea element
+        ≔ textarea = h("textarea")
+            .class("textarea")
+            .class("textarea-" + self.size)
+            .class("textarea-resize-" + self.resize)
+            .attr("name", self.name)
+            .attr("rows", self.rows.to_string());
+
+        // ID
+        ⌥ self.id {
+            Some(id) => { textarea = textarea.attr("id", id); },
+            None => {}
+        }
+
+        // Placeholder
+        ⌥ self.placeholder {
+            Some(ph) => { textarea = textarea.attr("placeholder", ph); },
+            None => {}
+        }
+
+        // Value (as text content)
+        ⌥ self.value {
+            Some(val) => { textarea = textarea.text(val); },
+            None => {}
+        }
+
+        // Auto resize
+        ⌥ self.auto_resize {
+            yay => {
+                textarea = textarea.class("textarea-auto-resize");
+                textarea = textarea.attr("data-min-rows", self.min_rows.to_string());
+                textarea = textarea.attr("data-max-rows", self.max_rows.to_string());
+            },
+            nay => {}
+        }
+
+        // Required
+        ⌥ self.required {
+            yay => {
+                textarea = textarea.attr("required", "true");
+                textarea = textarea.attr("aria-required", "true");
+            },
+            nay => {}
+        }
+
+        // Disabled
+        ⌥ self.disabled {
+            yay => {
+                textarea = textarea.attr("disabled", "true");
+                textarea = textarea.class("textarea-disabled");
+            },
+            nay => {}
+        }
+
+        // Readonly
+        ⌥ self.readonly {
+            yay => { textarea = textarea.attr("readonly", "true"); },
+            nay => {}
+        }
+
+        // Max length
+        ⌥ self.max_length {
+            Some(max) => { textarea = textarea.attr("maxlength", max.to_string()); },
+            None => {}
+        }
+
+        // Error state
+        ⌥ self.error {
+            Some(_) => {
+                textarea = textarea.class("textarea-error");
+                textarea = textarea.attr("aria-invalid", "true");
+            },
+            None => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { textarea = textarea.attr("aria-label", label); },
+            None => {}
+        }
+
+        wrapper = wrapper.child(textarea.build());
+
+        // Helper text
+        ⌥ self.helper {
+            Some(helper_text) => {
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("textarea-helper")
+                        .text(helper_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Error message
+        ⌥ self.error {
+            Some(error_msg) => {
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("textarea-error-message")
+                        .text(error_msg)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Character counter
+        ⌥ self.show_counter {
+            yay => {
+                ≔ current_len = ⌥ self.value {
+                    Some(v) => v.len(),
+                    None => 0,
+                };
+
+                ≔ max_str = ⌥ self.max_length {
+                    Some(max) => max.to_string(),
+                    None => "∞",
+                };
+
+                wrapper = wrapper.child(
+                    h("span")
+                        .class("textarea-counter")
+                        .text(current_len.to_string() + " / " + max_str)
+                        .build()
+                );
+            },
+            nay => {}
+        }
+
+        wrapper.build()
+    }
+}

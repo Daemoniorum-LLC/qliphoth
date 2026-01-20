@@ -1,0 +1,136 @@
+// Qliphoth Component: Button
+// A fundamental UI primitive with variants and states
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Button component properties
+struct Button {
+    label: Option<String>,
+    variant: String,        // primary, secondary, outline, ghost, danger
+    size: String,           // sm, md, lg
+    disabled: Bool,
+    loading: Bool,
+    icon: Option<String>,
+    icon_position: String,  // left, right
+    button_type: String,    // button, submit, reset
+    aria_label: Option<String>,
+    onclick: Option<Fn()>,
+}
+
+impl Button {
+    /// Create a new Button with defaults
+    rite new() -> Button {
+        Button {
+            label: None,
+            variant: "primary",
+            size: "md",
+            disabled: nay,
+            loading: nay,
+            icon: None,
+            icon_position: "left",
+            button_type: "button",
+            aria_label: None,
+            onclick: None,
+        }
+    }
+}
+
+impl Component for Button {
+    rite render(self) -> VNode {
+        ≔ node = h("button")
+            .class("btn")
+            .class("btn-" + self.variant)
+            .class("btn-" + self.size)
+            .attr("type", self.button_type);
+
+        // Disabled state
+        ⌥ self.disabled ∨ self.loading {
+            yay => {
+                node = node
+                    .class("btn-disabled")
+                    .attr("disabled", "true")
+                    .attr("aria-disabled", "true");
+            },
+            nay => {}
+        }
+
+        // Loading state
+        ⌥ self.loading {
+            yay => {
+                node = node
+                    .attr("aria-busy", "true")
+                    .child(
+                        h("span")
+                            .class("btn-spinner")
+                            .attr("aria-hidden", "true")
+                            .build()
+                    );
+            },
+            nay => {}
+        }
+
+        // Icon (left position)
+        ⌥ self.icon {
+            Some(icon_name) => {
+                ⌥ self.icon_position == "left" {
+                    yay => {
+                        node = node.child(
+                            h("span")
+                                .class("btn-icon")
+                                .attr("data-icon", icon_name)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Label
+        ⌥ self.label {
+            Some(text) => {
+                node = node.text(text);
+            },
+            None => {}
+        }
+
+        // Icon (right position)
+        ⌥ self.icon {
+            Some(icon_name) => {
+                ⌥ self.icon_position == "right" {
+                    yay => {
+                        node = node.child(
+                            h("span")
+                                .class("btn-icon")
+                                .attr("data-icon", icon_name)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Aria label (for icon-only buttons)
+        ⌥ self.aria_label {
+            Some(label) => {
+                node = node.attr("aria-label", label);
+            },
+            None => {}
+        }
+
+        // Click handler
+        ⌥ self.onclick {
+            Some(handler) => {
+                node = node.node.on("click", handler);
+            },
+            None => {}
+        }
+
+        node.build()
+    }
+}

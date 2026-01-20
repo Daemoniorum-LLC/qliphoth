@@ -1,0 +1,209 @@
+// Qliphoth Component: Header
+// Top navigation bar with branding and navigation
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Header component properties
+struct Header {
+    logo: Option<String>,
+    logo_alt: Option<String>,
+    logo_href: Option<String>,
+    brand: Option<String>,
+    brand_href: Option<String>,
+    variant: String,        // solid, transparent, blur, bordered
+    size: String,           // sm, md, lg
+    position: String,       // static, fixed, absolute
+    sticky: Bool,
+    theme: String,          // light, dark
+    mobile_menu: Bool,
+    search: Bool,
+    search_placeholder: Option<String>,
+    user: Option<UserMenuConfig>,
+    actions: List<ActionConfig>,
+    aria_label: Option<String>,
+    onsearch: Option<Fn(String)>,
+    children: List<VNode>,
+}
+
+struct UserMenuConfig {
+    name: String,
+    avatar: Option<String>,
+    menu: List<MenuItemConfig>,
+}
+
+struct ActionConfig {
+    label: String,
+    href: Option<String>,
+    variant: String,
+    onclick: Option<Fn()>,
+}
+
+struct MenuItemConfig {
+    label: Option<String>,
+    href: Option<String>,
+    divider: Bool,
+    onclick: Option<Fn()>,
+}
+
+impl Header {
+    rite new() -> Header {
+        Header {
+            logo: None,
+            logo_alt: None,
+            logo_href: Some("/"),
+            brand: None,
+            brand_href: Some("/"),
+            variant: "solid",
+            size: "md",
+            position: "static",
+            sticky: nay,
+            theme: "light",
+            mobile_menu: nay,
+            search: nay,
+            search_placeholder: Some("Search..."),
+            user: None,
+            actions: List·new(),
+            aria_label: None,
+            onsearch: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for Header {
+    rite render(self) -> VNode {
+        ≔ node = h("header")
+            .class("header")
+            .class("header-" + self.variant)
+            .class("header-" + self.size)
+            .class("header-" + self.position)
+            .class("header-" + self.theme);
+
+        // Sticky
+        ⌥ self.sticky {
+            yay => { node = node.class("header-sticky"); },
+            nay => {}
+        }
+
+        // Fixed position
+        ⌥ self.position == "fixed" {
+            yay => { node = node.class("header-fixed"); },
+            nay => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { node = node.attr("aria-label", label); },
+            None => {}
+        }
+
+        // Logo
+        ⌥ self.logo {
+            Some(logo_src) => {
+                ≔ logo_link = h("a")
+                    .class("header-logo")
+                    .attr("href", self.logo_href.unwrap_or("/"));
+
+                logo_link = logo_link.child(
+                    h("img")
+                        .attr("src", logo_src)
+                        .attr("alt", self.logo_alt.unwrap_or("Logo"))
+                        .build()
+                );
+
+                node = node.child(logo_link.build());
+            },
+            None => {}
+        }
+
+        // Text brand
+        ⌥ self.brand {
+            Some(brand_text) => {
+                node = node.child(
+                    h("a")
+                        .class("header-brand")
+                        .attr("href", self.brand_href.unwrap_or("/"))
+                        .text(brand_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Navigation children
+        ⌥ self.children.len() > 0 {
+            yay => {
+                ≔ nav_wrapper = h("div").class("header-nav");
+                nav_wrapper = nav_wrapper.children(self.children);
+                node = node.child(nav_wrapper.build());
+            },
+            nay => {}
+        }
+
+        // Search
+        ⌥ self.search {
+            yay => {
+                ≔ search_node = h("div").class("header-search");
+                search_node = search_node.child(
+                    h("input")
+                        .attr("type", "search")
+                        .attr("placeholder", self.search_placeholder.unwrap_or("Search..."))
+                        .build()
+                );
+                node = node.child(search_node.build());
+            },
+            nay => {}
+        }
+
+        // Actions
+        ⌥ self.actions.len() > 0 {
+            yay => {
+                ≔ actions_node = h("div").class("header-actions");
+                ⌽ action ∈ self.actions {
+                    ≔ btn = h("a")
+                        .class("btn")
+                        .class("btn-" + action.variant)
+                        .text(action.label);
+
+                    ⌥ action.href {
+                        Some(href) => { btn = btn.attr("href", href); },
+                        None => {}
+                    }
+
+                    actions_node = actions_node.child(btn.build());
+                }
+                node = node.child(actions_node.build());
+            },
+            nay => {}
+        }
+
+        // Mobile menu toggle
+        ⌥ self.mobile_menu {
+            yay => {
+                node = node.child(
+                    h("button")
+                        .class("header-mobile-toggle")
+                        .attr("type", "button")
+                        .attr("aria-label", "Toggle navigation menu")
+                        .attr("aria-expanded", "false")
+                        .build()
+                );
+            },
+            nay => {}
+        }
+
+        // User menu
+        ⌥ self.user {
+            Some(user_config) => {
+                ≔ user_menu = h("div").class("header-user-menu");
+                // Add user avatar and dropdown
+                node = node.child(user_menu.build());
+            },
+            None => {}
+        }
+
+        node.build()
+    }
+}

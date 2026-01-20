@@ -1,0 +1,273 @@
+// Qliphoth Component: Nav
+// Navigation menus with dropdown support
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// NavItem for navigation links
+struct NavItem {
+    label: Option<String>,
+    href: Option<String>,
+    icon: Option<String>,
+    badge: Option<i32>,
+    active: Bool,
+    disabled: Bool,
+    divider: Bool,
+    section: Option<String>,
+    children: List<NavItem>,
+}
+
+impl NavItem {
+    rite new() -> NavItem {
+        NavItem {
+            label: None,
+            href: None,
+            icon: None,
+            badge: None,
+            active: nay,
+            disabled: nay,
+            divider: nay,
+            section: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for NavItem {
+    rite render(self) -> VNode {
+        // Divider
+        ⌥ self.divider {
+            yay => {
+                ↩ h("hr").class("nav-divider").build()
+            },
+            nay => {}
+        }
+
+        // Section label
+        ⌥ self.section {
+            Some(section_text) => {
+                ↩ h("span")
+                    .class("nav-section-label")
+                    .text(section_text)
+                    .build()
+            },
+            None => {}
+        }
+
+        ≔ node = h("a")
+            .class("nav-item");
+
+        // Active state
+        ⌥ self.active {
+            yay => {
+                node = node
+                    .class("nav-item-active")
+                    .attr("aria-current", "page");
+            },
+            nay => {}
+        }
+
+        // Disabled state
+        ⌥ self.disabled {
+            yay => {
+                node = node
+                    .class("nav-item-disabled")
+                    .attr("aria-disabled", "true");
+            },
+            nay => {}
+        }
+
+        // Href
+        ⌥ self.href {
+            Some(href) => {
+                ⌥ self.disabled {
+                    nay => { node = node.attr("href", href); },
+                    yay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Icon
+        ⌥ self.icon {
+            Some(icon_name) => {
+                node = node.child(
+                    h("span")
+                        .class("nav-item-icon")
+                        .attr("data-icon", icon_name)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Label
+        ⌥ self.label {
+            Some(label_text) => {
+                node = node.text(label_text);
+            },
+            None => {}
+        }
+
+        // Badge
+        ⌥ self.badge {
+            Some(badge_count) => {
+                node = node.child(
+                    h("span")
+                        .class("nav-item-badge")
+                        .text(badge_count.to_string())
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Nested children
+        ⌥ self.children.len() > 0 {
+            yay => {
+                ≔ nested = h("div").class("nav-nested");
+                ⌽ child ∈ self.children {
+                    nested = nested.child(child.render());
+                }
+                node = node.child(nested.build());
+            },
+            nay => {}
+        }
+
+        node.build()
+    }
+}
+
+/// NavDropdown for dropdown menus
+struct NavDropdown {
+    label: String,
+    mega: Bool,
+    items: List<NavItem>,
+    columns: List<NavDropdownColumn>,
+}
+
+struct NavDropdownColumn {
+    title: String,
+    items: List<NavItem>,
+}
+
+impl NavDropdown {
+    rite new() -> NavDropdown {
+        NavDropdown {
+            label: "",
+            mega: nay,
+            items: List·new(),
+            columns: List·new(),
+        }
+    }
+}
+
+impl Component for NavDropdown {
+    rite render(self) -> VNode {
+        ≔ node = h("div").class("nav-dropdown");
+
+        ⌥ self.mega {
+            yay => { node = node.class("nav-dropdown-mega"); },
+            nay => {}
+        }
+
+        // Trigger button
+        node = node.child(
+            h("button")
+                .class("nav-dropdown-trigger")
+                .attr("type", "button")
+                .attr("aria-haspopup", "true")
+                .attr("aria-expanded", "false")
+                .text(self.label)
+                .build()
+        );
+
+        // Dropdown menu
+        ≔ menu = h("div").class("nav-dropdown-menu");
+
+        // Regular items
+        ⌽ item ∈ self.items {
+            menu = menu.child(item.render());
+        }
+
+        // Mega menu columns
+        ⌽ column ∈ self.columns {
+            ≔ col = h("div").class("nav-dropdown-column");
+            col = col.child(
+                h("h4")
+                    .class("nav-dropdown-column-title")
+                    .text(column.title)
+                    .build()
+            );
+
+            ⌽ item ∈ column.items {
+                col = col.child(item.render());
+            }
+
+            menu = menu.child(col.build());
+        }
+
+        node = node.child(menu.build());
+        node.build()
+    }
+}
+
+/// Nav component properties
+struct Nav {
+    variant: String,        // horizontal, vertical, pills, tabs, underline
+    size: String,           // sm, md, lg
+    alignment: String,      // start, center, end, between
+    collapsible: Bool,
+    collapsed: Bool,
+    aria_label: Option<String>,
+    items: List<VNode>,
+}
+
+impl Nav {
+    rite new() -> Nav {
+        Nav {
+            variant: "horizontal",
+            size: "md",
+            alignment: "start",
+            collapsible: nay,
+            collapsed: nay,
+            aria_label: None,
+            items: List·new(),
+        }
+    }
+}
+
+impl Component for Nav {
+    rite render(self) -> VNode {
+        ≔ node = h("nav")
+            .class("nav")
+            .class("nav-" + self.variant)
+            .class("nav-" + self.size)
+            .class("nav-align-" + self.alignment)
+            .attr("role", "navigation");
+
+        // Collapsible
+        ⌥ self.collapsible {
+            yay => {
+                node = node.class("nav-collapsible");
+                ⌥ self.collapsed {
+                    yay => { node = node.class("nav-collapsed"); },
+                    nay => {}
+                }
+            },
+            nay => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { node = node.attr("aria-label", label); },
+            None => {}
+        }
+
+        // Items
+        node = node.children(self.items);
+
+        node.build()
+    }
+}
