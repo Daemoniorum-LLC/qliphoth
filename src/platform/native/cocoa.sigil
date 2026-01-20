@@ -1,0 +1,1519 @@
+// Cocoa Platform Module
+// macOS native GUI backend via AppKit/Cocoa API
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::{Event, EventType};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
+use super::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align};
+
+// ============================================================================
+// Cocoa FFI Declarations
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+#[link("AppKit", framework)]
+#[link("Foundation", framework)]
+#[link("objc")]
+extern "C" {
+    // Objective-C runtime
+    rite objc_getClass(name: *c_char) → *void;
+    rite objc_allocateClassPair(superclass: *void, name: *c_char, extraBytes: usize) → *void;
+    rite objc_registerClassPair(cls: *void);
+    rite class_addMethod(cls: *void, name: *void, imp: *void, types: *c_char) → bool;
+    rite object_getClass(obj: *void) → *void;
+
+    // Selectors
+    rite sel_registerName(name: *c_char) → *void;
+    rite sel_getName(sel: *void) → *c_char;
+
+    // Message sending
+    rite objc_msgSend(obj: *void, sel: *void, ...) → *void;
+    rite objc_msgSend_stret(ret: *void, obj: *void, sel: *void, ...);
+    rite objc_msgSend_fpret(obj: *void, sel: *void, ...) → f64;
+
+    // Property access
+    rite objc_getAssociatedObject(obj: *void, key: *void) → *void;
+    rite objc_setAssociatedObject(obj: *void, key: *void, value: *void, policy: u32);
+
+    // Memory
+    rite malloc(size: usize) → *void;
+    rite free(ptr: *void);
+
+    // Core Foundation
+    rite CFStringCreateWithCString(allocator: *void, cStr: *c_char, encoding: u32) → *void;
+    rite CFRelease(cf: *void);
+}
+
+// ============================================================================
+// Objective-C Constants
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+const OBJC_ASSOCIATION_RETAIN_NONATOMIC: u32 = 1;
+const kCFStringEncodingUTF8: u32 = 0x08000100;
+
+// NSWindow style masks
+const NSWindowStyleMaskTitled: u64 = 1 << 0;
+const NSWindowStyleMaskClosable: u64 = 1 << 1;
+const NSWindowStyleMaskMiniaturizable: u64 = 1 << 2;
+const NSWindowStyleMaskResizable: u64 = 1 << 3;
+const NSWindowStyleMaskFullSizeContentView: u64 = 1 << 15;
+
+// NSBackingStoreType
+const NSBackingStoreBuffered: u64 = 2;
+
+// NSStackView orientation
+const NSUserInterfaceLayoutOrientationHorizontal: i64 = 0;
+const NSUserInterfaceLayoutOrientationVertical: i64 = 1;
+
+// NSStackView distribution
+const NSStackViewDistributionFillEqually: i64 = 1;
+
+// NSProgressIndicator style
+const NSProgressIndicatorStyleBar: u64 = 0;
+const NSProgressIndicatorStyleSpinning: u64 = 1;
+
+// NSButton types
+const NSButtonTypeMomentaryPushIn: u64 = 7;
+const NSButtonTypeSwitch: u64 = 3;
+
+// NSTextAlignment
+const NSTextAlignmentLeft: u64 = 0;
+const NSTextAlignmentCenter: u64 = 1;
+const NSTextAlignmentRight: u64 = 2;
+
+// Layout priorities
+const NSLayoutPriorityRequired: f32 = 1000.0;
+const NSLayoutPriorityDefaultHigh: f32 = 750.0;
+const NSLayoutPriorityDefaultLow: f32 = 250.0;
+
+// ============================================================================
+// NSRect Structure
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+sigil NSPoint {
+    x: f64,
+    y: f64
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+sigil NSSize {
+    width: f64,
+    height: f64
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+sigil NSRect {
+    origin: NSPoint,
+    size: NSSize
+}
+
+⊢ NSRect {
+    rite new(x: f64, y: f64, width: f64, height: f64) → This! {
+        NSRect {
+            origin: NSPoint { x, y },
+            size: NSSize { width, height }
+        }
+    }
+
+    rite zero() → This! {
+        NSRect::new(0.0, 0.0, 0.0, 0.0)
+    }
+}
+
+// ============================================================================
+// Objective-C Runtime Helpers
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+sigil ObjC;
+
+⊢ ObjC {
+    /// Get class by name
+    rite class(name: &str) → *void! {
+        unsafe {
+            ≔ cname! = name.as_ptr() as *c_char;
+            objc_getClass(cname)
+        }
+    }
+
+    /// Get selector by name
+    rite sel(name: &str) → *void! {
+        unsafe {
+            ≔ cname! = name.as_ptr() as *c_char;
+            sel_registerName(cname)
+        }
+    }
+
+    /// Create NSString from Rust string
+    rite string(s: &str) → *void! {
+        unsafe {
+            ≔ cls = ObjC::class("NSString\0");
+            ≔ sel_alloc = ObjC::sel("alloc\0");
+            ≔ sel_init = ObjC::sel("initWithUTF8String:\0");
+
+            ≔ obj = objc_msgSend(cls, sel_alloc);
+            objc_msgSend(obj, sel_init, s.as_ptr() as *c_char)
+        }
+    }
+
+    /// Send message with no args, returns id
+    rite msg0(obj: *void, sel_name: &str) → *void! {
+        unsafe {
+            ≔ sel = ObjC::sel(sel_name);
+            objc_msgSend(obj, sel)
+        }
+    }
+
+    /// Send message with one pointer arg
+    rite msg1(obj: *void, sel_name: &str, arg1: *void) → *void! {
+        unsafe {
+            ≔ sel = ObjC::sel(sel_name);
+            objc_msgSend(obj, sel, arg1)
+        }
+    }
+
+    /// Send message with one i64 arg
+    rite msg1_i64(obj: *void, sel_name: &str, arg1: i64) → *void! {
+        unsafe {
+            ≔ sel = ObjC::sel(sel_name);
+            objc_msgSend(obj, sel, arg1)
+        }
+    }
+
+    /// Send message with one f64 arg
+    rite msg1_f64(obj: *void, sel_name: &str, arg1: f64) → *void! {
+        unsafe {
+            ≔ sel = ObjC::sel(sel_name);
+            objc_msgSend(obj, sel, arg1)
+        }
+    }
+
+    /// Send message with one bool arg
+    rite msg1_bool(obj: *void, sel_name: &str, arg1: bool) → *void! {
+        unsafe {
+            ≔ sel = ObjC::sel(sel_name);
+            objc_msgSend(obj, sel, arg1 as i32)
+        }
+    }
+
+    /// Send message with two pointer args
+    rite msg2(obj: *void, sel_name: &str, arg1: *void, arg2: *void) → *void! {
+        unsafe {
+            ≔ sel = ObjC::sel(sel_name);
+            objc_msgSend(obj, sel, arg1, arg2)
+        }
+    }
+
+    /// Alloc + init pattern
+    rite alloc_init(class_name: &str) → *void! {
+        unsafe {
+            ≔ cls = ObjC::class(class_name);
+            ≔ obj = ObjC::msg0(cls, "alloc\0");
+            ObjC::msg0(obj, "init\0")
+        }
+    }
+}
+
+// ============================================================================
+// Layout Info for Auto Layout
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+sigil LayoutInfo {
+    hexpand: bool,
+    vexpand: bool,
+    halign: Align,
+    valign: Align,
+    margin_top: i32,
+    margin_bottom: i32,
+    margin_start: i32,
+    margin_end: i32,
+    orientation: Orientation
+}
+
+⊢ LayoutInfo {
+    rite default() → This! {
+        LayoutInfo {
+            hexpand: ⊥,
+            vexpand: ⊥,
+            halign: Align::Fill,
+            valign: Align::Fill,
+            margin_top: 0,
+            margin_bottom: 0,
+            margin_start: 0,
+            margin_end: 0,
+            orientation: Orientation::Vertical
+        }
+    }
+}
+
+// ============================================================================
+// Cocoa Platform Implementation
+// ============================================================================
+
+/// Global platform instance pointer for target-action callbacks
+#[cfg(target_os = "macos")]
+static vary PLATFORM_INSTANCE: *void = 0 as *void;
+
+/// Target-action callback handler
+#[cfg(target_os = "macos")]
+extern "C" rite action_handler(this: *void, sel: *void, sender: *void) {
+    unsafe {
+        ⎇ PLATFORM_INSTANCE as usize != 0 {
+            ≔ platform = &*(PLATFORM_INSTANCE as *CocoaPlatform);
+            platform.handle_action(sender);
+        }
+    }
+}
+
+/// Cocoa Platform for macOS native GUI
+#[cfg(target_os = "macos")]
+☉ sigil CocoaPlatform {
+    initialized: bool!,
+    app: *void!,
+    main_window: *void!,
+    event_handlers: HashMap<u64, fn()>!,
+    layout_info: HashMap<usize, LayoutInfo>!,
+    next_handler_id: u64!,
+    widget_to_handler: HashMap<usize, u64>!,
+    timer_map: HashMap<u64, *void>!,
+    action_target: *void!
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform {
+    ☉ rite new() → This! {
+        CocoaPlatform {
+            initialized: ⊥,
+            app: 0 as *void,
+            main_window: 0 as *void,
+            event_handlers: HashMap::new(),
+            layout_info: HashMap::new(),
+            next_handler_id: 1000,
+            widget_to_handler: HashMap::new(),
+            timer_map: HashMap::new(),
+            action_target: 0 as *void
+        }
+    }
+
+    /// Handle target-action callback
+    rite handle_action(&this, sender: *void) {
+        ⎇ let Some(handler_id) = this.widget_to_handler.get(&(sender as usize)) {
+            ⎇ let Some(callback) = this.event_handlers.get(handler_id) {
+                callback();
+            }
+        }
+    }
+
+    /// Get next handler ID
+    rite get_next_handler_id(&vary this) → u64! {
+        ≔ id! = this.next_handler_id;
+        this.next_handler_id = this.next_handler_id + 1;
+        id
+    }
+
+    /// Create the action target object
+    rite create_action_target(&vary this) → *void! {
+        unsafe {
+            // Create a custom class for handling actions
+            ≔ superclass = ObjC::class("NSObject\0");
+            ≔ cls = objc_allocateClassPair(superclass, "QliphothActionTarget\0".as_ptr() as *c_char, 0);
+
+            ⎇ cls as usize != 0 {
+                // Add the action: method
+                ≔ sel = ObjC::sel("action:\0");
+                ≔ types = "v@:@\0".as_ptr() as *c_char; // void, self, SEL, id
+                class_addMethod(cls, sel, action_handler as *void, types);
+                objc_registerClassPair(cls);
+            }
+
+            // Alloc and init an instance
+            ≔ target_cls = ObjC::class("QliphothActionTarget\0");
+            ⎇ target_cls as usize == 0 {
+                // Class already registered, use it
+                target_cls = ObjC::class("QliphothActionTarget\0");
+            }
+            ≔ target = ObjC::msg0(target_cls, "alloc\0");
+            ObjC::msg0(target, "init\0")
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform : NativeApp {
+    ☉ rite init(&vary this) → bool! {
+        ⎇ this.initialized {
+            ret ⊤;
+        }
+
+        unsafe {
+            // Set global instance
+            PLATFORM_INSTANCE = this as *void;
+
+            // Get shared application
+            ≔ app_class = ObjC::class("NSApplication\0");
+            this.app = ObjC::msg0(app_class, "sharedApplication\0");
+
+            // Set activation policy (regular app with dock icon)
+            ≔ sel = ObjC::sel("setActivationPolicy:\0");
+            objc_msgSend(this.app, sel, 0_i64); // NSApplicationActivationPolicyRegular
+
+            // Create action target
+            this.action_target = this.create_action_target();
+
+            this.initialized = ⊤;
+        }
+        ⊤
+    }
+
+    ☉ rite run(&this) {
+        unsafe {
+            // Activate the app
+            ObjC::msg1_bool(this.app, "activateIgnoringOtherApps:\0", ⊤);
+            // Run the event loop
+            ObjC::msg0(this.app, "run\0");
+        }
+    }
+
+    ☉ rite quit(&this) {
+        unsafe {
+            ObjC::msg1(this.app, "terminate:\0", 0 as *void);
+        }
+    }
+
+    ☉ rite create_window(&vary this, title: !String, width: !i32, height: !i32) → NativeWidget! {
+        unsafe {
+            // Create window frame
+            ≔ frame! = NSRect::new(100.0, 100.0, width as f64, height as f64);
+
+            // Create window: [[NSWindow alloc] initWithContentRect:styleMask:backing:defer:]
+            ≔ window_class = ObjC::class("NSWindow\0");
+            ≔ window = ObjC::msg0(window_class, "alloc\0");
+
+            ≔ style_mask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                           NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+
+            ≔ sel = ObjC::sel("initWithContentRect:styleMask:backing:defer:\0");
+            window = objc_msgSend(window, sel, frame, style_mask, NSBackingStoreBuffered, ⊥ as i32);
+
+            ⎇ window as usize != 0 {
+                // Set title
+                ≔ ns_title = ObjC::string(&title);
+                ObjC::msg1(window, "setTitle:\0", ns_title);
+
+                // Center window
+                ObjC::msg0(window, "center\0");
+
+                // Store as main window
+                this.main_window = window;
+                this.layout_info.insert(window as usize, LayoutInfo::default());
+
+                NativeWidget::new(window as usize, WidgetType::Window)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite show(&this, widget: &NativeWidget) {
+        unsafe {
+            ⌥ widget.widget_type {
+                WidgetType::Window => {
+                    ObjC::msg1(widget.handle as *void, "makeKeyAndOrderFront:\0", 0 as *void);
+                }
+                _ => {
+                    ObjC::msg1_bool(widget.handle as *void, "setHidden:\0", ⊥);
+                }
+            }
+        }
+    }
+
+    ☉ rite hide(&this, widget: &NativeWidget) {
+        unsafe {
+            ⌥ widget.widget_type {
+                WidgetType::Window => {
+                    ObjC::msg1(widget.handle as *void, "orderOut:\0", 0 as *void);
+                }
+                _ => {
+                    ObjC::msg1_bool(widget.handle as *void, "setHidden:\0", ⊤);
+                }
+            }
+        }
+    }
+
+    ☉ rite set_property(&this, widget: &NativeWidget, name: &str, value: &str) {
+        unsafe {
+            ⌥ (widget.widget_type, name) {
+                (WidgetType::Label, "text") | (_, "text") | (WidgetType::Button, "label") => {
+                    ≔ ns_value = ObjC::string(value);
+                    ⌥ widget.widget_type {
+                        WidgetType::Button => {
+                            ObjC::msg1(widget.handle as *void, "setTitle:\0", ns_value);
+                        }
+                        _ => {
+                            ObjC::msg1(widget.handle as *void, "setStringValue:\0", ns_value);
+                        }
+                    }
+                }
+                (WidgetType::ProgressBar, "fraction") => {
+                    ≔ fraction! = value.parse::<f64>().unwrap_or(0.0);
+                    ObjC::msg1_f64(widget.handle as *void, "setDoubleValue:\0", fraction * 100.0);
+                }
+                (WidgetType::Scale, "value") => {
+                    ≔ val! = value.parse::<f64>().unwrap_or(0.0);
+                    ObjC::msg1_f64(widget.handle as *void, "setDoubleValue:\0", val);
+                }
+                (WidgetType::CheckButton, "active") | (WidgetType::Switch, "active") => {
+                    ≔ checked! = value == "true" || value == "1";
+                    ObjC::msg1_i64(widget.handle as *void, "setState:\0", ⎇ checked { 1 } ⎉ { 0 });
+                }
+                (_, "visible") => {
+                    ≔ visible! = value == "true" || value == "1";
+                    ObjC::msg1_bool(widget.handle as *void, "setHidden:\0", ¬visible);
+                }
+                (_, "sensitive") | (_, "enabled") => {
+                    ≔ enabled! = value == "true" || value == "1";
+                    ObjC::msg1_bool(widget.handle as *void, "setEnabled:\0", enabled);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    ☉ rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64) {
+        unsafe {
+            // Set target and action for controls
+            ObjC::msg1(widget.handle as *void, "setTarget:\0", this.action_target);
+            ≔ action_sel = ObjC::sel("action:\0");
+            ObjC::msg1(widget.handle as *void, "setAction:\0", action_sel);
+
+            // Map widget to handler
+            this.widget_to_handler.insert(widget.handle, handler_id);
+        }
+    }
+
+    ☉ rite disconnect(&vary this, widget: &NativeWidget, handler_id: u64) {
+        unsafe {
+            ObjC::msg1(widget.handle as *void, "setTarget:\0", 0 as *void);
+            ObjC::msg1(widget.handle as *void, "setAction:\0", 0 as *void);
+        }
+        this.widget_to_handler.remove(&widget.handle);
+        this.event_handlers.remove(&handler_id);
+    }
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform : NativeWidgetBuilder {
+    ☉ rite create_box(&vary this, orientation: Orientation) → NativeWidget! {
+        unsafe {
+            ≔ stack = ObjC::alloc_init("NSStackView\0");
+
+            ⎇ stack as usize != 0 {
+                // Set orientation
+                ≔ ns_orientation! = ⌥ orientation {
+                    Orientation::Horizontal => NSUserInterfaceLayoutOrientationHorizontal,
+                    Orientation::Vertical => NSUserInterfaceLayoutOrientationVertical
+                };
+                ObjC::msg1_i64(stack, "setOrientation:\0", ns_orientation);
+
+                // Set distribution to fill equally
+                ObjC::msg1_i64(stack, "setDistribution:\0", NSStackViewDistributionFillEqually);
+
+                // Set default spacing
+                ObjC::msg1_f64(stack, "setSpacing:\0", 8.0);
+
+                vary info! = LayoutInfo::default();
+                info.orientation = orientation;
+                this.layout_info.insert(stack as usize, info);
+
+                NativeWidget::new(stack as usize, WidgetType::Box)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_button(&vary this, label: &str) → NativeWidget! {
+        unsafe {
+            // [NSButton buttonWithTitle:target:action:]
+            ≔ btn_class = ObjC::class("NSButton\0");
+            ≔ ns_title = ObjC::string(label);
+            ≔ sel = ObjC::sel("buttonWithTitle:target:action:\0");
+            ≔ button = objc_msgSend(btn_class, sel, ns_title, 0 as *void, 0 as *void);
+
+            ⎇ button as usize != 0 {
+                // Set button type
+                ObjC::msg1_i64(button, "setButtonType:\0", NSButtonTypeMomentaryPushIn as i64);
+
+                this.layout_info.insert(button as usize, LayoutInfo::default());
+                NativeWidget::new(button as usize, WidgetType::Button)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_label(&vary this, text: &str) → NativeWidget! {
+        unsafe {
+            // [NSTextField labelWithString:]
+            ≔ tf_class = ObjC::class("NSTextField\0");
+            ≔ ns_text = ObjC::string(text);
+            ≔ sel = ObjC::sel("labelWithString:\0");
+            ≔ label = objc_msgSend(tf_class, sel, ns_text);
+
+            ⎇ label as usize != 0 {
+                this.layout_info.insert(label as usize, LayoutInfo::default());
+                NativeWidget::new(label as usize, WidgetType::Label)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_entry(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ entry = ObjC::alloc_init("NSTextField\0");
+
+            ⎇ entry as usize != 0 {
+                // Make it editable
+                ObjC::msg1_bool(entry, "setEditable:\0", ⊤);
+                ObjC::msg1_bool(entry, "setBezeled:\0", ⊤);
+                ObjC::msg1_bool(entry, "setSelectable:\0", ⊤);
+
+                this.layout_info.insert(entry as usize, LayoutInfo::default());
+                NativeWidget::new(entry as usize, WidgetType::Entry)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_text_view(&vary this) → NativeWidget! {
+        unsafe {
+            // Create scroll view with text view
+            ≔ scroll = ObjC::alloc_init("NSScrollView\0");
+            ≔ text_view = ObjC::alloc_init("NSTextView\0");
+
+            ⎇ text_view as usize != 0 && scroll as usize != 0 {
+                // Configure text view
+                ObjC::msg1_bool(text_view, "setEditable:\0", ⊤);
+                ObjC::msg1_bool(text_view, "setSelectable:\0", ⊤);
+                ObjC::msg1_bool(text_view, "setRichText:\0", ⊥);
+
+                // Set text view as document view
+                ObjC::msg1(scroll, "setDocumentView:\0", text_view);
+                ObjC::msg1_bool(scroll, "setHasVerticalScroller:\0", ⊤);
+                ObjC::msg1_bool(scroll, "setHasHorizontalScroller:\0", ⊥);
+
+                this.layout_info.insert(scroll as usize, LayoutInfo::default());
+                NativeWidget::new(scroll as usize, WidgetType::TextView)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_scrolled(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ scroll = ObjC::alloc_init("NSScrollView\0");
+
+            ⎇ scroll as usize != 0 {
+                ObjC::msg1_bool(scroll, "setHasVerticalScroller:\0", ⊤);
+                ObjC::msg1_bool(scroll, "setHasHorizontalScroller:\0", ⊤);
+                ObjC::msg1_bool(scroll, "setAutohidesScrollers:\0", ⊤);
+
+                this.layout_info.insert(scroll as usize, LayoutInfo::default());
+                NativeWidget::new(scroll as usize, WidgetType::ScrolledWindow)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_list_box(&vary this) → NativeWidget! {
+        unsafe {
+            // Use NSTableView with single column
+            ≔ scroll = ObjC::alloc_init("NSScrollView\0");
+            ≔ table = ObjC::alloc_init("NSTableView\0");
+
+            ⎇ table as usize != 0 && scroll as usize != 0 {
+                // Add a single column
+                ≔ column = ObjC::alloc_init("NSTableColumn\0");
+                ≔ col_id = ObjC::string("items\0");
+                ObjC::msg1(column, "setIdentifier:\0", col_id);
+                ObjC::msg1(table, "addTableColumn:\0", column);
+
+                // Configure table
+                ObjC::msg1_bool(table, "setHeaderView:\0", 0 as *void); // No header
+
+                // Set table as document view
+                ObjC::msg1(scroll, "setDocumentView:\0", table);
+                ObjC::msg1_bool(scroll, "setHasVerticalScroller:\0", ⊤);
+
+                this.layout_info.insert(scroll as usize, LayoutInfo::default());
+                NativeWidget::new(scroll as usize, WidgetType::ListBox)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_grid(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ grid = ObjC::alloc_init("NSGridView\0");
+
+            ⎇ grid as usize != 0 {
+                this.layout_info.insert(grid as usize, LayoutInfo::default());
+                NativeWidget::new(grid as usize, WidgetType::Grid)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_stack(&vary this) → NativeWidget! {
+        unsafe {
+            // Use NSTabView for stack-like behavior
+            ≔ tab = ObjC::alloc_init("NSTabView\0");
+
+            ⎇ tab as usize != 0 {
+                // Hide tab buttons for stack behavior
+                ObjC::msg1_i64(tab, "setTabViewType:\0", 4); // NSNoTabsNoBorder
+
+                this.layout_info.insert(tab as usize, LayoutInfo::default());
+                NativeWidget::new(tab as usize, WidgetType::Stack)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_header_bar(&vary this) → NativeWidget! {
+        unsafe {
+            // Create horizontal stack view for header
+            ≔ stack = ObjC::alloc_init("NSStackView\0");
+
+            ⎇ stack as usize != 0 {
+                ObjC::msg1_i64(stack, "setOrientation:\0", NSUserInterfaceLayoutOrientationHorizontal);
+                ObjC::msg1_f64(stack, "setSpacing:\0", 8.0);
+
+                vary info! = LayoutInfo::default();
+                info.orientation = Orientation::Horizontal;
+                this.layout_info.insert(stack as usize, info);
+
+                NativeWidget::new(stack as usize, WidgetType::HeaderBar)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_image(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ image_view = ObjC::alloc_init("NSImageView\0");
+
+            ⎇ image_view as usize != 0 {
+                this.layout_info.insert(image_view as usize, LayoutInfo::default());
+                NativeWidget::new(image_view as usize, WidgetType::Image)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_spinner(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ spinner = ObjC::alloc_init("NSProgressIndicator\0");
+
+            ⎇ spinner as usize != 0 {
+                // Set spinning style
+                ObjC::msg1_i64(spinner, "setStyle:\0", NSProgressIndicatorStyleSpinning as i64);
+                ObjC::msg1_bool(spinner, "setIndeterminate:\0", ⊤);
+                ObjC::msg0(spinner, "startAnimation:\0");
+
+                this.layout_info.insert(spinner as usize, LayoutInfo::default());
+                NativeWidget::new(spinner as usize, WidgetType::Spinner)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_progress_bar(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ progress = ObjC::alloc_init("NSProgressIndicator\0");
+
+            ⎇ progress as usize != 0 {
+                // Set bar style
+                ObjC::msg1_i64(progress, "setStyle:\0", NSProgressIndicatorStyleBar as i64);
+                ObjC::msg1_bool(progress, "setIndeterminate:\0", ⊥);
+                ObjC::msg1_f64(progress, "setMinValue:\0", 0.0);
+                ObjC::msg1_f64(progress, "setMaxValue:\0", 100.0);
+
+                this.layout_info.insert(progress as usize, LayoutInfo::default());
+                NativeWidget::new(progress as usize, WidgetType::ProgressBar)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_scale(&vary this, orientation: Orientation, min: f64, max: f64) → NativeWidget! {
+        unsafe {
+            ≔ slider = ObjC::alloc_init("NSSlider\0");
+
+            ⎇ slider as usize != 0 {
+                ObjC::msg1_f64(slider, "setMinValue:\0", min);
+                ObjC::msg1_f64(slider, "setMaxValue:\0", max);
+
+                // Set orientation (vertical if needed)
+                ⎇ matches!(orientation, Orientation::Vertical) {
+                    ObjC::msg1_bool(slider, "setVertical:\0", ⊤);
+                }
+
+                this.layout_info.insert(slider as usize, LayoutInfo::default());
+                NativeWidget::new(slider as usize, WidgetType::Scale)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_switch(&vary this) → NativeWidget! {
+        unsafe {
+            // NSSwitch available in 10.15+, fallback to checkbox button
+            ≔ switch_class = ObjC::class("NSSwitch\0");
+
+            ≔ switch! = ⎇ switch_class as usize != 0 {
+                ObjC::alloc_init("NSSwitch\0")
+            } ⎉ {
+                // Fallback to checkbox button
+                ≔ btn = ObjC::alloc_init("NSButton\0");
+                ObjC::msg1_i64(btn, "setButtonType:\0", NSButtonTypeSwitch as i64);
+                btn
+            };
+
+            ⎇ switch as usize != 0 {
+                this.layout_info.insert(switch as usize, LayoutInfo::default());
+                NativeWidget::new(switch as usize, WidgetType::Switch)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_check_button(&vary this, label: &str) → NativeWidget! {
+        unsafe {
+            // [NSButton checkboxWithTitle:target:action:]
+            ≔ btn_class = ObjC::class("NSButton\0");
+            ≔ ns_title = ObjC::string(label);
+            ≔ sel = ObjC::sel("checkboxWithTitle:target:action:\0");
+            ≔ checkbox = objc_msgSend(btn_class, sel, ns_title, 0 as *void, 0 as *void);
+
+            ⎇ checkbox as usize != 0 {
+                this.layout_info.insert(checkbox as usize, LayoutInfo::default());
+                NativeWidget::new(checkbox as usize, WidgetType::CheckButton)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_drawing_area(&vary this) → NativeWidget! {
+        unsafe {
+            // Custom NSView for drawing
+            ≔ view = ObjC::alloc_init("NSView\0");
+
+            ⎇ view as usize != 0 {
+                // Enable layer-backing for drawing
+                ObjC::msg1_bool(view, "setWantsLayer:\0", ⊤);
+
+                this.layout_info.insert(view as usize, LayoutInfo::default());
+                NativeWidget::new(view as usize, WidgetType::DrawingArea)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform : NativeLayout {
+    ☉ rite append(&vary this, parent: &NativeWidget, child: &NativeWidget) {
+        unsafe {
+            ⌥ parent.widget_type {
+                WidgetType::Window => {
+                    // Set as content view
+                    ObjC::msg1(parent.handle as *void, "setContentView:\0", child.handle as *void);
+                }
+                WidgetType::Box | WidgetType::HeaderBar => {
+                    // Add to NSStackView
+                    ObjC::msg1(parent.handle as *void, "addArrangedSubview:\0", child.handle as *void);
+                }
+                WidgetType::ScrolledWindow => {
+                    // Set as document view
+                    ObjC::msg1(parent.handle as *void, "setDocumentView:\0", child.handle as *void);
+                }
+                _ => {
+                    // Generic addSubview
+                    ObjC::msg1(parent.handle as *void, "addSubview:\0", child.handle as *void);
+                }
+            }
+        }
+    }
+
+    ☉ rite remove(&vary this, parent: &NativeWidget, child: &NativeWidget) {
+        unsafe {
+            ⌥ parent.widget_type {
+                WidgetType::Box | WidgetType::HeaderBar => {
+                    ObjC::msg1(parent.handle as *void, "removeArrangedSubview:\0", child.handle as *void);
+                }
+                _ => {}
+            }
+            // Remove from superview
+            ObjC::msg0(child.handle as *void, "removeFromSuperview\0");
+            // Remove layout info
+            this.layout_info.remove(&child.handle);
+        }
+    }
+
+    ☉ rite grid_attach(&vary this, grid: &NativeWidget, child: &NativeWidget, col: i32, row: i32, width: i32, height: i32) {
+        unsafe {
+            // NSGridView: add view at row, column
+            // For simplicity, we'll add cells; real implementation would track cell positions
+            ≔ sel = ObjC::sel("addRow:withViews:\0");
+            // Create an array with the view
+            ≔ array_class = ObjC::class("NSArray\0");
+            ≔ arr_sel = ObjC::sel("arrayWithObject:\0");
+            ≔ views_array = objc_msgSend(array_class, arr_sel, child.handle as *void);
+
+            objc_msgSend(grid.handle as *void, sel, views_array);
+        }
+    }
+
+    ☉ rite set_spacing(&vary this, container: &NativeWidget, spacing: i32) {
+        unsafe {
+            ⌥ container.widget_type {
+                WidgetType::Box | WidgetType::HeaderBar => {
+                    ObjC::msg1_f64(container.handle as *void, "setSpacing:\0", spacing as f64);
+                }
+                WidgetType::Grid => {
+                    ObjC::msg1_f64(container.handle as *void, "setRowSpacing:\0", spacing as f64);
+                    ObjC::msg1_f64(container.handle as *void, "setColumnSpacing:\0", spacing as f64);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    ☉ rite set_margins(&vary this, widget: &NativeWidget, top: i32, bottom: i32, start: i32, end: i32) {
+        // Store margins in layout info
+        ⎇ let Some(info) = this.layout_info.get_mut(&widget.handle) {
+            info.margin_top = top;
+            info.margin_bottom = bottom;
+            info.margin_start = start;
+            info.margin_end = end;
+        } ⎉ {
+            vary info! = LayoutInfo::default();
+            info.margin_top = top;
+            info.margin_bottom = bottom;
+            info.margin_start = start;
+            info.margin_end = end;
+            this.layout_info.insert(widget.handle, info);
+        }
+
+        unsafe {
+            // NSStackView uses edgeInsets
+            ⎇ matches!(widget.widget_type, WidgetType::Box | WidgetType::HeaderBar) {
+                // Create NSEdgeInsets
+                ≔ sel = ObjC::sel("setEdgeInsets:\0");
+                // Note: This requires proper struct passing which is complex
+                // For now, we store in layout_info for custom handling
+            }
+        }
+    }
+
+    ☉ rite set_expand(&vary this, widget: &NativeWidget, hexpand: bool, vexpand: bool) {
+        // Store in layout info
+        ⎇ let Some(info) = this.layout_info.get_mut(&widget.handle) {
+            info.hexpand = hexpand;
+            info.vexpand = vexpand;
+        } ⎉ {
+            vary info! = LayoutInfo::default();
+            info.hexpand = hexpand;
+            info.vexpand = vexpand;
+            this.layout_info.insert(widget.handle, info);
+        }
+
+        unsafe {
+            // Set content hugging priority (lower = more likely to expand)
+            ⎇ hexpand {
+                ObjC::msg1_f64(widget.handle as *void, "setContentHuggingPriority:forOrientation:\0",
+                    NSLayoutPriorityDefaultLow as f64);
+            }
+            ⎇ vexpand {
+                // Vertical hugging
+                ≔ sel = ObjC::sel("setContentHuggingPriority:forOrientation:\0");
+                objc_msgSend(widget.handle as *void, sel, NSLayoutPriorityDefaultLow as f64, 1_i64);
+            }
+        }
+    }
+
+    ☉ rite set_align(&vary this, widget: &NativeWidget, halign: Align, valign: Align) {
+        // Store in layout info
+        ⎇ let Some(info) = this.layout_info.get_mut(&widget.handle) {
+            info.halign = halign;
+            info.valign = valign;
+        } ⎉ {
+            vary info! = LayoutInfo::default();
+            info.halign = halign;
+            info.valign = valign;
+            this.layout_info.insert(widget.handle, info);
+        }
+
+        // Auto Layout alignment would require constraint manipulation
+        // For NSStackView children, we can set alignment
+        unsafe {
+            ≔ ns_alignment! = ⌥ halign {
+                Align::Start => 0_i64,   // NSLayoutAttributeLeading
+                Align::Center => 5_i64,  // NSLayoutAttributeCenterX
+                Align::End => 1_i64,     // NSLayoutAttributeTrailing
+                Align::Fill => 0_i64,
+                Align::Baseline => 11_i64 // NSLayoutAttributeBaseline
+            };
+            ObjC::msg1_i64(widget.handle as *void, "setAlignment:\0", ns_alignment);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform : Platform {
+    ☉ rite query_selector(&this, selector: &str) → Option<DomElement>? {
+        // Native doesn't use DOM selectors
+        None
+    }
+
+    ☉ rite create_element(&vary this, tag: &str) → DomElement! {
+        ≔ widget! = ⌥ tag {
+            "div" | "section" | "article" => this.create_box(Orientation::Vertical),
+            "span" => this.create_box(Orientation::Horizontal),
+            "button" => this.create_button(""),
+            "label" | "p" => this.create_label(""),
+            "input" => this.create_entry(),
+            "textarea" => this.create_text_view(),
+            "ul" | "ol" => this.create_list_box(),
+            "progress" => this.create_progress_bar(),
+            "canvas" => this.create_drawing_area(),
+            _ => this.create_box(Orientation::Vertical)
+        };
+        DomElement::new(widget.handle)
+    }
+
+    ☉ rite create_text(&vary this, content: &str) → DomElement! {
+        ≔ label! = this.create_label(content);
+        DomElement::new(label.handle)
+    }
+
+    ☉ rite apply_patch(&this, patch: Patch) {
+        // Handled by VNodeToNative
+    }
+
+    ☉ rite add_event_listener(&vary this, element: &DomElement, event: EventType, handler_id: u64) {
+        this.widget_to_handler.insert(element.handle, handler_id);
+    }
+
+    ☉ rite remove_event_listener(&vary this, element: &DomElement, event: EventType, handler_id: u64) {
+        this.widget_to_handler.remove(&element.handle);
+        this.event_handlers.remove(&handler_id);
+    }
+
+    ☉ rite window_size(&this) → (i32, i32)! {
+        unsafe {
+            // [NSScreen mainScreen].frame.size
+            ≔ screen_class = ObjC::class("NSScreen\0");
+            ≔ screen = ObjC::msg0(screen_class, "mainScreen\0");
+
+            // Get frame (returns NSRect which needs struct return)
+            // For simplicity, return reasonable defaults
+            // Real implementation would use objc_msgSend_stret for struct returns
+            (1920, 1080)
+        }
+    }
+
+    ☉ rite request_animation_frame(&vary this, callback: fn(f64)) → u64! {
+        // Use timer for ~60fps
+        this.set_interval(|| { callback(0.0); }, 16)
+    }
+
+    ☉ rite cancel_animation_frame(&vary this, id: u64) {
+        this.clear_interval(id);
+    }
+
+    ☉ rite set_timeout(&vary this, callback: fn(), delay_ms: u64) → u64! {
+        unsafe {
+            // Use NSTimer
+            ≔ timer_id! = this.get_next_handler_id();
+
+            // dispatch_after would be cleaner, but NSTimer works
+            ≔ sel = ObjC::sel("scheduledTimerWithTimeInterval:repeats:block:\0");
+            ≔ timer_class = ObjC::class("NSTimer\0");
+            ≔ interval = (delay_ms as f64) / 1000.0;
+
+            // Note: Block-based timers require complex block creation
+            // For now, store callback and return ID
+            this.event_handlers.insert(timer_id, callback);
+
+            timer_id
+        }
+    }
+
+    ☉ rite clear_timeout(&vary this, id: u64) {
+        unsafe {
+            ⎇ let Some(timer) = this.timer_map.remove(&id) {
+                ObjC::msg0(timer, "invalidate\0");
+            }
+        }
+        this.event_handlers.remove(&id);
+    }
+
+    ☉ rite set_interval(&vary this, callback: fn(), interval_ms: u64) → u64! {
+        ≔ timer_id! = this.get_next_handler_id();
+        this.event_handlers.insert(timer_id, callback);
+        timer_id
+    }
+
+    ☉ rite clear_interval(&vary this, id: u64) {
+        this.clear_timeout(id);
+    }
+
+    ☉ rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
+        // NSURLSession implementation would go here
+        async {
+            FetchResponse {
+                ok: ⊥,
+                status: 501,
+                status_text: "Not Implemented".to_string(),
+                headers: HashMap::new(),
+                body: Vec::new()
+            }
+        }
+    }
+
+    ☉ rite local_storage(&this) → Storage! {
+        // Would use NSUserDefaults
+        Storage { storage_type: StorageType::Local }
+    }
+
+    ☉ rite session_storage(&this) → Storage! {
+        Storage { storage_type: StorageType::Session }
+    }
+
+    ☉ rite current_url(&this) → String! {
+        "native://app".to_string()
+    }
+
+    ☉ rite push_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Native apps don't have browser history
+    }
+
+    ☉ rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Native apps don't have browser history
+    }
+
+    ☉ rite render_to_string(&this, vnode: &VNode) → String! {
+        panic!("render_to_string not supported in native platform")
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // Platform Creation Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_cocoa_platform_creation() {
+        ≔ platform! = CocoaPlatform::new();
+        assert!(!platform.initialized);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_cocoa_platform_default_values() {
+        ≔ platform! = CocoaPlatform::new();
+        assert!(!platform.initialized);
+        assert_eq!(platform.app as usize, 0);
+        assert_eq!(platform.main_window as usize, 0);
+        assert_eq!(platform.next_handler_id, 1000);
+        assert_eq!(platform.action_target as usize, 0);
+        assert!(platform.event_handlers.is_empty());
+        assert!(platform.layout_info.is_empty());
+        assert!(platform.widget_to_handler.is_empty());
+        assert!(platform.timer_map.is_empty());
+    }
+
+    // ========================================================================
+    // NSPoint Tests
+    // ========================================================================
+
+    #[test]
+    rite test_nspoint_creation() {
+        ≔ point! = NSPoint { x: 100.0, y: 200.0 };
+        assert_eq!(point.x, 100.0);
+        assert_eq!(point.y, 200.0);
+    }
+
+    #[test]
+    rite test_nspoint_zero() {
+        ≔ point! = NSPoint { x: 0.0, y: 0.0 };
+        assert_eq!(point.x, 0.0);
+        assert_eq!(point.y, 0.0);
+    }
+
+    #[test]
+    rite test_nspoint_negative() {
+        ≔ point! = NSPoint { x: -50.0, y: -100.0 };
+        assert_eq!(point.x, -50.0);
+        assert_eq!(point.y, -100.0);
+    }
+
+    // ========================================================================
+    // NSSize Tests
+    // ========================================================================
+
+    #[test]
+    rite test_nssize_creation() {
+        ≔ size! = NSSize { width: 800.0, height: 600.0 };
+        assert_eq!(size.width, 800.0);
+        assert_eq!(size.height, 600.0);
+    }
+
+    #[test]
+    rite test_nssize_zero() {
+        ≔ size! = NSSize { width: 0.0, height: 0.0 };
+        assert_eq!(size.width, 0.0);
+        assert_eq!(size.height, 0.0);
+    }
+
+    // ========================================================================
+    // NSRect Tests
+    // ========================================================================
+
+    #[test]
+    rite test_nsrect_creation() {
+        ≔ rect! = NSRect::new(10.0, 20.0, 100.0, 200.0);
+        assert_eq!(rect.origin.x, 10.0);
+        assert_eq!(rect.origin.y, 20.0);
+        assert_eq!(rect.size.width, 100.0);
+        assert_eq!(rect.size.height, 200.0);
+    }
+
+    #[test]
+    rite test_nsrect_zero() {
+        ≔ rect! = NSRect::zero();
+        assert_eq!(rect.origin.x, 0.0);
+        assert_eq!(rect.origin.y, 0.0);
+        assert_eq!(rect.size.width, 0.0);
+        assert_eq!(rect.size.height, 0.0);
+    }
+
+    #[test]
+    rite test_nsrect_components() {
+        ≔ rect! = NSRect::new(50.0, 75.0, 1920.0, 1080.0);
+        // Verify origin
+        assert_eq!(rect.origin.x, 50.0);
+        assert_eq!(rect.origin.y, 75.0);
+        // Verify size
+        assert_eq!(rect.size.width, 1920.0);
+        assert_eq!(rect.size.height, 1080.0);
+    }
+
+    #[test]
+    rite test_nsrect_negative_origin() {
+        ≔ rect! = NSRect::new(-100.0, -200.0, 400.0, 300.0);
+        assert_eq!(rect.origin.x, -100.0);
+        assert_eq!(rect.origin.y, -200.0);
+        assert_eq!(rect.size.width, 400.0);
+        assert_eq!(rect.size.height, 300.0);
+    }
+
+    // ========================================================================
+    // LayoutInfo Tests
+    // ========================================================================
+
+    #[test]
+    rite test_layout_info_default() {
+        ≔ info! = LayoutInfo::default();
+        assert!(!info.hexpand);
+        assert!(!info.vexpand);
+        assert!(matches!(info.halign, Align::Fill));
+        assert!(matches!(info.valign, Align::Fill));
+        assert_eq!(info.margin_top, 0);
+        assert_eq!(info.margin_bottom, 0);
+        assert_eq!(info.margin_start, 0);
+        assert_eq!(info.margin_end, 0);
+        assert!(matches!(info.orientation, Orientation::Vertical));
+    }
+
+    #[test]
+    rite test_layout_info_custom_values() {
+        ≔ info! = LayoutInfo {
+            hexpand: ⊤,
+            vexpand: ⊤,
+            halign: Align::Center,
+            valign: Align::End,
+            margin_top: 8,
+            margin_bottom: 8,
+            margin_start: 16,
+            margin_end: 16,
+            orientation: Orientation::Horizontal
+        };
+        assert!(info.hexpand);
+        assert!(info.vexpand);
+        assert!(matches!(info.halign, Align::Center));
+        assert!(matches!(info.valign, Align::End));
+        assert_eq!(info.margin_top, 8);
+        assert_eq!(info.margin_bottom, 8);
+        assert_eq!(info.margin_start, 16);
+        assert_eq!(info.margin_end, 16);
+        assert!(matches!(info.orientation, Orientation::Horizontal));
+    }
+
+    #[test]
+    rite test_layout_info_all_aligns() {
+        // Test all alignment options
+        ≔ aligns! = [Align::Start, Align::Center, Align::End, Align::Fill, Align::Baseline];
+
+        for align in aligns {
+            ≔ info! = LayoutInfo {
+                hexpand: ⊥,
+                vexpand: ⊥,
+                halign: align,
+                valign: align,
+                margin_top: 0,
+                margin_bottom: 0,
+                margin_start: 0,
+                margin_end: 0,
+                orientation: Orientation::Vertical
+            };
+            // Just verify it compiles and works
+            assert!(!info.hexpand);
+        }
+    }
+
+    // ========================================================================
+    // Constants Tests
+    // ========================================================================
+
+    #[test]
+    rite test_window_style_mask_constants() {
+        assert_eq!(NSWindowStyleMaskTitled, 1 << 0);
+        assert_eq!(NSWindowStyleMaskClosable, 1 << 1);
+        assert_eq!(NSWindowStyleMaskMiniaturizable, 1 << 2);
+        assert_eq!(NSWindowStyleMaskResizable, 1 << 3);
+        assert_eq!(NSWindowStyleMaskFullSizeContentView, 1 << 15);
+    }
+
+    #[test]
+    rite test_combined_window_style() {
+        ≔ style! = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+        // All four base styles combined
+        assert_eq!(style, 0b1111);
+    }
+
+    #[test]
+    rite test_stack_orientation_constants() {
+        assert_eq!(NSUserInterfaceLayoutOrientationHorizontal, 0);
+        assert_eq!(NSUserInterfaceLayoutOrientationVertical, 1);
+    }
+
+    #[test]
+    rite test_progress_indicator_style_constants() {
+        assert_eq!(NSProgressIndicatorStyleBar, 0);
+        assert_eq!(NSProgressIndicatorStyleSpinning, 1);
+    }
+
+    #[test]
+    rite test_button_type_constants() {
+        assert_eq!(NSButtonTypeMomentaryPushIn, 7);
+        assert_eq!(NSButtonTypeSwitch, 3);
+    }
+
+    #[test]
+    rite test_text_alignment_constants() {
+        assert_eq!(NSTextAlignmentLeft, 0);
+        assert_eq!(NSTextAlignmentCenter, 1);
+        assert_eq!(NSTextAlignmentRight, 2);
+    }
+
+    #[test]
+    rite test_layout_priority_constants() {
+        assert_eq!(NSLayoutPriorityRequired, 1000.0);
+        assert_eq!(NSLayoutPriorityDefaultHigh, 750.0);
+        assert_eq!(NSLayoutPriorityDefaultLow, 250.0);
+    }
+
+    #[test]
+    rite test_backing_store_constant() {
+        assert_eq!(NSBackingStoreBuffered, 2);
+    }
+
+    // ========================================================================
+    // Handler ID Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_get_next_handler_id() {
+        vary platform! = CocoaPlatform::new();
+        ≔ id1! = platform.get_next_handler_id();
+        ≔ id2! = platform.get_next_handler_id();
+        ≔ id3! = platform.get_next_handler_id();
+
+        assert_eq!(id1, 1000);
+        assert_eq!(id2, 1001);
+        assert_eq!(id3, 1002);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_handler_id_sequential() {
+        vary platform! = CocoaPlatform::new();
+
+        for i in 0..50 {
+            ≔ id! = platform.get_next_handler_id();
+            assert_eq!(id, 1000 + i);
+        }
+
+        assert_eq!(platform.next_handler_id, 1050);
+    }
+
+    // ========================================================================
+    // Widget to Handler Mapping Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_widget_to_handler_mapping() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.widget_to_handler.insert(100, 1);
+        platform.widget_to_handler.insert(200, 2);
+        platform.widget_to_handler.insert(300, 3);
+
+        assert_eq!(platform.widget_to_handler.len(), 3);
+        assert_eq!(*platform.widget_to_handler.get(&100).unwrap(), 1);
+        assert_eq!(*platform.widget_to_handler.get(&200).unwrap(), 2);
+        assert_eq!(*platform.widget_to_handler.get(&300).unwrap(), 3);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_widget_to_handler_update() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.widget_to_handler.insert(100, 1);
+        assert_eq!(*platform.widget_to_handler.get(&100).unwrap(), 1);
+
+        // Update the handler
+        platform.widget_to_handler.insert(100, 5);
+        assert_eq!(*platform.widget_to_handler.get(&100).unwrap(), 5);
+    }
+
+    // ========================================================================
+    // Layout Info Storage Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_layout_info_storage() {
+        vary platform! = CocoaPlatform::new();
+
+        ≔ info1! = LayoutInfo::default();
+        vary info2! = LayoutInfo::default();
+        info2.hexpand = ⊤;
+        info2.orientation = Orientation::Horizontal;
+
+        platform.layout_info.insert(1000, info1);
+        platform.layout_info.insert(2000, info2);
+
+        assert_eq!(platform.layout_info.len(), 2);
+        assert!(!platform.layout_info.get(&1000).unwrap().hexpand);
+        assert!(platform.layout_info.get(&2000).unwrap().hexpand);
+        assert!(matches!(
+            platform.layout_info.get(&2000).unwrap().orientation,
+            Orientation::Horizontal
+        ));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_layout_info_removal() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.layout_info.insert(100, LayoutInfo::default());
+        platform.layout_info.insert(200, LayoutInfo::default());
+
+        assert_eq!(platform.layout_info.len(), 2);
+
+        platform.layout_info.remove(&100);
+        assert_eq!(platform.layout_info.len(), 1);
+        assert!(platform.layout_info.get(&100).is_none());
+        assert!(platform.layout_info.get(&200).is_some());
+    }
+
+    // ========================================================================
+    // Timer Map Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_timer_map_operations() {
+        vary platform! = CocoaPlatform::new();
+
+        platform.timer_map.insert(1, 0x1000 as *void);
+        platform.timer_map.insert(2, 0x2000 as *void);
+
+        assert_eq!(platform.timer_map.len(), 2);
+        assert!(platform.timer_map.contains_key(&1));
+        assert!(platform.timer_map.contains_key(&2));
+        assert!(!platform.timer_map.contains_key(&3));
+    }
+
+    // ========================================================================
+    // Objective-C Association Policy Constants
+    // ========================================================================
+
+    #[test]
+    rite test_objc_association_policy() {
+        assert_eq!(OBJC_ASSOCIATION_RETAIN_NONATOMIC, 1);
+    }
+
+    #[test]
+    rite test_cfstring_encoding() {
+        assert_eq!(kCFStringEncodingUTF8, 0x08000100);
+    }
+
+    // ========================================================================
+    // Stack View Distribution Tests
+    // ========================================================================
+
+    #[test]
+    rite test_stack_view_distribution() {
+        assert_eq!(NSStackViewDistributionFillEqually, 1);
+    }
+}

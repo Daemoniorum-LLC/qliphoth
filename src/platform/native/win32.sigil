@@ -1,0 +1,1780 @@
+// Win32 Platform Module
+// Windows native GUI backend via Win32 API
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::{Event, EventType};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
+use super::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align};
+
+// ============================================================================
+// Win32 FFI Declarations
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+#[link("user32")]
+#[link("gdi32")]
+#[link("kernel32")]
+#[link("comctl32")]
+extern "C" {
+    // Module
+    rite GetModuleHandleW(lpModuleName: *u16) → *void;
+
+    // Window Class
+    rite RegisterClassExW(lpWndClass: *WNDCLASSEXW) → u16;
+    rite UnregisterClassW(lpClassName: *u16, hInstance: *void) → bool;
+
+    // Window Management
+    rite CreateWindowExW(
+        dwExStyle: u32,
+        lpClassName: *u16,
+        lpWindowName: *u16,
+        dwStyle: u32,
+        x: i32,
+        y: i32,
+        nWidth: i32,
+        nHeight: i32,
+        hWndParent: *void,
+        hMenu: *void,
+        hInstance: *void,
+        lpParam: *void
+    ) → *void;
+
+    rite ShowWindow(hWnd: *void, nCmdShow: i32) → bool;
+    rite UpdateWindow(hWnd: *void) → bool;
+    rite DestroyWindow(hWnd: *void) → bool;
+    rite SetWindowPos(
+        hWnd: *void,
+        hWndInsertAfter: *void,
+        x: i32,
+        y: i32,
+        cx: i32,
+        cy: i32,
+        uFlags: u32
+    ) → bool;
+    rite GetClientRect(hWnd: *void, lpRect: *RECT) → bool;
+    rite SetParent(hWndChild: *void, hWndNewParent: *void) → *void;
+    rite GetParent(hWnd: *void) → *void;
+    rite EnableWindow(hWnd: *void, bEnable: bool) → bool;
+    rite IsWindowVisible(hWnd: *void) → bool;
+    rite GetWindowLongPtrW(hWnd: *void, nIndex: i32) → i64;
+    rite SetWindowLongPtrW(hWnd: *void, nIndex: i32, dwNewLong: i64) → i64;
+
+    // Message Loop
+    rite GetMessageW(lpMsg: *MSG, hWnd: *void, wMsgFilterMin: u32, wMsgFilterMax: u32) → i32;
+    rite TranslateMessage(lpMsg: *MSG) → bool;
+    rite DispatchMessageW(lpMsg: *MSG) → i64;
+    rite PostQuitMessage(nExitCode: i32);
+    rite PostMessageW(hWnd: *void, msg: u32, wParam: u64, lParam: i64) → bool;
+    rite SendMessageW(hWnd: *void, msg: u32, wParam: u64, lParam: i64) → i64;
+    rite DefWindowProcW(hWnd: *void, msg: u32, wParam: u64, lParam: i64) → i64;
+
+    // Text
+    rite SetWindowTextW(hWnd: *void, lpString: *u16) → bool;
+    rite GetWindowTextW(hWnd: *void, lpString: *u16, nMaxCount: i32) → i32;
+    rite GetWindowTextLengthW(hWnd: *void) → i32;
+
+    // Painting/GDI
+    rite InvalidateRect(hWnd: *void, lpRect: *RECT, bErase: bool) → bool;
+    rite BeginPaint(hWnd: *void, lpPaint: *PAINTSTRUCT) → *void;
+    rite EndPaint(hWnd: *void, lpPaint: *PAINTSTRUCT) → bool;
+    rite GetDC(hWnd: *void) → *void;
+    rite ReleaseDC(hWnd: *void, hDC: *void) → i32;
+
+    // Common Controls
+    rite InitCommonControlsEx(lpInitCtrls: *INITCOMMONCONTROLSEX) → bool;
+
+    // Timer
+    rite SetTimer(hWnd: *void, nIDEvent: u64, uElapse: u32, lpTimerFunc: *void) → u64;
+    rite KillTimer(hWnd: *void, nIDEvent: u64) → bool;
+
+    // Cursor/Loading
+    rite LoadCursorW(hInstance: *void, lpCursorName: *u16) → *void;
+    rite LoadIconW(hInstance: *void, lpIconName: *u16) → *void;
+
+    // System Metrics
+    rite GetSystemMetrics(nIndex: i32) → i32;
+}
+
+// ============================================================================
+// Win32 Structures
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+sigil WNDCLASSEXW {
+    cbSize: u32,
+    style: u32,
+    lpfnWndProc: *void,
+    cbClsExtra: i32,
+    cbWndExtra: i32,
+    hInstance: *void,
+    hIcon: *void,
+    hCursor: *void,
+    hbrBackground: *void,
+    lpszMenuName: *u16,
+    lpszClassName: *u16,
+    hIconSm: *void
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+sigil MSG {
+    hwnd: *void,
+    message: u32,
+    wParam: u64,
+    lParam: i64,
+    time: u32,
+    pt_x: i32,
+    pt_y: i32
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+sigil RECT {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+sigil PAINTSTRUCT {
+    hdc: *void,
+    fErase: bool,
+    rcPaint: RECT,
+    fRestore: bool,
+    fIncUpdate: bool,
+    rgbReserved: [u8; 32]
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+sigil INITCOMMONCONTROLSEX {
+    dwSize: u32,
+    dwICC: u32
+}
+
+// ============================================================================
+// Win32 Constants
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+const CW_USEDEFAULT: i32 = 0x80000000_u32 as i32;
+
+// Window Styles
+const WS_OVERLAPPED: u32 = 0x00000000;
+const WS_CAPTION: u32 = 0x00C00000;
+const WS_SYSMENU: u32 = 0x00080000;
+const WS_THICKFRAME: u32 = 0x00040000;
+const WS_MINIMIZEBOX: u32 = 0x00020000;
+const WS_MAXIMIZEBOX: u32 = 0x00010000;
+const WS_OVERLAPPEDWINDOW: u32 = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+const WS_CHILD: u32 = 0x40000000;
+const WS_VISIBLE: u32 = 0x10000000;
+const WS_TABSTOP: u32 = 0x00010000;
+const WS_BORDER: u32 = 0x00800000;
+const WS_VSCROLL: u32 = 0x00200000;
+const WS_HSCROLL: u32 = 0x00100000;
+const WS_GROUP: u32 = 0x00020000;
+
+// Extended Window Styles
+const WS_EX_CLIENTEDGE: u32 = 0x00000200;
+
+// Window Class Styles
+const CS_HREDRAW: u32 = 0x0002;
+const CS_VREDRAW: u32 = 0x0001;
+const CS_DBLCLKS: u32 = 0x0008;
+
+// Show Window Commands
+const SW_HIDE: i32 = 0;
+const SW_SHOW: i32 = 5;
+const SW_SHOWNORMAL: i32 = 1;
+
+// Messages
+const WM_CREATE: u32 = 0x0001;
+const WM_DESTROY: u32 = 0x0002;
+const WM_SIZE: u32 = 0x0005;
+const WM_PAINT: u32 = 0x000F;
+const WM_CLOSE: u32 = 0x0010;
+const WM_QUIT: u32 = 0x0012;
+const WM_COMMAND: u32 = 0x0111;
+const WM_NOTIFY: u32 = 0x004E;
+const WM_TIMER: u32 = 0x0113;
+const WM_HSCROLL: u32 = 0x0114;
+const WM_VSCROLL: u32 = 0x0115;
+
+// Button Messages
+const BM_GETCHECK: u32 = 0x00F0;
+const BM_SETCHECK: u32 = 0x00F1;
+const BST_CHECKED: u64 = 1;
+const BST_UNCHECKED: u64 = 0;
+
+// Button Styles
+const BS_PUSHBUTTON: u32 = 0x00000000;
+const BS_AUTOCHECKBOX: u32 = 0x00000003;
+const BS_AUTORADIOBUTTON: u32 = 0x00000009;
+const BS_GROUPBOX: u32 = 0x00000007;
+
+// Static Styles
+const SS_LEFT: u32 = 0x00000000;
+const SS_CENTER: u32 = 0x00000001;
+const SS_RIGHT: u32 = 0x00000002;
+const SS_BITMAP: u32 = 0x0000000E;
+
+// Edit Styles
+const ES_LEFT: u32 = 0x0000;
+const ES_MULTILINE: u32 = 0x0004;
+const ES_AUTOVSCROLL: u32 = 0x0040;
+const ES_AUTOHSCROLL: u32 = 0x0080;
+const ES_WANTRETURN: u32 = 0x1000;
+
+// List Box Styles
+const LBS_NOTIFY: u32 = 0x0001;
+const LBS_NOINTEGRALHEIGHT: u32 = 0x0100;
+
+// Common Control Classes
+const PROGRESS_CLASSW: *u16 = "msctls_progress32\0".as_ptr() as *u16;
+const TRACKBAR_CLASSW: *u16 = "msctls_trackbar32\0".as_ptr() as *u16;
+
+// Progress Bar Messages
+const PBM_SETPOS: u32 = 0x0402;
+const PBM_SETRANGE32: u32 = 0x0406;
+
+// Trackbar Messages
+const TBM_SETPOS: u32 = 0x0405;
+const TBM_SETRANGE: u32 = 0x0406;
+const TBM_GETPOS: u32 = 0x0400;
+
+// SetWindowPos Flags
+const SWP_NOZORDER: u32 = 0x0004;
+const SWP_NOACTIVATE: u32 = 0x0010;
+const SWP_NOMOVE: u32 = 0x0002;
+const SWP_NOSIZE: u32 = 0x0001;
+
+// GetWindowLongPtr indices
+const GWL_STYLE: i32 = -16;
+const GWL_EXSTYLE: i32 = -20;
+const GWLP_USERDATA: i32 = -21;
+const GWLP_WNDPROC: i32 = -4;
+
+// System Metrics
+const SM_CXSCREEN: i32 = 0;
+const SM_CYSCREEN: i32 = 1;
+
+// Common Controls Init
+const ICC_PROGRESS_CLASS: u32 = 0x00000020;
+const ICC_BAR_CLASSES: u32 = 0x00000004;
+
+// Standard cursors/icons (MAKEINTRESOURCE values)
+const IDC_ARROW: *u16 = 32512 as *u16;
+const IDI_APPLICATION: *u16 = 32512 as *u16;
+
+// Background Brush
+const COLOR_WINDOW: u32 = 5;
+
+// ============================================================================
+// Win32 Platform Implementation
+// ============================================================================
+
+/// Window class name for Qliphoth windows
+#[cfg(target_os = "windows")]
+static QLIPHOTH_CLASS_NAME: [u16; 15] = [
+    'Q' as u16, 'l' as u16, 'i' as u16, 'p' as u16, 'h' as u16, 'o' as u16, 't' as u16, 'h' as u16,
+    'W' as u16, 'i' as u16, 'n' as u16, 'd' as u16, 'o' as u16, 'w' as u16, 0
+];
+
+/// Container class name for layout containers
+#[cfg(target_os = "windows")]
+static QLIPHOTH_CONTAINER_CLASS: [u16; 19] = [
+    'Q' as u16, 'l' as u16, 'i' as u16, 'p' as u16, 'h' as u16, 'o' as u16, 't' as u16, 'h' as u16,
+    'C' as u16, 'o' as u16, 'n' as u16, 't' as u16, 'a' as u16, 'i' as u16, 'n' as u16, 'e' as u16,
+    'r' as u16, 0, 0
+];
+
+/// Global platform instance pointer for WndProc callback
+#[cfg(target_os = "windows")]
+static vary PLATFORM_INSTANCE: *void = 0 as *void;
+
+/// Window procedure for main windows
+#[cfg(target_os = "windows")]
+extern "C" rite window_proc(hwnd: *void, msg: u32, wparam: u64, lparam: i64) → i64 {
+    unsafe {
+        ⌥ msg {
+            WM_DESTROY => {
+                PostQuitMessage(0);
+                0
+            }
+            WM_CLOSE => {
+                DestroyWindow(hwnd);
+                0
+            }
+            WM_SIZE => {
+                // Trigger layout recalculation
+                InvalidateRect(hwnd, 0 as *RECT, ⊤);
+                0
+            }
+            WM_COMMAND => {
+                // Handle button clicks and control notifications
+                ≔ control_id = (wparam & 0xFFFF) as u64;
+                ≔ notification = ((wparam >> 16) & 0xFFFF) as u32;
+                // Route to event handler via PLATFORM_INSTANCE
+                ⎇ PLATFORM_INSTANCE as usize != 0 {
+                    ≔ platform = &*(PLATFORM_INSTANCE as *Win32Platform);
+                    platform.handle_command(control_id, notification, lparam as *void);
+                }
+                0
+            }
+            WM_NOTIFY => {
+                // Handle common control notifications
+                0
+            }
+            _ => {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+    }
+}
+
+/// Window procedure for container panels
+#[cfg(target_os = "windows")]
+extern "C" rite container_proc(hwnd: *void, msg: u32, wparam: u64, lparam: i64) → i64 {
+    unsafe {
+        ⌥ msg {
+            WM_SIZE => {
+                // Perform layout on children
+                ⎇ PLATFORM_INSTANCE as usize != 0 {
+                    ≔ platform = &*(PLATFORM_INSTANCE as *Win32Platform);
+                    platform.layout_children(hwnd);
+                }
+                0
+            }
+            _ => {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+    }
+}
+
+/// Layout metadata for custom layout management
+#[cfg(target_os = "windows")]
+sigil LayoutInfo {
+    hexpand: bool,
+    vexpand: bool,
+    halign: Align,
+    valign: Align,
+    margin_top: i32,
+    margin_bottom: i32,
+    margin_start: i32,
+    margin_end: i32,
+    orientation: Orientation
+}
+
+⊢ LayoutInfo {
+    rite default() → This! {
+        LayoutInfo {
+            hexpand: ⊥,
+            vexpand: ⊥,
+            halign: Align::Fill,
+            valign: Align::Fill,
+            margin_top: 0,
+            margin_bottom: 0,
+            margin_start: 0,
+            margin_end: 0,
+            orientation: Orientation::Vertical
+        }
+    }
+}
+
+/// Win32 Platform for Windows native GUI
+#[cfg(target_os = "windows")]
+☉ sigil Win32Platform {
+    initialized: bool!,
+    hinstance: *void!,
+    main_hwnd: *void!,
+    event_handlers: HashMap<u64, fn()>!,
+    layout_info: HashMap<usize, LayoutInfo>!,
+    next_control_id: u64!,
+    control_id_to_handler: HashMap<u64, u64>!,
+    timer_callbacks: HashMap<u64, fn()>!,
+    spacing_map: HashMap<usize, i32>!
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform {
+    ☉ rite new() → This! {
+        Win32Platform {
+            initialized: ⊥,
+            hinstance: 0 as *void,
+            main_hwnd: 0 as *void,
+            event_handlers: HashMap::new(),
+            layout_info: HashMap::new(),
+            next_control_id: 1000,
+            control_id_to_handler: HashMap::new(),
+            timer_callbacks: HashMap::new(),
+            spacing_map: HashMap::new()
+        }
+    }
+
+    /// Handle WM_COMMAND messages
+    rite handle_command(&this, control_id: u64, notification: u32, hwnd: *void) {
+        ⎇ let Some(handler_id) = this.control_id_to_handler.get(&control_id) {
+            ⎇ let Some(callback) = this.event_handlers.get(handler_id) {
+                callback();
+            }
+        }
+    }
+
+    /// Perform layout on container children
+    rite layout_children(&this, hwnd: *void) {
+        unsafe {
+            ≔ rect! = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+            GetClientRect(hwnd, &vary rect);
+
+            ≔ width! = rect.right - rect.left;
+            ≔ height! = rect.bottom - rect.top;
+
+            // Get layout info for this container
+            ≔ info! = this.layout_info.get(&(hwnd as usize)).cloned().unwrap_or(LayoutInfo::default());
+            ≔ spacing! = this.spacing_map.get(&(hwnd as usize)).cloned().unwrap_or(5);
+
+            // Simple box layout implementation
+            ≔ children! = this.get_child_windows(hwnd);
+            ≔ child_count! = children.len() as i32;
+
+            ⎇ child_count > 0 {
+                ⌥ info.orientation {
+                    Orientation::Vertical => {
+                        ≔ y! = spacing;
+                        ≔ child_height! = (height - spacing * (child_count + 1)) / child_count;
+                        for child in children {
+                            ≔ child_info! = this.layout_info.get(&(child as usize)).cloned().unwrap_or(LayoutInfo::default());
+                            ≔ x! = spacing + child_info.margin_start;
+                            ≔ w! = width - spacing * 2 - child_info.margin_start - child_info.margin_end;
+                            ≔ h! = child_height - child_info.margin_top - child_info.margin_bottom;
+                            SetWindowPos(child, 0 as *void, x, y + child_info.margin_top, w, h, SWP_NOZORDER);
+                            y = y + child_height + spacing;
+                        }
+                    }
+                    Orientation::Horizontal => {
+                        ≔ x! = spacing;
+                        ≔ child_width! = (width - spacing * (child_count + 1)) / child_count;
+                        for child in children {
+                            ≔ child_info! = this.layout_info.get(&(child as usize)).cloned().unwrap_or(LayoutInfo::default());
+                            ≔ y! = spacing + child_info.margin_top;
+                            ≔ w! = child_width - child_info.margin_start - child_info.margin_end;
+                            ≔ h! = height - spacing * 2 - child_info.margin_top - child_info.margin_bottom;
+                            SetWindowPos(child, 0 as *void, x + child_info.margin_start, y, w, h, SWP_NOZORDER);
+                            x = x + child_width + spacing;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get all child windows of a parent
+    rite get_child_windows(&this, parent: *void) → Vec<*void>! {
+        // For simplicity, iterate over layout_info to find children
+        // In production, would use EnumChildWindows
+        vary children! = Vec::new();
+        unsafe {
+            for (handle, _) in this.layout_info.iter() {
+                ≔ hwnd = *handle as *void;
+                ⎇ GetParent(hwnd) == parent {
+                    children.push(hwnd);
+                }
+            }
+        }
+        children
+    }
+
+    /// Convert Rust string to null-terminated UTF-16
+    rite to_wide(&this, s: &str) → Vec<u16>! {
+        vary result!: Vec<u16> = s.encode_utf16().collect();
+        result.push(0);
+        result
+    }
+
+    /// Get next control ID
+    rite get_next_control_id(&vary this) → u64! {
+        ≔ id! = this.next_control_id;
+        this.next_control_id = this.next_control_id + 1;
+        id
+    }
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform : NativeApp {
+    ☉ rite init(&vary this) → bool! {
+        ⎇ this.initialized {
+            ret ⊤;
+        }
+
+        unsafe {
+            // Get module handle
+            this.hinstance = GetModuleHandleW(0 as *u16);
+
+            // Set global instance for WndProc
+            PLATFORM_INSTANCE = this as *void;
+
+            // Initialize common controls
+            ≔ icc! = INITCOMMONCONTROLSEX {
+                dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
+                dwICC: ICC_PROGRESS_CLASS | ICC_BAR_CLASSES
+            };
+            InitCommonControlsEx(&icc);
+
+            // Register main window class
+            ≔ wc! = WNDCLASSEXW {
+                cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+                style: CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS,
+                lpfnWndProc: window_proc as *void,
+                cbClsExtra: 0,
+                cbWndExtra: 0,
+                hInstance: this.hinstance,
+                hIcon: LoadIconW(0 as *void, IDI_APPLICATION),
+                hCursor: LoadCursorW(0 as *void, IDC_ARROW),
+                hbrBackground: (COLOR_WINDOW + 1) as *void,
+                lpszMenuName: 0 as *u16,
+                lpszClassName: QLIPHOTH_CLASS_NAME.as_ptr(),
+                hIconSm: 0 as *void
+            };
+
+            ⎇ RegisterClassExW(&wc) == 0 {
+                ret ⊥;
+            }
+
+            // Register container class
+            ≔ cc! = WNDCLASSEXW {
+                cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+                style: CS_HREDRAW | CS_VREDRAW,
+                lpfnWndProc: container_proc as *void,
+                cbClsExtra: 0,
+                cbWndExtra: 0,
+                hInstance: this.hinstance,
+                hIcon: 0 as *void,
+                hCursor: LoadCursorW(0 as *void, IDC_ARROW),
+                hbrBackground: (COLOR_WINDOW + 1) as *void,
+                lpszMenuName: 0 as *u16,
+                lpszClassName: QLIPHOTH_CONTAINER_CLASS.as_ptr(),
+                hIconSm: 0 as *void
+            };
+
+            RegisterClassExW(&cc);
+
+            this.initialized = ⊤;
+        }
+        ⊤
+    }
+
+    ☉ rite run(&this) {
+        unsafe {
+            vary msg! = MSG {
+                hwnd: 0 as *void,
+                message: 0,
+                wParam: 0,
+                lParam: 0,
+                time: 0,
+                pt_x: 0,
+                pt_y: 0
+            };
+
+            ⌥ GetMessageW(&vary msg, 0 as *void, 0, 0) > 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+
+    ☉ rite quit(&this) {
+        unsafe {
+            PostQuitMessage(0);
+        }
+    }
+
+    ☉ rite create_window(&vary this, title: !String, width: !i32, height: !i32) → NativeWidget! {
+        unsafe {
+            ≔ wide_title! = this.to_wide(&title);
+            ≔ hwnd = CreateWindowExW(
+                0,                              // dwExStyle
+                QLIPHOTH_CLASS_NAME.as_ptr(),  // lpClassName
+                wide_title.as_ptr(),           // lpWindowName
+                WS_OVERLAPPEDWINDOW,           // dwStyle
+                CW_USEDEFAULT,                 // x
+                CW_USEDEFAULT,                 // y
+                width,                         // nWidth
+                height,                        // nHeight
+                0 as *void,                    // hWndParent
+                0 as *void,                    // hMenu
+                this.hinstance,                // hInstance
+                0 as *void                     // lpParam
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.main_hwnd = hwnd;
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Window)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite show(&this, widget: &NativeWidget) {
+        unsafe {
+            ⌥ widget.widget_type {
+                WidgetType::Window => {
+                    ShowWindow(widget.handle as *void, SW_SHOWNORMAL);
+                    UpdateWindow(widget.handle as *void);
+                }
+                _ => {
+                    ShowWindow(widget.handle as *void, SW_SHOW);
+                }
+            }
+        }
+    }
+
+    ☉ rite hide(&this, widget: &NativeWidget) {
+        unsafe {
+            ShowWindow(widget.handle as *void, SW_HIDE);
+        }
+    }
+
+    ☉ rite set_property(&this, widget: &NativeWidget, name: &str, value: &str) {
+        unsafe {
+            ⌥ (widget.widget_type, name) {
+                (WidgetType::Label, "text") | (WidgetType::Button, "label") | (_, "text") => {
+                    ≔ wide! = this.to_wide(value);
+                    SetWindowTextW(widget.handle as *void, wide.as_ptr());
+                }
+                (WidgetType::ProgressBar, "fraction") => {
+                    ≔ fraction! = value.parse::<f64>().unwrap_or(0.0);
+                    ≔ pos! = (fraction * 100.0) as i64;
+                    SendMessageW(widget.handle as *void, PBM_SETPOS, pos as u64, 0);
+                }
+                (WidgetType::Scale, "value") => {
+                    ≔ val! = value.parse::<f64>().unwrap_or(0.0) as i64;
+                    SendMessageW(widget.handle as *void, TBM_SETPOS, 1, val);
+                }
+                (WidgetType::CheckButton, "active") | (WidgetType::Switch, "active") => {
+                    ≔ checked! = value == "true" || value == "1";
+                    SendMessageW(
+                        widget.handle as *void,
+                        BM_SETCHECK,
+                        ⎇ checked { BST_CHECKED } ⎉ { BST_UNCHECKED },
+                        0
+                    );
+                }
+                (_, "visible") => {
+                    ≔ visible! = value == "true" || value == "1";
+                    ShowWindow(widget.handle as *void, ⎇ visible { SW_SHOW } ⎉ { SW_HIDE });
+                }
+                (_, "sensitive") | (_, "enabled") => {
+                    ≔ enabled! = value == "true" || value == "1";
+                    EnableWindow(widget.handle as *void, enabled);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    ☉ rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64) {
+        // For buttons and controls, map control ID to handler
+        // The control ID was stored when creating the widget
+        ≔ control_id! = widget.handle as u64 & 0xFFFF;
+        this.control_id_to_handler.insert(control_id, handler_id);
+    }
+
+    ☉ rite disconnect(&vary this, widget: &NativeWidget, handler_id: u64) {
+        ≔ control_id! = widget.handle as u64 & 0xFFFF;
+        this.control_id_to_handler.remove(&control_id);
+        this.event_handlers.remove(&handler_id);
+    }
+}
+
+// Win32 class name constants as UTF-16
+#[cfg(target_os = "windows")]
+static BUTTON_CLASS: [u16; 7] = ['B' as u16, 'U' as u16, 'T' as u16, 'T' as u16, 'O' as u16, 'N' as u16, 0];
+static STATIC_CLASS: [u16; 7] = ['S' as u16, 'T' as u16, 'A' as u16, 'T' as u16, 'I' as u16, 'C' as u16, 0];
+static EDIT_CLASS: [u16; 5] = ['E' as u16, 'D' as u16, 'I' as u16, 'T' as u16, 0];
+static LISTBOX_CLASS: [u16; 8] = ['L' as u16, 'I' as u16, 'S' as u16, 'T' as u16, 'B' as u16, 'O' as u16, 'X' as u16, 0];
+static PROGRESS_CLASS: [u16; 18] = [
+    'm' as u16, 's' as u16, 'c' as u16, 't' as u16, 'l' as u16, 's' as u16, '_' as u16,
+    'p' as u16, 'r' as u16, 'o' as u16, 'g' as u16, 'r' as u16, 'e' as u16, 's' as u16,
+    's' as u16, '3' as u16, '2' as u16, 0
+];
+static TRACKBAR_CLASS: [u16; 19] = [
+    'm' as u16, 's' as u16, 'c' as u16, 't' as u16, 'l' as u16, 's' as u16, '_' as u16,
+    't' as u16, 'r' as u16, 'a' as u16, 'c' as u16, 'k' as u16, 'b' as u16, 'a' as u16,
+    'r' as u16, '3' as u16, '2' as u16, 0, 0
+];
+static RICHEDIT_CLASS: [u16; 12] = [
+    'R' as u16, 'I' as u16, 'C' as u16, 'H' as u16, 'E' as u16, 'D' as u16, 'I' as u16,
+    'T' as u16, '5' as u16, '0' as u16, 'W' as u16, 0
+];
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform : NativeWidgetBuilder {
+    ☉ rite create_box(&vary this, orientation: Orientation) → NativeWidget! {
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                QLIPHOTH_CONTAINER_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE,
+                0, 0, 100, 100,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                vary info! = LayoutInfo::default();
+                info.orientation = orientation;
+                this.layout_info.insert(hwnd as usize, info);
+                NativeWidget::new(hwnd as usize, WidgetType::Box)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_button(&vary this, label: &str) → NativeWidget! {
+        unsafe {
+            ≔ wide_label! = this.to_wide(label);
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                BUTTON_CLASS.as_ptr(),
+                wide_label.as_ptr(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                0, 0, 100, 30,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Button)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_label(&vary this, text: &str) → NativeWidget! {
+        unsafe {
+            ≔ wide_text! = this.to_wide(text);
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                STATIC_CLASS.as_ptr(),
+                wide_text.as_ptr(),
+                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                0, 0, 100, 20,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Label)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_entry(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                EDIT_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                0, 0, 150, 24,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Entry)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_text_view(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            // Use multiline EDIT control
+            ≔ hwnd = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                EDIT_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+                0, 0, 200, 100,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::TextView)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_scrolled(&vary this) → NativeWidget! {
+        // Create a container with scroll bars
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                QLIPHOTH_CONTAINER_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL,
+                0, 0, 200, 150,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::ScrolledWindow)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_list_box(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                LISTBOX_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
+                0, 0, 200, 150,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::ListBox)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_grid(&vary this) → NativeWidget! {
+        // Use container for grid (manual positioning)
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                QLIPHOTH_CONTAINER_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE,
+                0, 0, 200, 200,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Grid)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_stack(&vary this) → NativeWidget! {
+        // Stack is a container where only one child is visible
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                QLIPHOTH_CONTAINER_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE,
+                0, 0, 200, 200,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Stack)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_header_bar(&vary this) → NativeWidget! {
+        // Header bar is a horizontal container at top
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                QLIPHOTH_CONTAINER_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE,
+                0, 0, 400, 40,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                vary info! = LayoutInfo::default();
+                info.orientation = Orientation::Horizontal;
+                this.layout_info.insert(hwnd as usize, info);
+                NativeWidget::new(hwnd as usize, WidgetType::HeaderBar)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_image(&vary this) → NativeWidget! {
+        // Use STATIC with SS_BITMAP style
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                STATIC_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE | SS_BITMAP,
+                0, 0, 100, 100,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Image)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_spinner(&vary this) → NativeWidget! {
+        // Use a progress bar in indeterminate mode as spinner
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                PROGRESS_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE | 0x08, // PBS_MARQUEE
+                0, 0, 32, 32,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                // Start marquee animation
+                SendMessageW(hwnd, 0x040A, 1, 30); // PBM_SETMARQUEE
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Spinner)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_progress_bar(&vary this) → NativeWidget! {
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                PROGRESS_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE,
+                0, 0, 200, 20,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                // Set range 0-100
+                SendMessageW(hwnd, PBM_SETRANGE32, 0, 100);
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::ProgressBar)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_scale(&vary this, orientation: Orientation, min: f64, max: f64) → NativeWidget! {
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            // TBS_VERT for vertical, 0 for horizontal
+            ≔ style! = WS_CHILD | WS_VISIBLE | WS_TABSTOP;
+            ≔ style = ⎇ matches!(orientation, Orientation::Vertical) { style | 0x02 } ⎉ { style };
+
+            ≔ hwnd = CreateWindowExW(
+                0,
+                TRACKBAR_CLASS.as_ptr(),
+                0 as *u16,
+                style,
+                0, 0, 150, 30,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                // Set range
+                ≔ range_packed = ((max as i32) << 16) | (min as i32 & 0xFFFF);
+                SendMessageW(hwnd, TBM_SETRANGE, 1, range_packed as i64);
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Scale)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_switch(&vary this) → NativeWidget! {
+        // Use checkbox styled as toggle
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                BUTTON_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                0, 0, 50, 24,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::Switch)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_check_button(&vary this, label: &str) → NativeWidget! {
+        unsafe {
+            ≔ wide_label! = this.to_wide(label);
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                BUTTON_CLASS.as_ptr(),
+                wide_label.as_ptr(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                0, 0, 150, 24,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::CheckButton)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    ☉ rite create_drawing_area(&vary this) → NativeWidget! {
+        // Custom drawing via WM_PAINT
+        unsafe {
+            ≔ control_id! = this.get_next_control_id();
+            ≔ hwnd = CreateWindowExW(
+                0,
+                QLIPHOTH_CONTAINER_CLASS.as_ptr(),
+                0 as *u16,
+                WS_CHILD | WS_VISIBLE,
+                0, 0, 200, 200,
+                this.main_hwnd,
+                control_id as *void,
+                this.hinstance,
+                0 as *void
+            );
+
+            ⎇ hwnd as usize != 0 {
+                this.layout_info.insert(hwnd as usize, LayoutInfo::default());
+                NativeWidget::new(hwnd as usize, WidgetType::DrawingArea)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform : NativeLayout {
+    ☉ rite append(&vary this, parent: &NativeWidget, child: &NativeWidget) {
+        unsafe {
+            // Re-parent the child window
+            SetParent(child.handle as *void, parent.handle as *void);
+
+            // For Window type, set as the main content
+            ⎇ matches!(parent.widget_type, WidgetType::Window) {
+                // Position to fill client area
+                ≔ rect! = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                GetClientRect(parent.handle as *void, &vary rect);
+                SetWindowPos(
+                    child.handle as *void,
+                    0 as *void,
+                    0, 0,
+                    rect.right - rect.left,
+                    rect.bottom - rect.top,
+                    SWP_NOZORDER
+                );
+            }
+
+            // Trigger re-layout
+            this.layout_children(parent.handle as *void);
+        }
+    }
+
+    ☉ rite remove(&vary this, parent: &NativeWidget, child: &NativeWidget) {
+        unsafe {
+            // Detach from parent
+            SetParent(child.handle as *void, 0 as *void);
+            // Remove layout info
+            this.layout_info.remove(&(child.handle));
+            // Destroy the window
+            DestroyWindow(child.handle as *void);
+        }
+    }
+
+    ☉ rite grid_attach(&vary this, grid: &NativeWidget, child: &NativeWidget, col: i32, row: i32, width: i32, height: i32) {
+        unsafe {
+            // Re-parent
+            SetParent(child.handle as *void, grid.handle as *void);
+
+            // Get grid client size
+            ≔ rect! = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+            GetClientRect(grid.handle as *void, &vary rect);
+
+            // Calculate cell size (assume 3x3 grid by default)
+            ≔ grid_cols! = 3;
+            ≔ grid_rows! = 3;
+            ≔ cell_width! = (rect.right - rect.left) / grid_cols;
+            ≔ cell_height! = (rect.bottom - rect.top) / grid_rows;
+
+            // Position child
+            ≔ x! = col * cell_width;
+            ≔ y! = row * cell_height;
+            ≔ w! = width * cell_width;
+            ≔ h! = height * cell_height;
+
+            SetWindowPos(child.handle as *void, 0 as *void, x, y, w, h, SWP_NOZORDER);
+        }
+    }
+
+    ☉ rite set_spacing(&vary this, container: &NativeWidget, spacing: i32) {
+        // Store spacing for this container
+        this.spacing_map.insert(container.handle, spacing);
+        // Trigger re-layout
+        this.layout_children(container.handle as *void);
+    }
+
+    ☉ rite set_margins(&vary this, widget: &NativeWidget, top: i32, bottom: i32, start: i32, end: i32) {
+        // Update layout info
+        ⎇ let Some(info) = this.layout_info.get_mut(&widget.handle) {
+            info.margin_top = top;
+            info.margin_bottom = bottom;
+            info.margin_start = start;
+            info.margin_end = end;
+        } ⎉ {
+            vary info! = LayoutInfo::default();
+            info.margin_top = top;
+            info.margin_bottom = bottom;
+            info.margin_start = start;
+            info.margin_end = end;
+            this.layout_info.insert(widget.handle, info);
+        }
+
+        // Trigger parent re-layout
+        unsafe {
+            ≔ parent = GetParent(widget.handle as *void);
+            ⎇ parent as usize != 0 {
+                this.layout_children(parent);
+            }
+        }
+    }
+
+    ☉ rite set_expand(&vary this, widget: &NativeWidget, hexpand: bool, vexpand: bool) {
+        // Update layout info
+        ⎇ let Some(info) = this.layout_info.get_mut(&widget.handle) {
+            info.hexpand = hexpand;
+            info.vexpand = vexpand;
+        } ⎉ {
+            vary info! = LayoutInfo::default();
+            info.hexpand = hexpand;
+            info.vexpand = vexpand;
+            this.layout_info.insert(widget.handle, info);
+        }
+
+        // Trigger parent re-layout
+        unsafe {
+            ≔ parent = GetParent(widget.handle as *void);
+            ⎇ parent as usize != 0 {
+                this.layout_children(parent);
+            }
+        }
+    }
+
+    ☉ rite set_align(&vary this, widget: &NativeWidget, halign: Align, valign: Align) {
+        // Update layout info
+        ⎇ let Some(info) = this.layout_info.get_mut(&widget.handle) {
+            info.halign = halign;
+            info.valign = valign;
+        } ⎉ {
+            vary info! = LayoutInfo::default();
+            info.halign = halign;
+            info.valign = valign;
+            this.layout_info.insert(widget.handle, info);
+        }
+
+        // Trigger parent re-layout
+        unsafe {
+            ≔ parent = GetParent(widget.handle as *void);
+            ⎇ parent as usize != 0 {
+                this.layout_children(parent);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform : Platform {
+    ☉ rite query_selector(&this, selector: &str) → Option<DomElement>? {
+        // Native doesn't use DOM selectors
+        None
+    }
+
+    ☉ rite create_element(&vary this, tag: &str) → DomElement! {
+        // Create native widget based on tag and wrap in DomElement
+        ≔ widget! = ⌥ tag {
+            "div" | "section" | "article" => this.create_box(Orientation::Vertical),
+            "span" => this.create_box(Orientation::Horizontal),
+            "button" => this.create_button(""),
+            "label" | "p" => this.create_label(""),
+            "input" => this.create_entry(),
+            "textarea" => this.create_text_view(),
+            "ul" | "ol" => this.create_list_box(),
+            "progress" => this.create_progress_bar(),
+            "canvas" => this.create_drawing_area(),
+            _ => this.create_box(Orientation::Vertical)
+        };
+        DomElement::new(widget.handle)
+    }
+
+    ☉ rite create_text(&vary this, content: &str) → DomElement! {
+        ≔ label! = this.create_label(content);
+        DomElement::new(label.handle)
+    }
+
+    ☉ rite apply_patch(&this, patch: Patch) {
+        // Handled by VNodeToNative
+    }
+
+    ☉ rite add_event_listener(&vary this, element: &DomElement, event: EventType, handler_id: u64) {
+        // Map element handle to control ID and store handler
+        ≔ control_id! = element.handle as u64 & 0xFFFF;
+        this.control_id_to_handler.insert(control_id, handler_id);
+    }
+
+    ☉ rite remove_event_listener(&vary this, element: &DomElement, event: EventType, handler_id: u64) {
+        ≔ control_id! = element.handle as u64 & 0xFFFF;
+        this.control_id_to_handler.remove(&control_id);
+        this.event_handlers.remove(&handler_id);
+    }
+
+    ☉ rite window_size(&this) → (i32, i32)! {
+        unsafe {
+            ≔ width! = GetSystemMetrics(SM_CXSCREEN);
+            ≔ height! = GetSystemMetrics(SM_CYSCREEN);
+            (width, height)
+        }
+    }
+
+    ☉ rite request_animation_frame(&vary this, callback: fn(f64)) → u64! {
+        // Use ~16ms timer for ~60fps
+        unsafe {
+            ≔ timer_id! = this.next_control_id;
+            this.next_control_id = this.next_control_id + 1;
+            SetTimer(this.main_hwnd, timer_id, 16, 0 as *void);
+            timer_id
+        }
+    }
+
+    ☉ rite cancel_animation_frame(&this, id: u64) {
+        unsafe {
+            KillTimer(this.main_hwnd, id);
+        }
+    }
+
+    ☉ rite set_timeout(&vary this, callback: fn(), delay_ms: u64) → u64! {
+        unsafe {
+            ≔ timer_id! = this.next_control_id;
+            this.next_control_id = this.next_control_id + 1;
+            this.timer_callbacks.insert(timer_id, callback);
+            SetTimer(this.main_hwnd, timer_id, delay_ms as u32, 0 as *void);
+            timer_id
+        }
+    }
+
+    ☉ rite clear_timeout(&vary this, id: u64) {
+        unsafe {
+            KillTimer(this.main_hwnd, id);
+            this.timer_callbacks.remove(&id);
+        }
+    }
+
+    ☉ rite set_interval(&vary this, callback: fn(), interval_ms: u64) → u64! {
+        unsafe {
+            ≔ timer_id! = this.next_control_id;
+            this.next_control_id = this.next_control_id + 1;
+            this.timer_callbacks.insert(timer_id, callback);
+            SetTimer(this.main_hwnd, timer_id, interval_ms as u32, 0 as *void);
+            timer_id
+        }
+    }
+
+    ☉ rite clear_interval(&vary this, id: u64) {
+        unsafe {
+            KillTimer(this.main_hwnd, id);
+            this.timer_callbacks.remove(&id);
+        }
+    }
+
+    ☉ rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
+        // WinHTTP implementation would go here
+        // For now, return not implemented
+        async {
+            FetchResponse {
+                ok: ⊥,
+                status: 501,
+                status_text: "Not Implemented".to_string(),
+                headers: HashMap::new(),
+                body: Vec::new()
+            }
+        }
+    }
+
+    ☉ rite local_storage(&this) → Storage! {
+        Storage { storage_type: StorageType::Local }
+    }
+
+    ☉ rite session_storage(&this) → Storage! {
+        Storage { storage_type: StorageType::Session }
+    }
+
+    ☉ rite current_url(&this) → String! {
+        "native://app".to_string()
+    }
+
+    ☉ rite push_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Native apps don't have browser history
+    }
+
+    ☉ rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Native apps don't have browser history
+    }
+
+    ☉ rite render_to_string(&this, vnode: &VNode) → String! {
+        panic!("render_to_string not supported in native platform")
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // Platform Creation Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_win32_platform_creation() {
+        ≔ platform! = Win32Platform::new();
+        assert!(!platform.initialized);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_win32_platform_default_values() {
+        ≔ platform! = Win32Platform::new();
+        assert!(!platform.initialized);
+        assert_eq!(platform.hinstance as usize, 0);
+        assert_eq!(platform.main_hwnd as usize, 0);
+        assert_eq!(platform.next_control_id, 1000);
+        assert!(platform.event_handlers.is_empty());
+        assert!(platform.layout_info.is_empty());
+        assert!(platform.control_id_to_handler.is_empty());
+        assert!(platform.timer_callbacks.is_empty());
+        assert!(platform.spacing_map.is_empty());
+    }
+
+    // ========================================================================
+    // LayoutInfo Tests
+    // ========================================================================
+
+    #[test]
+    rite test_layout_info_default() {
+        ≔ info! = LayoutInfo::default();
+        assert!(!info.hexpand);
+        assert!(!info.vexpand);
+        assert!(matches!(info.halign, Align::Fill));
+        assert!(matches!(info.valign, Align::Fill));
+        assert_eq!(info.margin_top, 0);
+        assert_eq!(info.margin_bottom, 0);
+        assert_eq!(info.margin_start, 0);
+        assert_eq!(info.margin_end, 0);
+        assert!(matches!(info.orientation, Orientation::Vertical));
+    }
+
+    #[test]
+    rite test_layout_info_custom_values() {
+        ≔ info! = LayoutInfo {
+            hexpand: ⊤,
+            vexpand: ⊥,
+            halign: Align::Center,
+            valign: Align::Start,
+            margin_top: 10,
+            margin_bottom: 20,
+            margin_start: 5,
+            margin_end: 15,
+            orientation: Orientation::Horizontal
+        };
+        assert!(info.hexpand);
+        assert!(!info.vexpand);
+        assert!(matches!(info.halign, Align::Center));
+        assert!(matches!(info.valign, Align::Start));
+        assert_eq!(info.margin_top, 10);
+        assert_eq!(info.margin_bottom, 20);
+        assert_eq!(info.margin_start, 5);
+        assert_eq!(info.margin_end, 15);
+        assert!(matches!(info.orientation, Orientation::Horizontal));
+    }
+
+    // ========================================================================
+    // Structure Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_rect_creation() {
+        ≔ rect! = RECT {
+            left: 10,
+            top: 20,
+            right: 110,
+            bottom: 220
+        };
+        assert_eq!(rect.left, 10);
+        assert_eq!(rect.top, 20);
+        assert_eq!(rect.right, 110);
+        assert_eq!(rect.bottom, 220);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_rect_dimensions() {
+        ≔ rect! = RECT {
+            left: 0,
+            top: 0,
+            right: 800,
+            bottom: 600
+        };
+        ≔ width! = rect.right - rect.left;
+        ≔ height! = rect.bottom - rect.top;
+        assert_eq!(width, 800);
+        assert_eq!(height, 600);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_msg_creation() {
+        ≔ msg! = MSG {
+            hwnd: 0 as *void,
+            message: 0,
+            wParam: 0,
+            lParam: 0,
+            time: 0,
+            pt_x: 0,
+            pt_y: 0
+        };
+        assert_eq!(msg.message, 0);
+        assert_eq!(msg.wParam, 0);
+        assert_eq!(msg.lParam, 0);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_paintstruct_creation() {
+        ≔ ps! = PAINTSTRUCT {
+            hdc: 0 as *void,
+            fErase: ⊥,
+            rcPaint: RECT { left: 0, top: 0, right: 100, bottom: 100 },
+            fRestore: ⊥,
+            fIncUpdate: ⊥,
+            rgbReserved: [0; 32]
+        };
+        assert!(!ps.fErase);
+        assert_eq!(ps.rcPaint.right, 100);
+    }
+
+    // ========================================================================
+    // Constants Tests
+    // ========================================================================
+
+    #[test]
+    rite test_window_style_constants() {
+        // Verify window styles are non-zero and distinct
+        assert!(WS_OVERLAPPEDWINDOW != 0);
+        assert!(WS_CHILD != 0);
+        assert!(WS_VISIBLE != 0);
+        assert!(WS_CHILD != WS_VISIBLE);
+    }
+
+    #[test]
+    rite test_message_constants() {
+        // Verify message constants
+        assert_eq!(WM_CREATE, 0x0001);
+        assert_eq!(WM_DESTROY, 0x0002);
+        assert_eq!(WM_SIZE, 0x0005);
+        assert_eq!(WM_PAINT, 0x000F);
+        assert_eq!(WM_CLOSE, 0x0010);
+        assert_eq!(WM_COMMAND, 0x0111);
+    }
+
+    #[test]
+    rite test_button_style_constants() {
+        assert_eq!(BS_PUSHBUTTON, 0x00000000);
+        assert_eq!(BS_AUTOCHECKBOX, 0x00000003);
+        assert_eq!(BS_AUTORADIOBUTTON, 0x00000009);
+    }
+
+    #[test]
+    rite test_show_window_constants() {
+        assert_eq!(SW_HIDE, 0);
+        assert_eq!(SW_SHOW, 5);
+        assert_eq!(SW_SHOWNORMAL, 1);
+    }
+
+    // ========================================================================
+    // String Conversion Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_to_wide_empty_string() {
+        ≔ platform! = Win32Platform::new();
+        ≔ wide! = platform.to_wide("");
+        assert_eq!(wide.len(), 1);  // Just null terminator
+        assert_eq!(wide[0], 0);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_to_wide_ascii() {
+        ≔ platform! = Win32Platform::new();
+        ≔ wide! = platform.to_wide("Hello");
+        assert_eq!(wide.len(), 6);  // 5 chars + null
+        assert_eq!(wide[0], 'H' as u16);
+        assert_eq!(wide[1], 'e' as u16);
+        assert_eq!(wide[2], 'l' as u16);
+        assert_eq!(wide[3], 'l' as u16);
+        assert_eq!(wide[4], 'o' as u16);
+        assert_eq!(wide[5], 0);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_to_wide_unicode() {
+        ≔ platform! = Win32Platform::new();
+        ≔ wide! = platform.to_wide("日本語");
+        assert_eq!(wide.len(), 4);  // 3 chars + null
+        assert_eq!(wide[0], '日' as u16);
+        assert_eq!(wide[1], '本' as u16);
+        assert_eq!(wide[2], '語' as u16);
+        assert_eq!(wide[3], 0);
+    }
+
+    // ========================================================================
+    // Control ID Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_get_next_control_id() {
+        vary platform! = Win32Platform::new();
+        ≔ id1! = platform.get_next_control_id();
+        ≔ id2! = platform.get_next_control_id();
+        ≔ id3! = platform.get_next_control_id();
+
+        assert_eq!(id1, 1000);
+        assert_eq!(id2, 1001);
+        assert_eq!(id3, 1002);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_control_id_sequential() {
+        vary platform! = Win32Platform::new();
+
+        for i in 0..100 {
+            ≔ id! = platform.get_next_control_id();
+            assert_eq!(id, 1000 + i);
+        }
+
+        assert_eq!(platform.next_control_id, 1100);
+    }
+
+    // ========================================================================
+    // Event Handler Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_event_handler_storage() {
+        vary platform! = Win32Platform::new();
+
+        platform.control_id_to_handler.insert(1000, 1);
+        platform.control_id_to_handler.insert(1001, 2);
+        platform.control_id_to_handler.insert(1002, 3);
+
+        assert_eq!(platform.control_id_to_handler.len(), 3);
+        assert_eq!(*platform.control_id_to_handler.get(&1000).unwrap(), 1);
+        assert_eq!(*platform.control_id_to_handler.get(&1001).unwrap(), 2);
+        assert_eq!(*platform.control_id_to_handler.get(&1002).unwrap(), 3);
+    }
+
+    // ========================================================================
+    // Layout Info Storage Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_layout_info_storage() {
+        vary platform! = Win32Platform::new();
+
+        ≔ info1! = LayoutInfo::default();
+        ≔ info2! = LayoutInfo {
+            hexpand: ⊤,
+            vexpand: ⊤,
+            halign: Align::Center,
+            valign: Align::Center,
+            margin_top: 5,
+            margin_bottom: 5,
+            margin_start: 5,
+            margin_end: 5,
+            orientation: Orientation::Horizontal
+        };
+
+        platform.layout_info.insert(100, info1);
+        platform.layout_info.insert(200, info2);
+
+        assert_eq!(platform.layout_info.len(), 2);
+        assert!(!platform.layout_info.get(&100).unwrap().hexpand);
+        assert!(platform.layout_info.get(&200).unwrap().hexpand);
+    }
+
+    // ========================================================================
+    // Spacing Map Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_spacing_map() {
+        vary platform! = Win32Platform::new();
+
+        platform.spacing_map.insert(100, 5);
+        platform.spacing_map.insert(200, 10);
+        platform.spacing_map.insert(300, 15);
+
+        assert_eq!(*platform.spacing_map.get(&100).unwrap(), 5);
+        assert_eq!(*platform.spacing_map.get(&200).unwrap(), 10);
+        assert_eq!(*platform.spacing_map.get(&300).unwrap(), 15);
+        assert!(platform.spacing_map.get(&400).is_none());
+    }
+
+    // ========================================================================
+    // Class Name Tests
+    // ========================================================================
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_class_names_null_terminated() {
+        // Verify class name arrays are null-terminated
+        assert_eq!(QLIPHOTH_CLASS_NAME[14], 0);
+        assert_eq!(QLIPHOTH_CONTAINER_CLASS[17], 0);
+        assert_eq!(BUTTON_CLASS[6], 0);
+        assert_eq!(STATIC_CLASS[6], 0);
+        assert_eq!(EDIT_CLASS[4], 0);
+        assert_eq!(LISTBOX_CLASS[7], 0);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_class_name_content() {
+        // Verify BUTTON class
+        assert_eq!(BUTTON_CLASS[0], 'B' as u16);
+        assert_eq!(BUTTON_CLASS[1], 'U' as u16);
+        assert_eq!(BUTTON_CLASS[2], 'T' as u16);
+        assert_eq!(BUTTON_CLASS[3], 'T' as u16);
+        assert_eq!(BUTTON_CLASS[4], 'O' as u16);
+        assert_eq!(BUTTON_CLASS[5], 'N' as u16);
+    }
+}
