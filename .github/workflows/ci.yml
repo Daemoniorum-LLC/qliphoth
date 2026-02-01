@@ -1,20 +1,37 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright (c) 2025 Daemoniorum, LLC
+
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
     inputs:
       branch:
         description: 'Branch to test'
         required: false
-        default: 'main'
+        default: 'develop'
 
 jobs:
+  # Core E2E tests on all platforms
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            name: Linux
+          - os: windows-latest
+            name: Windows
+          - os: macos-latest
+            name: macOS
+
+    runs-on: ${{ matrix.os }}
+    name: E2E Tests (${{ matrix.name }})
 
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +58,108 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.os }}
+          path: playwright-report/
+          retention-days: 30
+
+  # Platform-specific tests (native backends)
+  platform-tests:
+    runs-on: ubuntu-latest
+    name: Platform Tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Build
+        run: npm run build
+
+      - name: Run platform tests
+        run: npx playwright test e2e/platform.e2e.spec.ts
+
+      - name: Upload platform test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platform-test-report
+          path: playwright-report/
+          retention-days: 30
+
+  # Performance tests (run separately to avoid timeout issues)
+  performance-tests:
+    runs-on: ubuntu-latest
+    name: Performance Tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Build
+        run: npm run build
+
+      - name: Run performance tests
+        run: npx playwright test e2e/performance.e2e.spec.ts
+
+      - name: Upload performance test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-report
+          path: playwright-report/
+          retention-days: 30
+
+  # Simulacra UX tests
+  simulacra-tests:
+    runs-on: ubuntu-latest
+    name: Simulacra UX Tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Build
+        run: npm run build
+
+      - name: Run simulacra tests
+        run: npx playwright test e2e/simulacra.e2e.spec.ts
+
+      - name: Upload simulacra test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simulacra-test-report
           path: playwright-report/
           retention-days: 30
