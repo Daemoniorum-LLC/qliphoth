@@ -13,22 +13,22 @@ use qliphoth::prelude::*
 
 /// A simple counter component that works across all platforms
 component Counter {
-    /// The current count value (! = computed/certain)
-    state count: i64! = 0
+    /// The current count value (! = known/certain)
+    state count: i64! ≔ 0
 
     /// Increment the counter
-    fn increment(&mut self) {
+    rite increment(&mut self) {
         self.count += 1
     }
 
     /// Decrement the counter
-    fn decrement(&mut self) {
+    rite decrement(&mut self) {
         self.count -= 1
     }
 
     /// Reset to zero
-    fn reset(&mut self) {
-        self.count = 0
+    rite reset(&mut self) {
+        self.count ≔ 0
     }
 
     /// Render the counter UI
@@ -36,7 +36,7 @@ component Counter {
     /// - DOM elements in browser
     /// - HTML string on server
     /// - GTK widgets on desktop
-    fn render(self) -> Element {
+    rite render(self) → Element {
         div[class: "counter"] {
             h1[class: "counter-title"] { "Cross-Platform Counter" }
 
@@ -45,9 +45,9 @@ component Counter {
             }
 
             div[class: "counter-buttons"] {
-                button[onclick: || self.decrement()] { "−" }
-                button[onclick: || self.reset()] { "Reset" }
-                button[onclick: || self.increment()] { "+" }
+                button[onclick: || self·decrement()] { "−" }
+                button[onclick: || self·reset()] { "Reset" }
+                button[onclick: || self·increment()] { "+" }
             }
 
             // Platform indicator
@@ -66,7 +66,7 @@ component Counter {
 }
 
 /// Styles for the counter (works on all platforms)
-const COUNTER_STYLES: &str = r#"
+const COUNTER_STYLES: &str ≔ r#"
     .counter {
         font-family: system-ui, -apple-system, sans-serif;
         max-width: 400px;
@@ -122,31 +122,31 @@ const COUNTER_STYLES: &str = r#"
 "#;
 
 /// Main entry point
-fn main() {
+rite main() {
     // Detect platform automatically
-    let platform! = qliphoth::platform::detect();
+    ≔ platform! ≔ qliphoth::platform·detect();
 
     // Mount the app
-    App::new()
+    App·new()
         ·with_styles(COUNTER_STYLES)
-        ·mount("#root", Counter::new())
+        ·mount("#root", Counter·new())
 }
 
 /// Native-specific entry point (for GTK)
 #[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-fn main_native() {
+rite main_native() {
     use qliphoth::platform::native;
 
     // Create native platform explicitly
-    let platform! = native();
+    ≔ platform! ≔ native();
 
     // Create and mount the app
-    let app! = App::new()
+    ≔ app! ≔ App·new()
         ·with_platform(platform)
         ·with_styles(COUNTER_STYLES)
 
     // Mount counter component
-    app·mount_root(Counter::new());
+    app·mount_root(Counter·new());
 
     // Show window and run main loop
     platform·show();
