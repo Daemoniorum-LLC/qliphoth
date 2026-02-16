@@ -94,7 +94,33 @@ This document defines the migration strategy for the entire Daemoniorum ecosyste
 
 ### 3.1 CRITICAL Priority (Migrate First)
 
-#### Bael
+#### Infernum Observer (FIRST MIGRATION TARGET)
+- **Location:** `/home/crook/dev/infernum-observer`
+- **Type:** LLM Inference Engine monitoring dashboard
+- **Complexity:** MODERATE - ideal first migration
+- **Why First:**
+  - Uses ALL @daemoniorum/* core libraries (forces library ports)
+  - No exotic deps (no 3D, no audio, no ML)
+  - Well-tested (unit tests + Playwright E2E)
+  - Moderate size, clear structure
+  - Lower risk than business-critical apps
+- **Dependencies:**
+  - @daemoniorum/ui
+  - @daemoniorum/api
+  - @daemoniorum/state
+  - @daemoniorum/forms
+  - @daemoniorum/realtime (WebSocket monitoring)
+  - @daemoniorum/storage
+  - @daemoniorum/analytics
+  - @daemoniorum/core
+  - @daemoniorum/assets
+  - TanStack React Query
+  - Axios
+  - Lucide React (icons)
+- **Components:** ~30 (admin panel, models panel, thermal monitor, cache stats, etc.)
+- **Estimated Effort:** 2-3 weeks (including library ports)
+
+#### Bael (SECOND - after Infernum proves the pattern)
 - **Location:** `/home/crook/dev2/workspace/persona/bael`
 - **Type:** Flagship @persona-framework application
 - **Complexity:** EXTREME
@@ -288,18 +314,42 @@ Week 7-8:
 - API documentation
 - Migration guides per library
 
-### Phase 3: Flagship Apps (Weeks 9-16)
+### Phase 3: First App Migration - Infernum Observer (Weeks 9-12)
 
-**Goal:** Migrate Bael and Vulcan ERP as reference implementations
+**Goal:** Complete first full app migration, proving the entire stack
 
 ```
-Week 9-12: Bael
+Week 9-10: Infernum Observer migration
+├── Run React→Qliphoth migration tool
+├── Manual refinement of generated code
+├── Integrate qliphoth-ui components
+└── Port WebSocket monitoring (qliphoth-sys)
+
+Week 11-12: Validation & Documentation
+├── Port existing unit tests to Sigil
+├── Run Playwright E2E tests against Qliphoth version
+├── Document migration patterns discovered
+└── Performance comparison vs React version
+```
+
+**Deliverables:**
+- First production Qliphoth app (Infernum Observer)
+- Validated @daemoniorum/* library ports
+- Migration pattern documentation
+- Performance baseline
+
+### Phase 4: Flagship Apps (Weeks 13-20)
+
+**Goal:** Migrate Bael and Vulcan ERP using proven patterns
+
+```
+Week 13-16: Bael
 ├── Use migration tool for bulk conversion
 ├── Handle 3D/audio via JS interop
 ├── Document complex patterns
 └── Validate with E2E tests
 
-Week 13-16: Vulcan ERP
+Week 17-20: Vulcan ERP
 ├── Migration with business validation
 ├── Tauri integration testing
 ├── Performance benchmarks
@@ -307,22 +357,22 @@ Week 13-16: Vulcan ERP
 ```
 
 **Deliverables:**
-- Two production Qliphoth apps
-- Battle-tested migration patterns
-- Performance baseline
+- Two flagship Qliphoth apps
+- JS interop patterns for complex deps
+- Production deployment guides
 
-### Phase 4: High-Value Apps (Weeks 17-32)
+### Phase 5: High-Value Apps (Weeks 21-36)
 
 **Goal:** Migrate remaining high-priority applications
 
 ```
-Weeks 17-20: Arachne, Umbra (creative apps)
-Weeks 21-24: Orpheus (music - complex domain)
-Weeks 25-28: Codex, Synaxis (business apps)
-Weeks 29-32: Remaining high-priority
+Weeks 21-24: Arachne, Umbra (creative apps)
+Weeks 25-28: Orpheus (music - complex domain)
+Weeks 29-32: Codex, Synaxis (business apps)
+Weeks 33-36: Remaining high-priority
 ```
 
-### Phase 5: Long Tail (Weeks 33+)
+### Phase 6: Long Tail (Weeks 37+)
 
 **Goal:** Migrate remaining applications, deprecate React
 
