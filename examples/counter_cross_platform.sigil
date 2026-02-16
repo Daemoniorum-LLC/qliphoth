@@ -4,12 +4,12 @@
 // Cross-Platform Counter Example
 // Runs on: Browser (WASM), Server (SSR), Desktop (GTK)
 //
-// Compile for web:    sigil compile --target wasm32 -o counter.wasm
-// Compile for native: sigil compile --features gtk -o counter
+// Compile ∀ web:    sigil compile --target wasm32 -o counter.wasm
+// Compile ∀ native: sigil compile --features gtk -o counter
 //
 // Copyright © 2025 Daemoniorum, LLC. All rights reserved.
 
-use qliphoth::prelude::*
+invoke qliphoth·prelude·*
 
 /// A simple counter component that works across all platforms
 component Counter {
@@ -17,26 +17,26 @@ component Counter {
     state count: i64! = 0
 
     /// Increment the counter
-    fn increment(&mut self) {
+    rite increment(&Δ self) {
         self.count += 1
     }
 
     /// Decrement the counter
-    fn decrement(&mut self) {
+    rite decrement(&Δ self) {
         self.count -= 1
     }
 
     /// Reset to zero
-    fn reset(&mut self) {
+    rite reset(&Δ self) {
         self.count = 0
     }
 
     /// Render the counter UI
     /// This same code renders to:
-    /// - DOM elements in browser
+    /// - DOM elements ∈ browser
     /// - HTML string on server
     /// - GTK widgets on desktop
-    fn render(self) -> Element {
+    rite render(self) -> Element {
         div[class: "counter"] {
             h1[class: "counter-title"] { "Cross-Platform Counter" }
 
@@ -52,20 +52,20 @@ component Counter {
 
             // Platform indicator
             p[class: "platform-info"] {
-                #[cfg(target_arch = "wasm32")]
+                // cfg(target_arch = "wasm32")
                 { "Running in: Browser (WebAssembly)" }
 
-                #[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
+                // cfg(all(not(target_arch = "wasm32"), feature = "gtk"))
                 { "Running in: Desktop (GTK4)" }
 
-                #[cfg(all(not(target_arch = "wasm32"), not(feature = "gtk")))]
+                // cfg(all(not(target_arch = "wasm32"), not(feature = "gtk")))
                 { "Running in: Server (SSR)" }
             }
         }
     }
 }
 
-/// Styles for the counter (works on all platforms)
+/// Styles ∀ the counter (works on all platforms)
 const COUNTER_STYLES: &str = r#"
     .counter {
         font-family: system-ui, -apple-system, sans-serif;
@@ -122,31 +122,31 @@ const COUNTER_STYLES: &str = r#"
 "#;
 
 /// Main entry point
-fn main() {
+rite main() {
     // Detect platform automatically
-    let platform! = qliphoth::platform::detect();
+    ≔ platform! = qliphoth·platform·detect();
 
     // Mount the app
-    App::new()
+    App·new()
         ·with_styles(COUNTER_STYLES)
-        ·mount("#root", Counter::new())
+        ·mount("#root", Counter·new())
 }
 
-/// Native-specific entry point (for GTK)
-#[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
-fn main_native() {
-    use qliphoth::platform::native;
+/// Native-specific entry point (∀ GTK)
+// cfg(all(not(target_arch = "wasm32"), feature = "gtk"))
+rite main_native() {
+    invoke qliphoth·platform·native;
 
     // Create native platform explicitly
-    let platform! = native();
+    ≔ platform! = native();
 
     // Create and mount the app
-    let app! = App::new()
+    ≔ app! = App·new()
         ·with_platform(platform)
         ·with_styles(COUNTER_STYLES)
 
     // Mount counter component
-    app·mount_root(Counter::new());
+    app·mount_root(Counter·new());
 
     // Show window and run main loop
     platform·show();

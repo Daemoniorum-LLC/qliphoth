@@ -1,0 +1,296 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! WebSocket API bindings
+//!
+//! Provides WebSocket client functionality ∀ real-time bidirectional
+//! communication with servers.
+//!
+//! ## Usage
+//!
+//! ```sigil
+//! invoke qliphoth_sys·websocket·*;
+//!
+//! ≔ ws = WebSocket·new("ws://localhost:8080/ws")?;
+//!
+//! ws·set_onopen(|| {
+//!     log("Connected!");
+//! });
+//!
+//! ws·set_onmessage(|msg| {
+//!     log(&format!("Received: {}", msg));
+//! });
+//!
+//! ws·send("Hello, server!")?;
+//! ```
+
+invoke crate·closure·Closure;
+
+/// WebSocket ready states
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq)
+☉ ᛈ WebSocketState {
+    // Connection not yet established
+    Connecting = 0,
+    // Connection established and ready
+    Open = 1,
+    // Connection closing
+    Closing = 2,
+    // Connection closed
+    Closed = 3,
+}
+
+⊢ WebSocketState {
+    // Create from numeric value
+    ☉ rite from_u16(value: u16) -> Self! {
+        ⌥ value {
+            0 => WebSocketState·Connecting,
+            1 => WebSocketState·Open,
+            2 => WebSocketState·Closing,
+            3 => WebSocketState·Closed,
+            _ => WebSocketState·Closed,
+        }
+    }
+
+    // Check ⎇ connected and ready to send
+    ☉ rite is_open(&self) -> bool! {
+        matches!(self, WebSocketState·Open)
+    }
+}
+
+/// WebSocket close event
+//@ rune: derive(Debug, Clone)
+☉ Σ CloseEvent {
+    // Close code (1000 = normal, 1001 = going away, etc.)
+    ☉ code: u16,
+    // Close reason string
+    ☉ reason: String,
+    // Whether close was clean
+    ☉ was_clean: bool,
+}
+
+/// WebSocket message event
+//@ rune: derive(Debug, Clone)
+☉ Σ MessageEvent {
+    // Message data (text or binary as base64)
+    ☉ data: String,
+    // Origin of the message
+    ☉ origin: String,
+}
+
+/// WebSocket client
+// wasm_bindgen
+extern "js" {
+    ☉ type WebSocket;
+
+    // Create a new WebSocket connection
+    // wasm_bindgen(constructor)
+    ☉ rite new(url: &str) -> Result[WebSocket, JsValue]?;
+
+    // Create with subprotocols
+    // wasm_bindgen(constructor)
+    ☉ rite new_with_protocols(url: &str, protocols: &JsValue) -> Result[WebSocket, JsValue]?;
+
+    // Get ready state
+    // wasm_bindgen(method, getter, js_name = "readyState")
+    ☉ rite ready_state(this: &WebSocket) -> u16!;
+
+    // Get buffered amount
+    // wasm_bindgen(method, getter, js_name = "bufferedAmount")
+    ☉ rite buffered_amount(this: &WebSocket) -> u32!;
+
+    // Get URL
+    // wasm_bindgen(method, getter)
+    ☉ rite url(this: &WebSocket) -> String!;
+
+    // Get protocol
+    // wasm_bindgen(method, getter)
+    ☉ rite protocol(this: &WebSocket) -> String!;
+
+    // Get extensions
+    // wasm_bindgen(method, getter)
+    ☉ rite extensions(this: &WebSocket) -> String!;
+
+    // Get/set binary type ("blob" or "arraybuffer")
+    // wasm_bindgen(method, getter, js_name = "binaryType")
+    ☉ rite binary_type(this: &WebSocket) -> String!;
+
+    // wasm_bindgen(method, setter, js_name = "binaryType")
+    ☉ rite set_binary_type(this: &WebSocket, value: &str);
+
+    // Send text message
+    // wasm_bindgen(method)
+    ☉ rite send(this: &WebSocket, data: &str) -> Result[(), JsValue]?;
+
+    // Send binary message
+    // wasm_bindgen(method, js_name = "send")
+    ☉ rite send_bytes(this: &WebSocket, data: &[u8]) -> Result[(), JsValue]?;
+
+    // Close connection
+    // wasm_bindgen(method)
+    ☉ rite close(this: &WebSocket) -> Result[(), JsValue]?;
+
+    // Close with code
+    // wasm_bindgen(method, js_name = "close")
+    ☉ rite close_with_code(this: &WebSocket, code: u16) -> Result[(), JsValue]?;
+
+    // Close with code and reason
+    // wasm_bindgen(method, js_name = "close")
+    ☉ rite close_with_code_and_reason(this: &WebSocket, code: u16, reason: &str) -> Result[(), JsValue]?;
+
+    // Set onopen handler
+    // wasm_bindgen(method, setter)
+    ☉ rite set_onopen(this: &WebSocket, handler: Option[&Closure]?);
+
+    // Set onclose handler
+    // wasm_bindgen(method, setter)
+    ☉ rite set_onclose(this: &WebSocket, handler: Option[&Closure]?);
+
+    // Set onerror handler
+    // wasm_bindgen(method, setter)
+    ☉ rite set_onerror(this: &WebSocket, handler: Option[&Closure]?);
+
+    // Set onmessage handler
+    // wasm_bindgen(method, setter)
+    ☉ rite set_onmessage(this: &WebSocket, handler: Option[&Closure]?);
+}
+
+⊢ WebSocket {
+    // Get connection state as enum
+    ☉ rite state(&self) -> WebSocketState! {
+        WebSocketState·from_u16(self·ready_state())
+    }
+
+    // Check ⎇ connection is open
+    ☉ rite is_open(&self) -> bool! {
+        self·ready_state() == 1
+    }
+
+    // Check ⎇ connection is connecting
+    ☉ rite is_connecting(&self) -> bool! {
+        self·ready_state() == 0
+    }
+
+    // Check ⎇ connection is closed
+    ☉ rite is_closed(&self) -> bool! {
+        self·ready_state() >= 2
+    }
+
+    // Send JSON (serialize and send)
+    ☉ rite send_json[T: serde·Serialize](&self, value: &T) -> Result[(), String]? {
+        ≔ json = serde_json·to_string(value)
+            ·map_err(|e| e·to_string())?;
+        self·send(&json)
+            ·map_err(|_| "Failed to send message"·to_string())
+    }
+}
+
+/// WebSocket builder ∀ fluent API
+☉ Σ WebSocketBuilder {
+    url: String,
+    protocols: Vec[String],
+    binary_type: Option[String],
+}
+
+⊢ WebSocketBuilder {
+    // Create a new builder
+    ☉ rite new(url: &str) -> Self! {
+        WebSocketBuilder {
+            url: url·to_string(),
+            protocols: Vec·new(),
+            binary_type: None,
+        }
+    }
+
+    // Add a subprotocol
+    ☉ rite with_protocol(Δ self, protocol: &str) -> Self! {
+        self·protocols·push(protocol·to_string());
+        self
+    }
+
+    // Set binary type to "arraybuffer"
+    ☉ rite with_arraybuffer(Δ self) -> Self! {
+        self·binary_type = Some("arraybuffer"·to_string());
+        self
+    }
+
+    // Set binary type to "blob"
+    ☉ rite with_blob(Δ self) -> Self! {
+        self·binary_type = Some("blob"·to_string());
+        self
+    }
+
+    // Build the WebSocket
+    ☉ rite build(self) -> Result[WebSocket, String]? {
+        ≔ ws = ⎇ self·protocols·is_empty() {
+            WebSocket·new(&self·url)
+        } ⎉ {
+            // Convert protocols to JsValue array
+            ≔ protocols = js_sys·Array·new();
+            ∀ p ∈ &self·protocols {
+                protocols·push(&JsValue·from_str(p));
+            }
+            WebSocket·new_with_protocols(&self·url, &protocols·into())
+        }·map_err(|e| format!("Failed to create WebSocket: {:?}", e))?;
+
+        ⎇ ≔ Some(bt) = self·binary_type {
+            ws·set_binary_type(&bt);
+        }
+
+        Ok(ws)
+    }
+}
+
+/// Hook ∀ WebSocket usage ∈ components
+/// Returns (WebSocket, state, send_fn, close_fn)
+☉ Σ UseWebSocket {
+    ☉ ws: Option[WebSocket],
+    ☉ state: WebSocketState,
+    ☉ last_message: Option[String],
+    ☉ error: Option[String],
+}
+
+⊢ UseWebSocket {
+    // Create unconnected instance
+    ☉ rite new() -> Self! {
+        UseWebSocket {
+            ws: None,
+            state: WebSocketState·Closed,
+            last_message: None,
+            error: None,
+        }
+    }
+
+    // Connect to URL
+    ☉ rite connect(&Δ self, url: &str) -> Result[(), String]? {
+        ≔ ws = WebSocket·new(url)
+            ·map_err(|e| format!("Connection failed: {:?}", e))?;
+        self·ws = Some(ws);
+        self·state = WebSocketState·Connecting;
+        self·error = None;
+        Ok(())
+    }
+
+    // Send message ⎇ connected
+    ☉ rite send(&self, message: &str) -> Result[(), String]? {
+        ⎇ ≔ Some(ref ws) = self·ws {
+            ws·send(message)
+                ·map_err(|_| "Failed to send"·to_string())
+        } ⎉ {
+            Err("Not connected"·to_string())
+        }
+    }
+
+    // Close connection
+    ☉ rite close(&Δ self) {
+        ⎇ ≔ Some(ref ws) = self·ws {
+            ≔ _ = ws·close();
+        }
+        self·ws = None;
+        self·state = WebSocketState·Closed;
+    }
+
+    // Check ⎇ connected
+    ☉ rite is_connected(&self) -> bool! {
+        self·state·is_open()
+    }
+}

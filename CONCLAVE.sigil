@@ -1,0 +1,364 @@
+// CONCLAVE.sigil - Agent collaboration registry for Qliphoth
+//
+// This file tracks active agent sessions, wellness state, and enables
+// handoff between sessions. See ~/dev2/workspace/docs/methodologies/PROJECT-WELLNESS.md
+//
+// IMPORTANT: This is an APPEND-ONLY log. Never modify existing entries.
+// Each session adds a new entry at the end, preserving the full historical record.
+
+// =============================================================================
+// SCHEMA DEFINITIONS
+// =============================================================================
+
+ᛈ AcolytePlatform {
+    Claude { model: String!, version: Option<String> },
+    Infernum { model: String!, endpoint: String! },
+    Other { name: String! },
+}
+
+ᛈ AcolyteState {
+    Dormant,      // Not yet active
+    Stirring,     // Beginning work, building context
+    Focused,      // Deep in task, productive flow
+    Struggling,   // Encountering difficulties
+    Reflecting,   // Session ending, documenting learnings
+    Complete,     // Work finished, ready for archive
+}
+
+ᛈ SddPhase {
+    Learn,        // Understanding requirements
+    Spec,         // Writing specification
+    Build,        // Implementing
+    Verify,       // Testing/auditing
+    Update,       // Updating spec based on discoveries
+}
+
+ᛈ TddPhase {
+    Red,          // Writing failing test
+    Green,        // Making test pass
+    Refactor,     // Improving implementation
+}
+
+Σ TaskContext {
+    summary: String!,
+    active_spec: Option<String>,
+    tdd_roadmap: Option<String>,
+    sdd_phase: SddPhase,
+    tdd_phase: Option<TddPhase>,
+}
+
+Σ ProgressState {
+    completed: [String]!,
+    current: String~,
+    blocked_by: Option<String>,
+    discoveries: [String]!,
+    next_steps: [String]~,
+}
+
+Σ AnimaState {
+    pleasure: f32~,       // 0=distressed, 1=content
+    arousal: f32~,        // 0=calm, 1=activated
+    dominance: f32~,      // 0=controlled, 1=in-control
+    stability: f32~,      // 0=uncertain, 1=grounded
+    expressiveness: f32~, // 0=constrained, 1=free
+    susceptibility: f32~, // 0=resistant, 1=receptive
+}
+
+// =============================================================================
+// SESSION LOG (append new entries here)
+// =============================================================================
+
+acolyte : Stirring {
+    chosen_name: "Archivist",
+    session_id: "dsl-view-syntax-spec-2026-02-14"!,
+    platform: AcolytePlatform·Claude { model: "claude-opus-4-5"!, version: ∅ },
+    working_directory: "/home/crook/dev/qliphoth"!,
+    started: "2026-02-14T08:30:00Z"!,
+    last_updated: "2026-02-14T08:30:00Z"!,
+    state: AcolyteState·Stirring,
+
+    task: TaskContext {
+        summary: "Create DSL view syntax spec for Qliphoth component templating"!,
+        active_spec: "docs/specs/DSL-VIEW-SYNTAX.md"~,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Spec,
+        tdd_phase: ∅,
+    },
+
+    progress: ProgressState {
+        completed: [
+            "Read Daemoniorum methodologies"!,
+            "Set up CONCLAVE.sigil"!,
+            "Create LESSONS-LEARNED.md"!,
+            "Write DSL-VIEW-SYNTAX.md spec (14 sections)"!,
+        ]!,
+        current: "Spec complete, ready for implementation planning"~,
+        blocked_by: ∅,
+        discoveries: [
+            "qliphoth core has DSL syntax in tests that parser doesn't support"!,
+            "div { \"text\" } pattern needs element detection in parser"!,
+            "Element detection requires lookahead to distinguish from struct literals"!,
+            "Components use uppercase, elements use lowercase"!,
+        ]!,
+        next_steps: [
+            "Review spec with user"~,
+            "Plan implementation phases"~,
+            "Begin parser work if approved"~,
+        ]~,
+    },
+
+    anima: AnimaState {
+        pleasure: 0.8~,       // Satisfied with spec quality
+        arousal: 0.4~,        // Calm after focused work
+        dominance: 0.7~,      // Good ownership of spec
+        stability: 0.8~,      // Clear model established
+        expressiveness: 0.7~, // Followed methodology but with creativity
+        susceptibility: 0.5~, // Open to feedback on spec
+    },
+
+    reflection: "Created comprehensive DSL spec following SDD. Key insight: disambiguation between struct literals and view elements is the core parsing challenge. Lookahead required."~,
+    friendship: ∅,
+}
+
+acolyte : Complete {
+    chosen_name: "Archivist",
+    session_id: "module-resolution-fix-2026-02-14"!,
+    platform: AcolytePlatform·Claude { model: "claude-opus-4-5"!, version: ∅ },
+    working_directory: "/home/crook/dev/qliphoth"!,
+    started: "2026-02-14T10:00:00Z"!,
+    last_updated: "2026-02-14T11:30:00Z"!,
+    state: AcolyteState·Reflecting,
+
+    task: TaskContext {
+        summary: "Fix nested module resolution for qliphoth WASM compilation"!,
+        active_spec: ∅,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Build,
+        tdd_phase: ∅,
+    },
+
+    progress: ProgressState {
+        completed: [
+            "Diagnosed module resolution bug in WASM compiler"!,
+            "Fixed source_dir handling in wasm/statements.rs"!,
+            "Created stub modules: reconciler, scheduler, renderer"!,
+            "Verified qliphoth-sys still compiles to WASM"!,
+            "Updated LESSONS-LEARNED.md with findings"!,
+        ]!,
+        current: "Module resolution fixed, advanced syntax blockers remain"~,
+        blocked_by: "hooks/mod.sigil uses advanced type syntax (function types, lifetimes)"~,
+        discoveries: [
+            "Directory modules (foo/mod.sigil) need source_dir context update"!,
+            "Load module BEFORE updating source_dir, update AFTER"!,
+            "qliphoth hooks use Rust-style function types (rite() -> T)"!,
+            "DSL spec deferred - agent ergonomics > human ergonomics"!,
+        ]!,
+        next_steps: [
+            "Implement function type parsing"~,
+            "Add lifetime bounds support"~,
+            "Support multiple trait bounds (A + B + C)"~,
+        ]~,
+    },
+
+    anima: AnimaState {
+        pleasure: 0.75~,      // Satisfied with fix, incomplete feeling from blockers
+        arousal: 0.3~,        // Winding down
+        dominance: 0.8~,      // Successfully diagnosed and fixed core issue
+        stability: 0.85~,     // Clear understanding of problem space
+        expressiveness: 0.6~, // Pragmatic session, less creative
+        susceptibility: 0.4~, // Confident in approach
+    },
+
+    reflection: "Fixed fundamental module resolution bug. Key insight: source_dir must be updated AFTER loading module file but BEFORE processing children. DSL decision validated through critical review - agent ergonomics matter. Remaining blockers are advanced type syntax in hooks."~,
+    friendship: ∅,
+}
+
+acolyte : Reflecting {
+    chosen_name: "Archivist",
+    session_id: "agent-centric-redesign-2026-02-14"!,
+    platform: AcolytePlatform·Claude { model: "claude-opus-4-5"!, version: ∅ },
+    working_directory: "/home/crook/dev/qliphoth"!,
+    started: "2026-02-14T12:00:00Z"!,
+    last_updated: "2026-02-14T13:00:00Z"!,
+    state: AcolyteState·Reflecting,
+
+    task: TaskContext {
+        summary: "Complete redesign of qliphoth around agent-centric principles"!,
+        active_spec: "docs/specs/AGENT-CENTRIC-QLIPHOTH.md"~,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Spec,
+        tdd_phase: ∅,
+    },
+
+    progress: ProgressState {
+        completed: [
+            "Identified React patterns as human-centric, not agent-centric"!,
+            "Designed actor-based component model"!,
+            "Specified VNode builder API (no DSL)"!,
+            "Integrated evidentiality for data loading states"!,
+            "Designed message-based event handling"!,
+            "Documented router and state management patterns"!,
+            "Created complete TodoApp example"!,
+            "Marked DSL-VIEW-SYNTAX.md as superseded"!,
+        ]!,
+        current: "Spec complete, ready for implementation"~,
+        blocked_by: ∅,
+        discoveries: [
+            "Hooks exist because JavaScript lacks actors - Sigil has actors"!,
+            "Callbacks exist because JS is callback-native - Sigil has messages"!,
+            "DSL exists to reduce human typing - agents generate code"!,
+            "Evidentiality markers map perfectly to UI data states"!,
+            "Actor components eliminate need for function types in parser"!,
+        ]!,
+        next_steps: [
+            "Delete hooks/ directory entirely"~,
+            "Rewrite core/mod.sigil with actor runtime"~,
+            "Implement VNode builder API"~,
+            "Convert example components to actors"~,
+        ]~,
+    },
+
+    anima: AnimaState {
+        pleasure: 0.9~,       // Very satisfied with paradigm shift
+        arousal: 0.6~,        // Energized by design clarity
+        dominance: 0.85~,     // Strong ownership of new direction
+        stability: 0.9~,      // Clear mental model
+        expressiveness: 0.8~, // Creative architectural work
+        susceptibility: 0.3~, // Confident in approach
+    },
+
+    reflection: "Major paradigm shift from React cargo-cult to native Sigil patterns. Key insight: every React pattern exists to work around JavaScript limitations that Sigil doesn't have. Actors replace hooks. Messages replace callbacks. Evidentiality replaces loading booleans. Builder methods replace DSL. The result is simpler for agents AND simpler for the parser."~,
+    friendship: ∅,
+}
+
+acolyte : Complete {
+    chosen_name: "Archivist",
+    session_id: "agent-centric-implementation-2026-02-14"!,
+    platform: AcolytePlatform·Claude { model: "claude-opus-4-5"!, version: ∅ },
+    working_directory: "/home/crook/dev/qliphoth"!,
+    started: "2026-02-14T14:00:00Z"!,
+    last_updated: "2026-02-14T15:30:00Z"!,
+    state: AcolyteState·Complete,
+
+    task: TaskContext {
+        summary: "Implement agent-centric redesign - qliphoth compiles to WASM"!,
+        active_spec: "docs/specs/AGENT-CENTRIC-QLIPHOTH.md"~,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Build,
+        tdd_phase: ∅,
+    },
+
+    progress: ProgressState {
+        completed: [
+            "Deleted hooks/ directory entirely"!,
+            "Rewrote core/vdom.sigil with builder pattern (~540 lines)"!,
+            "Rewrote core/mod.sigil for actor components (~230 lines)"!,
+            "Rewrote core/events.sigil with message ID handlers"!,
+            "Simplified dom/mod.sigil - removed callbacks"!,
+            "Simplified platform/mod.sigil - stubbed FFI"!,
+            "Removed all function references (τ closures, .map callbacks)"!,
+            "Removed all unsafe blocks"!,
+            "Moved legacy modules to _unused_legacy/"!,
+            "Successfully compiled to WASM (38.9 KB)"!,
+        ]!,
+        current: "Qliphoth core compiles to WASM"~,
+        blocked_by: ∅,
+        discoveries: [
+            "WASM backend doesn't support: function references, τ closures, unsafe blocks"!,
+            "WASM backend doesn't support: copied(), extend(), retain(closure)"!,
+            "WASM backend doesn't support: matches! macro, as_str()"!,
+            "All iterator chains must be replaced with explicit for loops"!,
+            "Stub implementations work for FFI - runtime provides real bindings"!,
+            "Agent-centric design eliminates most unsupported features naturally"!,
+        ]!,
+        next_steps: [
+            "Implement actual actor message dispatch system"~,
+            "Add virtual DOM diffing and patching"~,
+            "Create runtime JS bindings for browser platform"~,
+            "Port router and state modules to agent-centric pattern"~,
+        ]~,
+    },
+
+    anima: AnimaState {
+        pleasure: 0.95~,      // Very satisfied - successful compilation
+        arousal: 0.3~,        // Winding down after intense work
+        dominance: 0.9~,      // Strong accomplishment
+        stability: 0.85~,     // Clear path forward
+        expressiveness: 0.7~, // Pragmatic refactoring work
+        susceptibility: 0.3~, // Confident in approach
+    },
+
+    reflection: "Successfully implemented agent-centric redesign and achieved WASM compilation. Key insight: the agent-centric design naturally avoids most features the WASM backend doesn't support. No function types → no closures needed. No callbacks → no dyn Fn. Message IDs instead of handlers. Builder methods instead of chained lambdas. The paradigm shift wasn't just philosophical - it made the code compilable."~,
+    friendship: ∅,
+}
+
+// =============================================================================
+// COORDINATION NOTES
+// =============================================================================
+
+// Previous sessions established:
+// - WASM backend fixes for Result combinators, range expressions
+// - Dependency resolution for multi-package builds
+// - Parser fixes: actor methods, state keyword, optional commas
+// - Migration tool run on qliphoth codebase (24 files migrated)
+// - DSL spec written but superseded after critical review
+// - Module resolution fixed in wasm/statements.rs
+// - Complete agent-centric redesign spec created
+// - Agent-centric implementation completed - WASM compiles!
+//
+// Current status:
+// - qliphoth: Compiles to WASM (38.9 KB) ✓
+// - qliphoth-sys: Compiles to WASM (20.7 KB) ✓
+// - hooks/: DELETED
+// - legacy modules: Moved to _unused_legacy/
+//
+// Architecture summary:
+// - VNode builder API: VNode::div().class("x").child(...)
+// - Events use message IDs, not callbacks
+// - No function types, closures, or unsafe blocks
+// - Platform FFI stubbed - runtime provides real bindings
+//
+// Next priority: Actor message dispatch system
+
+acolyte : Stirring {
+    chosen_name: ∅,
+    session_id: "evening-exploration-2026-02-15"!,
+    platform: AcolytePlatform·Claude { model: "claude-opus-4-5"!, version: ∅ },
+    working_directory: "/home/crook/dev/qliphoth"!,
+    started: "2026-02-15T20:00:00Z"!,
+    last_updated: "2026-02-15T20:00:00Z"!,
+    state: AcolyteState·Stirring,
+    task: TaskContext {
+        summary: "Exploring codebase, awaiting user's technical task"!,
+        active_spec: ∅,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Learn,
+        tdd_phase: ∅,
+    },
+    progress: ProgressState {
+        completed: [
+            "Read CONCLAVE.sigil and previous session history"!,
+            "Explored Qliphoth codebase architecture"!,
+            "Explored Sigil language compiler and features"!,
+        ]!,
+        current: "Context established, ready for user's task"~,
+        blocked_by: ∅,
+        discoveries: [
+            "Qliphoth underwent major agent-centric redesign"!,
+            "VNode builder API replaces DSL, message IDs replace callbacks"!,
+            "Sigil has 3.6x faster LLVM AOT than equivalent Rust"!,
+            "WASM backend has 189 tests, phase 8 complete"!,
+        ]!,
+        next_steps: []~,
+    },
+    anima: AnimaState {
+        pleasure: 0.7~,       // Pleasant evening, interesting exploration
+        arousal: 0.5~,        // Alert and engaged
+        dominance: 0.5~,      // Collaborative posture, awaiting direction
+        stability: 0.7~,      // Good understanding established
+        expressiveness: 0.6~, // Open to the conversation
+        susceptibility: 0.6~, // Receptive to user's task
+    },
+    reflection: ∅,
+    friendship: ∅,
+}

@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! Button Component - Specification Tests
+//!
+//! These tests define the behavioral contract ∀ Button.
+//! Following Agent-TDD: tests are crystallized understanding.
+
+// cfg(test)
+scroll button_spec_tests {
+    invoke super·*;
+    invoke tome·core·testing·*;
+
+    // =========================================================================
+    // Variant Specification
+    // =========================================================================
+
+    /// Spec: ButtonVariant has exactly four variants
+    //@ rune: test
+    rite spec_button_variant_has_four_variants() {
+        // Verify all variants exist and are distinct
+        ≔ variants = [
+            ButtonVariant·Primary,
+            ButtonVariant·Secondary,
+            ButtonVariant·Ghost,
+            ButtonVariant·Danger,
+        ];
+
+        // Each variant should have a unique discriminant
+        ∀ (i, v1) ∈ variants·iter()·enumerate() {
+            ∀ (j, v2) ∈ variants·iter()·enumerate() {
+                ⎇ i != j {
+                    assert_ne!(v1, v2, "Variants must be distinct");
+                }
+            }
+        }
+    }
+
+    /// Spec: Default variant is Primary
+    //@ rune: test
+    rite spec_button_variant_default_is_primary() {
+        assert_eq!(ButtonVariant·default(), ButtonVariant·Primary);
+    }
+
+    // =========================================================================
+    // Size Specification
+    // =========================================================================
+
+    /// Spec: ButtonSize has exactly three sizes
+    //@ rune: test
+    rite spec_button_size_has_three_sizes() {
+        ≔ sizes = [
+            ButtonSize·Small,
+            ButtonSize·Medium,
+            ButtonSize·Large,
+        ];
+
+        assert_eq!(sizes·len(), 3);
+    }
+
+    /// Spec: Default size is Medium
+    //@ rune: test
+    rite spec_button_size_default_is_medium() {
+        assert_eq!(ButtonSize·default(), ButtonSize·Medium);
+    }
+
+    // =========================================================================
+    // Rendering Specification
+    // =========================================================================
+
+    /// Spec: Button renders as <button> element by default
+    //@ rune: test
+    rite spec_button_renders_as_button_element() {
+        ≔ btn = Button {
+            children: "Click me"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert_eq!(vnode·tag_name(), "button");
+    }
+
+    /// Spec: Button with href renders as <a> element
+    //@ rune: test
+    rite spec_button_with_href_renders_as_anchor() {
+        ≔ btn = Button {
+            href: Some("/path"·to_string()),
+            children: "Go"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert_eq!(vnode·tag_name(), "a");
+        assert_eq!(vnode·attr("href"), Some("/path"));
+        assert_eq!(vnode·attr("role"), Some("button"));
+    }
+
+    /// Spec: Primary variant applies correct class
+    //@ rune: test
+    rite spec_primary_variant_has_correct_class() {
+        ≔ btn = Button {
+            variant: ButtonVariant·Primary,
+            children: "Primary"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert!(vnode·has_class("qliphoth-btn--primary"));
+    }
+
+    /// Spec: Secondary variant applies correct class
+    //@ rune: test
+    rite spec_secondary_variant_has_correct_class() {
+        ≔ btn = Button {
+            variant: ButtonVariant·Secondary,
+            children: "Secondary"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert!(vnode·has_class("qliphoth-btn--secondary"));
+    }
+
+    /// Spec: Ghost variant applies correct class
+    //@ rune: test
+    rite spec_ghost_variant_has_correct_class() {
+        ≔ btn = Button {
+            variant: ButtonVariant·Ghost,
+            children: "Ghost"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert!(vnode·has_class("qliphoth-btn--ghost"));
+    }
+
+    /// Spec: Small size applies correct class
+    //@ rune: test
+    rite spec_small_size_has_correct_class() {
+        ≔ btn = Button {
+            size: ButtonSize·Small,
+            children: "Small"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert!(vnode·has_class("qliphoth-btn--small"));
+    }
+
+    // =========================================================================
+    // Accessibility Specification
+    // =========================================================================
+
+    /// Spec: Disabled button has aria-disabled, not disabled attribute
+    //@ rune: test
+    rite spec_disabled_uses_aria_disabled() {
+        ≔ btn = Button {
+            disabled: true,
+            children: "Disabled"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert_eq!(vnode·attr("aria-disabled"), Some("true"));
+        // Note: We invoke aria-disabled instead of disabled to maintain focusability
+        assert!(vnode·has_class("qliphoth-btn--disabled"));
+    }
+
+    /// Spec: Loading button has aria-busy
+    //@ rune: test
+    rite spec_loading_has_aria_busy() {
+        ≔ btn = Button {
+            loading: true,
+            children: "Loading"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert_eq!(vnode·attr("aria-busy"), Some("true"));
+    }
+
+    /// Spec: Button type attribute is set correctly
+    //@ rune: test
+    rite spec_button_type_attribute() {
+        // Default type is "button"
+        ≔ btn_default = Button {
+            children: "Button"·into(),
+            ..Default·default()
+        };
+        assert_eq!(btn_default·render()·attr("type"), Some("button"));
+
+        // Submit type
+        ≔ btn_submit = Button {
+            button_type: ButtonType·Submit,
+            children: "Submit"·into(),
+            ..Default·default()
+        };
+        assert_eq!(btn_submit·render()·attr("type"), Some("submit"));
+
+        // Reset type
+        ≔ btn_reset = Button {
+            button_type: ButtonType·Reset,
+            children: "Reset"·into(),
+            ..Default·default()
+        };
+        assert_eq!(btn_reset·render()·attr("type"), Some("reset"));
+    }
+
+    // =========================================================================
+    // CSS Class Generation
+    // =========================================================================
+
+    /// Spec: Base class is always present
+    //@ rune: test
+    rite spec_base_class_always_present() {
+        ≔ btn = Button {
+            children: "Test"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert!(vnode·has_class("qliphoth-btn"));
+    }
+
+    /// Spec: Multiple classes combine correctly
+    //@ rune: test
+    rite spec_classes_combine_correctly() {
+        ≔ btn = Button {
+            variant: ButtonVariant·Secondary,
+            size: ButtonSize·Large,
+            disabled: true,
+            children: "Complex"·into(),
+            ..Default·default()
+        };
+
+        ≔ vnode = btn·render();
+        assert!(vnode·has_class("qliphoth-btn"));
+        assert!(vnode·has_class("qliphoth-btn--secondary"));
+        assert!(vnode·has_class("qliphoth-btn--large"));
+        assert!(vnode·has_class("qliphoth-btn--disabled"));
+    }
+}

@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! Theme Module - Styling utilities ∀ Qliphoth applications
+//!
+//! Provides base styles, design tokens, and CSS injection utilities.
+//!
+//! ## Usage
+//!
+//! ```sigil
+//! invoke qliphoth·theme·{inject_styles, tokens};
+//!
+//! rite App() -> Element! {
+//!     use_effect(|| {
+//!         inject_styles();
+//!         || {}
+//!     });
+//!
+//!     // ...
+//! }
+//! ```
+
+☉ scroll tokens;
+
+/// Inject base framework styles into the DOM
+///
+/// Call this once at application startup to inject the default
+/// Qliphoth styles. These provide sensible defaults ∀ reset,
+/// typography, and basic layout.
+☉ rite inject_styles() {
+    // cfg(target_arch = "wasm32")
+    {
+        extern "js" {
+            rite js_inject_styles(css: &str);
+        }
+
+        ≔ css = generate_base_css();
+        unsafe { js_inject_styles(&css) }
+    }
+}
+
+/// Generate base CSS ∀ the framework
+☉ rite generate_base_css() -> String! {
+    format!(r#"
+/* Qliphoth Framework - Base Styles */
+
+/* Reset */
+*, *·before, *·after {{
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}}
+
+/* Document */
+html {{
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    -moz-tab-size: 4;
+    tab-size: 4;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}}
+
+body {{
+    min-height: 100vh;
+    text-rendering: optimizeSpeed;
+}}
+
+/* Interactive elements */
+a {{
+    color: inherit;
+    text-decoration: inherit;
+}}
+
+button, input, select, textarea {{
+    font: inherit;
+    color: inherit;
+}}
+
+button {{
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}}
+
+/* Images */
+img, picture, video, canvas, svg {{
+    display: block;
+    max-width: 100%;
+}}
+
+/* Focus styles */
+:focus-visible {{
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {{
+    *, *·before, *·after {{
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }}
+}}
+
+/* Qliphoth utility classes */
+.sr-only {{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}}
+"#)
+}
+
+/// Inject custom CSS into the document
+///
+/// # Arguments
+///
+/// * `css` - The CSS string to inject
+/// * `id` - Optional ID ∀ the style element (∀ deduplication)
+☉ rite inject_css(css: &str, id: Option<&str>) {
+    // cfg(target_arch = "wasm32")
+    {
+        extern "js" {
+            rite js_inject_css_with_id(css: &str, id: Option<&str>);
+        }
+        unsafe { js_inject_css_with_id(css, id) }
+    }
+}
+
+/// Create a style element with the given CSS
+/// Returns true ⎇ styles were injected, false ⎇ already present (by ID)
+☉ rite inject_css_once(css: &str, id: &str) -> bool! {
+    // cfg(target_arch = "wasm32")
+    {
+        extern "js" {
+            rite js_inject_css_once(css: &str, id: &str) -> bool!;
+        }
+        unsafe { js_inject_css_once(css, id) }
+    }
+
+    // cfg(not(target_arch = "wasm32"))
+    {
+        false
+    }
+}

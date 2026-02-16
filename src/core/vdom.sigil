@@ -1,546 +1,543 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2025 Daemoniorum, LLC
 
-// Virtual DOM Implementation
-// Efficient tree diffing and patching with evidentiality-aware updates
+// Virtual DOM Implementation - Agent-Centric Design
+// Builder pattern for explicit, unambiguous view construction
+// No DSL, no function types, no callbacks
 
-use std::collections::HashMap;
-use crate::core::events::{EventHandler, EventType};
+invoke std·collections·HashMap;
 
 /// Unique identifier for virtual nodes
-pub type NodeId = u64;
+☉ type NodeId = u64;
 
 /// Virtual Node - the core abstraction for UI elements
-pub enum VNode {
+☉ ᛈ VNode {
     /// HTML/SVG element
     Element(VElement!),
     /// Text content
     Text(VText!),
     /// Fragment (multiple children without wrapper)
     Fragment(VFragment!),
-    /// Component instance
-    Component(VComponent!),
     /// Empty placeholder
     Empty,
-    /// Portal (render in different DOM location)
-    Portal(VPortal!)
 }
 
-/// Virtual Element representing a DOM element
-pub struct VElement {
-    /// Element tag name (div, span, etc.)
-    tag: String!
-    /// Element attributes
-    attrs: HashMap<String, AttrValue>!
-    /// Element properties (for DOM properties vs attributes)
-    props: HashMap<String, PropValue>!
-    /// Event handlers
-    events: HashMap<EventType, EventHandler>!
-    /// Child nodes
-    children: Vec<VNode>!
-    /// Unique key for reconciliation
-    key: Option<String>?
-    /// Reference callback
-    ref_callback: Option<fn(&DomRef)>?
-    /// Namespace (for SVG, MathML)
-    namespace: Option<String>?
-    /// Node ID (assigned during reconciliation)
-    id: Option<NodeId>?
-}
+⊢ VNode {
+    // =========================================================================
+    // Element Constructors
+    // =========================================================================
 
-impl VElement {
-    /// Create a new virtual element
-    pub fn new(tag: &str) -> Self! {
-        VElement {
-            tag: tag.to_string(),
-            attrs: HashMap::new(),
-            props: HashMap::new(),
-            events: HashMap::new(),
-            children: Vec::new(),
-            key: None,
-            ref_callback: None,
-            namespace: None,
-            id: None
+    // Document structure
+    ☉ rite div() -> Self! { VNode·Element(VElement·new("div")) }
+    ☉ rite span() -> Self! { VNode·Element(VElement·new("span")) }
+    ☉ rite main_elem() -> Self! { VNode·Element(VElement·new("main")) }
+    ☉ rite section() -> Self! { VNode·Element(VElement·new("section")) }
+    ☉ rite article() -> Self! { VNode·Element(VElement·new("article")) }
+    ☉ rite aside() -> Self! { VNode·Element(VElement·new("aside")) }
+    ☉ rite header() -> Self! { VNode·Element(VElement·new("header")) }
+    ☉ rite footer() -> Self! { VNode·Element(VElement·new("footer")) }
+    ☉ rite nav() -> Self! { VNode·Element(VElement·new("nav")) }
+
+    // Text elements
+    ☉ rite h1() -> Self! { VNode·Element(VElement·new("h1")) }
+    ☉ rite h2() -> Self! { VNode·Element(VElement·new("h2")) }
+    ☉ rite h3() -> Self! { VNode·Element(VElement·new("h3")) }
+    ☉ rite h4() -> Self! { VNode·Element(VElement·new("h4")) }
+    ☉ rite h5() -> Self! { VNode·Element(VElement·new("h5")) }
+    ☉ rite h6() -> Self! { VNode·Element(VElement·new("h6")) }
+    ☉ rite p() -> Self! { VNode·Element(VElement·new("p")) }
+    ☉ rite pre() -> Self! { VNode·Element(VElement·new("pre")) }
+    ☉ rite code() -> Self! { VNode·Element(VElement·new("code")) }
+    ☉ rite blockquote() -> Self! { VNode·Element(VElement·new("blockquote")) }
+    ☉ rite em() -> Self! { VNode·Element(VElement·new("em")) }
+    ☉ rite strong() -> Self! { VNode·Element(VElement·new("strong")) }
+    ☉ rite small() -> Self! { VNode·Element(VElement·new("small")) }
+
+    // Links and media
+    ☉ rite a() -> Self! { VNode·Element(VElement·new("a")) }
+    ☉ rite img() -> Self! { VNode·Element(VElement·new("img")) }
+    ☉ rite video() -> Self! { VNode·Element(VElement·new("video")) }
+    ☉ rite audio() -> Self! { VNode·Element(VElement·new("audio")) }
+    ☉ rite svg() -> Self! { VNode·Element(VElement·new("svg")) }
+
+    // Lists
+    ☉ rite ul() -> Self! { VNode·Element(VElement·new("ul")) }
+    ☉ rite ol() -> Self! { VNode·Element(VElement·new("ol")) }
+    ☉ rite li() -> Self! { VNode·Element(VElement·new("li")) }
+
+    // Tables
+    ☉ rite table() -> Self! { VNode·Element(VElement·new("table")) }
+    ☉ rite thead() -> Self! { VNode·Element(VElement·new("thead")) }
+    ☉ rite tbody() -> Self! { VNode·Element(VElement·new("tbody")) }
+    ☉ rite tr() -> Self! { VNode·Element(VElement·new("tr")) }
+    ☉ rite th() -> Self! { VNode·Element(VElement·new("th")) }
+    ☉ rite td() -> Self! { VNode·Element(VElement·new("td")) }
+
+    // Forms
+    ☉ rite form() -> Self! { VNode·Element(VElement·new("form")) }
+    ☉ rite input() -> Self! { VNode·Element(VElement·new("input")) }
+    ☉ rite textarea() -> Self! { VNode·Element(VElement·new("textarea")) }
+    ☉ rite select() -> Self! { VNode·Element(VElement·new("select")) }
+    ☉ rite option() -> Self! { VNode·Element(VElement·new("option")) }
+    ☉ rite button() -> Self! { VNode·Element(VElement·new("button")) }
+    ☉ rite label() -> Self! { VNode·Element(VElement·new("label")) }
+
+    // Other
+    ☉ rite br() -> Self! { VNode·Element(VElement·new("br")) }
+    ☉ rite hr() -> Self! { VNode·Element(VElement·new("hr")) }
+
+    // Text and fragment
+    ☉ rite text(content: &str) -> Self! { VNode·Text(VText·new(content)) }
+    ☉ rite fragment() -> Self! { VNode·Fragment(VFragment·new()) }
+
+    // =========================================================================
+    // Builder Methods (delegate to inner type)
+    // =========================================================================
+
+    /// Add an id attribute
+    ☉ rite id(Δ self, value: &str) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·id(value)),
+            other => other,
+        }
+    }
+
+    /// Add a class attribute
+    ☉ rite class(Δ self, value: &str) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·class(value)),
+            other => other,
         }
     }
 
     /// Add an attribute
-    pub fn attr(mut self, name: &str, value: impl Into<AttrValue>) -> Self! {
-        self.attrs·insert(name.to_string(), value·into())
+    ☉ rite attr(Δ self, name: &str, value: &str) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·attr(name, value)),
+            other => other,
+        }
+    }
+
+    /// Add a style property
+    ☉ rite style(Δ self, property: &str, value: &str) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·style(property, value)),
+            other => other,
+        }
+    }
+
+    /// Add a child node
+    ☉ rite child(Δ self, node: VNode) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·child(node)),
+            VNode·Fragment(frag) => VNode·Fragment(frag·child(node)),
+            other => other,
+        }
+    }
+
+    /// Add text content as child
+    ☉ rite text_child(Δ self, content: &str) -> Self! {
+        self·child(VNode·text(content))
+    }
+
+    /// Add multiple children
+    ☉ rite children(Δ self, nodes: Vec<VNode>) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·children(nodes)),
+            VNode·Fragment(frag) => VNode·Fragment(frag·children(nodes)),
+            other => other,
+        }
+    }
+
+    /// Set key for reconciliation
+    ☉ rite key(Δ self, key: &str) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·key(key)),
+            VNode·Fragment(frag) => VNode·Fragment(frag·key(key)),
+            other => other,
+        }
+    }
+
+    // =========================================================================
+    // Event Methods - Take message type ID, not callbacks
+    // =========================================================================
+
+    /// Register click handler (dispatches message to actor)
+    ☉ rite on_click(Δ self, message_id: u64) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·on_click(message_id)),
+            other => other,
+        }
+    }
+
+    /// Register input handler
+    ☉ rite on_input(Δ self, message_id: u64) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·on_input(message_id)),
+            other => other,
+        }
+    }
+
+    /// Register submit handler
+    ☉ rite on_submit(Δ self, message_id: u64) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·on_submit(message_id)),
+            other => other,
+        }
+    }
+
+    /// Register change handler
+    ☉ rite on_change(Δ self, message_id: u64) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·on_change(message_id)),
+            other => other,
+        }
+    }
+
+    // =========================================================================
+    // Conditional Helpers
+    // =========================================================================
+
+    /// Conditionally add a child
+    ☉ rite when(Δ self, condition: bool, node: VNode) -> Self! {
+        ⎇ condition {
+            self·child(node)
+        } ⎉ {
+            self
+        }
+    }
+
+    /// Add child from Option
+    ☉ rite when_some(Δ self, opt: Option<VNode>) -> Self! {
+        ⌥ opt {
+            Some(node) => self·child(node),
+            None => self,
+        }
+    }
+}
+
+/// Virtual Element representing a DOM element
+☉ Σ VElement {
+    /// Element tag name (div, span, etc.)
+    tag: String!
+    /// Element attributes (string values)
+    attrs: HashMap<String, String>!
+    /// Inline styles
+    styles: HashMap<String, String>!
+    /// Event handler message IDs
+    events: HashMap<String, u64>!
+    /// Child nodes
+    children: Vec<VNode>!
+    /// Unique key for reconciliation
+    key: Option<String>!
+    /// Node ID (assigned during reconciliation)
+    id: Option<NodeId>!
+}
+
+⊢ VElement {
+    /// Create a new virtual element
+    ☉ rite new(tag: &str) -> Self! {
+        VElement {
+            tag: tag.to_string(),
+            attrs: HashMap·new(),
+            styles: HashMap·new(),
+            events: HashMap·new(),
+            children: Vec·new(),
+            key: None,
+            id: None,
+        }
+    }
+
+    /// Add id attribute
+    ☉ rite id(Δ self, value: &str) -> Self! {
+        self.attrs·insert("id".to_string(), value.to_string())
         self
     }
 
-    /// Add a property
-    pub fn prop(mut self, name: &str, value: impl Into<PropValue>) -> Self! {
-        self.props·insert(name.to_string(), value·into())
+    /// Add class attribute
+    ☉ rite class(Δ self, value: &str) -> Self! {
+        self.attrs·insert("class".to_string(), value.to_string())
         self
     }
 
-    /// Add an event handler
-    pub fn on(mut self, event: EventType, handler: EventHandler) -> Self! {
-        self.events·insert(event, handler)
+    /// Add an attribute
+    ☉ rite attr(Δ self, name: &str, value: &str) -> Self! {
+        self.attrs·insert(name.to_string(), value.to_string())
+        self
+    }
+
+    /// Add a style property
+    ☉ rite style(Δ self, property: &str, value: &str) -> Self! {
+        self.styles·insert(property.to_string(), value.to_string())
         self
     }
 
     /// Add a child node
-    pub fn child(mut self, node: impl Into<VNode>) -> Self! {
-        self.children·push(node·into())
+    ☉ rite child(Δ self, node: VNode) -> Self! {
+        self.children·push(node)
         self
     }
 
     /// Add multiple children
-    pub fn children(mut self, nodes: impl IntoIterator<Item = impl Into<VNode>>) -> Self! {
-        self.children·extend(nodes|τ{n => n·into()})
+    ☉ rite children(Δ self, nodes: Vec<VNode>) -> Self! {
+        ∀ node ∈ nodes {
+            self.children·push(node)
+        }
         self
     }
 
     /// Set the key for reconciliation
-    pub fn key(mut self, key: &str) -> Self! {
-        self.key = Some(key.to_string())
+    ☉ rite key(Δ self, k: &str) -> Self! {
+        self.key = Some(k.to_string())
         self
     }
 
-    /// Set a ref callback
-    pub fn ref_cb(mut self, callback: fn(&DomRef)) -> Self! {
-        self.ref_callback = Some(callback)
+    /// Register click event (stores message ID)
+    ☉ rite on_click(Δ self, message_id: u64) -> Self! {
+        self.events·insert("click".to_string(), message_id)
         self
     }
-}
 
-/// Attribute value types
-pub enum AttrValue {
-    String(String!),
-    Bool(bool!),
-    Number(f64!),
-    /// Uncertain value (may not be set)
-    Uncertain(Option<String>?),
-    /// Remote value (from external source)
-    Remote(String~)
-}
-
-impl From<&str> for AttrValue {
-    fn from(s: &str) -> Self! {
-        AttrValue::String(s.to_string())
+    /// Register input event
+    ☉ rite on_input(Δ self, message_id: u64) -> Self! {
+        self.events·insert("input".to_string(), message_id)
+        self
     }
-}
 
-impl From<String> for AttrValue {
-    fn from(s: String) -> Self! {
-        AttrValue::String(s)
+    /// Register submit event
+    ☉ rite on_submit(Δ self, message_id: u64) -> Self! {
+        self.events·insert("submit".to_string(), message_id)
+        self
     }
-}
 
-impl From<bool> for AttrValue {
-    fn from(b: bool) -> Self! {
-        AttrValue::Bool(b)
+    /// Register change event
+    ☉ rite on_change(Δ self, message_id: u64) -> Self! {
+        self.events·insert("change".to_string(), message_id)
+        self
     }
-}
-
-impl From<i64> for AttrValue {
-    fn from(n: i64) -> Self! {
-        AttrValue::Number(n as f64)
-    }
-}
-
-impl From<f64> for AttrValue {
-    fn from(n: f64) -> Self! {
-        AttrValue::Number(n)
-    }
-}
-
-/// Property value types (for DOM properties)
-pub enum PropValue {
-    String(String!),
-    Bool(bool!),
-    Number(f64!),
-    Object(HashMap<String, PropValue>!),
-    Array(Vec<PropValue>!),
-    Function(fn() -> ()),
-    Null
 }
 
 /// Virtual Text node
-pub struct VText {
+☉ Σ VText {
     /// Text content
     content: String!
     /// Node ID
-    id: Option<NodeId>?
+    id: Option<NodeId>!
 }
 
-impl VText {
-    pub fn new(content: &str) -> Self! {
+⊢ VText {
+    ☉ rite new(content: &str) -> Self! {
         VText {
             content: content.to_string(),
-            id: None
+            id: None,
         }
-    }
-}
-
-impl From<&str> for VNode {
-    fn from(s: &str) -> Self! {
-        VNode::Text(VText::new(s))
-    }
-}
-
-impl From<String> for VNode {
-    fn from(s: String) -> Self! {
-        VNode::Text(VText::new(&s))
     }
 }
 
 /// Virtual Fragment (multiple nodes without wrapper)
-pub struct VFragment {
+☉ Σ VFragment {
     /// Child nodes
     children: Vec<VNode>!
     /// Fragment key
-    key: Option<String>?
+    key: Option<String>!
 }
 
-impl VFragment {
-    pub fn new(children: Vec<VNode>) -> Self! {
+⊢ VFragment {
+    ☉ rite new() -> Self! {
         VFragment {
-            children: children,
-            key: None
-        }
-    }
-
-    pub fn key(mut self, key: &str) -> Self! {
-        self.key = Some(key.to_string())
-        self
-    }
-}
-
-/// Virtual Component wrapper
-pub struct VComponent {
-    /// Component type identifier
-    type_id: u64!
-    /// Component props (as dynamic map)
-    props: HashMap<String, PropValue>!
-    /// Component key
-    key: Option<String>?
-    /// Render function
-    render: fn(HashMap<String, PropValue>) -> VNode
-    /// Component instance ID
-    id: Option<NodeId>?
-}
-
-impl VComponent {
-    pub fn new<C: Component>(component: C) -> Self! {
-        VComponent {
-            type_id: C::type_id(),
-            props: component·props_to_map(),
+            children: Vec·new(),
             key: None,
-            render: C::render_static,
-            id: None
         }
     }
 
-    pub fn key(mut self, key: &str) -> Self! {
-        self.key = Some(key.to_string())
+    ☉ rite child(Δ self, node: VNode) -> Self! {
+        self.children·push(node)
         self
     }
-}
 
-/// Portal for rendering in a different DOM location
-pub struct VPortal {
-    /// Target container selector
-    target: String!
-    /// Child nodes to render in target
-    children: Vec<VNode>!
-}
-
-impl VPortal {
-    pub fn new(target: &str, children: Vec<VNode>) -> Self! {
-        VPortal {
-            target: target.to_string(),
-            children: children
+    ☉ rite children(Δ self, nodes: Vec<VNode>) -> Self! {
+        ∀ node ∈ nodes {
+            self.children·push(node)
         }
-    }
-}
-
-/// Reference to actual DOM element
-pub struct DomRef {
-    /// Element pointer (platform-specific)
-    element: *mut ()
-}
-
-impl DomRef {
-    /// Focus the element
-    pub fn focus(self) {
-        // Platform-specific implementation
+        self
     }
 
-    /// Blur the element
-    pub fn blur(self) {
-        // Platform-specific implementation
-    }
-
-    /// Scroll element into view
-    pub fn scroll_into_view(self) {
-        // Platform-specific implementation
-    }
-
-    /// Get bounding client rect
-    pub fn get_bounding_rect(self) -> Rect! {
-        // Platform-specific implementation
-        Rect::default()
-    }
-}
-
-/// Rectangle dimensions
-pub struct Rect {
-    x: f64!
-    y: f64!
-    width: f64!
-    height: f64!
-}
-
-impl Rect {
-    pub fn default() -> Self! {
-        Rect { x: 0.0, y: 0.0, width: 0.0, height: 0.0 }
+    ☉ rite key(Δ self, k: &str) -> Self! {
+        self.key = Some(k.to_string())
+        self
     }
 }
 
 /// Diff result for reconciliation
-pub enum Patch {
+☉ ᛈ Patch {
     /// Create a new element
-    Create(VNode!),
+    Create { node: VNode! },
     /// Remove an element
-    Remove(NodeId!),
+    Remove { id: NodeId! },
     /// Replace one element with another
-    Replace(NodeId!, VNode!),
+    Replace { id: NodeId!, node: VNode! },
     /// Update element attributes
-    UpdateAttrs(NodeId!, HashMap<String, AttrValue>!),
-    /// Update element properties
-    UpdateProps(NodeId!, HashMap<String, PropValue>!),
-    /// Update event handlers
-    UpdateEvents(NodeId!, HashMap<EventType, EventHandler>!),
+    UpdateAttrs { id: NodeId!, attrs: HashMap<String, String>! },
+    /// Update element styles
+    UpdateStyles { id: NodeId!, styles: HashMap<String, String>! },
     /// Update text content
-    UpdateText(NodeId!, String!),
-    /// Reorder children
-    ReorderChildren(NodeId!, Vec<NodeId>!),
+    UpdateText { id: NodeId!, content: String! },
     /// Append child
-    AppendChild(NodeId!, VNode!),
-    /// Insert child before another
-    InsertBefore(NodeId!, VNode!, NodeId!),
+    AppendChild { parent_id: NodeId!, node: VNode! },
     /// Remove child
-    RemoveChild(NodeId!, NodeId!)
+    RemoveChild { parent_id: NodeId!, child_id: NodeId! },
 }
 
 /// Diff two virtual nodes and produce patches
-pub fn diff(old: &VNode, new: &VNode) -> Vec<Patch>! {
-    let patches! = Vec::new()
-    diff_recursive(old, new, &mut patches)
+☉ rite diff(old: &VNode, new: &VNode) -> Vec<Patch>! {
+    ≔ patches! = Vec·new()
+    diff_recursive(old, new, &Δ patches)
     patches
 }
 
-fn diff_recursive(old: &VNode, new: &VNode, patches: &mut Vec<Patch>) {
-    match (old, new) {
-        // Same type of element
-        (VNode::Element(old_el), VNode::Element(new_el)) => {
-            if old_el.tag != new_el.tag {
+rite diff_recursive(old: &VNode, new: &VNode, patches: &Δ Vec<Patch>) {
+    ⌥ (old, new) {
+        // Same type: Element
+        (VNode·Element(old_el), VNode·Element(new_el)) => {
+            ⎇ old_el.tag != new_el.tag {
                 // Different tags, replace entirely
-                patches·push(Patch::Replace(old_el.id·unwrap(), VNode::Element(new_el·clone())))
-            } else {
-                let id! = old_el.id·unwrap()
-
-                // Diff attributes
-                let attr_changes! = diff_attrs(&old_el.attrs, &new_el.attrs)
-                if !attr_changes·is_empty() {
-                    patches·push(Patch::UpdateAttrs(id, attr_changes))
+                ⌥ old_el.id {
+                    Some(id) => patches·push(Patch·Replace { id, node: VNode·Element(new_el·clone()) }),
+                    None => patches·push(Patch·Create { node: VNode·Element(new_el·clone()) }),
                 }
-
-                // Diff properties
-                let prop_changes! = diff_props(&old_el.props, &new_el.props)
-                if !prop_changes·is_empty() {
-                    patches·push(Patch::UpdateProps(id, prop_changes))
+            } ⎉ {
+                ⌥ old_el.id {
+                    Some(id) => {
+                        // Diff attributes
+                        ⎇ old_el.attrs != new_el.attrs {
+                            patches·push(Patch·UpdateAttrs { id, attrs: new_el.attrs·clone() })
+                        }
+                        // Diff styles
+                        ⎇ old_el.styles != new_el.styles {
+                            patches·push(Patch·UpdateStyles { id, styles: new_el.styles·clone() })
+                        }
+                        // Diff children
+                        diff_children(&old_el.children, &new_el.children, id, patches)
+                    }
+                    None => {}
                 }
-
-                // Diff events
-                let event_changes! = diff_events(&old_el.events, &new_el.events)
-                if !event_changes·is_empty() {
-                    patches·push(Patch::UpdateEvents(id, event_changes))
-                }
-
-                // Diff children
-                diff_children(&old_el.children, &new_el.children, id, patches)
             }
         }
 
-        // Text nodes
-        (VNode::Text(old_text), VNode::Text(new_text)) => {
-            if old_text.content != new_text.content {
-                patches·push(Patch::UpdateText(old_text.id·unwrap(), new_text.content·clone()))
+        // Same type: Text
+        (VNode·Text(old_text), VNode·Text(new_text)) => {
+            ⎇ old_text.content != new_text.content {
+                ⌥ old_text.id {
+                    Some(id) => patches·push(Patch·UpdateText { id, content: new_text.content·clone() }),
+                    None => {}
+                }
             }
         }
 
-        // Fragments
-        (VNode::Fragment(old_frag), VNode::Fragment(new_frag)) => {
+        // Same type: Fragment
+        (VNode·Fragment(old_frag), VNode·Fragment(new_frag)) => {
             diff_children(&old_frag.children, &new_frag.children, 0, patches)
         }
 
-        // Components
-        (VNode::Component(old_comp), VNode::Component(new_comp)) => {
-            if old_comp.type_id != new_comp.type_id {
-                // Different component types, replace
-                patches·push(Patch::Replace(old_comp.id·unwrap(), VNode::Component(new_comp·clone())))
-            } else {
-                // Same type, re-render with new props
-                let old_rendered! = (old_comp.render)(old_comp.props·clone())
-                let new_rendered! = (new_comp.render)(new_comp.props·clone())
-                diff_recursive(&old_rendered, &new_rendered, patches)
-            }
-        }
-
-        // Type changed, replace
-        (old, new) => {
-            match old {
-                VNode::Element(el) => patches·push(Patch::Replace(el.id·unwrap(), new·clone())),
-                VNode::Text(t) => patches·push(Patch::Replace(t.id·unwrap(), new·clone())),
-                VNode::Component(c) => patches·push(Patch::Replace(c.id·unwrap(), new·clone())),
-                _ => patches·push(Patch::Create(new·clone()))
+        // Type changed or Empty involved
+        _ => {
+            ≔ old_id! = get_node_id(old)
+            ⌥ old_id {
+                Some(id) => patches·push(Patch·Replace { id, node: new·clone() }),
+                None => patches·push(Patch·Create { node: new·clone() }),
             }
         }
     }
 }
 
-fn diff_attrs(old: &HashMap<String, AttrValue>, new: &HashMap<String, AttrValue>) -> HashMap<String, AttrValue>! {
-    let changes! = HashMap::new()
+rite diff_children(old: &Vec<VNode>, new: &Vec<VNode>, parent_id: NodeId, patches: &Δ Vec<Patch>) {
+    ≔ old_len! = old·len()
+    ≔ new_len! = new·len()
+    ≔ min_len! = old_len·min(new_len)
 
-    // Find added/changed attributes
-    for (key, value) in new {
-        match old·get(key) {
-            Some(old_value) if old_value == value => {}
-            _ => changes·insert(key·clone(), value·clone())
-        }
+    // Diff common children
+    ∀ i ∈ 0..min_len {
+        diff_recursive(&old[i], &new[i], patches)
     }
 
-    changes
-}
-
-fn diff_props(old: &HashMap<String, PropValue>, new: &HashMap<String, PropValue>) -> HashMap<String, PropValue>! {
-    let changes! = HashMap::new()
-
-    for (key, value) in new {
-        match old·get(key) {
-            Some(old_value) if old_value == value => {}
-            _ => changes·insert(key·clone(), value·clone())
-        }
+    // Append new children
+    ∀ i ∈ min_len..new_len {
+        patches·push(Patch·AppendChild { parent_id, node: new[i]·clone() })
     }
 
-    changes
-}
-
-fn diff_events(old: &HashMap<EventType, EventHandler>, new: &HashMap<EventType, EventHandler>) -> HashMap<EventType, EventHandler>! {
-    // Events are always replaced (function identity check is complex)
-    new·clone()
-}
-
-fn diff_children(old: &Vec<VNode>, new: &Vec<VNode>, parent_id: NodeId, patches: &mut Vec<Patch>) {
-    // Use keyed reconciliation for efficient updates
-    let old_keyed! = old|τ{node => (get_key(node), node)}|collect::<Vec<_>>()
-    let new_keyed! = new|τ{node => (get_key(node), node)}|collect::<Vec<_>>()
-
-    // LCS-based diffing for optimal moves
-    let operations! = compute_child_operations(&old_keyed, &new_keyed)
-
-    for op in operations {
-        match op {
-            ChildOp::Keep(idx) => {
-                diff_recursive(&old[idx], &new[idx], patches)
-            }
-            ChildOp::Insert(node, before_idx) => {
-                match before_idx {
-                    Some(idx) => {
-                        let before_id! = get_node_id(&old[idx])
-                        patches·push(Patch::InsertBefore(parent_id, node·clone(), before_id))
-                    }
-                    None => {
-                        patches·push(Patch::AppendChild(parent_id, node·clone()))
-                    }
-                }
-            }
-            ChildOp::Remove(idx) => {
-                let child_id! = get_node_id(&old[idx])
-                patches·push(Patch::RemoveChild(parent_id, child_id))
-            }
-            ChildOp::Move(from_idx, to_idx) => {
-                // Move is handled by remove + insert
-            }
+    // Remove old children
+    ∀ i ∈ min_len..old_len {
+        ⌥ get_node_id(&old[i]) {
+            Some(child_id) => patches·push(Patch·RemoveChild { parent_id, child_id }),
+            None => {}
         }
     }
 }
 
-enum ChildOp {
-    Keep(usize!),
-    Insert(VNode!, Option<usize>?),
-    Remove(usize!),
-    Move(usize!, usize!)
+rite get_node_id(node: &VNode) -> Option<NodeId>! {
+    ⌥ node {
+        VNode·Element(el) => el.id,
+        VNode·Text(t) => t.id,
+        _ => None,
+    }
 }
 
-fn compute_child_operations(old: &Vec<(Option<String>?, &VNode)>, new: &Vec<(Option<String>?, &VNode)>) -> Vec<ChildOp>! {
-    // Simplified reconciliation - full implementation would use LCS
-    let ops! = Vec::new()
+// =============================================================================
+// Tests
+// =============================================================================
 
-    let max_len! = old·len()·max(new·len())
-    for i in 0..max_len {
-        if i < old·len() && i < new·len() {
-            ops·push(ChildOp::Keep(i))
-        } else if i >= old·len() {
-            ops·push(ChildOp::Insert(new[i].1·clone(), None))
-        } else {
-            ops·push(ChildOp::Remove(i))
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    //@ rune: test
+    rite test_element_creation() {
+        ≔ el! = VNode·div()
+            ·class("container")
+            ·id("main")
+            ·child(VNode·text("Hello"))
+
+        ⌥ el {
+            VNode·Element(e) => {
+                assert_eq!(e.tag, "div")
+                assert_eq!(e.attrs·get("class"), Some(&"container".to_string()))
+                assert_eq!(e.children·len(), 1)
+            }
+            _ => {}
         }
     }
 
-    ops
-}
+    //@ rune: test
+    rite test_builder_chain() {
+        ≔ view! = VNode·div()
+            ·class("app")
+            ·child(VNode·header()
+                ·child(VNode·h1()·text_child("Title")))
+            ·child(VNode·main_elem()
+                ·child(VNode·p()·text_child("Content")))
+            ·child(VNode·footer()
+                ·child(VNode·text("Footer")))
 
-fn get_key(node: &VNode) -> Option<String>? {
-    match node {
-        VNode::Element(el) => el.key·clone(),
-        VNode::Component(comp) => comp.key·clone(),
-        VNode::Fragment(frag) => frag.key·clone(),
-        _ => None
-    }
-}
-
-fn get_node_id(node: &VNode) -> NodeId! {
-    match node {
-        VNode::Element(el) => el.id·unwrap_or(0),
-        VNode::Text(t) => t.id·unwrap_or(0),
-        VNode::Component(c) => c.id·unwrap_or(0),
-        _ => 0
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_element_creation() {
-        let el! = VElement::new("div")
-            ·attr("class", "container")
-            ·child("Hello")
-
-        assert_eq!(el.tag, "div")
-        assert_eq!(el.children·len(), 1)
-    }
-
-    #[test]
-    fn test_diff_text_change() {
-        let old! = VNode::Text(VText { content: "Hello".to_string(), id: Some(1) })
-        let new! = VNode::Text(VText { content: "World".to_string(), id: Some(1) })
-
-        let patches! = diff(&old, &new)
-        assert_eq!(patches·len(), 1)
-        match &patches[0] {
-            Patch::UpdateText(id, content) => {
-                assert_eq!(*id, 1)
-                assert_eq!(content, "World")
+        ⌥ view {
+            VNode·Element(e) => {
+                assert_eq!(e.children·len(), 3)
             }
-            _ => panic!("Expected UpdateText patch")
+            _ => {}
+        }
+    }
+
+    //@ rune: test
+    rite test_conditional_child() {
+        ≔ logged_in! = true
+        ≔ view! = VNode·div()
+            ·when(logged_in, VNode·span()·text_child("Welcome"))
+            ·when(!logged_in, VNode·a()·attr("href", "/login")·text_child("Login"))
+
+        ⌥ view {
+            VNode·Element(e) => {
+                assert_eq!(e.children·len(), 1)
+            }
+            _ => {}
         }
     }
 }

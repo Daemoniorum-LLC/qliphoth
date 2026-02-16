@@ -15,7 +15,7 @@ invoke super·viewport·{LineRange};
 // Athame Component Props
 // =============================================================================
 
-// Callback type for change events
+// Callback type ∀ change events
 ᛈ OptionCallback {
     None,
     Some(rite(String) → ()),
@@ -61,7 +61,7 @@ rite callback_unwrap(opt: OptionCallback) → rite(String) → () {
 // Athame Component
 // =============================================================================
 
-/// Athame code editor component for Qliphoth
+/// Athame code editor component ∀ Qliphoth
 ☉ rite AthameEditor(props: AthameProps) → VNode {
     // Initialize editor state
     ≔ (editor, set_editor) = use_state(athame_with_content(props.initial_content, props.height));
@@ -118,7 +118,7 @@ rite callback_unwrap(opt: OptionCallback) → rite(String) → () {
                 )
                 ·build(),
 
-            // Hidden input for text entry
+            // Hidden input ∀ text entry
             ⎇ ¬props.readonly ∧ focused {
                 input()
                     ·class("athame-hidden-input")
@@ -167,13 +167,13 @@ rite render_lines(editor: Athame, range: LineRange, cursor_line: i64, bracket_ma
     ≔ vary rendered = Vec·new();
     ≔ vary line_offset = 0;
 
-    // Calculate line offsets for highlighting
+    // Calculate line offsets ∀ highlighting
     ≔ vary offsets = Vec·new();
     ≔ vary offset = 0;
     ≔ vary j = 0;
     ⟳ j < lines.len() {
         offsets.push(offset);
-        offset = offset + chars(lines[j]).len() + 1; // +1 for newline
+        offset = offset + chars(lines[j]).len() + 1; // +1 ∀ newline
         j = j + 1;
     }
 
@@ -184,7 +184,7 @@ rite render_lines(editor: Athame, range: LineRange, cursor_line: i64, bracket_ma
         ≔ line_start = offsets[i];
         ≔ line_end = line_start + chars(line).len();
 
-        // Get highlights for this line
+        // Get highlights ∀ this line
         ≔ highlights = athame_get_line_highlights(editor, line_start, line_end);
 
         rendered.push(
@@ -223,12 +223,12 @@ rite render_line(line: String, line_num: i64, is_current: bool, line_start: i64,
     ≔ vary char_idx = 0;
 
     ⟳ char_idx < len {
-        // Find highlight for this character
+        // Find highlight ∀ this character
         ≔ char_pos = line_start + char_idx;
         ≔ vary span_class = "athame-text";
         ≔ vary span_end = char_idx + 1;
 
-        // Check for highlight spans
+        // Check ∀ highlight spans
         ≔ vary h = 0;
         ⟳ h < highlights.len() {
             ≔ hl = highlights[h];
@@ -240,7 +240,7 @@ rite render_line(line: String, line_num: i64, is_current: bool, line_start: i64,
             h = h + 1;
         }
 
-        // Check for bracket match
+        // Check ∀ bracket match
         ⌥ bracket_match {
             OptionBracketPair·Some(pair) => {
                 ⎇ char_pos == pair.open_pos ∨ char_pos == pair.close_pos {
@@ -262,7 +262,7 @@ rite render_line(line: String, line_num: i64, is_current: bool, line_start: i64,
             span()·class(span_class)·text(&span_text)·build()
         );
 
-        // Add cursor if it's in this span
+        // Add cursor ⎇ it's ∈ this span
         ⎇ is_current ∧ focused ∧ cursor_col >= char_idx ∧ cursor_col < span_end {
             spans.push(render_cursor(cursor_col - char_idx));
         }
@@ -395,7 +395,7 @@ rite parse_key_code(event: KeyboardEvent) → KeyCode {
 .ath-evidence-paradox { color: #f38ba8; }
 .ath-punctuation { color: #9399b2; }
 .ath-bracket { color: #f5c2e7; }
-.ath-bracket-match { background: rgba(245, 194, 231, 0.3); border-radius: 2px; }
+.ath-bracket-⌥ { background: rgba(245, 194, 231, 0.3); border-radius: 2px; }
 .ath-error { color: #f38ba8; text-decoration: wavy underline; }
 
 /* Cursor */

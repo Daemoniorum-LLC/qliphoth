@@ -1,226 +1,233 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2025 Daemoniorum, LLC
 
-// Sigil Web Core Module
-// Provides the fundamental runtime, reconciliation, and rendering engine
+// Qliphoth Core Module - Agent-Centric Design
+// Actor-based UI components with message passing
+// No hooks, no callbacks, no DSL
 
-pub mod vdom;
-pub mod reconciler;
-pub mod scheduler;
-pub mod renderer;
-pub mod events;
+☉ scroll vdom;
+☉ scroll events;
 
-use crate::dom::Element;
-use crate::state::Store;
-use crate::platform::Platform;
+invoke crate·platform·Platform;
 
 // Re-exports for convenience
-pub use vdom::{VNode, VElement, VText, VFragment, VComponent};
-pub use reconciler::Reconciler;
-pub use scheduler::{Scheduler, Priority};
-pub use renderer::Renderer;
-pub use events::{Event, EventHandler, EventType};
-
-/// Core application runtime
-/// Manages the component tree, state, and rendering pipeline
-actor AppRuntime {
-    state root: Option<VNode>? = None
-    state platform: Platform!
-    state scheduler: Scheduler!
-    state reconciler: Reconciler!
-    state mounted: bool! = false
-
-    /// Initialize the runtime with a target platform
-    fn new(platform: Platform) -> Self! {
-        AppRuntime {
-            platform: platform,
-            scheduler: Scheduler::new(),
-            reconciler: Reconciler::new(),
-            mounted: false,
-            root: None
-        }
-    }
-
-    /// Mount the application to a DOM element
-    on Mount(selector: String, component: VNode) {
-        let target! = self.platform·query_selector(selector)
-
-        match target! {
-            Some(el) => {
-                self.root = Some(component)
-                self.reconciler·initial_render(component, el)
-                self.mounted = true
-                self·emit(Mounted {})
-            }
-            None => {
-                panic!("Mount target not found: {selector}")
-            }
-        }
-    }
-
-    /// Schedule a state update
-    on ScheduleUpdate(component_id: u64, priority: Priority) {
-        self.scheduler·enqueue(component_id, priority)
-        self·process_queue()
-    }
-
-    /// Process pending updates
-    fn process_queue(self) {
-        self.scheduler·flush()
-            |τ{update => self.reconciler·reconcile(update)}
-            |each
-    }
-
-    /// Unmount the application
-    on Unmount {
-        match self.root {
-            Some(node) => {
-                self.reconciler·unmount(node)
-                self.root = None
-                self.mounted = false
-            }
-            None => {}
-        }
-    }
-
-    /// Check if application is mounted
-    fn is_mounted(self) -> bool! {
-        self.mounted
-    }
-}
+☉ invoke vdom·{VNode, VElement, VText, VFragment, Patch, diff};
+☉ invoke events·{Event, EventHandler, EventType};
 
 /// Application configuration
-struct AppConfig {
+☉ Σ AppConfig {
     /// Enable development mode features
     dev_mode: bool! = false
 
     /// Enable strict mode checks
     strict_mode: bool! = true
 
-    /// Enable concurrent rendering
-    concurrent: bool! = true
-
-    /// Custom error boundary
-    error_boundary: Option<fn(Error~) -> Element>? = None
-
-    /// Platform-specific options
-    platform_options: PlatformOptions! = PlatformOptions::default()
-}
-
-/// Platform-specific configuration
-struct PlatformOptions {
-    /// Target rendering environment
-    target: RenderTarget! = RenderTarget::Browser
-
-    /// Enable hydration for SSR
-    hydrate: bool! = false
-
     /// Base URL for routing
     base_url: String! = "/"
 }
 
+⊢ AppConfig {
+    ☉ rite default() -> Self! {
+        AppConfig {
+            dev_mode: false,
+            strict_mode: true,
+            base_url: "/".to_string(),
+        }
+    }
+
+    ☉ rite dev() -> Self! {
+        AppConfig {
+            dev_mode: true,
+            strict_mode: true,
+            base_url: "/".to_string(),
+        }
+    }
+}
+
 /// Render target environments
-enum RenderTarget {
+☉ ᛈ RenderTarget {
     Browser,
     Server,
     Static,
-    Native
 }
 
 /// Main application entry point
-pub struct App {
-    runtime: AppRuntime!
+☉ Σ App {
     config: AppConfig!
+    target: RenderTarget!
 }
 
-impl App {
+⊢ App {
     /// Create a new application with default config
-    pub fn new() -> Self! {
-        App::with_config(AppConfig::default())
+    ☉ rite new() -> Self! {
+        App {
+            config: AppConfig·default(),
+            target: RenderTarget·Browser,
+        }
     }
 
     /// Create a new application with custom config
-    pub fn with_config(config: AppConfig) -> Self! {
-        let platform! = Platform::detect(config.platform_options)
+    ☉ rite with_config(config: AppConfig) -> Self! {
         App {
-            runtime: AppRuntime::new(platform),
-            config: config
+            config,
+            target: RenderTarget·Browser,
         }
     }
 
-    /// Mount a component to a DOM selector
-    pub fn mount<C: Component>(selector: &str, component: C) -> Self! {
-        let app! = App::new()
-        app.runtime·send(Mount {
-            selector: selector.to_string(),
-            component: component·to_vnode()
-        })
+    /// Mount a component actor to a DOM selector
+    ☉ rite mount(selector: &str, root: VNode) -> Self! {
+        ≔ app! = App·new()
+        // Platform-specific mounting handled by runtime
         app
     }
 
-    /// Mount with hydration (for SSR)
-    pub fn hydrate<C: Component>(selector: &str, component: C) -> Self! {
-        let config! = AppConfig {
-            platform_options: PlatformOptions {
-                hydrate: true,
-                ..PlatformOptions::default()
-            },
-            ..AppConfig::default()
-        }
-        let app! = App::with_config(config)
-        app.runtime·send(Mount {
-            selector: selector.to_string(),
-            component: component·to_vnode()
-        })
-        app
+    /// Render to static HTML string (for SSG/SSR)
+    ☉ rite render_to_string(root: VNode) -> String! {
+        render_vnode_to_string(&root)
     }
+}
 
-    /// Render to static HTML (for SSG)
-    pub fn render_to_string<C: Component>(component: C) -> String! {
-        let config! = AppConfig {
-            platform_options: PlatformOptions {
-                target: RenderTarget::Static,
-                ..PlatformOptions::default()
-            },
-            ..AppConfig::default()
+/// Render a VNode tree to an HTML string
+☉ rite render_vnode_to_string(node: &VNode) -> String! {
+    ⌥ node {
+        VNode·Element(el) => {
+            ≔ tag! = &el.tag
+            ≔ attrs! = render_attrs(&el.attrs)
+            ≔ styles! = render_styles(&el.styles)
+
+            ≔ attr_str! = ⎇ attrs·is_empty() && styles·is_empty() {
+                "".to_string()
+            } ⎉ ⎇ styles·is_empty() {
+                format!(" {}", attrs)
+            } ⎉ ⎇ attrs·is_empty() {
+                format!(" style=\"{}\"", styles)
+            } ⎉ {
+                format!(" {} style=\"{}\"", attrs, styles)
+            }
+
+            // Void elements (no closing tag)
+            ⎇ is_void_element(tag) {
+                format!("<{}{} />", tag, attr_str)
+            } ⎉ {
+                ≔ Δ children_html! = String·new();
+                ∀ child ∈ &el.children {
+                    children_html·push_str(&render_vnode_to_string(child))
+                }
+                format!("<{}{}>{}</{}>", tag, attr_str, children_html, tag)
+            }
         }
-        let renderer! = Renderer::new_static()
-        renderer·render_to_string(component·to_vnode())
-    }
 
-    /// Unmount the application
-    pub fn unmount(self) {
-        self.runtime·send(Unmount {})
+        VNode·Text(text) => {
+            escape_html(&text.content)
+        }
+
+        VNode·Fragment(frag) => {
+            ≔ Δ result! = String·new();
+            ∀ child ∈ &frag.children {
+                result·push_str(&render_vnode_to_string(child))
+            }
+            result
+        }
+
+        VNode·Empty => "".to_string()
+    }
+}
+
+rite render_attrs(attrs: &std·collections·HashMap<String, String>) -> String! {
+    ≔ Δ parts! = Vec·new();
+    ∀ (k, v) ∈ attrs {
+        parts·push(format!("{}=\"{}\"", k, escape_attr(v)))
+    }
+    parts·join(" ")
+}
+
+rite render_styles(styles: &std·collections·HashMap<String, String>) -> String! {
+    ≔ Δ parts! = Vec·new();
+    ∀ (k, v) ∈ styles {
+        parts·push(format!("{}: {}", k, v))
+    }
+    parts·join("; ")
+}
+
+rite escape_html(s: &str) -> String! {
+    s·replace("&", "&amp;")
+     ·replace("<", "&lt;")
+     ·replace(">", "&gt;")
+     ·replace("\"", "&quot;")
+     ·replace("'", "&#39;")
+}
+
+rite escape_attr(s: &str) -> String! {
+    s·replace("\"", "&quot;")
+     ·replace("&", "&amp;")
+}
+
+rite is_void_element(tag: &str) -> bool! {
+    ⌥ tag {
+        "area" | "base" | "br" | "col" | "embed" | "hr" | "img" |
+        "input" | "link" | "meta" | "param" | "source" | "track" | "wbr" => true,
+        _ => false,
     }
 }
 
 /// Prelude module for convenient imports
-pub mod prelude {
-    pub use super::{App, AppConfig, AppRuntime};
-    pub use super::vdom::*;
-    pub use super::events::*;
-    pub use crate::components::*;
-    pub use crate::hooks::*;
-    pub use crate::router::*;
-    pub use crate::state::*;
-    pub use crate::dom::*;
+☉ scroll prelude {
+    ☉ invoke super·{App, AppConfig, RenderTarget};
+    ☉ invoke super·vdom·{VNode, VElement, VText, VFragment, Patch, diff};
+    ☉ invoke super·events·{Event, EventType, EventRegistry};
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// =============================================================================
+// Tests
+// =============================================================================
 
-    #[test]
-    fn test_app_creation() {
-        let app! = App::new()
-        assert!(!app.runtime·is_mounted())
+// cfg(test)
+scroll tests {
+    invoke super·*;
+    invoke super·vdom·VNode;
+
+    //@ rune: test
+    rite test_render_simple_element() {
+        ≔ node! = VNode·div()
+            ·class("container")
+            ·child(VNode·text("Hello"))
+
+        ≔ html! = render_vnode_to_string(&node)
+        assert_eq!(html, "<div class=\"container\">Hello</div>")
     }
 
-    #[test]
-    fn test_render_to_string() {
-        let html! = App::render_to_string(
-            div { "Hello, World!" }
-        )
-        assert_eq!(html, "<div>Hello, World!</div>")
+    //@ rune: test
+    rite test_render_nested_elements() {
+        ≔ node! = VNode·div()
+            ·child(VNode·h1()·text_child("Title"))
+            ·child(VNode·p()·text_child("Content"))
+
+        ≔ html! = render_vnode_to_string(&node)
+        assert_eq!(html, "<div><h1>Title</h1><p>Content</p></div>")
+    }
+
+    //@ rune: test
+    rite test_render_void_element() {
+        ≔ node! = VNode·input()
+            ·attr("type", "text")
+            ·attr("placeholder", "Enter name")
+
+        ≔ html! = render_vnode_to_string(&node)
+        assert!(html·contains("<input"))
+        assert!(html·contains("/>"))
+    }
+
+    //@ rune: test
+    rite test_escape_html() {
+        ≔ node! = VNode·text("<script>alert('xss')</script>")
+        ≔ html! = render_vnode_to_string(&node)
+        assert!(!html·contains("<script>"))
+        assert!(html·contains("&lt;script&gt;"))
+    }
+
+    //@ rune: test
+    rite test_app_creation() {
+        ≔ app! = App·new()
+        assert_eq!(app.config.dev_mode, false)
     }
 }

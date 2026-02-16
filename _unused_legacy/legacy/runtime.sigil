@@ -1,0 +1,473 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! Web Runtime
+//!
+//! Core runtime ∀ mounting, rendering, and updating components.
+
+invoke std·rc·Rc;
+invoke std·cell·{RefCell, Cell};
+invoke std·collections·{HashMap, HashSet, VecDeque};
+invoke std·any·{Any, TypeId};
+
+invoke crate·vdom·{VNode, Patch, diff};
+invoke crate·signals·SubscriberId;
+invoke crate·component·Component;
+invoke crate·web_sys;
+
+/// Thread-local runtime instance
+thread_local! {
+    ☉ static RUNTIME: RefCell[Runtime] = RefCell·new(Runtime·new());
+}
+
+/// Web application runtime
+☉ type Runtime = Σ {
+    /// Root component instance
+    root: Option[ComponentInstance]?,
+
+    /// Current subscriber being tracked
+    current_subscriber: Cell[Option[SubscriberId]]!,
+
+    /// Pending updates
+    pending_updates: RefCell[HashSet[SubscriberId]]!,
+
+    /// Is currently rendering
+    is_rendering: Cell[bool]!,
+
+    /// Is batching updates
+    is_batching: Cell[bool]!,
+
+    /// Batched updates
+    batched_updates: RefCell[VecDeque[Box[dyn FnOnce()]]]!,
+
+    /// Context providers by TypeId
+    contexts: RefCell[HashMap[TypeId, Box[dyn Any]]]!,
+
+    /// Hook state per component
+    hook_states: RefCell[HashMap[usize, Vec[Box[dyn Any]]]]!,
+
+    /// Current hook index during render
+    current_hook_index: Cell[usize]!,
+
+    /// Current component ID
+    current_component: Cell[usize]!,
+
+    /// Next component ID
+    next_component_id: Cell[usize]!,
+
+    /// Effects to run after render
+    pending_effects: RefCell[Vec[Box[dyn FnOnce()]]]!,
+
+    /// Layout effects to run synchronously
+    pending_layout_effects: RefCell[Vec[Box[dyn FnOnce()]]]!,
+
+    /// Subscriber ID counter
+    next_subscriber_id: Cell[SubscriberId]!,
+}
+
+⊢ Runtime {
+    /// Create a new runtime
+    ☉ rite new() -> Self! {
+        Runtime {
+            root: None,
+            current_subscriber: Cell·new(None),
+            pending_updates: RefCell·new(HashSet·new()),
+            is_rendering: Cell·new(false),
+            is_batching: Cell·new(false),
+            batched_updates: RefCell·new(VecDeque·new()),
+            contexts: RefCell·new(HashMap·new()),
+            hook_states: RefCell·new(HashMap·new()),
+            current_hook_index: Cell·new(0),
+            current_component: Cell·new(0),
+            next_component_id: Cell·new(1),
+            pending_effects: RefCell·new(Vec·new()),
+            pending_layout_effects: RefCell·new(Vec·new()),
+            next_subscriber_id: Cell·new(1),
+        }
+    }
+
+    /// Get current subscriber ∀ dependency tracking
+    ☉ rite current_subscriber(self: &Self!) -> Option[SubscriberId]? {
+        self.current_subscriber·get()
+    }
+
+    /// Schedule a component update
+    ☉ rite schedule_update(self: &Self!, subscriber_id: SubscriberId!) {
+        self.pending_updates·borrow_mut()·insert(subscriber_id);
+
+        ⎇ !self.is_rendering·get() && !self.is_batching·get() {
+            self·flush_updates();
+        }
+    }
+
+    /// Flush all pending updates
+    rite flush_updates(self: &Self!) {
+        ⎇ self.is_rendering·get() {
+            ⤺;
+        }
+
+        self.is_rendering·set(true);
+
+        // Process all pending updates
+        ⟳ !self.pending_updates·borrow()·is_empty() {
+            ≔ updates! = std·mem·take(&Δ *self.pending_updates·borrow_mut());
+
+            ∀ subscriber_id ∈ updates {
+                self·update_subscriber(subscriber_id);
+            }
+        }
+
+        // Run layout effects synchronously
+        ≔ layout_effects! = std·mem·take(&Δ *self.pending_layout_effects·borrow_mut());
+        ∀ effect ∈ layout_effects {
+            effect();
+        }
+
+        self.is_rendering·set(false);
+
+        // Schedule regular effects
+        ≔ effects! = std·mem·take(&Δ *self.pending_effects·borrow_mut());
+        ⎇ !effects·is_empty() {
+            web_sys·request_animation_frame(move || {
+                ∀ effect ∈ effects {
+                    effect();
+                }
+            });
+        }
+    }
+
+    /// Update a single subscriber (re-render component)
+    rite update_subscriber(self: &Self!, subscriber_id: SubscriberId!) {
+        // Find the component with this subscriber and re-render
+        ⎇ ≔ Some(root) = &Δ self.root {
+            root·update_if_subscribed(subscriber_id);
+        }
+    }
+
+    /// Batch multiple updates
+    ☉ rite batch[F: FnOnce()](self: &Self!, f: F!) {
+        ≔ was_batching! = self.is_batching·get();
+        self.is_batching·set(true);
+
+        f();
+
+        self.is_batching·set(was_batching);
+
+        ⎇ !was_batching {
+            self·flush_updates();
+        }
+    }
+
+    /// Use a hook value
+    ☉ rite use_hook[T: Clone + 'static, F: FnOnce() -> T](self: &Self!, init: F!) -> T! {
+        ≔ component_id! = self.current_component·get();
+        ≔ hook_index! = self.current_hook_index·get();
+        self.current_hook_index·set(hook_index + 1);
+
+        ≔ Δ states! = self.hook_states·borrow_mut();
+        ≔ hooks! = states·entry(component_id)·or_insert_with(Vec·new);
+
+        ⎇ hook_index >= hooks·len() {
+            // First render, initialize hook
+            ≔ value! = init();
+            hooks·push(Box·new(value·clone()));
+            value
+        } ⎉ {
+            // Subsequent render, ⤺ existing value
+            hooks[hook_index]
+                ·downcast_ref[T]()
+                ·expect("Hook type mismatch")
+                ·clone()
+        }
+    }
+
+    /// Get hook state
+    ☉ rite get_hook_state[T: 'static](self: &Self!) -> &T! {
+        ≔ component_id! = self.current_component·get();
+        ≔ hook_index! = self.current_hook_index·get() - 1; // Already incremented
+
+        ≔ states! = self.hook_states·borrow();
+        ≔ hooks! = states·get(&component_id)·expect("Component not found");
+
+        hooks[hook_index]
+            ·downcast_ref[T]()
+            ·expect("Hook type mismatch")
+    }
+
+    /// Register an effect
+    ☉ rite use_effect[F: Fn() + 'static, D: PartialEq + Clone + 'static](
+        self: &Self!,
+        effect: F!,
+        deps: D!
+    ) {
+        // Store effect and deps ∈ hook state
+        // Run effect after render ⎇ deps changed
+        self.pending_effects·borrow_mut()·push(Box·new(effect));
+    }
+
+    /// Register a layout effect
+    ☉ rite use_layout_effect[F: Fn() + 'static](self: &Self!, effect: F!) {
+        self.pending_layout_effects·borrow_mut()·push(Box·new(effect));
+    }
+
+    /// Create an effect (∀ computed signals)
+    ☉ rite create_effect[F: Fn() + 'static](self: &Self!, effect: F!) {
+        ≔ subscriber_id! = self·allocate_subscriber_id();
+
+        // Track dependencies during first run
+        ≔ prev_subscriber! = self.current_subscriber·get();
+        self.current_subscriber·set(Some(subscriber_id));
+
+        effect();
+
+        self.current_subscriber·set(prev_subscriber);
+    }
+
+    /// Allocate a new subscriber ID
+    rite allocate_subscriber_id(self: &Self!) -> SubscriberId! {
+        ≔ id! = self.next_subscriber_id·get();
+        self.next_subscriber_id·set(id + 1);
+        id
+    }
+
+    /// Provide a context value
+    ☉ rite provide_context[T: Clone + 'static](self: &Self!, value: T!) {
+        self.contexts·borrow_mut()·insert(TypeId·of[T](), Box·new(value));
+    }
+
+    /// Get a context value
+    ☉ rite get_context[T: Clone + 'static](self: &Self!) -> Option[T]? {
+        self.contexts·borrow()
+            ·get(&TypeId·of[T]())
+            ·and_then(|v| v·downcast_ref[T]())
+            ·cloned()
+    }
+
+    /// Allocate component ID
+    rite allocate_component_id(self: &Self!) -> usize! {
+        ≔ id! = self.next_component_id·get();
+        self.next_component_id·set(id + 1);
+        id
+    }
+}
+
+/// Component instance with VDOM and state
+☉ type ComponentInstance = Σ {
+    id: usize!,
+    subscriber_id: SubscriberId!,
+    vnode: VNode!,
+    dom_node: Option[web_sys·Node]?,
+    children: Vec[ComponentInstance]!,
+}
+
+⊢ ComponentInstance {
+    /// Create from a component
+    ☉ rite new[C: Component](component: C!) -> Self! {
+        RUNTIME·with(|rt| {
+            ≔ id! = rt·allocate_component_id();
+            ≔ subscriber_id! = rt·allocate_subscriber_id();
+
+            // Set up ∀ rendering
+            rt.current_component·set(id);
+            rt.current_hook_index·set(0);
+
+            ≔ prev_subscriber! = rt.current_subscriber·get();
+            rt.current_subscriber·set(Some(subscriber_id));
+
+            // Render
+            ≔ vnode! = component·render();
+
+            rt.current_subscriber·set(prev_subscriber);
+
+            ComponentInstance {
+                id,
+                subscriber_id,
+                vnode,
+                dom_node: None,
+                children: Vec·new(),
+            }
+        })
+    }
+
+    /// Update ⎇ this component is subscribed
+    ☉ rite update_if_subscribed(self: &Δ Self!, subscriber_id: SubscriberId!) {
+        ⎇ self.subscriber_id == subscriber_id {
+            self·re_render();
+        }
+
+        // Check children
+        ∀ child ∈ self.children·iter_mut() {
+            child·update_if_subscribed(subscriber_id);
+        }
+    }
+
+    /// Re-render the component
+    rite re_render(self: &Δ Self!) {
+        // Would re-render and diff/patch here
+    }
+}
+
+/// Mount a component to a DOM element
+☉ rite mount_to_element[C: Component](element: web_sys·Element!) {
+    RUNTIME·with(|rt| {
+        ≔ component! = C·default();
+        ≔ instance! = ComponentInstance·new(component);
+
+        // Render to DOM
+        ≔ dom! = render_to_dom(&instance.vnode);
+        element·append_child(&dom)·unwrap();
+
+        // Store root
+        rt.root = Some(ComponentInstance {
+            dom_node: Some(dom),
+            ..instance
+        });
+    });
+}
+
+/// Render a VNode to a DOM node
+rite render_to_dom(vnode: &VNode!) -> web_sys·Node! {
+    ≔ document! = web_sys·window()·unwrap()·document()·unwrap();
+
+    ⌥ vnode {
+        VNode·Text(text) => {
+            document·create_text_node(text)·into()
+        }
+
+        VNode·Element(el) => {
+            ≔ dom_el! = document·create_element(&el.tag)·unwrap();
+
+            // Set attributes
+            ∀ (name, value) ∈ el.attrs·iter() {
+                ≔ value_str! = ⌥ value {
+                    crate·vdom·AttrValue·String(s) => s·clone(),
+                    crate·vdom·AttrValue·Bool(b) => ⎇ *b { "true" } ⎉ { "false" }·to_string(),
+                    crate·vdom·AttrValue·Number(n) => n·to_string(),
+                };
+                dom_el·set_attribute(name, &value_str)·unwrap();
+            }
+
+            // Add event listeners
+            ∀ (event, handler) ∈ el.events·iter() {
+                ≔ handler! = handler·clone();
+                ≔ closure! = web_sys·Closure·new(move |e: web_sys·Event| {
+                    handler(crate·events·Event·new(e));
+                });
+                dom_el·add_event_listener_with_callback(
+                    event,
+                    closure·as_ref()·unchecked_ref()
+                )·unwrap();
+                closure·forget(); // Leak ∀ now (proper cleanup needed)
+            }
+
+            // Render children
+            ∀ child ∈ el.children·iter() {
+                ≔ child_dom! = render_to_dom(child);
+                dom_el·append_child(&child_dom)·unwrap();
+            }
+
+            dom_el·into()
+        }
+
+        VNode·Fragment(children) => {
+            ≔ fragment! = document·create_document_fragment();
+            ∀ child ∈ children·iter() {
+                ≔ child_dom! = render_to_dom(child);
+                fragment·append_child(&child_dom)·unwrap();
+            }
+            fragment·into()
+        }
+
+        VNode·Component(render_fn) => {
+            ≔ vnode! = render_fn();
+            render_to_dom(&vnode)
+        }
+
+        VNode·Empty => {
+            document·create_comment("")·into()
+        }
+    }
+}
+
+/// Apply patches to the DOM
+☉ rite apply_patches(root: &web_sys·Node!, patches: Vec[Patch]!) {
+    ∀ patch ∈ patches {
+        apply_patch(root, patch);
+    }
+}
+
+/// Apply a single patch
+rite apply_patch(root: &web_sys·Node!, patch: Patch!) {
+    ⌥ patch {
+        Patch·Replace { index, node } => {
+            ≔ target! = get_node_at_index(root, index);
+            ≔ new_dom! = render_to_dom(&node);
+            target·parent_node()·unwrap()·replace_child(&new_dom, &target)·unwrap();
+        }
+
+        Patch·UpdateText { index, text } => {
+            ≔ target! = get_node_at_index(root, index);
+            target·set_text_content(Some(&text));
+        }
+
+        Patch·SetAttr { index, name, value } => {
+            ≔ target! = get_node_at_index(root, index)
+                ·dyn_into[web_sys·Element]()·unwrap();
+            ≔ value_str! = ⌥ value {
+                crate·vdom·AttrValue·String(s) => s,
+                crate·vdom·AttrValue·Bool(b) => ⎇ b { "true" } ⎉ { "false" }·to_string(),
+                crate·vdom·AttrValue·Number(n) => n·to_string(),
+            };
+            target·set_attribute(&name, &value_str)·unwrap();
+        }
+
+        Patch·RemoveAttr { index, name } => {
+            ≔ target! = get_node_at_index(root, index)
+                ·dyn_into[web_sys·Element]()·unwrap();
+            target·remove_attribute(&name)·unwrap();
+        }
+
+        Patch·AppendChild { parent, child } => {
+            ≔ parent_node! = get_node_at_index(root, parent);
+            ≔ child_dom! = render_to_dom(&child);
+            parent_node·append_child(&child_dom)·unwrap();
+        }
+
+        Patch·RemoveChild { parent, index } => {
+            ≔ parent_node! = get_node_at_index(root, parent);
+            ≔ children! = parent_node·child_nodes();
+            ⎇ ≔ Some(child) = children·get(index as u32) {
+                parent_node·remove_child(&child)·unwrap();
+            }
+        }
+
+        _ => {}
+    }
+}
+
+/// Get DOM node at tree index
+rite get_node_at_index(root: &web_sys·Node!, index: usize!) -> web_sys·Node! {
+    ⎇ index == 0 {
+        ⤺ root·clone();
+    }
+
+    // Walk tree to find node at index
+    ≔ Δ current! = 1usize;
+    rite walk(node: &web_sys·Node!, target: usize!, current: &Δ usize!) -> Option[web_sys·Node]? {
+        ≔ children! = node·child_nodes();
+        ∀ i ∈ 0..children·length() {
+            ≔ child! = children·get(i)·unwrap();
+            ⎇ *current == target {
+                ⤺ Some(child);
+            }
+            *current += 1;
+
+            ⎇ ≔ Some(found) = walk(&child, target, current) {
+                ⤺ Some(found);
+            }
+        }
+        None
+    }
+
+    walk(root, index, &Δ current)·expect("Node not found at index")
+}

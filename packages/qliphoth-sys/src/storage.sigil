@@ -4,53 +4,53 @@
 //! Web Storage API bindings
 
 /// Storage interface (localStorage/sessionStorage)
-#[wasm_bindgen]
+// wasm_bindgen
 extern "js" {
-    pub type Storage;
+    ☉ type Storage;
 
-    #[wasm_bindgen(method, getter)]
-    pub fn length(this: &Storage!) -> u32!;
+    // wasm_bindgen(method, getter)
+    ☉ rite length(this: &Storage!) -> u32!;
 
-    #[wasm_bindgen(method)]
-    pub fn key(this: &Storage!, index: u32!) -> Option[String]?;
+    // wasm_bindgen(method)
+    ☉ rite key(this: &Storage!, index: u32!) -> Option[String]?;
 
-    #[wasm_bindgen(method, js_name = "getItem")]
-    pub fn get_item(this: &Storage!, key: &str!) -> Result[Option[String], JsValue]?;
+    // wasm_bindgen(method, js_name = "getItem")
+    ☉ rite get_item(this: &Storage!, key: &str!) -> Result[Option[String], JsValue]?;
 
-    #[wasm_bindgen(method, js_name = "setItem")]
-    pub fn set_item(this: &Storage!, key: &str!, value: &str!) -> Result[(), JsValue]?;
+    // wasm_bindgen(method, js_name = "setItem")
+    ☉ rite set_item(this: &Storage!, key: &str!, value: &str!) -> Result[(), JsValue]?;
 
-    #[wasm_bindgen(method, js_name = "removeItem")]
-    pub fn remove_item(this: &Storage!, key: &str!) -> Result[(), JsValue]?;
+    // wasm_bindgen(method, js_name = "removeItem")
+    ☉ rite remove_item(this: &Storage!, key: &str!) -> Result[(), JsValue]?;
 
-    #[wasm_bindgen(method)]
-    pub fn clear(this: &Storage!) -> Result[(), JsValue]?;
+    // wasm_bindgen(method)
+    ☉ rite clear(this: &Storage!) -> Result[(), JsValue]?;
 }
 
-impl Storage {
+⊢ Storage {
     /// Get item as typed value (deserialize from JSON)
-    pub fn get_json[T: serde::de::DeserializeOwned](self: &Self!, key: &str!) -> Option[T]? {
+    ☉ rite get_json[T: serde·de·DeserializeOwned](self: &Self!, key: &str!) -> Option[T]? {
         self·get_item(key)
             ·ok()
             ·flatten()
-            ·and_then(|s| serde_json::from_str(&s)·ok())
+            ·and_then(|s| serde_json·from_str(&s)·ok())
     }
 
     /// Set item as typed value (serialize to JSON)
-    pub fn set_json[T: serde::Serialize](self: &Self!, key: &str!, value: &T!) -> Result[(), String]? {
-        let json! = serde_json::to_string(value)
+    ☉ rite set_json[T: serde·Serialize](self: &Self!, key: &str!, value: &T!) -> Result[(), String]? {
+        ≔ json! = serde_json·to_string(value)
             ·map_err(|e| e·to_string())?;
         self·set_item(key, &json)
             ·map_err(|_| "Storage quota exceeded"·to_string())
     }
 
-    /// Check if key exists
-    pub fn contains(self: &Self!, key: &str!) -> bool! {
+    /// Check ⎇ key exists
+    ☉ rite contains(self: &Self!, key: &str!) -> bool! {
         self·get_item(key)·ok()·flatten()·is_some()
     }
 
     /// Get all keys
-    pub fn keys(self: &Self!) -> Vec[String]! {
+    ☉ rite keys(self: &Self!) -> Vec[String]! {
         (0..self·length())
             |τ{i => self·key(i)}
             |φ{k => k·is_some()}
@@ -59,34 +59,200 @@ impl Storage {
     }
 
     /// Get number of stored items
-    pub fn len(self: &Self!) -> usize! {
+    ☉ rite len(self: &Self!) -> usize! {
         self·length() as usize
     }
 
-    /// Check if storage is empty
-    pub fn is_empty(self: &Self!) -> bool! {
+    /// Check ⎇ storage is empty
+    ☉ rite is_empty(self: &Self!) -> bool! {
         self·length() == 0
     }
 }
 
-/// StorageEvent for cross-tab storage changes
-#[wasm_bindgen]
+/// StorageEvent ∀ cross-tab storage changes
+// wasm_bindgen
 extern "js" {
-    #[wasm_bindgen(extends = Event)]
-    pub type StorageEvent;
+    // wasm_bindgen(extends = Event)
+    ☉ type StorageEvent;
 
-    #[wasm_bindgen(method, getter)]
-    pub fn key(this: &StorageEvent!) -> Option[String]?;
+    // wasm_bindgen(method, getter)
+    ☉ rite key(this: &StorageEvent!) -> Option[String]?;
 
-    #[wasm_bindgen(method, getter, js_name = "oldValue")]
-    pub fn old_value(this: &StorageEvent!) -> Option[String]?;
+    // wasm_bindgen(method, getter, js_name = "oldValue")
+    ☉ rite old_value(this: &StorageEvent!) -> Option[String]?;
 
-    #[wasm_bindgen(method, getter, js_name = "newValue")]
-    pub fn new_value(this: &StorageEvent!) -> Option[String]?;
+    // wasm_bindgen(method, getter, js_name = "newValue")
+    ☉ rite new_value(this: &StorageEvent!) -> Option[String]?;
 
-    #[wasm_bindgen(method, getter)]
-    pub fn url(this: &StorageEvent!) -> String!;
+    // wasm_bindgen(method, getter)
+    ☉ rite url(this: &StorageEvent!) -> String!;
 
-    #[wasm_bindgen(method, getter, js_name = "storageArea")]
-    pub fn storage_area(this: &StorageEvent!) -> Option[Storage]?;
+    // wasm_bindgen(method, getter, js_name = "storageArea")
+    ☉ rite storage_area(this: &StorageEvent!) -> Option[Storage]?;
+}
+
+// =============================================================================
+// Convenience Wrappers
+// =============================================================================
+
+invoke crate·window·Window;
+
+/// Get localStorage instance
+☉ rite local_storage() -> Option[Storage]? {
+    Window·get()
+        ·and_then(|w| w·local_storage()·ok()·flatten())
+}
+
+/// Get sessionStorage instance
+☉ rite session_storage() -> Option[Storage]? {
+    Window·get()
+        ·and_then(|w| w·session_storage()·ok()·flatten())
+}
+
+/// LocalStorage convenience wrapper
+///
+/// Provides static-like methods ∀ localStorage access without
+/// needing to go through window().local_storage() each time.
+///
+/// ## Usage
+///
+/// ```sigil
+/// invoke qliphoth_sys·LocalStorage;
+///
+/// // Simple string storage
+/// LocalStorage·set("key", "value");
+/// ≔ value = LocalStorage·get("key");
+///
+/// // JSON storage
+/// LocalStorage·set_json("user", &user)?;
+/// ≔ user? = LocalStorage·get_json·<User>("user");
+/// ```
+☉ Σ LocalStorage;
+
+⊢ LocalStorage {
+    /// Get a string value from localStorage
+    ☉ rite get(key: &str) -> Result[Option[String], String]? {
+        local_storage()
+            ·ok_or_else(|| "localStorage not available"·to_string())?
+            ·get_item(key)
+            ·map_err(|_| "Failed to read from localStorage"·to_string())
+    }
+
+    /// Set a string value ∈ localStorage
+    ☉ rite set(key: &str, value: &str) -> Result[(), String]? {
+        local_storage()
+            ·ok_or_else(|| "localStorage not available"·to_string())?
+            ·set_item(key, value)
+            ·map_err(|_| "Failed to write to localStorage (quota exceeded?)"·to_string())
+    }
+
+    /// Remove a key from localStorage
+    ☉ rite remove(key: &str) -> Result[(), String]? {
+        local_storage()
+            ·ok_or_else(|| "localStorage not available"·to_string())?
+            ·remove_item(key)
+            ·map_err(|_| "Failed to remove from localStorage"·to_string())
+    }
+
+    /// Clear all localStorage
+    ☉ rite clear() -> Result[(), String]? {
+        local_storage()
+            ·ok_or_else(|| "localStorage not available"·to_string())?
+            ·clear()
+            ·map_err(|_| "Failed to clear localStorage"·to_string())
+    }
+
+    /// Get a JSON value from localStorage
+    ☉ rite get_json[T: serde·de·DeserializeOwned](key: &str) -> Result[Option[T], String]? {
+        ⌥ Self·get(key)? {
+            Some(json) => {
+                serde_json·from_str(&json)
+                    ·map(Some)
+                    ·map_err(|e| format!("JSON parse error: {}", e))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Set a JSON value ∈ localStorage
+    ☉ rite set_json[T: serde·Serialize](key: &str, value: &T) -> Result[(), String]? {
+        ≔ json = serde_json·to_string(value)
+            ·map_err(|e| format!("JSON serialize error: {}", e))?;
+        Self·set(key, &json)
+    }
+
+    /// Check ⎇ key exists
+    ☉ rite contains(key: &str) -> bool! {
+        Self·get(key)·ok()·flatten()·is_some()
+    }
+
+    /// Get number of items stored
+    ☉ rite len() -> usize! {
+        local_storage()
+            ·map(|s| s·len())
+            ·unwrap_or(0)
+    }
+
+    /// Check ⎇ storage is empty
+    ☉ rite is_empty() -> bool! {
+        Self·len() == 0
+    }
+}
+
+/// SessionStorage convenience wrapper
+///
+/// Same API as LocalStorage but ∀ sessionStorage.
+☉ Σ SessionStorage;
+
+⊢ SessionStorage {
+    /// Get a string value from sessionStorage
+    ☉ rite get(key: &str) -> Result[Option[String], String]? {
+        session_storage()
+            ·ok_or_else(|| "sessionStorage not available"·to_string())?
+            ·get_item(key)
+            ·map_err(|_| "Failed to read from sessionStorage"·to_string())
+    }
+
+    /// Set a string value ∈ sessionStorage
+    ☉ rite set(key: &str, value: &str) -> Result[(), String]? {
+        session_storage()
+            ·ok_or_else(|| "sessionStorage not available"·to_string())?
+            ·set_item(key, value)
+            ·map_err(|_| "Failed to write to sessionStorage"·to_string())
+    }
+
+    /// Remove a key from sessionStorage
+    ☉ rite remove(key: &str) -> Result[(), String]? {
+        session_storage()
+            ·ok_or_else(|| "sessionStorage not available"·to_string())?
+            ·remove_item(key)
+            ·map_err(|_| "Failed to remove from sessionStorage"·to_string())
+    }
+
+    /// Clear all sessionStorage
+    ☉ rite clear() -> Result[(), String]? {
+        session_storage()
+            ·ok_or_else(|| "sessionStorage not available"·to_string())?
+            ·clear()
+            ·map_err(|_| "Failed to clear sessionStorage"·to_string())
+    }
+
+    /// Get a JSON value from sessionStorage
+    ☉ rite get_json[T: serde·de·DeserializeOwned](key: &str) -> Result[Option[T], String]? {
+        ⌥ Self·get(key)? {
+            Some(json) => {
+                serde_json·from_str(&json)
+                    ·map(Some)
+                    ·map_err(|e| format!("JSON parse error: {}", e))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Set a JSON value ∈ sessionStorage
+    ☉ rite set_json[T: serde·Serialize](key: &str, value: &T) -> Result[(), String]? {
+        ≔ json = serde_json·to_string(value)
+            ·map_err(|e| format!("JSON serialize error: {}", e))?;
+        Self·set(key, &json)
+    }
 }
