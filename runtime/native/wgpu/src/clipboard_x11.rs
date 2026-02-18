@@ -23,11 +23,11 @@ use std::time::Instant;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConnectionExt as _, *};
 use x11rb::rust_connection::RustConnection;
-use x11rb::wrapper::ConnectionExt as WrapperConnectionExt;
+use x11rb::wrapper::ConnectionExt as _; // Provides change_property8, change_property32
 
 use crate::{
     ClipboardCompletedData, ClipboardTarget, NativeEvent, PendingOpState, PendingOperation,
-    CLIPBOARD_ERR_TIMEOUT,
+    CLIPBOARD_ERR_EMPTY, CLIPBOARD_ERR_INTERNAL, CLIPBOARD_ERR_TIMEOUT,
 };
 
 // =============================================================================
@@ -104,7 +104,8 @@ pub struct X11ClipboardBackend {
     atoms: ClipboardAtoms,
     selection_window: Window,
     pending_reads: HashMap<u64, X11ReadRequest>,
-    incr_transfers: HashMap<Window, IncrTransfer>,
+    /// INCR transfers keyed by callback_id (allows multiple concurrent transfers)
+    incr_transfers: HashMap<u64, IncrTransfer>,
     write_data: Option<X11WriteData>,
 }
 
@@ -161,8 +162,11 @@ impl X11ClipboardBackend {
     }
 
     /// Check if X11 display is available
+    ///
+    /// Returns true if DISPLAY environment variable is set, indicating
+    /// an X11 server is available (either native X11 or XWayland).
     pub fn is_available() -> bool {
-        std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_err()
+        std::env::var("DISPLAY").is_ok()
     }
 
     /// Request clipboard data in a specific format
@@ -176,6 +180,13 @@ impl X11ClipboardBackend {
         mime: &str,
         callback_id: u64,
     ) -> Result<(), i32> {
+        // Reject duplicate callback_id
+        if self.pending_reads.contains_key(&callback_id)
+            || self.incr_transfers.contains_key(&callback_id)
+        {
+            return Err(-1);
+        }
+
         // Map MIME type to X11 atom
         let target_atom = self.mime_to_atom(mime);
 
@@ -209,6 +220,13 @@ impl X11ClipboardBackend {
     /// Query available clipboard formats
     #[allow(dead_code)] // Called when FFI layer routes through X11 backend
     pub fn get_formats(&mut self, callback_id: u64) -> Result<(), i32> {
+        // Reject duplicate callback_id
+        if self.pending_reads.contains_key(&callback_id)
+            || self.incr_transfers.contains_key(&callback_id)
+        {
+            return Err(-1);
+        }
+
         // Request TARGETS to discover available formats
         self.conn
             .convert_selection(
@@ -400,7 +418,7 @@ impl X11ClipboardBackend {
             return;
         };
 
-        // Property is None means selection conversion failed
+        // Property is None means selection conversion failed (empty clipboard)
         if notify.property == x11rb::NONE {
             self.pending_reads.remove(&callback_id);
             if let Some(op) = pending_ops.get_mut(&callback_id) {
@@ -408,7 +426,7 @@ impl X11ClipboardBackend {
             }
             event_queue.push(NativeEvent::ClipboardError {
                 callback_id,
-                error_code: -2, // CLIPBOARD_ERR_EMPTY
+                error_code: CLIPBOARD_ERR_EMPTY,
             });
             return;
         }
@@ -428,7 +446,7 @@ impl X11ClipboardBackend {
                     self.pending_reads.remove(&callback_id);
                     event_queue.push(NativeEvent::ClipboardError {
                         callback_id,
-                        error_code: -1,
+                        error_code: CLIPBOARD_ERR_INTERNAL,
                     });
                     return;
                 }
@@ -437,7 +455,7 @@ impl X11ClipboardBackend {
                 self.pending_reads.remove(&callback_id);
                 event_queue.push(NativeEvent::ClipboardError {
                     callback_id,
-                    error_code: -1,
+                    error_code: CLIPBOARD_ERR_INTERNAL,
                 });
                 return;
             }
@@ -445,10 +463,10 @@ impl X11ClipboardBackend {
 
         // Check for INCR (incremental transfer)
         if property_reply.type_ == self.atoms.INCR {
-            // Start INCR transfer
+            // Start INCR transfer - key by callback_id to allow concurrent transfers
             if let Some(request) = self.pending_reads.remove(&callback_id) {
                 self.incr_transfers.insert(
-                    self.selection_window,
+                    callback_id,
                     IncrTransfer {
                         callback_id,
                         request_type: request.request_type,
@@ -514,13 +532,21 @@ impl X11ClipboardBackend {
         completed: &mut HashMap<u64, ClipboardCompletedData>,
         pending_ops: &mut HashMap<u64, PendingOperation>,
     ) {
-        // Only handle new value events for INCR
-        if notify.state != Property::NEW_VALUE {
+        // Only handle new value events for INCR on our selection window
+        if notify.state != Property::NEW_VALUE || notify.window != self.selection_window {
             return;
         }
 
-        // Find INCR transfer for this window
-        let Some(transfer) = self.incr_transfers.get_mut(&notify.window) else {
+        // Find the INCR transfer (we may have multiple, but PropertyNotify on our
+        // selection window means we need to check if any transfer is waiting)
+        // For simplicity, we handle one INCR at a time per property atom
+        let callback_id = self
+            .incr_transfers
+            .iter()
+            .next()
+            .map(|(&id, _)| id);
+
+        let Some(callback_id) = callback_id else {
             return;
         };
 
@@ -542,7 +568,7 @@ impl X11ClipboardBackend {
 
         if property_reply.value.is_empty() {
             // INCR transfer complete
-            let transfer = self.incr_transfers.remove(&notify.window).unwrap();
+            let transfer = self.incr_transfers.remove(&callback_id).unwrap();
             if let Some(op) = pending_ops.get_mut(&transfer.callback_id) {
                 op.state = PendingOpState::Completed;
             }
@@ -563,14 +589,16 @@ impl X11ClipboardBackend {
             });
         } else {
             // Accumulate data
-            transfer.partial_data.extend_from_slice(&property_reply.value);
+            if let Some(transfer) = self.incr_transfers.get_mut(&callback_id) {
+                transfer.partial_data.extend_from_slice(&property_reply.value);
+            }
         }
     }
 
     fn handle_selection_request(&mut self, request: SelectionRequestEvent) {
         let Some(ref write_data) = self.write_data else {
             // No data to provide
-            self.send_selection_notify(request.requestor, request.selection, x11rb::NONE, request.time);
+            self.send_selection_notify(request.requestor, request.selection, request.target, x11rb::NONE, request.time);
             return;
         };
 
@@ -602,6 +630,7 @@ impl X11ClipboardBackend {
             self.send_selection_notify(
                 request.requestor,
                 request.selection,
+                request.target,
                 request.property,
                 request.time,
             );
@@ -641,23 +670,31 @@ impl X11ClipboardBackend {
             self.send_selection_notify(
                 request.requestor,
                 request.selection,
+                request.target,
                 request.property,
                 request.time,
             );
         } else {
             // Unsupported target
-            self.send_selection_notify(request.requestor, request.selection, x11rb::NONE, request.time);
+            self.send_selection_notify(request.requestor, request.selection, request.target, x11rb::NONE, request.time);
         }
     }
 
-    fn send_selection_notify(&self, requestor: Window, selection: Atom, property: Atom, time: Timestamp) {
+    fn send_selection_notify(
+        &self,
+        requestor: Window,
+        selection: Atom,
+        target: Atom,
+        property: Atom,
+        time: Timestamp,
+    ) {
         let event = SelectionNotifyEvent {
             response_type: SELECTION_NOTIFY_EVENT,
             sequence: 0,
             time,
             requestor,
             selection,
-            target: selection, // Should be the target from the request
+            target,
             property,
         };
 
@@ -671,6 +708,8 @@ impl X11ClipboardBackend {
     }
 
     fn parse_targets(&self, reply: &GetPropertyReply) -> Vec<String> {
+        use std::collections::HashSet;
+
         if reply.format != 32 {
             return Vec::new();
         }
@@ -682,23 +721,26 @@ impl X11ClipboardBackend {
             .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
 
-        atoms
+        // Use HashSet to deduplicate (e.g., UTF8_STRING and TEXT_PLAIN both map to text/plain)
+        let unique_formats: HashSet<&str> = atoms
             .iter()
             .filter_map(|&atom| {
                 // Map known atoms to MIME types
                 if atom == self.atoms.UTF8_STRING || atom == self.atoms.TEXT_PLAIN {
-                    Some("text/plain".to_string())
+                    Some("text/plain")
                 } else if atom == self.atoms.TEXT_HTML {
-                    Some("text/html".to_string())
+                    Some("text/html")
                 } else if atom == self.atoms.IMAGE_PNG {
-                    Some("image/png".to_string())
+                    Some("image/png")
                 } else if atom == self.atoms.TEXT_URI_LIST {
-                    Some("text/uri-list".to_string())
+                    Some("text/uri-list")
                 } else {
                     None
                 }
             })
-            .collect()
+            .collect();
+
+        unique_formats.into_iter().map(String::from).collect()
     }
 
     fn check_timeouts(
@@ -729,21 +771,21 @@ impl X11ClipboardBackend {
         }
 
         // Check INCR transfers
-        let incr_timed_out: Vec<Window> = self
+        let incr_timed_out: Vec<u64> = self
             .incr_transfers
             .iter()
-            .filter_map(|(window, transfer)| {
+            .filter_map(|(&callback_id, transfer)| {
                 if let Some(op) = pending_ops.get(&transfer.callback_id) {
                     if now.duration_since(op.started_at) > timeout {
-                        return Some(*window);
+                        return Some(callback_id);
                     }
                 }
                 None
             })
             .collect();
 
-        for window in incr_timed_out {
-            if let Some(transfer) = self.incr_transfers.remove(&window) {
+        for callback_id in incr_timed_out {
+            if let Some(transfer) = self.incr_transfers.remove(&callback_id) {
                 if let Some(op) = pending_ops.get_mut(&transfer.callback_id) {
                     op.state = PendingOpState::TimedOut;
                 }
