@@ -26,6 +26,17 @@
 //! - More code to maintain for custom rendering
 //! - Need to implement accessibility ourselves
 
+// =============================================================================
+// Conditional Modules
+// =============================================================================
+
+#[cfg(all(target_os = "linux", feature = "x11-backend"))]
+mod clipboard_x11;
+
+// =============================================================================
+// Imports
+// =============================================================================
+
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -774,15 +785,15 @@ impl From<i32> for ClipboardTarget {
 }
 
 /// Completed clipboard data awaiting retrieval
-struct ClipboardCompletedData {
+pub(crate) struct ClipboardCompletedData {
     /// Retrieved clipboard data
-    data: Vec<u8>,
+    pub(crate) data: Vec<u8>,
     /// For GetFormats responses: list of available formats
-    formats: Option<Vec<String>>,
+    pub(crate) formats: Option<Vec<String>>,
     /// Cached CStrings for format pointers (valid until this entry is released)
-    format_cstrings: Vec<std::ffi::CString>,
+    pub(crate) format_cstrings: Vec<std::ffi::CString>,
     /// When this data was completed (for timeout tracking)
-    completed_at: std::time::Instant,
+    pub(crate) completed_at: std::time::Instant,
 }
 
 /// A clipboard write operation in progress
@@ -879,10 +890,31 @@ struct ClipboardState {
     last_poll_time: Option<std::time::Instant>,
     /// Pending async operations (keyed by callback_id)
     pending_ops: HashMap<u64, PendingOperation>,
+    /// Native X11 clipboard backend (Linux only, when DISPLAY is set)
+    #[cfg(all(target_os = "linux", feature = "x11-backend"))]
+    x11_backend: Option<clipboard_x11::X11ClipboardBackend>,
 }
 
 impl Default for ClipboardState {
     fn default() -> Self {
+        // Try to initialize X11 backend if available
+        #[cfg(all(target_os = "linux", feature = "x11-backend"))]
+        let x11_backend = if clipboard_x11::X11ClipboardBackend::is_available() {
+            match clipboard_x11::X11ClipboardBackend::new() {
+                Ok(backend) => {
+                    log::info!("X11 clipboard backend initialized");
+                    Some(backend)
+                }
+                Err(e) => {
+                    log::warn!("Failed to initialize X11 clipboard backend: {}, falling back to arboard", e);
+                    None
+                }
+            }
+        } else {
+            log::debug!("X11 not available, using arboard clipboard backend");
+            None
+        };
+
         Self {
             completed: HashMap::new(),
             write_handles: HashMap::new(),
@@ -893,6 +925,8 @@ impl Default for ClipboardState {
             primary_content_hash: None,
             last_poll_time: None,
             pending_ops: HashMap::new(),
+            #[cfg(all(target_os = "linux", feature = "x11-backend"))]
+            x11_backend,
         }
     }
 }
@@ -1239,6 +1273,32 @@ fn process_clipboard_timeouts(state: &mut AppState) {
         state.clipboard.write_handles.remove(&handle);
         // Silent cleanup - no event fired for timed-out write handles
     }
+}
+
+/// Process X11 clipboard events (Linux only, when x11-backend feature is enabled)
+#[cfg(all(target_os = "linux", feature = "x11-backend"))]
+fn process_x11_clipboard_events(state: &mut AppState) {
+    // Take x11_backend out temporarily to avoid borrow conflicts
+    let Some(mut x11) = state.clipboard.x11_backend.take() else {
+        return;
+    };
+
+    // Collect events and completed data into temporary storage
+    let mut new_events = Vec::new();
+    let mut new_completed = HashMap::new();
+
+    x11.process_events(
+        &mut new_events,
+        &mut new_completed,
+        &mut state.clipboard.pending_ops,
+    );
+
+    // Put the backend back
+    state.clipboard.x11_backend = Some(x11);
+
+    // Merge collected data into state
+    state.event_queue.extend(new_events);
+    state.clipboard.completed.extend(new_completed);
 }
 
 fn c_str_to_string(ptr: *const c_char) -> String {
@@ -2273,6 +2333,10 @@ pub extern "C" fn native_poll_event(out_event: *mut NativeEventData) -> i32 {
 
     // Process clipboard timeouts
     process_clipboard_timeouts(&mut state);
+
+    // Process X11 clipboard events (if X11 backend is active)
+    #[cfg(all(target_os = "linux", feature = "x11-backend"))]
+    process_x11_clipboard_events(&mut state);
 
     // Poll for clipboard changes (if subscribed)
     poll_clipboard_changes(&mut state);
