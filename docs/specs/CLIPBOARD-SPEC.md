@@ -896,25 +896,25 @@ Use a background task or check timeouts during event polling.
 
 ## 9. Implementation Phases
 
-### Phase 1: Basic Text (P0)
+### Phase 1: Basic Text (P0) ✅ COMPLETE
 
-- [ ] Add `arboard` dependency
-- [ ] Implement `native_clipboard_api_version`
-- [ ] Implement `native_clipboard_capabilities` (basic flags)
-- [ ] Implement write flow: `begin`, `add_format`, `commit`, `cancel` for `text/plain`
-- [ ] Implement read flow: `read_format`, `get_data_size`, `get_data` for `text/plain`
-- [ ] Implement `release` and `cancel`
-- [ ] Add clipboard event types to event loop
-- [ ] Implement timeouts for completed data and write handles
-- [ ] Basic tests
+- [x] Add `arboard` dependency
+- [x] Implement `native_clipboard_api_version`
+- [x] Implement `native_clipboard_capabilities` (basic flags)
+- [x] Implement write flow: `begin`, `add_format`, `commit`, `cancel` for `text/plain`
+- [x] Implement read flow: `read_format`, `get_data_size`, `get_data` for `text/plain`
+- [x] Implement `release` and `cancel`
+- [x] Add clipboard event types to event loop
+- [x] Implement timeouts for completed data and write handles
+- [x] Basic tests
 
-### Phase 2: Format Negotiation (P1)
+### Phase 2: Format Negotiation (P1) ✅ COMPLETE
 
-- [ ] Implement `native_clipboard_get_formats`
-- [ ] Implement `native_clipboard_get_formats_data`
-- [ ] Add `text/html` support (with Windows CF_HTML conversion)
-- [ ] Add `text/uri-list` support
-- [ ] Update capability flags
+- [x] Implement `native_clipboard_get_formats`
+- [x] Implement `native_clipboard_get_formats_data`
+- [x] Add `text/html` support (via arboard set().html() / get().html())
+- [x] Add `text/uri-list` support (via arboard set().file_list() / get().file_list())
+- [x] Update capability flags (CAP_HTML, CAP_FILES)
 
 ### Phase 3: Binary Content (P2)
 

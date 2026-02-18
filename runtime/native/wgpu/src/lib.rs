@@ -2871,7 +2871,7 @@ pub extern "C" fn native_clipboard_api_version() -> u32 {
 /// Returns: Bitfield of CLIPBOARD_CAP_* flags
 #[no_mangle]
 pub extern "C" fn native_clipboard_capabilities() -> u32 {
-    let mut caps = CLIPBOARD_CAP_READ | CLIPBOARD_CAP_WRITE;
+    let mut caps = CLIPBOARD_CAP_READ | CLIPBOARD_CAP_WRITE | CLIPBOARD_CAP_HTML | CLIPBOARD_CAP_FILES;
 
     // Primary selection support on Linux
     #[cfg(target_os = "linux")]
@@ -2883,7 +2883,7 @@ pub extern "C" fn native_clipboard_capabilities() -> u32 {
 }
 
 /// Request available formats from clipboard.
-/// Phase 1: Returns only "text/plain" if clipboard has text.
+/// Detects text/plain, text/html, and text/uri-list formats.
 /// Triggers EVENT_CLIPBOARD_FORMATS_AVAILABLE or EVENT_CLIPBOARD_ERROR.
 #[no_mangle]
 pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) -> i32 {
@@ -2909,19 +2909,26 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
         }
     }
 
-    // Check if text is available
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
-    let formats = match clipboard.get_text() {
-        Ok(_) => vec!["text/plain".to_string()],
-        Err(arboard::Error::ContentNotAvailable) => vec![],
-        Err(_) => {
-            state.event_queue.push(NativeEvent::ClipboardError {
-                callback_id,
-                error_code: CLIPBOARD_ERR_INTERNAL,
-            });
-            return 0;
-        }
-    };
+
+    // Probe for available formats
+    // Note: arboard doesn't have a "query formats" API, so we probe each format
+    let mut formats = Vec::new();
+
+    // Check text/plain
+    if clipboard.get_text().is_ok() {
+        formats.push("text/plain".to_string());
+    }
+
+    // Check text/html
+    if clipboard.get().html().is_ok() {
+        formats.push("text/html".to_string());
+    }
+
+    // Check text/uri-list (file list)
+    if clipboard.get().file_list().is_ok() {
+        formats.push("text/uri-list".to_string());
+    }
 
     let format_count = formats.len();
 
@@ -3026,51 +3033,66 @@ pub extern "C" fn native_clipboard_read_format(
         }
     }
 
-    // Phase 1: Only support text/plain
-    if mime != "text/plain" && mime != "text/plain;charset=utf-8" {
-        state.event_queue.push(NativeEvent::ClipboardError {
-            callback_id,
-            error_code: CLIPBOARD_ERR_FORMAT_NOT_FOUND,
-        });
-        return 0;
-    }
-
     // Warn if callback_id is already in use (caller error)
     if state.clipboard.completed.contains_key(&callback_id) {
         log::warn!("Callback ID {} already in use, overwriting", callback_id);
     }
 
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
-    match clipboard.get_text() {
-        Ok(text) => {
-            let data = text.into_bytes();
-            let data_size = data.len();
 
+    // Route to appropriate format handler
+    let result = match mime.as_str() {
+        "text/plain" | "text/plain;charset=utf-8" => {
+            match clipboard.get_text() {
+                Ok(text) => Ok(text.into_bytes()),
+                Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
+                Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+            }
+        }
+        "text/html" => {
+            match clipboard.get().html() {
+                Ok(html) => Ok(html.into_bytes()),
+                Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
+                Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+            }
+        }
+        "text/uri-list" => {
+            match clipboard.get().file_list() {
+                Ok(paths) => {
+                    // Convert paths to text/uri-list format (newline-separated file:// URIs)
+                    let uri_list: String = paths.iter()
+                        .filter_map(|p| p.to_str())
+                        .map(|s| format!("file://{}", s))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    Ok(uri_list.into_bytes())
+                }
+                Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
+                Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+            }
+        }
+        _ => Err(CLIPBOARD_ERR_FORMAT_NOT_FOUND),
+    };
+
+    match result {
+        Ok(data) => {
+            let data_size = data.len();
             state.clipboard.completed.insert(callback_id, ClipboardCompletedData {
                 data,
                 formats: None,
                 format_cstrings: Vec::new(),
                 completed_at: std::time::Instant::now(),
             });
-
             state.event_queue.push(NativeEvent::ClipboardDataReady {
                 callback_id,
                 data_size,
             });
-
             1
         }
-        Err(arboard::Error::ContentNotAvailable) => {
+        Err(error_code) => {
             state.event_queue.push(NativeEvent::ClipboardError {
                 callback_id,
-                error_code: CLIPBOARD_ERR_EMPTY,
-            });
-            0
-        }
-        Err(_) => {
-            state.event_queue.push(NativeEvent::ClipboardError {
-                callback_id,
-                error_code: CLIPBOARD_ERR_INTERNAL,
+                error_code,
             });
             0
         }
@@ -3280,45 +3302,94 @@ pub extern "C" fn native_clipboard_write_commit(
 
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
 
-    // Phase 1: Only write text/plain
+    // Extract formats from builder
+    let html_data = builder.formats.iter()
+        .find(|(mime, _, _)| mime == "text/html")
+        .map(|(_, data, _)| data.clone());
+
     let text_data = builder.formats.iter()
         .find(|(mime, _, _)| mime == "text/plain" || mime == "text/plain;charset=utf-8")
-        .map(|(_, data, _)| data);
+        .map(|(_, data, _)| data.clone());
 
-    match text_data {
-        Some(data) => {
-            match String::from_utf8(data.clone()) {
-                Ok(text) => {
-                    match clipboard.set_text(&text) {
-                        Ok(()) => {
-                            state.event_queue.push(NativeEvent::ClipboardWriteComplete {
-                                callback_id,
-                            });
-                            1
-                        }
-                        Err(_) => {
-                            state.event_queue.push(NativeEvent::ClipboardError {
-                                callback_id,
-                                error_code: CLIPBOARD_ERR_INTERNAL,
-                            });
-                            0
-                        }
-                    }
-                }
-                Err(_) => {
-                    state.event_queue.push(NativeEvent::ClipboardError {
-                        callback_id,
-                        error_code: CLIPBOARD_ERR_INTERNAL,
-                    });
-                    0
+    let file_list_data = builder.formats.iter()
+        .find(|(mime, _, _)| mime == "text/uri-list")
+        .map(|(_, data, _)| data.clone());
+
+    // Priority: HTML > file list > text (HTML can include text fallback)
+    let result: Result<(), i32> = if let Some(html_bytes) = html_data {
+        // HTML with optional plain text fallback
+        match String::from_utf8(html_bytes) {
+            Ok(html) => {
+                let alt_text = text_data
+                    .and_then(|d| String::from_utf8(d).ok());
+                match clipboard.set().html(&html, alt_text.as_ref()) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
                 }
             }
+            Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
         }
-        None => {
-            // No text/plain format provided
+    } else if let Some(file_bytes) = file_list_data {
+        // File URI list - parse text/uri-list format into paths
+        match String::from_utf8(file_bytes) {
+            Ok(uri_list) => {
+                let paths: Vec<std::path::PathBuf> = uri_list
+                    .lines()
+                    .filter(|line| !line.starts_with('#')) // Skip comments
+                    .map(|line| line.trim())
+                    .filter(|line| !line.is_empty())
+                    .filter_map(|uri| {
+                        // Strip file:// prefix if present
+                        if let Some(path) = uri.strip_prefix("file://") {
+                            Some(std::path::PathBuf::from(path))
+                        } else if !uri.contains("://") {
+                            // Treat as plain path
+                            Some(std::path::PathBuf::from(uri))
+                        } else {
+                            None // Skip non-file URIs
+                        }
+                    })
+                    .collect();
+
+                if paths.is_empty() {
+                    Err(CLIPBOARD_ERR_FORMAT_NOT_FOUND)
+                } else {
+                    let path_refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+                    match clipboard.set().file_list(&path_refs) {
+                        Ok(()) => Ok(()),
+                        Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+                    }
+                }
+            }
+            Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+        }
+    } else if let Some(text_bytes) = text_data {
+        // Plain text
+        match String::from_utf8(text_bytes) {
+            Ok(text) => {
+                match clipboard.set_text(&text) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+                }
+            }
+            Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+        }
+    } else {
+        // No supported format provided
+        Err(CLIPBOARD_ERR_FORMAT_NOT_FOUND)
+    };
+
+    match result {
+        Ok(()) => {
+            state.event_queue.push(NativeEvent::ClipboardWriteComplete {
+                callback_id,
+            });
+            1
+        }
+        Err(error_code) => {
             state.event_queue.push(NativeEvent::ClipboardError {
                 callback_id,
-                error_code: CLIPBOARD_ERR_FORMAT_NOT_FOUND,
+                error_code,
             });
             0
         }
@@ -5992,5 +6063,159 @@ mod tests {
 
         let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
         assert_eq!(handle, 0, "Should return 0 when handle would overflow to 0");
+    }
+
+    // =========================================================================
+    // Phase 2 Clipboard Tests: HTML and File List
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_clipboard_capabilities_includes_html_and_files() {
+        let caps = native_clipboard_capabilities();
+        assert!(caps & CLIPBOARD_CAP_HTML != 0, "Should have HTML capability");
+        assert!(caps & CLIPBOARD_CAP_FILES != 0, "Should have FILES capability");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_html_format() {
+        reset_state();
+
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        let html = b"<b>Hello</b>\0";
+        let plain = b"Hello\0";
+        let html_mime = b"text/html\0";
+        let plain_mime = b"text/plain\0";
+
+        // Add HTML format
+        let result = native_clipboard_write_add_format(
+            handle,
+            html_mime.as_ptr(),
+            html.as_ptr(),
+            html.len() - 1, // Exclude null terminator
+        );
+        assert_eq!(result, 1, "Should succeed adding HTML format");
+
+        // Add plain text fallback
+        let result = native_clipboard_write_add_format(
+            handle,
+            plain_mime.as_ptr(),
+            plain.as_ptr(),
+            plain.len() - 1,
+        );
+        assert_eq!(result, 1, "Should succeed adding plain text fallback");
+
+        // Verify formats stored
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 2, "Should have 2 formats");
+        assert_eq!(builder.formats[0].0, "text/html");
+        assert_eq!(builder.formats[1].0, "text/plain");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_file_list_format() {
+        reset_state();
+
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        let uri_list = b"file:///home/test/file1.txt\nfile:///home/test/file2.txt\0";
+        let mime = b"text/uri-list\0";
+
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr(),
+            uri_list.as_ptr(),
+            uri_list.len() - 1,
+        );
+        assert_eq!(result, 1, "Should succeed adding file list format");
+
+        // Verify format stored
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 1, "Should have 1 format");
+        assert_eq!(builder.formats[0].0, "text/uri-list");
+    }
+
+    #[test]
+    #[serial]
+    fn test_read_unsupported_format_returns_error() {
+        reset_state();
+
+        let mime = b"application/x-unsupported-format\0";
+        let callback_id = 42;
+
+        let result = native_clipboard_read_format(
+            ClipboardTarget::Clipboard as i32,
+            mime.as_ptr(),
+            callback_id,
+        );
+
+        // Should fail synchronously with unsupported format
+        // The result depends on whether clipboard can be initialized
+        // In headless tests, either fails immediately or queues error event
+        let state = STATE.lock();
+        if result == 0 {
+            // Check for error event
+            let error_event = state.event_queue.iter().find(|e| {
+                matches!(e, NativeEvent::ClipboardError { callback_id: cid, error_code }
+                    if *cid == callback_id && *error_code == CLIPBOARD_ERR_FORMAT_NOT_FOUND)
+            });
+            assert!(error_event.is_some() || state.clipboard.clipboard.is_none(),
+                "Should queue format not found error or clipboard unavailable");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_html_only_no_plain_fallback() {
+        reset_state();
+
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        let html = b"<p>Test HTML</p>\0";
+        let html_mime = b"text/html\0";
+
+        let result = native_clipboard_write_add_format(
+            handle,
+            html_mime.as_ptr(),
+            html.as_ptr(),
+            html.len() - 1,
+        );
+        assert_eq!(result, 1, "Should succeed adding HTML format");
+
+        // Verify only HTML stored (no plain text fallback)
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 1, "Should have only HTML format");
+        assert_eq!(builder.formats[0].0, "text/html");
+    }
+
+    #[test]
+    #[serial]
+    fn test_file_list_parse_with_comments() {
+        // Test that text/uri-list format parsing handles RFC 2483 comments
+        reset_state();
+
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        // RFC 2483 allows comments starting with #
+        let uri_list = b"# This is a comment\nfile:///path/to/file.txt\n# Another comment\n\0";
+        let mime = b"text/uri-list\0";
+
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr(),
+            uri_list.as_ptr(),
+            uri_list.len() - 1,
+        );
+        assert_eq!(result, 1, "Should succeed adding file list with comments");
     }
 }

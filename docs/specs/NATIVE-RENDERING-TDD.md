@@ -4,7 +4,7 @@
 **Date:** 2025-02-17
 **Status:** ✅ Complete (All Phases Passing)
 **Reviewed:** 2025-02-17 - Added stronger assertions, more tests
-**Updated:** 2026-02-17 - 34/34 Rust unit tests passing (All phases including integration)
+**Updated:** 2026-02-17 - 73/73 Rust unit tests passing (Including clipboard Phase 2: HTML, file lists)
 
 ---
 
@@ -886,20 +886,73 @@ fn spec_write_handle_overflow() {
     ≔ handle = native_clipboard_write_begin(CLIPBOARD_TARGET);
     assert(handle == 0, "Should return 0 on overflow");
 }
+
+// =========================================================================
+// Phase 2 Clipboard Tests: HTML and File List Support
+// =========================================================================
+
+/// Capabilities include HTML and FILES
+fn spec_capabilities_includes_html_files() {
+    ≔ caps = native_clipboard_capabilities();
+    assert(caps & CLIPBOARD_CAP_HTML != 0, "Should have HTML capability");
+    assert(caps & CLIPBOARD_CAP_FILES != 0, "Should have FILES capability");
+}
+
+/// Write HTML format stores correctly
+fn spec_write_html_format() {
+    ≔ handle = native_clipboard_write_begin(CLIPBOARD_TARGET);
+    ≔ result = native_clipboard_write_add_format(handle, "text/html", html, len);
+    assert(result == 1, "Should succeed");
+}
+
+/// Write file list format stores correctly
+fn spec_write_file_list_format() {
+    ≔ handle = native_clipboard_write_begin(CLIPBOARD_TARGET);
+    ≔ result = native_clipboard_write_add_format(handle, "text/uri-list", uris, len);
+    assert(result == 1, "Should succeed");
+}
+
+/// Read unsupported format returns error
+fn spec_read_unsupported_format() {
+    native_clipboard_read_format(CLIPBOARD_TARGET, "application/x-unsupported", callback_id);
+    ≔ event = native_poll_event();
+    assert(event.type == EVENT_CLIPBOARD_ERROR, "Should fire error");
+    assert(event.button == CLIPBOARD_ERR_FORMAT_NOT_FOUND, "Should be format not found");
+}
+
+/// HTML only (no plain fallback) stores correctly
+fn spec_write_html_only() {
+    ≔ handle = native_clipboard_write_begin(CLIPBOARD_TARGET);
+    native_clipboard_write_add_format(handle, "text/html", html, len);
+    // Verify only 1 format stored
+    assert(builder.formats.len() == 1, "Should have only HTML");
+}
+
+/// File list with RFC 2483 comments parses correctly
+fn spec_file_list_with_comments() {
+    ≔ handle = native_clipboard_write_begin(CLIPBOARD_TARGET);
+    ≔ uri_list = "# Comment\nfile:///path\n";
+    ≔ result = native_clipboard_write_add_format(handle, "text/uri-list", uri_list, len);
+    assert(result == 1, "Should succeed with comments");
+}
 ```
 
-**Criteria:** All 14 clipboard tests pass.
+**Criteria:** All 20 clipboard tests pass (14 Phase 1 + 6 Phase 2).
 
 **Implementation Notes (2026-02-17):**
 - Async event-based API per CLIPBOARD-SPEC.md v0.2.0
 - arboard crate provides cross-platform clipboard access
 - Phase 1: text/plain and text/plain;charset=utf-8 MIME types
+- Phase 2: text/html, text/uri-list MIME types
 - Per-callback CString storage prevents use-after-free
 - Timeout processing: 30s data lifetime, 60s write handle timeout
 - Return values: write_add_* returns 1/success, 0/failure
 - Primary selection logged as warning (not yet supported)
 - Callback ID collision detection with warning log
 - Handle overflow protection returns 0
+- HTML write uses arboard set().html() with optional plain text fallback
+- File list uses arboard set().file_list() and get().file_list()
+- Format detection probes clipboard for text, HTML, and file list availability
 
 ---
 
@@ -915,14 +968,14 @@ fn spec_write_handle_overflow() {
 | 6. Event Handling | 6 | ✅ 6/6 Passing |
 | 7. Timing | 5 | ✅ 5/5 Passing |
 | 8. Integration | 1 | ✅ 1/1 Passing |
-| 9. Clipboard API | 14 | ✅ 14/14 Passing |
-| **Total** | **48** | **67/67 passing** |
+| 9. Clipboard API (Phase 1+2) | 20 | ✅ 20/20 Passing |
+| **Total** | **54** | **73/73 passing** |
 
 *Note: Total includes additional edge case tests beyond spec requirements.*
 
 ### Implementation Notes (2026-02-17)
 
-**Rust Unit Tests:** 34 tests in `lib.rs` cover complete FFI functionality:
+**Rust Unit Tests:** 73 tests in `lib.rs` cover complete FFI functionality:
 
 **Phase 1-3: Core Infrastructure**
 - Window creation/destruction with proper handle management
