@@ -797,34 +797,38 @@ struct ClipboardWriteBuilder {
 
 /// State for clipboard operations
 
-/// State of a pending async clipboard operation
+/// State of a pending async clipboard operation.
+/// Note: Completed/Cancelled/TimedOut variants reserved for Phase 6B-D native backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Variants used in Phase 6B-D native async backends
 enum PendingOpState {
     /// Operation is in progress
     InProgress,
-    /// Operation completed successfully
+    /// Operation completed successfully (Phase 6B-D)
     Completed,
-    /// Operation was cancelled by the user
+    /// Operation was cancelled by the user (Phase 6B-D)
     Cancelled,
-    /// Operation timed out
+    /// Operation timed out (Phase 6B-D)
     TimedOut,
 }
 
-/// A pending async clipboard operation
+/// A pending async clipboard operation.
+/// Some fields are reserved for Phase 6B-D native backends (X11 INCR protocol, Wayland pipes).
+#[allow(dead_code)] // Fields used in Phase 6B-D native async backends
 struct PendingOperation {
-    /// The callback ID to notify when operation completes
+    /// The callback ID to notify when operation completes (Phase 6B-D)
     callback_id: u64,
-    /// Target clipboard (Clipboard or PrimarySelection)
+    /// Target clipboard (Clipboard or PrimarySelection) (Phase 6B-D)
     target: ClipboardTarget,
-    /// MIME type being read (e.g., "text/plain")
+    /// MIME type being read (e.g., "text/plain") (Phase 6B-D)
     mime_type: String,
-    /// Current state of the operation
+    /// Current state of the operation (Phase 6B-D)
     state: PendingOpState,
-    /// When the operation was started
+    /// When the operation was started (used by is_timed_out)
     started_at: std::time::Instant,
     /// Timeout in milliseconds (0 = no timeout)
     timeout_ms: u64,
-    /// Partial data for incremental transfers (INCR protocol)
+    /// Partial data for incremental transfers (X11 INCR protocol, Phase 6B)
     partial_data: Vec<u8>,
 }
 
@@ -1051,9 +1055,11 @@ pub const CLIPBOARD_CAP_SVG: u32 = 1 << 8;
 pub const CLIPBOARD_CAP_CUSTOM_FORMATS: u32 = 1 << 9;
 pub const CLIPBOARD_CAP_CHUNKED_READ: u32 = 1 << 10;
 
-// Clipboard timeouts (seconds)
+// Clipboard timeouts
 pub const CLIPBOARD_DATA_LIFETIME_SECONDS: u64 = 30;
 pub const CLIPBOARD_WRITE_HANDLE_TIMEOUT_SECONDS: u64 = 60;
+/// Timeout for pending async clipboard operations (milliseconds)
+pub const CLIPBOARD_PENDING_OP_TIMEOUT_MS: u64 = 30_000;
 
 // -----------------------------------------------------------------------------
 // Image encoding/decoding helpers for clipboard
@@ -3155,18 +3161,23 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
         }
     }
 
+    // Warn if callback_id is already in use (caller error)
+    if state.clipboard.completed.contains_key(&callback_id) {
+        log::warn!("Callback ID {} already in use, overwriting", callback_id);
+    }
+
     // Check if there's already a pending operation with this callback_id
     if state.clipboard.pending_ops.contains_key(&callback_id) {
         log::warn!("Callback ID {} has pending operation, ignoring new request", callback_id);
         return 0;
     }
 
-    // Track this operation as pending (default timeout: 30 seconds)
+    // Track this operation as pending
     let pending_op = PendingOperation::new(
         callback_id,
         target_enum,
         "*".to_string(), // Special marker for get_formats
-        30_000,
+        CLIPBOARD_PENDING_OP_TIMEOUT_MS,
     );
     state.clipboard.pending_ops.insert(callback_id, pending_op);
 
@@ -3336,12 +3347,12 @@ pub extern "C" fn native_clipboard_read_format(
         return 0;
     }
 
-    // Track this operation as pending (default timeout: 30 seconds)
+    // Track this operation as pending
     let pending_op = PendingOperation::new(
         callback_id,
         target_enum,
         mime.clone(),
-        30_000, // 30s timeout
+        CLIPBOARD_PENDING_OP_TIMEOUT_MS,
     );
     state.clipboard.pending_ops.insert(callback_id, pending_op);
 
@@ -3743,6 +3754,26 @@ pub extern "C" fn native_clipboard_write_commit(
         }
     }
 
+    // Warn if callback_id is already in use (caller error)
+    if state.clipboard.completed.contains_key(&callback_id) {
+        log::warn!("Callback ID {} already in use, overwriting", callback_id);
+    }
+
+    // Check if there's already a pending operation with this callback_id
+    if state.clipboard.pending_ops.contains_key(&callback_id) {
+        log::warn!("Callback ID {} has pending operation, ignoring write commit", callback_id);
+        return 0;
+    }
+
+    // Track this write operation as pending
+    let pending_op = PendingOperation::new(
+        callback_id,
+        builder.target,
+        "write".to_string(), // Marker for write operations
+        CLIPBOARD_PENDING_OP_TIMEOUT_MS,
+    );
+    state.clipboard.pending_ops.insert(callback_id, pending_op);
+
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
     let target = builder.target;
 
@@ -3989,6 +4020,9 @@ pub extern "C" fn native_clipboard_write_commit(
         // No supported format provided
         Err(CLIPBOARD_ERR_FORMAT_NOT_FOUND)
     };
+
+    // Operation complete (success or error) - remove from pending
+    state.clipboard.pending_ops.remove(&callback_id);
 
     match result {
         Ok(()) => {
