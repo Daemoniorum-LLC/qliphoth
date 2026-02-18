@@ -1,7 +1,7 @@
 # Qliphoth Clipboard API Specification
 
-**Version:** 0.5.1
-**Date:** 2025-02-18
+**Version:** 0.5.2
+**Date:** 2026-02-18
 **Status:** Draft (Methodology Compliant)
 **SDD Phase:** Spec
 **Parent Spec:** NATIVE-RENDERING-SPEC.md
@@ -994,25 +994,39 @@ Use a background task or check timeouts during event polling.
 
 ### Phase 6: Async Implementation (P3)
 
-For true Wayland/async clipboard support:
+#### Phase 6A: Pending Operation Infrastructure ✓ COMPLETE
 
-- [ ] Replace synchronous arboard calls with async file descriptor reads
-- [ ] Implement proper pending operation tracking
-- [ ] Fire `CLIPBOARD_ERR_CANCELLED` from `native_clipboard_cancel` for pending ops
-- [ ] Add `CLIPBOARD_ERR_TIMEOUT` for long-running operations
-- [ ] Consider `wl-clipboard` integration for better Wayland support
+Implemented pending operation tracking with arboard backend:
+
+- [x] Add `PendingOperation` and `PendingOpState` types for tracking async ops
+- [x] Add `pending_ops: HashMap<u64, PendingOperation>` to `ClipboardState`
+- [x] Track operations in `native_clipboard_read_format()` and `native_clipboard_get_formats()`
+- [x] Fire `CLIPBOARD_ERR_CANCELLED` from `native_clipboard_cancel()` for pending ops
+- [x] Fire `CLIPBOARD_ERR_TIMEOUT` for operations exceeding 30s timeout
+- [x] Reject duplicate `callback_id` when operation already pending
+
+#### Phase 6B-D: Native Async Backends (Future)
+
+For true native Wayland/X11 async support:
+
+- [ ] X11 backend: Replace arboard with native x11rb selection protocol
+- [ ] Wayland backend: Replace arboard with native wl-clipboard/data-device protocol
+- [ ] Platform detection: Auto-detect Wayland vs X11 and use appropriate backend
+- [ ] Keep arboard as fallback for macOS/Windows
 
 ### Known Limitations (Current Implementation)
 
-1. **Synchronous operations**: All clipboard operations complete synchronously using arboard.
-   True async is deferred to Phase 6.
+1. **Synchronous backend**: Clipboard operations use arboard which is synchronous.
+   True async native backends (X11/Wayland) are planned for Phase 6B-D. However,
+   pending operation tracking is in place (Phase 6A) so cancel/timeout events work.
 
 2. **Primary selection on Wayland**: Requires `zwp_primary_selection_v1` protocol.
    Currently uses arboard's X11/Wayland abstraction.
 
-3. **Cancel behavior**: `native_clipboard_cancel()` silently removes completed data rather
-   than firing `CLIPBOARD_ERR_CANCELLED` for pending operations (no pending state exists
-   in synchronous implementation).
+3. **Pending operations brief**: With synchronous arboard backend, operations are
+   tracked as "pending" only briefly during execution. In practice, operations
+   complete before `native_clipboard_cancel()` can be called. True cancelable
+   async operations require Phase 6B-D native backends.
 
 4. **Binary custom formats**: Custom `application/*` formats containing binary (non-UTF-8)
    data will be stored as lossy UTF-8 text, which corrupts non-text content. This is because

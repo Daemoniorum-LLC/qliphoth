@@ -796,6 +796,60 @@ struct ClipboardWriteBuilder {
 }
 
 /// State for clipboard operations
+
+/// State of a pending async clipboard operation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingOpState {
+    /// Operation is in progress
+    InProgress,
+    /// Operation completed successfully
+    Completed,
+    /// Operation was cancelled by the user
+    Cancelled,
+    /// Operation timed out
+    TimedOut,
+}
+
+/// A pending async clipboard operation
+struct PendingOperation {
+    /// The callback ID to notify when operation completes
+    callback_id: u64,
+    /// Target clipboard (Clipboard or PrimarySelection)
+    target: ClipboardTarget,
+    /// MIME type being read (e.g., "text/plain")
+    mime_type: String,
+    /// Current state of the operation
+    state: PendingOpState,
+    /// When the operation was started
+    started_at: std::time::Instant,
+    /// Timeout in milliseconds (0 = no timeout)
+    timeout_ms: u64,
+    /// Partial data for incremental transfers (INCR protocol)
+    partial_data: Vec<u8>,
+}
+
+impl PendingOperation {
+    fn new(callback_id: u64, target: ClipboardTarget, mime_type: String, timeout_ms: u64) -> Self {
+        Self {
+            callback_id,
+            target,
+            mime_type,
+            state: PendingOpState::InProgress,
+            started_at: std::time::Instant::now(),
+            timeout_ms,
+            partial_data: Vec::new(),
+        }
+    }
+
+    /// Check if operation has exceeded its timeout
+    fn is_timed_out(&self) -> bool {
+        if self.timeout_ms == 0 {
+            return false;
+        }
+        self.started_at.elapsed().as_millis() as u64 > self.timeout_ms
+    }
+}
+
 /// Subscription for clipboard change notifications
 struct ClipboardSubscription {
     target: ClipboardTarget,
@@ -819,6 +873,8 @@ struct ClipboardState {
     primary_content_hash: Option<u64>,
     /// Last time we polled for changes
     last_poll_time: Option<std::time::Instant>,
+    /// Pending async operations (keyed by callback_id)
+    pending_ops: HashMap<u64, PendingOperation>,
 }
 
 impl Default for ClipboardState {
@@ -832,6 +888,7 @@ impl Default for ClipboardState {
             clipboard_content_hash: None,
             primary_content_hash: None,
             last_poll_time: None,
+            pending_ops: HashMap::new(),
         }
     }
 }
@@ -1135,6 +1192,22 @@ fn validate_ptr_for_write<T>(ptr: *mut T, location: &str) -> bool {
 /// Removes expired completed data and write handles.
 fn process_clipboard_timeouts(state: &mut AppState) {
     let now = std::time::Instant::now();
+
+    // Timeout pending operations (async clipboard operations)
+    let expired_pending: Vec<u64> = state.clipboard.pending_ops
+        .iter()
+        .filter(|(_, op)| op.is_timed_out())
+        .map(|(&id, _)| id)
+        .collect();
+
+    for callback_id in expired_pending {
+        state.clipboard.pending_ops.remove(&callback_id);
+        // Fire TIMEOUT error event for expired pending operations
+        state.event_queue.push(NativeEvent::ClipboardError {
+            callback_id,
+            error_code: CLIPBOARD_ERR_TIMEOUT,
+        });
+    }
 
     // Timeout completed data after DATA_LIFETIME_SECONDS
     let data_timeout = std::time::Duration::from_secs(CLIPBOARD_DATA_LIFETIME_SECONDS);
@@ -3082,6 +3155,21 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
         }
     }
 
+    // Check if there's already a pending operation with this callback_id
+    if state.clipboard.pending_ops.contains_key(&callback_id) {
+        log::warn!("Callback ID {} has pending operation, ignoring new request", callback_id);
+        return 0;
+    }
+
+    // Track this operation as pending (default timeout: 30 seconds)
+    let pending_op = PendingOperation::new(
+        callback_id,
+        target_enum,
+        "*".to_string(), // Special marker for get_formats
+        30_000,
+    );
+    state.clipboard.pending_ops.insert(callback_id, pending_op);
+
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
 
     // Helper macro to probe clipboard content with Linux primary selection support
@@ -3135,6 +3223,9 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
     if state.clipboard.completed.contains_key(&callback_id) {
         log::warn!("Callback ID {} already in use, overwriting", callback_id);
     }
+
+    // Operation complete - remove from pending
+    state.clipboard.pending_ops.remove(&callback_id);
 
     // Store completed data
     state.clipboard.completed.insert(callback_id, ClipboardCompletedData {
@@ -3238,6 +3329,21 @@ pub extern "C" fn native_clipboard_read_format(
     if state.clipboard.completed.contains_key(&callback_id) {
         log::warn!("Callback ID {} already in use, overwriting", callback_id);
     }
+
+    // Check if there's already a pending operation with this callback_id
+    if state.clipboard.pending_ops.contains_key(&callback_id) {
+        log::warn!("Callback ID {} has pending operation, ignoring new request", callback_id);
+        return 0;
+    }
+
+    // Track this operation as pending (default timeout: 30 seconds)
+    let pending_op = PendingOperation::new(
+        callback_id,
+        target_enum,
+        mime.clone(),
+        30_000, // 30s timeout
+    );
+    state.clipboard.pending_ops.insert(callback_id, pending_op);
 
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
 
@@ -3350,6 +3456,9 @@ pub extern "C" fn native_clipboard_read_format(
         }
         _ => Err(CLIPBOARD_ERR_FORMAT_NOT_FOUND),
     };
+
+    // Operation complete (success or error) - remove from pending
+    state.clipboard.pending_ops.remove(&callback_id);
 
     match result {
         Ok(data) => {
@@ -3475,8 +3584,17 @@ pub extern "C" fn native_clipboard_read_chunk(
 pub extern "C" fn native_clipboard_cancel(callback_id: u64) {
     let mut state = STATE.lock();
 
-    // Remove from completed if present
-    // Phase 1: Operations complete synchronously, so no "pending" state exists
+    // Check if operation is pending (async operations)
+    if state.clipboard.pending_ops.remove(&callback_id).is_some() {
+        // Fire CANCELLED error event for pending operations
+        state.event_queue.push(NativeEvent::ClipboardError {
+            callback_id,
+            error_code: CLIPBOARD_ERR_CANCELLED,
+        });
+        return;
+    }
+
+    // Remove from completed if present (for already-completed operations)
     // Just silently remove - don't fire events for unknown callback_ids
     if state.clipboard.completed.remove(&callback_id).is_none() {
         log::debug!("native_clipboard_cancel: callback_id {} not found", callback_id);
@@ -4916,6 +5034,7 @@ mod tests {
         state.clipboard.clipboard_content_hash = None;
         state.clipboard.primary_content_hash = None;
         state.clipboard.last_poll_time = None;
+        state.clipboard.pending_ops.clear();
     }
 
     // =========================================================================
@@ -7673,5 +7792,195 @@ mod tests {
         // Should match with different whitespace after <svg
         assert!(is_likely_svg("<svg\nwidth=\"100\">content</svg>"));
         assert!(is_likely_svg("<svg\rwidth=\"100\">content</svg>"));
+    }
+
+    // =========================================================================
+    // Phase 6A: Pending Operation Tracking Tests
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_pending_op_is_timed_out() {
+        // Test PendingOperation timeout logic
+        let op_no_timeout = PendingOperation::new(
+            1,
+            ClipboardTarget::Clipboard,
+            "text/plain".to_string(),
+            0, // No timeout
+        );
+        assert!(!op_no_timeout.is_timed_out(), "Operation with 0 timeout should never timeout");
+
+        // Create operation with very short timeout
+        let op_short = PendingOperation::new(
+            2,
+            ClipboardTarget::Clipboard,
+            "text/plain".to_string(),
+            1, // 1ms timeout
+        );
+        // Wait for timeout
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(op_short.is_timed_out(), "Operation should have timed out after 5ms");
+    }
+
+    #[test]
+    #[serial]
+    fn test_cancel_pending_fires_cancelled() {
+        reset_state();
+
+        // Manually insert a pending operation (simulating async in-progress)
+        {
+            let mut state = STATE.lock();
+            let pending = PendingOperation::new(
+                12345,
+                ClipboardTarget::Clipboard,
+                "text/plain".to_string(),
+                30_000,
+            );
+            state.clipboard.pending_ops.insert(12345, pending);
+        }
+
+        // Cancel the pending operation
+        native_clipboard_cancel(12345);
+
+        // Should fire CLIPBOARD_ERR_CANCELLED event
+        let mut event_data = NativeEventData::default();
+        let event_type = native_poll_event(&mut event_data);
+        assert_eq!(event_type, EVENT_CLIPBOARD_ERROR, "Should get clipboard error event");
+        assert_eq!(event_data.callback_id, 12345, "Callback ID should match");
+        assert_eq!(
+            event_data.button,
+            CLIPBOARD_ERR_CANCELLED as i32,
+            "Error code should be CANCELLED"
+        );
+
+        // Verify operation was removed from pending
+        {
+            let state = STATE.lock();
+            assert!(
+                !state.clipboard.pending_ops.contains_key(&12345),
+                "Operation should be removed from pending after cancel"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_timeout_fires_timeout_error() {
+        reset_state();
+
+        // Manually insert a pending operation with 1ms timeout
+        {
+            let mut state = STATE.lock();
+            let pending = PendingOperation::new(
+                54321,
+                ClipboardTarget::Clipboard,
+                "text/plain".to_string(),
+                1, // 1ms timeout (will expire almost immediately)
+            );
+            state.clipboard.pending_ops.insert(54321, pending);
+        }
+
+        // Wait for timeout to expire
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Poll events - this triggers timeout processing
+        let mut event_data = NativeEventData::default();
+        let event_type = native_poll_event(&mut event_data);
+
+        // Should fire CLIPBOARD_ERR_TIMEOUT event
+        assert_eq!(event_type, EVENT_CLIPBOARD_ERROR, "Should get clipboard error event");
+        assert_eq!(event_data.callback_id, 54321, "Callback ID should match");
+        assert_eq!(
+            event_data.button,
+            CLIPBOARD_ERR_TIMEOUT as i32,
+            "Error code should be TIMEOUT"
+        );
+
+        // Verify operation was removed from pending
+        {
+            let state = STATE.lock();
+            assert!(
+                !state.clipboard.pending_ops.contains_key(&54321),
+                "Operation should be removed from pending after timeout"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_pending_ops_cleared_on_completion() {
+        reset_state();
+
+        // Manually insert a pending operation
+        {
+            let mut state = STATE.lock();
+            let pending = PendingOperation::new(
+                99999,
+                ClipboardTarget::Clipboard,
+                "text/plain".to_string(),
+                30_000,
+            );
+            state.clipboard.pending_ops.insert(99999, pending);
+        }
+
+        // Verify it's in pending
+        {
+            let state = STATE.lock();
+            assert!(
+                state.clipboard.pending_ops.contains_key(&99999),
+                "Operation should be in pending"
+            );
+        }
+
+        // Calling native_clipboard_release should not affect pending ops
+        // (it only affects completed ops)
+        native_clipboard_release(99999);
+        {
+            let state = STATE.lock();
+            assert!(
+                state.clipboard.pending_ops.contains_key(&99999),
+                "Operation should still be in pending after release (which only affects completed)"
+            );
+        }
+
+        // Cancel removes from pending
+        native_clipboard_cancel(99999);
+        {
+            let state = STATE.lock();
+            assert!(
+                !state.clipboard.pending_ops.contains_key(&99999),
+                "Operation should be removed from pending after cancel"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_duplicate_callback_id_rejected_for_pending() {
+        reset_state();
+
+        // Manually insert a pending operation
+        {
+            let mut state = STATE.lock();
+            let pending = PendingOperation::new(
+                77777,
+                ClipboardTarget::Clipboard,
+                "text/plain".to_string(),
+                30_000,
+            );
+            state.clipboard.pending_ops.insert(77777, pending);
+        }
+
+        // Trying to start a new read with same callback_id should fail (return 0)
+        let mime = cstr("text/plain");
+        let result = native_clipboard_read_format(
+            ClipboardTarget::Clipboard as i32,
+            mime.as_ptr() as *const u8,
+            77777, // Same callback_id as pending
+        );
+        assert_eq!(result, 0, "Should reject duplicate callback_id when pending");
+
+        // Clean up
+        native_clipboard_cancel(77777);
     }
 }
