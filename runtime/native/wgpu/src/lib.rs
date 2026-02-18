@@ -3211,7 +3211,42 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
     let mut state = STATE.lock();
     let target_enum = ClipboardTarget::from(target);
 
-    // Ensure clipboard is initialized
+    // Warn if callback_id is already in use (caller error)
+    if state.clipboard.completed.contains_key(&callback_id) {
+        log::warn!("Callback ID {} already in use, overwriting", callback_id);
+    }
+
+    // Check if there's already a pending operation with this callback_id
+    if state.clipboard.pending_ops.contains_key(&callback_id) {
+        log::warn!("Callback ID {} has pending operation, ignoring new request", callback_id);
+        return 0;
+    }
+
+    // Try X11 backend first (Linux only, async operation)
+    #[cfg(all(target_os = "linux", feature = "x11-backend"))]
+    if target_enum == ClipboardTarget::Clipboard {
+        if let Some(ref mut x11) = state.clipboard.x11_backend {
+            match x11.get_formats(callback_id) {
+                Ok(()) => {
+                    // Track as pending - X11 backend will fire event when complete
+                    let pending_op = PendingOperation::new(
+                        callback_id,
+                        target_enum,
+                        "*".to_string(),
+                        CLIPBOARD_PENDING_OP_TIMEOUT_MS,
+                    );
+                    state.clipboard.pending_ops.insert(callback_id, pending_op);
+                    return 1;
+                }
+                Err(e) => {
+                    log::warn!("X11 get_formats failed with {}, falling back to arboard", e);
+                    // Fall through to arboard
+                }
+            }
+        }
+    }
+
+    // Ensure clipboard is initialized (arboard fallback)
     if state.clipboard.clipboard.is_none() {
         match arboard::Clipboard::new() {
             Ok(clip) => state.clipboard.clipboard = Some(clip),
@@ -3223,17 +3258,6 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
                 return 0;
             }
         }
-    }
-
-    // Warn if callback_id is already in use (caller error)
-    if state.clipboard.completed.contains_key(&callback_id) {
-        log::warn!("Callback ID {} already in use, overwriting", callback_id);
-    }
-
-    // Check if there's already a pending operation with this callback_id
-    if state.clipboard.pending_ops.contains_key(&callback_id) {
-        log::warn!("Callback ID {} has pending operation, ignoring new request", callback_id);
-        return 0;
     }
 
     // Track this operation as pending
@@ -3386,7 +3410,42 @@ pub extern "C" fn native_clipboard_read_format(
     let mut state = STATE.lock();
     let target_enum = ClipboardTarget::from(target);
 
-    // Ensure clipboard is initialized
+    // Warn if callback_id is already in use (caller error)
+    if state.clipboard.completed.contains_key(&callback_id) {
+        log::warn!("Callback ID {} already in use, overwriting", callback_id);
+    }
+
+    // Check if there's already a pending operation with this callback_id
+    if state.clipboard.pending_ops.contains_key(&callback_id) {
+        log::warn!("Callback ID {} has pending operation, ignoring new request", callback_id);
+        return 0;
+    }
+
+    // Try X11 backend first (Linux only, async operation)
+    #[cfg(all(target_os = "linux", feature = "x11-backend"))]
+    if target_enum == ClipboardTarget::Clipboard {
+        if let Some(ref mut x11) = state.clipboard.x11_backend {
+            match x11.read_format(target_enum, &mime, callback_id) {
+                Ok(()) => {
+                    // Track as pending - X11 backend will fire event when complete
+                    let pending_op = PendingOperation::new(
+                        callback_id,
+                        target_enum,
+                        mime.clone(),
+                        CLIPBOARD_PENDING_OP_TIMEOUT_MS,
+                    );
+                    state.clipboard.pending_ops.insert(callback_id, pending_op);
+                    return 1;
+                }
+                Err(e) => {
+                    log::warn!("X11 read_format failed with {}, falling back to arboard", e);
+                    // Fall through to arboard
+                }
+            }
+        }
+    }
+
+    // Ensure clipboard is initialized (arboard fallback)
     if state.clipboard.clipboard.is_none() {
         match arboard::Clipboard::new() {
             Ok(clip) => state.clipboard.clipboard = Some(clip),
@@ -3398,17 +3457,6 @@ pub extern "C" fn native_clipboard_read_format(
                 return 0;
             }
         }
-    }
-
-    // Warn if callback_id is already in use (caller error)
-    if state.clipboard.completed.contains_key(&callback_id) {
-        log::warn!("Callback ID {} already in use, overwriting", callback_id);
-    }
-
-    // Check if there's already a pending operation with this callback_id
-    if state.clipboard.pending_ops.contains_key(&callback_id) {
-        log::warn!("Callback ID {} has pending operation, ignoring new request", callback_id);
-        return 0;
     }
 
     // Track this operation as pending
@@ -3659,6 +3707,12 @@ pub extern "C" fn native_clipboard_read_chunk(
 pub extern "C" fn native_clipboard_cancel(callback_id: u64) {
     let mut state = STATE.lock();
 
+    // Cancel in X11 backend if available (removes from X11 internal tracking)
+    #[cfg(all(target_os = "linux", feature = "x11-backend"))]
+    if let Some(ref mut x11) = state.clipboard.x11_backend {
+        x11.cancel(callback_id);
+    }
+
     // Check if operation is pending (async operations)
     if state.clipboard.pending_ops.remove(&callback_id).is_some() {
         // Fire CANCELLED error event for pending operations
@@ -3804,7 +3858,65 @@ pub extern "C" fn native_clipboard_write_commit(
         }
     };
 
-    // Ensure clipboard is initialized
+    // Warn if callback_id is already in use (caller error)
+    if state.clipboard.completed.contains_key(&callback_id) {
+        log::warn!("Callback ID {} already in use, overwriting", callback_id);
+    }
+
+    // Check if there's already a pending operation with this callback_id
+    if state.clipboard.pending_ops.contains_key(&callback_id) {
+        log::warn!("Callback ID {} has pending operation, ignoring write commit", callback_id);
+        return 0;
+    }
+
+    let target = builder.target;
+
+    // Try X11 backend first (Linux only)
+    #[cfg(all(target_os = "linux", feature = "x11-backend"))]
+    if target == ClipboardTarget::Clipboard {
+        if let Some(ref mut x11) = state.clipboard.x11_backend {
+            let mut x11_success = true;
+
+            // Write each format to X11 backend
+            for (mime, data, _is_sensitive) in &builder.formats {
+                let result = match mime.as_str() {
+                    "text/plain" | "text/plain;charset=utf-8" => {
+                        if let Ok(text) = std::str::from_utf8(data) {
+                            x11.write_text(text)
+                        } else {
+                            Err(-1)
+                        }
+                    }
+                    "text/html" => {
+                        if let Ok(html) = std::str::from_utf8(data) {
+                            x11.write_html(html)
+                        } else {
+                            Err(-1)
+                        }
+                    }
+                    "image/png" => x11.write_image(data),
+                    _ => Ok(()), // Skip unsupported formats
+                };
+                if result.is_err() {
+                    x11_success = false;
+                    break;
+                }
+            }
+
+            if x11_success {
+                if x11.write_commit(callback_id).is_ok() {
+                    // Queue success event
+                    state.event_queue.push(NativeEvent::ClipboardWriteComplete { callback_id });
+                    return 1;
+                }
+            }
+
+            log::warn!("X11 write failed, falling back to arboard");
+            // Fall through to arboard
+        }
+    }
+
+    // Ensure clipboard is initialized (arboard fallback)
     if state.clipboard.clipboard.is_none() {
         match arboard::Clipboard::new() {
             Ok(clip) => state.clipboard.clipboard = Some(clip),
@@ -3818,28 +3930,16 @@ pub extern "C" fn native_clipboard_write_commit(
         }
     }
 
-    // Warn if callback_id is already in use (caller error)
-    if state.clipboard.completed.contains_key(&callback_id) {
-        log::warn!("Callback ID {} already in use, overwriting", callback_id);
-    }
-
-    // Check if there's already a pending operation with this callback_id
-    if state.clipboard.pending_ops.contains_key(&callback_id) {
-        log::warn!("Callback ID {} has pending operation, ignoring write commit", callback_id);
-        return 0;
-    }
-
     // Track this write operation as pending
     let pending_op = PendingOperation::new(
         callback_id,
-        builder.target,
+        target,
         "write".to_string(), // Marker for write operations
         CLIPBOARD_PENDING_OP_TIMEOUT_MS,
     );
     state.clipboard.pending_ops.insert(callback_id, pending_op);
 
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
-    let target = builder.target;
 
     // Check if any format is marked as sensitive
     let has_sensitive = builder.formats.iter().any(|(_, _, is_sensitive)| *is_sensitive);

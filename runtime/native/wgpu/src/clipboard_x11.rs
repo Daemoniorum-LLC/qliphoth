@@ -365,7 +365,9 @@ impl X11ClipboardBackend {
     /// Cancel a pending operation
     #[allow(dead_code)] // Called when FFI layer routes through X11 backend
     pub fn cancel(&mut self, callback_id: u64) -> bool {
-        self.pending_reads.remove(&callback_id).is_some()
+        let removed_pending = self.pending_reads.remove(&callback_id).is_some();
+        let removed_incr = self.incr_transfers.remove(&callback_id).is_some();
+        removed_pending || removed_incr
     }
 
     // =========================================================================
