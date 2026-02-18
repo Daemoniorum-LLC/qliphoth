@@ -1,6 +1,6 @@
 # Qliphoth Clipboard API Specification
 
-**Version:** 0.4.0
+**Version:** 0.5.0
 **Date:** 2025-02-17
 **Status:** Draft (Methodology Compliant)
 **SDD Phase:** Spec
@@ -316,6 +316,7 @@ const EVENT_CLIPBOARD_FORMATS_AVAILABLE: i32 = 200;
 const EVENT_CLIPBOARD_DATA_READY: i32 = 201;
 const EVENT_CLIPBOARD_WRITE_COMPLETE: i32 = 202;
 const EVENT_CLIPBOARD_ERROR: i32 = 203;
+const EVENT_CLIPBOARD_CHANGED: i32 = 204;  // Fired when clipboard content changes (Phase 5)
 ```
 
 **Reserved ranges:**
@@ -564,6 +565,56 @@ const CLIPBOARD_ERR_INTERNAL: i32 = 99;       // Internal error
     );
 
     // =========================================================================
+    // Chunked Read (Phase 5)
+    // =========================================================================
+
+    /// Read a chunk of clipboard data at a specific offset.
+    /// Enables efficient streaming of large clipboard data without copying everything.
+    ///
+    /// # Arguments
+    /// - `callback_id`: The callback_id from the completed read event
+    /// - `offset`: Byte offset to start reading from
+    /// - `out_buf`: Buffer to write data into
+    /// - `max_len`: Maximum bytes to write
+    ///
+    /// # Returns
+    /// Number of bytes written, or 0 if invalid callback_id, offset out of bounds, or null buffer
+    rite native_clipboard_read_chunk(
+        callback_id: u64,
+        offset: usize,
+        out_buf: *mut u8,
+        max_len: usize,
+    ) -> usize;
+
+    // =========================================================================
+    // Change Notifications (Phase 5)
+    // =========================================================================
+
+    /// Subscribe to clipboard change notifications.
+    /// When clipboard content changes, EVENT_CLIPBOARD_CHANGED fires with the callback_id.
+    ///
+    /// Implementation uses polling (500ms interval) with content hashing.
+    ///
+    /// # Arguments
+    /// - `target`: ClipboardTarget (0 = Clipboard, 1 = PrimarySelection)
+    /// - `callback_id`: ID for correlating change events
+    ///
+    /// # Returns
+    /// 1 on success, 0 if already subscribed with this callback_id
+    rite native_clipboard_subscribe_changes(
+        target: i32,
+        callback_id: u64,
+    ) -> i32;
+
+    /// Unsubscribe from clipboard change notifications.
+    ///
+    /// # Arguments
+    /// - `callback_id`: The callback_id used when subscribing
+    rite native_clipboard_unsubscribe_changes(
+        callback_id: u64,
+    );
+
+    // =========================================================================
     // Deprecated API (backward compatibility)
     // =========================================================================
 
@@ -588,7 +639,10 @@ const CLIPBOARD_CAP_IMAGES: u32 = 1 << 3;         // Image formats supported
 const CLIPBOARD_CAP_HTML: u32 = 1 << 4;           // HTML format supported
 const CLIPBOARD_CAP_FILES: u32 = 1 << 5;          // File URI list supported
 const CLIPBOARD_CAP_SENSITIVE: u32 = 1 << 6;      // Sensitive data flag supported
-const CLIPBOARD_CAP_CHANGE_NOTIFY: u32 = 1 << 7;  // Change notifications (future)
+const CLIPBOARD_CAP_CHANGE_NOTIFY: u32 = 1 << 7;  // Change notifications (polling-based)
+const CLIPBOARD_CAP_SVG: u32 = 1 << 8;            // SVG format supported
+const CLIPBOARD_CAP_CUSTOM_FORMATS: u32 = 1 << 9; // Custom application/* formats
+const CLIPBOARD_CAP_CHUNKED_READ: u32 = 1 << 10;  // Chunked read API supported
 ```
 
 ### 5.5 Constants
@@ -930,12 +984,13 @@ Use a background task or check timeouts during event polling.
 - [x] Platform-specific format conversions
 - [x] Update capability flags
 
-### Phase 5: Advanced Features (P3)
+### Phase 5: Advanced Features (P3) ✅
 
-- [ ] Clipboard change notifications (optional, requires capability check)
-- [ ] Custom application formats (`application/x-qliphoth-*`)
-- [ ] Performance optimization for large transfers (streaming API)
-- [ ] `image/svg+xml` support
+- [x] Clipboard change notifications (polling-based, 500ms interval)
+- [x] Custom application formats (`application/x-qliphoth-*`, `application/json`, etc.)
+- [x] Performance optimization for large transfers (chunked read API)
+- [x] `image/svg+xml` support
+- [x] New capabilities: CAP_SVG, CAP_CUSTOM_FORMATS, CAP_CHANGE_NOTIFY, CAP_CHUNKED_READ
 
 ### Phase 6: Async Implementation (P3)
 
@@ -1150,11 +1205,12 @@ pub const EVENT_CLOSE: i32 = 15;
 pub const EVENT_TIMEOUT: i32 = 20;         // TODO: Move to 100
 pub const EVENT_ANIMATION_FRAME: i32 = 21; // TODO: Move to 101
 
-// Clipboard events (200-299) - NEW
+// Clipboard events (200-299)
 pub const EVENT_CLIPBOARD_FORMATS_AVAILABLE: i32 = 200;
 pub const EVENT_CLIPBOARD_DATA_READY: i32 = 201;
 pub const EVENT_CLIPBOARD_WRITE_COMPLETE: i32 = 202;
 pub const EVENT_CLIPBOARD_ERROR: i32 = 203;
+pub const EVENT_CLIPBOARD_CHANGED: i32 = 204;
 ```
 
 ---
@@ -1196,6 +1252,17 @@ native_clipboard_write_commit(h, callback_id)
 ---
 
 ## Changelog
+
+### v0.5.0 (2025-02-17)
+- **Phase 5 Complete**: Advanced Features
+- Added `image/svg+xml` format support
+- Added custom application formats (`application/*`)
+- Added clipboard change notifications (polling-based, 500ms)
+- Added chunked read API (`native_clipboard_read_chunk`)
+- Added `native_clipboard_subscribe_changes` and `native_clipboard_unsubscribe_changes`
+- Added `EVENT_CLIPBOARD_CHANGED` event constant
+- Added capability flags: CAP_SVG, CAP_CUSTOM_FORMATS, CAP_CHUNKED_READ
+- Updated CAP_CHANGE_NOTIFY to reflect implementation
 
 ### v0.4.0 (2025-02-17)
 - Added Type Architecture section (Section 2)

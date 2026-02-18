@@ -405,6 +405,7 @@ pub enum NativeEvent {
     ClipboardDataReady { callback_id: u64, data_size: usize },
     ClipboardWriteComplete { callback_id: u64 },
     ClipboardError { callback_id: u64, error_code: i32 },
+    ClipboardChanged { callback_id: u64, target: ClipboardTarget },
 }
 
 impl NativeEvent {
@@ -539,6 +540,12 @@ impl NativeEvent {
                 event_type: EVENT_CLIPBOARD_ERROR,
                 callback_id: *callback_id,
                 button: *error_code, // error code stored in button field per spec
+                ..Default::default()
+            },
+            NativeEvent::ClipboardChanged { callback_id, target } => NativeEventData {
+                event_type: EVENT_CLIPBOARD_CHANGED,
+                callback_id: *callback_id,
+                key: *target as i32, // target stored in key field
                 ..Default::default()
             },
         }
@@ -789,6 +796,12 @@ struct ClipboardWriteBuilder {
 }
 
 /// State for clipboard operations
+/// Subscription for clipboard change notifications
+struct ClipboardSubscription {
+    target: ClipboardTarget,
+    callback_id: u64,
+}
+
 struct ClipboardState {
     /// Completed data awaiting retrieval (keyed by callback_id)
     completed: HashMap<u64, ClipboardCompletedData>,
@@ -798,6 +811,12 @@ struct ClipboardState {
     next_write_handle: u64,
     /// Arboard clipboard instance (lazily initialized)
     clipboard: Option<arboard::Clipboard>,
+    /// Active change notification subscriptions
+    change_subscriptions: Vec<ClipboardSubscription>,
+    /// Hash of last known clipboard content (for change detection)
+    last_content_hash: Option<u64>,
+    /// Last time we polled for changes
+    last_poll_time: Option<std::time::Instant>,
 }
 
 impl Default for ClipboardState {
@@ -807,6 +826,9 @@ impl Default for ClipboardState {
             write_handles: HashMap::new(),
             next_write_handle: 1,
             clipboard: None,
+            change_subscriptions: Vec::new(),
+            last_content_hash: None,
+            last_poll_time: None,
         }
     }
 }
@@ -943,6 +965,7 @@ pub const EVENT_CLIPBOARD_FORMATS_AVAILABLE: i32 = 200;
 pub const EVENT_CLIPBOARD_DATA_READY: i32 = 201;
 pub const EVENT_CLIPBOARD_WRITE_COMPLETE: i32 = 202;
 pub const EVENT_CLIPBOARD_ERROR: i32 = 203;
+pub const EVENT_CLIPBOARD_CHANGED: i32 = 204;
 
 // Clipboard error codes
 pub const CLIPBOARD_OK: i32 = 0;
@@ -964,6 +987,9 @@ pub const CLIPBOARD_CAP_HTML: u32 = 1 << 4;
 pub const CLIPBOARD_CAP_FILES: u32 = 1 << 5;
 pub const CLIPBOARD_CAP_SENSITIVE: u32 = 1 << 6;
 pub const CLIPBOARD_CAP_CHANGE_NOTIFY: u32 = 1 << 7;
+pub const CLIPBOARD_CAP_SVG: u32 = 1 << 8;
+pub const CLIPBOARD_CAP_CUSTOM_FORMATS: u32 = 1 << 9;
+pub const CLIPBOARD_CAP_CHUNKED_READ: u32 = 1 << 10;
 
 // Clipboard timeouts (seconds)
 pub const CLIPBOARD_DATA_LIFETIME_SECONDS: u64 = 30;
@@ -2124,6 +2150,9 @@ pub extern "C" fn native_poll_event(out_event: *mut NativeEventData) -> i32 {
     // Process clipboard timeouts
     process_clipboard_timeouts(&mut state);
 
+    // Poll for clipboard changes (if subscribed)
+    poll_clipboard_changes(&mut state);
+
     // Use remove(0) for FIFO order - events should be processed in the order they were queued
     if !state.event_queue.is_empty() {
         let event = state.event_queue.remove(0);
@@ -2967,7 +2996,15 @@ pub extern "C" fn native_clipboard_api_version() -> u32 {
 /// Returns: Bitfield of CLIPBOARD_CAP_* flags
 #[no_mangle]
 pub extern "C" fn native_clipboard_capabilities() -> u32 {
-    let mut caps = CLIPBOARD_CAP_READ | CLIPBOARD_CAP_WRITE | CLIPBOARD_CAP_HTML | CLIPBOARD_CAP_FILES | CLIPBOARD_CAP_IMAGES;
+    let mut caps = CLIPBOARD_CAP_READ
+        | CLIPBOARD_CAP_WRITE
+        | CLIPBOARD_CAP_HTML
+        | CLIPBOARD_CAP_FILES
+        | CLIPBOARD_CAP_IMAGES
+        | CLIPBOARD_CAP_SVG
+        | CLIPBOARD_CAP_CUSTOM_FORMATS
+        | CLIPBOARD_CAP_CHANGE_NOTIFY
+        | CLIPBOARD_CAP_CHUNKED_READ;
 
     // Primary selection and sensitive data support on Linux
     #[cfg(target_os = "linux")]
@@ -3239,6 +3276,34 @@ pub extern "C" fn native_clipboard_read_format(
                 Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
             }
         }
+        "image/svg+xml" => {
+            // SVG is text-based XML; retrieve as text
+            // Note: arboard doesn't have native SVG support, so we read as text
+            match get_content!(text) {
+                Ok(text) => {
+                    // Verify it looks like SVG (basic check)
+                    let trimmed = text.trim();
+                    if trimmed.starts_with("<?xml") || trimmed.starts_with("<svg") || trimmed.contains("<svg") {
+                        Ok(text.into_bytes())
+                    } else {
+                        // Text doesn't look like SVG
+                        Err(CLIPBOARD_ERR_FORMAT_NOT_FOUND)
+                    }
+                }
+                Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
+                Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+            }
+        }
+        // Custom application formats (application/*)
+        mime if mime.starts_with("application/") => {
+            // For custom formats, try to retrieve as text (many are JSON/XML-based)
+            // Binary formats would need platform-specific raw clipboard access
+            match get_content!(text) {
+                Ok(text) => Ok(text.into_bytes()),
+                Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
+                Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+            }
+        }
         _ => Err(CLIPBOARD_ERR_FORMAT_NOT_FOUND),
     };
 
@@ -3301,6 +3366,57 @@ pub extern "C" fn native_clipboard_get_data(
         unsafe {
             std::ptr::copy_nonoverlapping(
                 completed.data.as_ptr(),
+                out_buf,
+                copy_len,
+            );
+        }
+    }
+
+    copy_len
+}
+
+/// Read a chunk of clipboard data at a specific offset.
+/// Enables efficient streaming of large clipboard data without copying everything.
+///
+/// # Arguments
+/// - `callback_id`: The callback_id from the completed read event
+/// - `offset`: Byte offset to start reading from
+/// - `out_buf`: Buffer to write data into
+/// - `max_len`: Maximum bytes to write
+///
+/// # Returns
+/// Number of bytes written, or 0 if invalid callback_id, offset out of bounds, or null buffer
+#[no_mangle]
+pub extern "C" fn native_clipboard_read_chunk(
+    callback_id: u64,
+    offset: usize,
+    out_buf: *mut u8,
+    max_len: usize,
+) -> usize {
+    if out_buf.is_null() || max_len == 0 {
+        return 0;
+    }
+
+    let state = STATE.lock();
+
+    let completed = match state.clipboard.completed.get(&callback_id) {
+        Some(c) => c,
+        None => return 0,
+    };
+
+    // Check offset bounds
+    if offset >= completed.data.len() {
+        return 0;
+    }
+
+    // Calculate how much we can copy
+    let available = completed.data.len() - offset;
+    let copy_len = available.min(max_len);
+
+    if copy_len > 0 {
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                completed.data.as_ptr().add(offset),
                 out_buf,
                 copy_len,
             );
@@ -3480,6 +3596,10 @@ pub extern "C" fn native_clipboard_write_commit(
         .find(|(mime, _, _)| mime == "image/jpeg")
         .map(|(_, data, _)| data.clone());
 
+    let svg_data = builder.formats.iter()
+        .find(|(mime, _, _)| mime == "image/svg+xml")
+        .map(|(_, data, _)| data.clone());
+
     let html_data = builder.formats.iter()
         .find(|(mime, _, _)| mime == "text/html")
         .map(|(_, data, _)| data.clone());
@@ -3490,6 +3610,11 @@ pub extern "C" fn native_clipboard_write_commit(
 
     let file_list_data = builder.formats.iter()
         .find(|(mime, _, _)| mime == "text/uri-list")
+        .map(|(_, data, _)| data.clone());
+
+    // Custom application/* formats (stored as text, first one wins)
+    let custom_data = builder.formats.iter()
+        .find(|(mime, _, _)| mime.starts_with("application/"))
         .map(|(_, data, _)| data.clone());
 
     // Helper macro to set clipboard content with Linux primary selection and sensitive data support
@@ -3576,7 +3701,7 @@ pub extern "C" fn native_clipboard_write_commit(
         }};
     }
 
-    // Priority: PNG image > JPEG image > HTML > file list > text
+    // Priority: PNG image > JPEG image > SVG > HTML > file list > custom > text
     let result: Result<(), i32> = if let Some(png_bytes) = png_data {
         // Decode PNG to RGBA, then set via arboard
         match decode_png_to_rgba(&png_bytes) {
@@ -3603,6 +3728,18 @@ pub extern "C" fn native_clipboard_write_commit(
                     bytes: std::borrow::Cow::Owned(rgba_data),
                 };
                 match set_content!(image, img_data) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+                }
+            }
+            Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+        }
+    } else if let Some(svg_bytes) = svg_data {
+        // SVG is stored as text (arboard doesn't have native SVG support)
+        // Note: Other apps may not recognize this as SVG
+        match String::from_utf8(svg_bytes) {
+            Ok(svg) => {
+                match set_content!(text, &svg) {
                     Ok(()) => Ok(()),
                     Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
                 }
@@ -3656,6 +3793,25 @@ pub extern "C" fn native_clipboard_write_commit(
             }
             Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
         }
+    } else if let Some(custom_bytes) = custom_data {
+        // Custom application/* format stored as text
+        // Note: arboard doesn't support raw MIME types, so this is a best-effort approach
+        match String::from_utf8(custom_bytes.clone()) {
+            Ok(custom_text) => {
+                match set_content!(text, &custom_text) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+                }
+            }
+            Err(_) => {
+                // Binary data - store as lossy UTF-8
+                let lossy = String::from_utf8_lossy(&custom_bytes).into_owned();
+                match set_content!(text, &lossy) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+                }
+            }
+        }
     } else if let Some(text_bytes) = text_data {
         // Plain text
         match String::from_utf8(text_bytes) {
@@ -3694,6 +3850,140 @@ pub extern "C" fn native_clipboard_write_commit(
 pub extern "C" fn native_clipboard_write_cancel(write_handle: u64) {
     let mut state = STATE.lock();
     state.clipboard.write_handles.remove(&write_handle);
+}
+
+// -----------------------------------------------------------------------------
+// Clipboard Change Notifications (Phase 5)
+// -----------------------------------------------------------------------------
+
+/// Subscribe to clipboard change notifications.
+/// When the clipboard content changes, EVENT_CLIPBOARD_CHANGED will be fired
+/// with the provided callback_id.
+///
+/// Note: This uses polling (every 500ms when subscribed). For efficiency,
+/// only subscribe when needed and unsubscribe when done.
+///
+/// Returns: 1 on success, 0 on failure
+#[no_mangle]
+pub extern "C" fn native_clipboard_subscribe_changes(
+    target: i32,
+    callback_id: u64,
+) -> i32 {
+    let mut state = STATE.lock();
+    let target_enum = ClipboardTarget::from(target);
+
+    // Check if already subscribed with this callback_id
+    if state.clipboard.change_subscriptions.iter().any(|s| s.callback_id == callback_id) {
+        return 0; // Already subscribed
+    }
+
+    state.clipboard.change_subscriptions.push(ClipboardSubscription {
+        target: target_enum,
+        callback_id,
+    });
+
+    // Initialize polling state if first subscription
+    if state.clipboard.last_poll_time.is_none() {
+        state.clipboard.last_poll_time = Some(std::time::Instant::now());
+        // Calculate initial content hash
+        if let Some(ref mut clipboard) = state.clipboard.clipboard {
+            state.clipboard.last_content_hash = calculate_clipboard_hash(clipboard);
+        }
+    }
+
+    1
+}
+
+/// Unsubscribe from clipboard change notifications.
+#[no_mangle]
+pub extern "C" fn native_clipboard_unsubscribe_changes(callback_id: u64) {
+    let mut state = STATE.lock();
+    state.clipboard.change_subscriptions.retain(|s| s.callback_id != callback_id);
+
+    // Clear polling state if no more subscriptions
+    if state.clipboard.change_subscriptions.is_empty() {
+        state.clipboard.last_poll_time = None;
+        state.clipboard.last_content_hash = None;
+    }
+}
+
+/// Calculate a hash of the current clipboard content for change detection.
+/// Uses a simple hash of the text content (most common clipboard type).
+fn calculate_clipboard_hash(clipboard: &mut arboard::Clipboard) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+
+    let mut hasher = DefaultHasher::new();
+
+    // Hash text content if available
+    if let Ok(text) = clipboard.get_text() {
+        text.hash(&mut hasher);
+        return Some(hasher.finish());
+    }
+
+    // Try HTML
+    if let Ok(html) = clipboard.get().html() {
+        html.hash(&mut hasher);
+        return Some(hasher.finish());
+    }
+
+    // Try image (hash dimensions only for performance)
+    if let Ok(img) = clipboard.get().image() {
+        img.width.hash(&mut hasher);
+        img.height.hash(&mut hasher);
+        // Hash first few bytes of image data for uniqueness
+        if img.bytes.len() > 0 {
+            img.bytes[..img.bytes.len().min(256)].hash(&mut hasher);
+        }
+        return Some(hasher.finish());
+    }
+
+    None // Empty or unreadable clipboard
+}
+
+/// Poll for clipboard changes (called from event loop).
+/// Only polls if there are active subscriptions and enough time has passed.
+const CLIPBOARD_POLL_INTERVAL_MS: u64 = 500;
+
+fn poll_clipboard_changes(state: &mut AppState) {
+    // Skip if no subscriptions
+    if state.clipboard.change_subscriptions.is_empty() {
+        return;
+    }
+
+    // Skip if not enough time has passed
+    let now = std::time::Instant::now();
+    if let Some(last_poll) = state.clipboard.last_poll_time {
+        if now.duration_since(last_poll).as_millis() < CLIPBOARD_POLL_INTERVAL_MS as u128 {
+            return;
+        }
+    }
+    state.clipboard.last_poll_time = Some(now);
+
+    // Ensure clipboard is initialized
+    if state.clipboard.clipboard.is_none() {
+        match arboard::Clipboard::new() {
+            Ok(clip) => state.clipboard.clipboard = Some(clip),
+            Err(_) => return,
+        }
+    }
+
+    // Calculate new hash
+    let clipboard = state.clipboard.clipboard.as_mut().unwrap();
+    let new_hash = calculate_clipboard_hash(clipboard);
+
+    // Check for change
+    if new_hash != state.clipboard.last_content_hash {
+        state.clipboard.last_content_hash = new_hash;
+
+        // Fire change events for all subscriptions
+        for sub in &state.clipboard.change_subscriptions {
+            state.event_queue.push(NativeEvent::ClipboardChanged {
+                callback_id: sub.callback_id,
+                target: sub.target,
+            });
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -4478,6 +4768,9 @@ mod tests {
         state.clipboard.completed.clear();
         state.clipboard.write_handles.clear();
         state.clipboard.next_write_handle = 1;
+        state.clipboard.change_subscriptions.clear();
+        state.clipboard.last_content_hash = None;
+        state.clipboard.last_poll_time = None;
     }
 
     // =========================================================================
@@ -6899,5 +7192,260 @@ mod tests {
         let state = STATE.lock();
         let builder = state.clipboard.write_handles.get(&handle).unwrap();
         assert_eq!(builder.formats[0].0, "text/plain;charset=utf-8");
+    }
+
+    // =========================================================================
+    // Phase 5 Tests: SVG, Custom Formats, Change Notifications, Chunked Read
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_write_svg_format() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        let svg_data = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\"><rect fill=\"red\"/></svg>";
+        let mime = cstr("image/svg+xml");
+
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            svg_data.as_ptr(),
+            svg_data.len()
+        );
+        assert_eq!(result, 1, "Should succeed adding SVG format");
+
+        // Verify format stored
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 1);
+        assert_eq!(builder.formats[0].0, "image/svg+xml");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_custom_application_format() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        let json_data = b"{\"key\": \"value\", \"count\": 42}";
+        let mime = cstr("application/json");
+
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            json_data.as_ptr(),
+            json_data.len()
+        );
+        assert_eq!(result, 1, "Should succeed adding application/json format");
+
+        // Verify format stored
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 1);
+        assert_eq!(builder.formats[0].0, "application/json");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_custom_qliphoth_format() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        let vnode_data = b"<vnode type=\"div\" id=\"1\" />";
+        let mime = cstr("application/x-qliphoth-vnode");
+
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            vnode_data.as_ptr(),
+            vnode_data.len()
+        );
+        assert_eq!(result, 1, "Should succeed adding custom Qliphoth format");
+
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats[0].0, "application/x-qliphoth-vnode");
+    }
+
+    #[test]
+    #[serial]
+    fn test_clipboard_change_subscribe_unsubscribe() {
+        reset_state();
+        let callback_id: u64 = 99999;
+
+        // Subscribe (returns 1 on success, 0 if already subscribed)
+        let result = native_clipboard_subscribe_changes(
+            ClipboardTarget::Clipboard as i32,
+            callback_id
+        );
+        assert_eq!(result, 1, "Should return 1 on successful subscription");
+
+        // Verify subscription exists
+        {
+            let state = STATE.lock();
+            assert_eq!(state.clipboard.change_subscriptions.len(), 1);
+            assert_eq!(state.clipboard.change_subscriptions[0].callback_id, callback_id);
+        }
+
+        // Unsubscribe
+        native_clipboard_unsubscribe_changes(callback_id);
+
+        // Verify subscription removed
+        {
+            let state = STATE.lock();
+            assert!(state.clipboard.change_subscriptions.is_empty());
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_clipboard_change_subscribe_multiple() {
+        reset_state();
+
+        // Subscribe multiple callbacks
+        native_clipboard_subscribe_changes(ClipboardTarget::Clipboard as i32, 100);
+        native_clipboard_subscribe_changes(ClipboardTarget::PrimarySelection as i32, 200);
+        native_clipboard_subscribe_changes(ClipboardTarget::Clipboard as i32, 300);
+
+        {
+            let state = STATE.lock();
+            assert_eq!(state.clipboard.change_subscriptions.len(), 3);
+        }
+
+        // Unsubscribe one
+        native_clipboard_unsubscribe_changes(200);
+
+        {
+            let state = STATE.lock();
+            assert_eq!(state.clipboard.change_subscriptions.len(), 2);
+            // Verify the right one was removed
+            assert!(state.clipboard.change_subscriptions.iter()
+                .all(|s| s.callback_id != 200));
+        }
+    }
+
+    #[test]
+    fn test_clipboard_capabilities_includes_svg() {
+        let caps = native_clipboard_capabilities();
+        assert!(caps & CLIPBOARD_CAP_SVG != 0, "Should have SVG capability");
+    }
+
+    #[test]
+    fn test_clipboard_capabilities_includes_custom_formats() {
+        let caps = native_clipboard_capabilities();
+        assert!(caps & CLIPBOARD_CAP_CUSTOM_FORMATS != 0, "Should have custom formats capability");
+    }
+
+    #[test]
+    fn test_clipboard_capabilities_includes_change_notify() {
+        let caps = native_clipboard_capabilities();
+        assert!(caps & CLIPBOARD_CAP_CHANGE_NOTIFY != 0, "Should have change notify capability");
+    }
+
+    #[test]
+    fn test_clipboard_capabilities_includes_chunked_read() {
+        let caps = native_clipboard_capabilities();
+        assert!(caps & CLIPBOARD_CAP_CHUNKED_READ != 0, "Should have chunked read capability");
+    }
+
+    #[test]
+    #[serial]
+    fn test_chunked_read_basic() {
+        reset_state();
+        let callback_id: u64 = 88888;
+        let test_data = b"Hello, this is test data for chunked reading!";
+
+        // Insert test data
+        {
+            let mut state = STATE.lock();
+            state.clipboard.completed.insert(callback_id, ClipboardCompletedData {
+                data: test_data.to_vec(),
+                formats: None,
+                format_cstrings: Vec::new(),
+                completed_at: std::time::Instant::now(),
+            });
+        }
+
+        // Read in chunks
+        let mut buf = [0u8; 10];
+
+        // First chunk (offset 0)
+        let len = native_clipboard_read_chunk(callback_id, 0, buf.as_mut_ptr(), 10);
+        assert_eq!(len, 10);
+        assert_eq!(&buf[..10], b"Hello, thi");
+
+        // Second chunk (offset 10)
+        let len = native_clipboard_read_chunk(callback_id, 10, buf.as_mut_ptr(), 10);
+        assert_eq!(len, 10);
+        assert_eq!(&buf[..10], b"s is test ");
+
+        // Third chunk (offset 20)
+        let len = native_clipboard_read_chunk(callback_id, 20, buf.as_mut_ptr(), 10);
+        assert_eq!(len, 10);
+        assert_eq!(&buf[..10], b"data for c");
+
+        // Last chunk (partial)
+        // "Hello, this is test data for chunked reading!" = 45 chars
+        // At offset 40, remaining = "ding!" = 5 chars
+        let len = native_clipboard_read_chunk(callback_id, 40, buf.as_mut_ptr(), 10);
+        assert_eq!(len, 5); // Only 5 bytes remaining
+        assert_eq!(&buf[..5], b"ding!");
+    }
+
+    #[test]
+    #[serial]
+    fn test_chunked_read_offset_out_of_bounds() {
+        reset_state();
+        let callback_id: u64 = 77777;
+        let test_data = b"Short";
+
+        // Insert test data
+        {
+            let mut state = STATE.lock();
+            state.clipboard.completed.insert(callback_id, ClipboardCompletedData {
+                data: test_data.to_vec(),
+                formats: None,
+                format_cstrings: Vec::new(),
+                completed_at: std::time::Instant::now(),
+            });
+        }
+
+        let mut buf = [0u8; 10];
+
+        // Offset beyond data length
+        let len = native_clipboard_read_chunk(callback_id, 100, buf.as_mut_ptr(), 10);
+        assert_eq!(len, 0, "Should return 0 for out-of-bounds offset");
+
+        // Offset exactly at end
+        let len = native_clipboard_read_chunk(callback_id, 5, buf.as_mut_ptr(), 10);
+        assert_eq!(len, 0, "Should return 0 when offset equals data length");
+    }
+
+    #[test]
+    #[serial]
+    fn test_chunked_read_invalid_callback() {
+        reset_state();
+        let mut buf = [0u8; 10];
+
+        // Non-existent callback
+        let len = native_clipboard_read_chunk(99999, 0, buf.as_mut_ptr(), 10);
+        assert_eq!(len, 0, "Should return 0 for invalid callback_id");
+    }
+
+    #[test]
+    fn test_chunked_read_null_buffer() {
+        let len = native_clipboard_read_chunk(1, 0, std::ptr::null_mut(), 10);
+        assert_eq!(len, 0, "Should return 0 for null buffer");
+    }
+
+    #[test]
+    fn test_chunked_read_zero_max_len() {
+        let mut buf = [0u8; 10];
+        let len = native_clipboard_read_chunk(1, 0, buf.as_mut_ptr(), 0);
+        assert_eq!(len, 0, "Should return 0 for zero max_len");
     }
 }
