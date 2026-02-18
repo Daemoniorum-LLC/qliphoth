@@ -3877,6 +3877,12 @@ pub extern "C" fn native_clipboard_write_commit(
         if let Some(ref mut x11) = state.clipboard.x11_backend {
             let mut x11_success = true;
 
+            // Log if sensitive data flag is set (X11 doesn't support it natively)
+            let has_sensitive = builder.formats.iter().any(|(_, _, is_sensitive)| *is_sensitive);
+            if has_sensitive {
+                log::debug!("X11 clipboard: sensitive data flag ignored (not supported on X11)");
+            }
+
             // Write each format to X11 backend
             for (mime, data, _is_sensitive) in &builder.formats {
                 let result = match mime.as_str() {
@@ -3884,14 +3890,14 @@ pub extern "C" fn native_clipboard_write_commit(
                         if let Ok(text) = std::str::from_utf8(data) {
                             x11.write_text(text)
                         } else {
-                            Err(-1)
+                            Err(CLIPBOARD_ERR_INTERNAL)
                         }
                     }
                     "text/html" => {
                         if let Ok(html) = std::str::from_utf8(data) {
                             x11.write_html(html)
                         } else {
-                            Err(-1)
+                            Err(CLIPBOARD_ERR_INTERNAL)
                         }
                     }
                     "image/png" => x11.write_image(data),
