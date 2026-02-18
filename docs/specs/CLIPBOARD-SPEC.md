@@ -933,8 +933,31 @@ Use a background task or check timeouts during event polling.
 ### Phase 5: Advanced Features (P3)
 
 - [ ] Clipboard change notifications (optional, requires capability check)
-- [ ] Custom application formats
-- [ ] Performance optimization for large transfers
+- [ ] Custom application formats (`application/x-qliphoth-*`)
+- [ ] Performance optimization for large transfers (streaming API)
+- [ ] `image/svg+xml` support
+
+### Phase 6: Async Implementation (P3)
+
+For true Wayland/async clipboard support:
+
+- [ ] Replace synchronous arboard calls with async file descriptor reads
+- [ ] Implement proper pending operation tracking
+- [ ] Fire `CLIPBOARD_ERR_CANCELLED` from `native_clipboard_cancel` for pending ops
+- [ ] Add `CLIPBOARD_ERR_TIMEOUT` for long-running operations
+- [ ] Consider `wl-clipboard` integration for better Wayland support
+
+### Known Limitations (Current Implementation)
+
+1. **Synchronous operations**: All clipboard operations complete synchronously using arboard.
+   True async is deferred to Phase 6.
+
+2. **Primary selection on Wayland**: Requires `zwp_primary_selection_v1` protocol.
+   Currently uses arboard's X11/Wayland abstraction.
+
+3. **Cancel behavior**: `native_clipboard_cancel()` silently removes completed data rather
+   than firing `CLIPBOARD_ERR_CANCELLED` for pending operations (no pending state exists
+   in synchronous implementation).
 
 ---
 

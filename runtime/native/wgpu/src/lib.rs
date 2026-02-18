@@ -780,7 +780,7 @@ struct ClipboardCompletedData {
 
 /// A clipboard write operation in progress
 struct ClipboardWriteBuilder {
-    #[allow(dead_code)]
+    /// Target selection (Clipboard or PrimarySelection)
     target: ClipboardTarget,
     /// Format entries: (mime_type, data, is_sensitive)
     formats: Vec<(String, Vec<u8>, bool)>,
@@ -1145,6 +1145,18 @@ fn c_str_to_string(ptr: *const c_char) -> String {
     // Safety: We've verified non-null and alignment. CStr::from_ptr requires
     // that the memory is valid and null-terminated - caller contract.
     unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() }
+}
+
+/// Normalize a MIME type according to CLIPBOARD-SPEC.md §3.1:
+/// 1. Convert to lowercase
+/// 2. Strip whitespace around semicolons (parameters)
+/// Example: "TEXT/PLAIN; charset=utf-8" → "text/plain;charset=utf-8"
+fn normalize_mime_type(mime: &str) -> String {
+    mime.to_lowercase()
+        .split(';')
+        .map(|part| part.trim())
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 /// Convert element tag to default taffy style
@@ -3088,8 +3100,15 @@ pub extern "C" fn native_clipboard_get_formats_data(
     completed.format_cstrings.clear();
     let count = formats.len().min(max_formats);
     for i in 0..count {
-        if let Ok(cstr) = std::ffi::CString::new(formats[i].as_str()) {
-            completed.format_cstrings.push(cstr);
+        match std::ffi::CString::new(formats[i].as_str()) {
+            Ok(cstr) => completed.format_cstrings.push(cstr),
+            Err(_) => {
+                // Format contains embedded null byte - skip with warning
+                log::warn!(
+                    "Clipboard format '{}' contains embedded null byte, skipping",
+                    formats[i].escape_default()
+                );
+            }
         }
     }
 
@@ -3115,7 +3134,7 @@ pub extern "C" fn native_clipboard_read_format(
         return 0;
     }
 
-    let mime = c_str_to_string(mime_type as *const c_char);
+    let mime = normalize_mime_type(&c_str_to_string(mime_type as *const c_char));
     let mut state = STATE.lock();
     let target_enum = ClipboardTarget::from(target);
 
@@ -3350,7 +3369,7 @@ pub extern "C" fn native_clipboard_write_add_format(
         return 0; // Failure
     }
 
-    let mime = c_str_to_string(mime_type as *const c_char);
+    let mime = normalize_mime_type(&c_str_to_string(mime_type as *const c_char));
     let mut state = STATE.lock();
 
     let builder = match state.clipboard.write_handles.get_mut(&write_handle) {
@@ -3373,7 +3392,9 @@ pub extern "C" fn native_clipboard_write_add_format(
 }
 
 /// Add a sensitive format (excluded from clipboard managers/history).
-/// Phase 1: Stored but not specially handled.
+/// On Linux, uses arboard's exclude_from_history() to prevent clipboard managers
+/// from recording this data. On other platforms, the sensitive flag is stored
+/// but has no effect (check CLIPBOARD_CAP_SENSITIVE capability).
 /// Returns: 1 on success, 0 on failure (invalid handle, null pointer)
 #[no_mangle]
 pub extern "C" fn native_clipboard_write_add_sensitive(
@@ -3386,7 +3407,7 @@ pub extern "C" fn native_clipboard_write_add_sensitive(
         return 0; // Failure
     }
 
-    let mime = c_str_to_string(mime_type as *const c_char);
+    let mime = normalize_mime_type(&c_str_to_string(mime_type as *const c_char));
     let mut state = STATE.lock();
 
     let builder = match state.clipboard.write_handles.get_mut(&write_handle) {
@@ -6802,5 +6823,81 @@ mod tests {
         // Second format (text/html) should be sensitive
         assert_eq!(builder.formats[1].0, "text/html");
         assert_eq!(builder.formats[1].2, true);
+    }
+
+    // =========================================================================
+    // MIME Type Normalization Tests (CLIPBOARD-SPEC.md §3.1)
+    // =========================================================================
+
+    #[test]
+    fn test_normalize_mime_type_lowercase() {
+        assert_eq!(normalize_mime_type("TEXT/PLAIN"), "text/plain");
+        assert_eq!(normalize_mime_type("Text/Html"), "text/html");
+        assert_eq!(normalize_mime_type("IMAGE/PNG"), "image/png");
+    }
+
+    #[test]
+    fn test_normalize_mime_type_whitespace() {
+        assert_eq!(
+            normalize_mime_type("text/plain; charset=utf-8"),
+            "text/plain;charset=utf-8"
+        );
+        assert_eq!(
+            normalize_mime_type("text/plain ;  charset=utf-8"),
+            "text/plain;charset=utf-8"
+        );
+    }
+
+    #[test]
+    fn test_normalize_mime_type_combined() {
+        assert_eq!(
+            normalize_mime_type("TEXT/PLAIN; CHARSET=UTF-8"),
+            "text/plain;charset=utf-8"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_format_normalizes_mime() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+
+        // Add format with uppercase MIME type
+        let mime = cstr("TEXT/PLAIN");
+        let data = b"test data";
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            data.as_ptr(),
+            data.len()
+        );
+        assert_eq!(result, 1);
+
+        // Verify MIME type was normalized to lowercase
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats[0].0, "text/plain");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_format_normalizes_charset_whitespace() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+
+        // Add format with whitespace around semicolon
+        let mime = cstr("text/plain; charset=utf-8");
+        let data = b"test data";
+        native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            data.as_ptr(),
+            data.len()
+        );
+
+        // Verify whitespace was stripped
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats[0].0, "text/plain;charset=utf-8");
     }
 }
