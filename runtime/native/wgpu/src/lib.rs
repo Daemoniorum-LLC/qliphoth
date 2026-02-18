@@ -1014,6 +1014,45 @@ fn decode_png_to_rgba(png_data: &[u8]) -> Result<(Vec<u8>, u32, u32), image::Ima
     Ok((rgba.into_raw(), width, height))
 }
 
+/// Encode RGBA pixels to JPEG format
+/// Note: quality parameter is for future use (image crate uses default quality via write_to)
+fn encode_rgba_to_jpeg(rgba_data: &[u8], width: u32, height: u32, _quality: u8) -> Result<Vec<u8>, image::ImageError> {
+    use image::{ImageBuffer, Rgba};
+    use std::io::Cursor;
+
+    // Create image buffer from RGBA data
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_raw(
+        width,
+        height,
+        rgba_data.to_vec()
+    ).ok_or_else(|| image::ImageError::Parameter(
+        image::error::ParameterError::from_kind(
+            image::error::ParameterErrorKind::DimensionMismatch
+        )
+    ))?;
+
+    // Convert to RGB (JPEG doesn't support alpha)
+    let rgb_img = image::DynamicImage::ImageRgba8(img).to_rgb8();
+
+    // Encode to JPEG
+    let mut jpeg_data = Cursor::new(Vec::new());
+    rgb_img.write_to(&mut jpeg_data, image::ImageFormat::Jpeg)?;
+
+    Ok(jpeg_data.into_inner())
+}
+
+/// Decode JPEG format to RGBA pixels
+/// Returns (rgba_data, width, height)
+fn decode_jpeg_to_rgba(jpeg_data: &[u8]) -> Result<(Vec<u8>, u32, u32), image::ImageError> {
+    use image::GenericImageView;
+
+    let img = image::load_from_memory_with_format(jpeg_data, image::ImageFormat::Jpeg)?;
+    let rgba = img.to_rgba8();
+    let (width, height) = img.dimensions();
+
+    Ok((rgba.into_raw(), width, height))
+}
+
 // Thread-local buffer for text input events (persists until next poll_event call)
 thread_local! {
     static TEXT_INPUT_BUFFER: std::cell::RefCell<std::ffi::CString> =
@@ -2918,10 +2957,10 @@ pub extern "C" fn native_clipboard_api_version() -> u32 {
 pub extern "C" fn native_clipboard_capabilities() -> u32 {
     let mut caps = CLIPBOARD_CAP_READ | CLIPBOARD_CAP_WRITE | CLIPBOARD_CAP_HTML | CLIPBOARD_CAP_FILES | CLIPBOARD_CAP_IMAGES;
 
-    // Primary selection support on Linux
+    // Primary selection and sensitive data support on Linux
     #[cfg(target_os = "linux")]
     {
-        caps |= CLIPBOARD_CAP_PRIMARY;
+        caps |= CLIPBOARD_CAP_PRIMARY | CLIPBOARD_CAP_SENSITIVE;
     }
 
     caps
@@ -2934,11 +2973,6 @@ pub extern "C" fn native_clipboard_capabilities() -> u32 {
 pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) -> i32 {
     let mut state = STATE.lock();
     let target_enum = ClipboardTarget::from(target);
-
-    // Log warning for Primary selection (not yet supported)
-    if target_enum == ClipboardTarget::PrimarySelection {
-        log::warn!("Primary selection not yet supported, using clipboard");
-    }
 
     // Ensure clipboard is initialized
     if state.clipboard.clipboard.is_none() {
@@ -2956,28 +2990,49 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
 
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
 
+    // Helper macro to probe clipboard content with Linux primary selection support
+    macro_rules! probe_content {
+        ($method:ident) => {{
+            #[cfg(target_os = "linux")]
+            {
+                use arboard::GetExtLinux;
+                let kind = match target_enum {
+                    ClipboardTarget::PrimarySelection => arboard::LinuxClipboardKind::Primary,
+                    ClipboardTarget::Clipboard => arboard::LinuxClipboardKind::Clipboard,
+                };
+                clipboard.get().clipboard(kind).$method().is_ok()
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                // Primary selection not supported on non-Linux; fall back to clipboard
+                clipboard.get().$method().is_ok()
+            }
+        }};
+    }
+
     // Probe for available formats
     // Note: arboard doesn't have a "query formats" API, so we probe each format
     let mut formats = Vec::new();
 
     // Check text/plain
-    if clipboard.get_text().is_ok() {
+    if probe_content!(text) {
         formats.push("text/plain".to_string());
     }
 
     // Check text/html
-    if clipboard.get().html().is_ok() {
+    if probe_content!(html) {
         formats.push("text/html".to_string());
     }
 
     // Check text/uri-list (file list)
-    if clipboard.get().file_list().is_ok() {
+    if probe_content!(file_list) {
         formats.push("text/uri-list".to_string());
     }
 
-    // Check image/png
-    if clipboard.get().image().is_ok() {
+    // Check image formats (if image available, we can encode to both PNG and JPEG)
+    if probe_content!(image) {
         formats.push("image/png".to_string());
+        formats.push("image/jpeg".to_string());
     }
 
     let format_count = formats.len();
@@ -3064,11 +3119,6 @@ pub extern "C" fn native_clipboard_read_format(
     let mut state = STATE.lock();
     let target_enum = ClipboardTarget::from(target);
 
-    // Log warning for Primary selection (not yet supported)
-    if target_enum == ClipboardTarget::PrimarySelection {
-        log::warn!("Primary selection not yet supported, using clipboard");
-    }
-
     // Ensure clipboard is initialized
     if state.clipboard.clipboard.is_none() {
         match arboard::Clipboard::new() {
@@ -3090,24 +3140,44 @@ pub extern "C" fn native_clipboard_read_format(
 
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
 
+    // Helper macro to get clipboard content with Linux primary selection support
+    macro_rules! get_content {
+        ($method:ident) => {{
+            #[cfg(target_os = "linux")]
+            {
+                use arboard::GetExtLinux;
+                let kind = match target_enum {
+                    ClipboardTarget::PrimarySelection => arboard::LinuxClipboardKind::Primary,
+                    ClipboardTarget::Clipboard => arboard::LinuxClipboardKind::Clipboard,
+                };
+                clipboard.get().clipboard(kind).$method()
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                // Primary selection not supported on non-Linux; fall back to clipboard
+                clipboard.get().$method()
+            }
+        }};
+    }
+
     // Route to appropriate format handler
     let result = match mime.as_str() {
         "text/plain" | "text/plain;charset=utf-8" => {
-            match clipboard.get_text() {
+            match get_content!(text) {
                 Ok(text) => Ok(text.into_bytes()),
                 Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
                 Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
             }
         }
         "text/html" => {
-            match clipboard.get().html() {
+            match get_content!(html) {
                 Ok(html) => Ok(html.into_bytes()),
                 Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
                 Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
             }
         }
         "text/uri-list" => {
-            match clipboard.get().file_list() {
+            match get_content!(file_list) {
                 Ok(paths) => {
                     // Convert paths to text/uri-list format (newline-separated file:// URIs)
                     let uri_list: String = paths.iter()
@@ -3122,13 +3192,28 @@ pub extern "C" fn native_clipboard_read_format(
             }
         }
         "image/png" => {
-            match clipboard.get().image() {
+            match get_content!(image) {
                 Ok(img_data) => {
                     // Encode RGBA pixels to PNG
                     encode_rgba_to_png(
                         &img_data.bytes,
                         img_data.width as u32,
                         img_data.height as u32,
+                    ).map_err(|_| CLIPBOARD_ERR_INTERNAL)
+                }
+                Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
+                Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+            }
+        }
+        "image/jpeg" => {
+            match get_content!(image) {
+                Ok(img_data) => {
+                    // Encode RGBA pixels to JPEG (quality 90)
+                    encode_rgba_to_jpeg(
+                        &img_data.bytes,
+                        img_data.width as u32,
+                        img_data.height as u32,
+                        90,
                     ).map_err(|_| CLIPBOARD_ERR_INTERNAL)
                 }
                 Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
@@ -3232,11 +3317,6 @@ pub extern "C" fn native_clipboard_release(callback_id: u64) {
 pub extern "C" fn native_clipboard_write_begin(target: i32) -> u64 {
     let mut state = STATE.lock();
     let target_enum = ClipboardTarget::from(target);
-
-    // Log warning for Primary selection (not yet supported)
-    if target_enum == ClipboardTarget::PrimarySelection {
-        log::warn!("Primary selection not yet supported, using clipboard");
-    }
 
     // Handle overflow (return 0 if we would wrap to 0)
     if state.clipboard.next_write_handle == 0 {
@@ -3365,10 +3445,18 @@ pub extern "C" fn native_clipboard_write_commit(
     }
 
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
+    let target = builder.target;
+
+    // Check if any format is marked as sensitive
+    let has_sensitive = builder.formats.iter().any(|(_, _, is_sensitive)| *is_sensitive);
 
     // Extract formats from builder
-    let image_data = builder.formats.iter()
+    let png_data = builder.formats.iter()
         .find(|(mime, _, _)| mime == "image/png")
+        .map(|(_, data, _)| data.clone());
+
+    let jpeg_data = builder.formats.iter()
+        .find(|(mime, _, _)| mime == "image/jpeg")
         .map(|(_, data, _)| data.clone());
 
     let html_data = builder.formats.iter()
@@ -3383,8 +3471,92 @@ pub extern "C" fn native_clipboard_write_commit(
         .find(|(mime, _, _)| mime == "text/uri-list")
         .map(|(_, data, _)| data.clone());
 
-    // Priority: image > HTML > file list > text
-    let result: Result<(), i32> = if let Some(png_bytes) = image_data {
+    // Helper macro to set clipboard content with Linux primary selection and sensitive data support
+    macro_rules! set_content {
+        (text, $text:expr) => {{
+            #[cfg(target_os = "linux")]
+            {
+                use arboard::SetExtLinux;
+                let kind = match target {
+                    ClipboardTarget::PrimarySelection => arboard::LinuxClipboardKind::Primary,
+                    ClipboardTarget::Clipboard => arboard::LinuxClipboardKind::Clipboard,
+                };
+                let setter = clipboard.set().clipboard(kind);
+                if has_sensitive {
+                    setter.exclude_from_history().text($text)
+                } else {
+                    setter.text($text)
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                clipboard.set().text($text)
+            }
+        }};
+        (html, $html:expr, $alt:expr) => {{
+            #[cfg(target_os = "linux")]
+            {
+                use arboard::SetExtLinux;
+                let kind = match target {
+                    ClipboardTarget::PrimarySelection => arboard::LinuxClipboardKind::Primary,
+                    ClipboardTarget::Clipboard => arboard::LinuxClipboardKind::Clipboard,
+                };
+                let setter = clipboard.set().clipboard(kind);
+                if has_sensitive {
+                    setter.exclude_from_history().html($html, $alt)
+                } else {
+                    setter.html($html, $alt)
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                clipboard.set().html($html, $alt)
+            }
+        }};
+        (image, $img:expr) => {{
+            #[cfg(target_os = "linux")]
+            {
+                use arboard::SetExtLinux;
+                let kind = match target {
+                    ClipboardTarget::PrimarySelection => arboard::LinuxClipboardKind::Primary,
+                    ClipboardTarget::Clipboard => arboard::LinuxClipboardKind::Clipboard,
+                };
+                let setter = clipboard.set().clipboard(kind);
+                if has_sensitive {
+                    setter.exclude_from_history().image($img)
+                } else {
+                    setter.image($img)
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                clipboard.set().image($img)
+            }
+        }};
+        (file_list, $paths:expr) => {{
+            #[cfg(target_os = "linux")]
+            {
+                use arboard::SetExtLinux;
+                let kind = match target {
+                    ClipboardTarget::PrimarySelection => arboard::LinuxClipboardKind::Primary,
+                    ClipboardTarget::Clipboard => arboard::LinuxClipboardKind::Clipboard,
+                };
+                let setter = clipboard.set().clipboard(kind);
+                if has_sensitive {
+                    setter.exclude_from_history().file_list($paths)
+                } else {
+                    setter.file_list($paths)
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                clipboard.set().file_list($paths)
+            }
+        }};
+    }
+
+    // Priority: PNG image > JPEG image > HTML > file list > text
+    let result: Result<(), i32> = if let Some(png_bytes) = png_data {
         // Decode PNG to RGBA, then set via arboard
         match decode_png_to_rgba(&png_bytes) {
             Ok((rgba_data, width, height)) => {
@@ -3393,7 +3565,23 @@ pub extern "C" fn native_clipboard_write_commit(
                     height: height as usize,
                     bytes: std::borrow::Cow::Owned(rgba_data),
                 };
-                match clipboard.set().image(img_data) {
+                match set_content!(image, img_data) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+                }
+            }
+            Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+        }
+    } else if let Some(jpeg_bytes) = jpeg_data {
+        // Decode JPEG to RGBA, then set via arboard
+        match decode_jpeg_to_rgba(&jpeg_bytes) {
+            Ok((rgba_data, width, height)) => {
+                let img_data = arboard::ImageData {
+                    width: width as usize,
+                    height: height as usize,
+                    bytes: std::borrow::Cow::Owned(rgba_data),
+                };
+                match set_content!(image, img_data) {
                     Ok(()) => Ok(()),
                     Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
                 }
@@ -3406,7 +3594,7 @@ pub extern "C" fn native_clipboard_write_commit(
             Ok(html) => {
                 let alt_text = text_data
                     .and_then(|d| String::from_utf8(d).ok());
-                match clipboard.set().html(&html, alt_text.as_ref()) {
+                match set_content!(html, &html, alt_text.as_ref()) {
                     Ok(()) => Ok(()),
                     Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
                 }
@@ -3439,7 +3627,7 @@ pub extern "C" fn native_clipboard_write_commit(
                     Err(CLIPBOARD_ERR_FORMAT_NOT_FOUND)
                 } else {
                     let path_refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
-                    match clipboard.set().file_list(&path_refs) {
+                    match set_content!(file_list, &path_refs) {
                         Ok(()) => Ok(()),
                         Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
                     }
@@ -3451,7 +3639,7 @@ pub extern "C" fn native_clipboard_write_commit(
         // Plain text
         match String::from_utf8(text_bytes) {
             Ok(text) => {
-                match clipboard.set_text(&text) {
+                match set_content!(text, &text) {
                     Ok(()) => Ok(()),
                     Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
                 }
@@ -6400,5 +6588,219 @@ mod tests {
         let rgba_data: Vec<u8> = vec![255, 0, 0, 255]; // Only 1 pixel
         let result = encode_rgba_to_png(&rgba_data, 2, 2); // But claim 2x2
         assert!(result.is_err(), "Should fail on dimension mismatch");
+    }
+
+    // =========================================================================
+    // Phase 3 JPEG Tests
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_write_image_jpeg_format() {
+        reset_state();
+
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        // Create a simple JPEG by encoding a 2x2 image
+        let rgba_data: Vec<u8> = vec![
+            255, 0, 0, 255,     // red
+            0, 255, 0, 255,     // green
+            0, 0, 255, 255,     // blue
+            255, 255, 255, 255, // white
+        ];
+        let jpeg_bytes = encode_rgba_to_jpeg(&rgba_data, 2, 2, 90).unwrap();
+
+        let mime = b"image/jpeg\0";
+
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr(),
+            jpeg_bytes.as_ptr(),
+            jpeg_bytes.len(),
+        );
+        assert_eq!(result, 1, "Should succeed adding image/jpeg format");
+
+        // Verify format stored
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 1, "Should have 1 format");
+        assert_eq!(builder.formats[0].0, "image/jpeg");
+    }
+
+    #[test]
+    fn test_encode_decode_jpeg_roundtrip() {
+        // Test the JPEG helper functions
+        let width = 2u32;
+        let height = 2u32;
+        // 2x2 RGBA image
+        let rgba_data: Vec<u8> = vec![
+            255, 0, 0, 255,     // red
+            0, 255, 0, 255,     // green
+            0, 0, 255, 255,     // blue
+            255, 255, 255, 255, // white
+        ];
+
+        // Encode to JPEG
+        let jpeg_bytes = encode_rgba_to_jpeg(&rgba_data, width, height, 90)
+            .expect("Encoding should succeed");
+
+        // Verify it's a valid JPEG (starts with FFD8 signature)
+        assert_eq!(jpeg_bytes[0], 0xFF);
+        assert_eq!(jpeg_bytes[1], 0xD8);
+
+        // Decode back
+        let (decoded_rgba, decoded_width, decoded_height) = decode_jpeg_to_rgba(&jpeg_bytes)
+            .expect("Decoding should succeed");
+
+        assert_eq!(decoded_width, width);
+        assert_eq!(decoded_height, height);
+        // Note: JPEG is lossy, so we don't check exact pixel values
+        assert_eq!(decoded_rgba.len(), (width * height * 4) as usize);
+    }
+
+    #[test]
+    fn test_decode_jpeg_invalid_data() {
+        let invalid_data = b"not a jpeg";
+        let result = decode_jpeg_to_rgba(invalid_data);
+        assert!(result.is_err(), "Should fail on invalid JPEG data");
+    }
+
+    #[test]
+    fn test_encode_jpeg_dimension_mismatch() {
+        // Provide wrong amount of data for the dimensions
+        let rgba_data: Vec<u8> = vec![255, 0, 0, 255]; // Only 1 pixel
+        let result = encode_rgba_to_jpeg(&rgba_data, 2, 2, 90); // But claim 2x2
+        assert!(result.is_err(), "Should fail on dimension mismatch");
+    }
+
+    // =========================================================================
+    // Phase 4: Primary Selection and Sensitive Data Tests
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_write_begin_primary_selection() {
+        reset_state();
+        // Primary selection should be accepted as a valid target
+        let handle = native_clipboard_write_begin(ClipboardTarget::PrimarySelection as i32);
+        assert!(handle > 0, "Primary selection write handle should be non-zero");
+
+        // Verify the target is stored correctly
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.target, ClipboardTarget::PrimarySelection);
+    }
+
+    #[test]
+    #[serial]
+    fn test_sensitive_data_flag_stored() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        let mime = cstr("text/plain");
+        let data = b"secret password";
+
+        // Add as sensitive
+        let result = native_clipboard_write_add_sensitive(
+            handle,
+            mime.as_ptr() as *const u8,
+            data.as_ptr(),
+            data.len()
+        );
+        assert_eq!(result, 1, "Adding sensitive format should succeed");
+
+        // Verify is_sensitive flag is true
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 1);
+        assert_eq!(builder.formats[0].2, true, "is_sensitive flag should be true");
+    }
+
+    #[test]
+    #[serial]
+    fn test_non_sensitive_data_flag_stored() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        let mime = cstr("text/plain");
+        let data = b"public data";
+
+        // Add as non-sensitive
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            data.as_ptr(),
+            data.len()
+        );
+        assert_eq!(result, 1, "Adding format should succeed");
+
+        // Verify is_sensitive flag is false
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 1);
+        assert_eq!(builder.formats[0].2, false, "is_sensitive flag should be false");
+    }
+
+    #[test]
+    #[serial]
+    #[cfg(target_os = "linux")]
+    fn test_primary_selection_capability_linux() {
+        // On Linux, primary selection should be advertised
+        let caps = native_clipboard_capabilities();
+        assert!(
+            caps & CLIPBOARD_CAP_PRIMARY != 0,
+            "Linux should advertise primary selection capability"
+        );
+    }
+
+    #[test]
+    #[serial]
+    #[cfg(target_os = "linux")]
+    fn test_sensitive_data_capability_linux() {
+        // On Linux, sensitive data (exclude_from_history) should be advertised
+        let caps = native_clipboard_capabilities();
+        assert!(
+            caps & CLIPBOARD_CAP_SENSITIVE != 0,
+            "Linux should advertise sensitive data capability"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_mixed_sensitive_and_non_sensitive_formats() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+
+        // Add non-sensitive text
+        let mime1 = cstr("text/plain");
+        let data1 = b"public content";
+        native_clipboard_write_add_format(
+            handle,
+            mime1.as_ptr() as *const u8,
+            data1.as_ptr(),
+            data1.len()
+        );
+
+        // Add sensitive HTML
+        let mime2 = cstr("text/html");
+        let data2 = b"<p>secret</p>";
+        native_clipboard_write_add_sensitive(
+            handle,
+            mime2.as_ptr() as *const u8,
+            data2.as_ptr(),
+            data2.len()
+        );
+
+        // Verify both formats stored with correct sensitivity flags
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 2);
+
+        // First format (text/plain) should be non-sensitive
+        assert_eq!(builder.formats[0].0, "text/plain");
+        assert_eq!(builder.formats[0].2, false);
+
+        // Second format (text/html) should be sensitive
+        assert_eq!(builder.formats[1].0, "text/html");
+        assert_eq!(builder.formats[1].2, true);
     }
 }

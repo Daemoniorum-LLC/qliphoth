@@ -916,19 +916,19 @@ Use a background task or check timeouts during event polling.
 - [x] Add `text/uri-list` support (via arboard set().file_list() / get().file_list())
 - [x] Update capability flags (CAP_HTML, CAP_FILES)
 
-### Phase 3: Binary Content (P2) ✅ PARTIAL
+### Phase 3: Binary Content (P2) ✅
 
 - [x] Add `image/png` support (via `image` crate encode/decode + arboard)
-- [ ] Add `image/jpeg` support (future: add jpeg feature to image crate)
+- [x] Add `image/jpeg` support (via `image` crate encode/decode + arboard)
 - [x] Handle large data transfers efficiently (PNG compression handles this)
 - [x] Update capability flags (CAP_IMAGES)
 
-### Phase 4: Platform Polish (P2)
+### Phase 4: Platform Polish (P2) ✅
 
-- [ ] Primary selection support (X11/Wayland)
-- [ ] Sensitive data support where available
-- [ ] Platform-specific format conversions
-- [ ] Update capability flags
+- [x] Primary selection support (X11/Wayland)
+- [x] Sensitive data support where available
+- [x] Platform-specific format conversions
+- [x] Update capability flags
 
 ### Phase 5: Advanced Features (P3)
 
