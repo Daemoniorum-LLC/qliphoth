@@ -813,8 +813,10 @@ struct ClipboardState {
     clipboard: Option<arboard::Clipboard>,
     /// Active change notification subscriptions
     change_subscriptions: Vec<ClipboardSubscription>,
-    /// Hash of last known clipboard content (for change detection)
-    last_content_hash: Option<u64>,
+    /// Hash of last known clipboard content (for change detection per target)
+    clipboard_content_hash: Option<u64>,
+    /// Hash of last known primary selection content (Linux only)
+    primary_content_hash: Option<u64>,
     /// Last time we polled for changes
     last_poll_time: Option<std::time::Instant>,
 }
@@ -827,7 +829,8 @@ impl Default for ClipboardState {
             next_write_handle: 1,
             clipboard: None,
             change_subscriptions: Vec::new(),
-            last_content_hash: None,
+            clipboard_content_hash: None,
+            primary_content_hash: None,
             last_poll_time: None,
         }
     }
@@ -1183,6 +1186,48 @@ fn normalize_mime_type(mime: &str) -> String {
         .map(|part| part.trim())
         .collect::<Vec<_>>()
         .join(";")
+}
+
+/// Check if text content is likely to be SVG.
+///
+/// This is a heuristic check, not full XML validation. It looks for:
+/// 1. XML declaration (`<?xml`) at the start (case-insensitive)
+/// 2. SVG root element (`<svg` followed by whitespace or `>`)
+/// 3. SVG namespace in the content
+///
+/// False positives are possible for XML containing `<svg>` elements that aren't
+/// the root, but this is acceptable for clipboard use cases.
+fn is_likely_svg(text: &str) -> bool {
+    let trimmed = text.trim();
+    let lower = trimmed.to_lowercase();
+
+    // Check for XML declaration at start
+    if lower.starts_with("<?xml") {
+        // XML file - check if it contains an SVG element
+        return lower.contains("<svg") && (
+            lower.contains("<svg>") ||
+            lower.contains("<svg ") ||
+            lower.contains("<svg\t") ||
+            lower.contains("<svg\n") ||
+            lower.contains("<svg\r")
+        );
+    }
+
+    // Check for SVG root element (case-insensitive)
+    if lower.starts_with("<svg>") ||
+       lower.starts_with("<svg ") ||
+       lower.starts_with("<svg\t") ||
+       lower.starts_with("<svg\n") ||
+       lower.starts_with("<svg\r") {
+        return true;
+    }
+
+    // Check for SVG namespace anywhere in the document
+    if lower.contains("xmlns") && lower.contains("http://www.w3.org/2000/svg") {
+        return true;
+    }
+
+    false
 }
 
 /// Convert element tag to default taffy style
@@ -3279,11 +3324,10 @@ pub extern "C" fn native_clipboard_read_format(
         "image/svg+xml" => {
             // SVG is text-based XML; retrieve as text
             // Note: arboard doesn't have native SVG support, so we read as text
+            // and perform heuristic validation (not full XML parsing)
             match get_content!(text) {
                 Ok(text) => {
-                    // Verify it looks like SVG (basic check)
-                    let trimmed = text.trim();
-                    if trimmed.starts_with("<?xml") || trimmed.starts_with("<svg") || trimmed.contains("<svg") {
+                    if is_likely_svg(&text) {
                         Ok(text.into_bytes())
                     } else {
                         // Text doesn't look like SVG
@@ -3882,12 +3926,29 @@ pub extern "C" fn native_clipboard_subscribe_changes(
         callback_id,
     });
 
-    // Initialize polling state if first subscription
+    // Initialize polling state if first subscription for this target
     if state.clipboard.last_poll_time.is_none() {
         state.clipboard.last_poll_time = Some(std::time::Instant::now());
-        // Calculate initial content hash
+    }
+
+    // Check if we need to initialize hash for this target
+    let needs_init = match target_enum {
+        ClipboardTarget::Clipboard => state.clipboard.clipboard_content_hash.is_none(),
+        ClipboardTarget::PrimarySelection => state.clipboard.primary_content_hash.is_none(),
+    };
+
+    // Initialize hash for this target if not already set
+    if needs_init {
         if let Some(ref mut clipboard) = state.clipboard.clipboard {
-            state.clipboard.last_content_hash = calculate_clipboard_hash(clipboard);
+            let hash = calculate_clipboard_hash(clipboard, target_enum);
+            match target_enum {
+                ClipboardTarget::Clipboard => {
+                    state.clipboard.clipboard_content_hash = hash;
+                }
+                ClipboardTarget::PrimarySelection => {
+                    state.clipboard.primary_content_hash = hash;
+                }
+            }
         }
     }
 
@@ -3903,39 +3964,95 @@ pub extern "C" fn native_clipboard_unsubscribe_changes(callback_id: u64) {
     // Clear polling state if no more subscriptions
     if state.clipboard.change_subscriptions.is_empty() {
         state.clipboard.last_poll_time = None;
-        state.clipboard.last_content_hash = None;
+        state.clipboard.clipboard_content_hash = None;
+        state.clipboard.primary_content_hash = None;
+    } else {
+        // Clear hash for targets with no remaining subscriptions
+        let has_clipboard_sub = state.clipboard.change_subscriptions
+            .iter().any(|s| s.target == ClipboardTarget::Clipboard);
+        let has_primary_sub = state.clipboard.change_subscriptions
+            .iter().any(|s| s.target == ClipboardTarget::PrimarySelection);
+
+        if !has_clipboard_sub {
+            state.clipboard.clipboard_content_hash = None;
+        }
+        if !has_primary_sub {
+            state.clipboard.primary_content_hash = None;
+        }
     }
 }
 
 /// Calculate a hash of the current clipboard content for change detection.
 /// Uses a simple hash of the text content (most common clipboard type).
-fn calculate_clipboard_hash(clipboard: &mut arboard::Clipboard) -> Option<u64> {
+///
+/// # Arguments
+/// - `clipboard`: The arboard clipboard instance
+/// - `target`: Which clipboard to hash (Clipboard or PrimarySelection)
+///
+/// # Performance Note
+/// For images, only the first 256 bytes are hashed along with dimensions.
+/// This is a trade-off: two images differing only after byte 256 would have
+/// the same hash, but in practice PNG/JPEG headers are sufficiently distinct.
+fn calculate_clipboard_hash(clipboard: &mut arboard::Clipboard, target: ClipboardTarget) -> Option<u64> {
     use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
 
     let mut hasher = DefaultHasher::new();
 
     // Hash text content if available
-    if let Ok(text) = clipboard.get_text() {
-        text.hash(&mut hasher);
-        return Some(hasher.finish());
-    }
+    #[cfg(target_os = "linux")]
+    {
+        use arboard::GetExtLinux;
+        let kind = match target {
+            ClipboardTarget::PrimarySelection => arboard::LinuxClipboardKind::Primary,
+            ClipboardTarget::Clipboard => arboard::LinuxClipboardKind::Clipboard,
+        };
 
-    // Try HTML
-    if let Ok(html) = clipboard.get().html() {
-        html.hash(&mut hasher);
-        return Some(hasher.finish());
-    }
-
-    // Try image (hash dimensions only for performance)
-    if let Ok(img) = clipboard.get().image() {
-        img.width.hash(&mut hasher);
-        img.height.hash(&mut hasher);
-        // Hash first few bytes of image data for uniqueness
-        if img.bytes.len() > 0 {
-            img.bytes[..img.bytes.len().min(256)].hash(&mut hasher);
+        if let Ok(text) = clipboard.get().clipboard(kind).text() {
+            text.hash(&mut hasher);
+            return Some(hasher.finish());
         }
-        return Some(hasher.finish());
+
+        // Try HTML
+        if let Ok(html) = clipboard.get().clipboard(kind).html() {
+            html.hash(&mut hasher);
+            return Some(hasher.finish());
+        }
+
+        // Try image (hash dimensions and first bytes for performance)
+        if let Ok(img) = clipboard.get().clipboard(kind).image() {
+            img.width.hash(&mut hasher);
+            img.height.hash(&mut hasher);
+            if !img.bytes.is_empty() {
+                img.bytes[..img.bytes.len().min(256)].hash(&mut hasher);
+            }
+            return Some(hasher.finish());
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // On non-Linux, primary selection falls back to clipboard
+        let _ = target; // Suppress unused warning
+
+        if let Ok(text) = clipboard.get_text() {
+            text.hash(&mut hasher);
+            return Some(hasher.finish());
+        }
+
+        if let Ok(html) = clipboard.get().html() {
+            html.hash(&mut hasher);
+            return Some(hasher.finish());
+        }
+
+        if let Ok(img) = clipboard.get().image() {
+            img.width.hash(&mut hasher);
+            img.height.hash(&mut hasher);
+            if !img.bytes.is_empty() {
+                img.bytes[..img.bytes.len().min(256)].hash(&mut hasher);
+            }
+            return Some(hasher.finish());
+        }
     }
 
     None // Empty or unreadable clipboard
@@ -3968,20 +4085,47 @@ fn poll_clipboard_changes(state: &mut AppState) {
         }
     }
 
-    // Calculate new hash
+    // Check which targets have subscriptions
+    let has_clipboard_sub = state.clipboard.change_subscriptions
+        .iter().any(|s| s.target == ClipboardTarget::Clipboard);
+    let has_primary_sub = state.clipboard.change_subscriptions
+        .iter().any(|s| s.target == ClipboardTarget::PrimarySelection);
+
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
-    let new_hash = calculate_clipboard_hash(clipboard);
 
-    // Check for change
-    if new_hash != state.clipboard.last_content_hash {
-        state.clipboard.last_content_hash = new_hash;
+    // Check clipboard target for changes
+    if has_clipboard_sub {
+        let new_hash = calculate_clipboard_hash(clipboard, ClipboardTarget::Clipboard);
+        if new_hash != state.clipboard.clipboard_content_hash {
+            state.clipboard.clipboard_content_hash = new_hash;
 
-        // Fire change events for all subscriptions
-        for sub in &state.clipboard.change_subscriptions {
-            state.event_queue.push(NativeEvent::ClipboardChanged {
-                callback_id: sub.callback_id,
-                target: sub.target,
-            });
+            // Fire change events only for clipboard subscriptions
+            for sub in &state.clipboard.change_subscriptions {
+                if sub.target == ClipboardTarget::Clipboard {
+                    state.event_queue.push(NativeEvent::ClipboardChanged {
+                        callback_id: sub.callback_id,
+                        target: sub.target,
+                    });
+                }
+            }
+        }
+    }
+
+    // Check primary selection target for changes (Linux only, but check anyway)
+    if has_primary_sub {
+        let new_hash = calculate_clipboard_hash(clipboard, ClipboardTarget::PrimarySelection);
+        if new_hash != state.clipboard.primary_content_hash {
+            state.clipboard.primary_content_hash = new_hash;
+
+            // Fire change events only for primary selection subscriptions
+            for sub in &state.clipboard.change_subscriptions {
+                if sub.target == ClipboardTarget::PrimarySelection {
+                    state.event_queue.push(NativeEvent::ClipboardChanged {
+                        callback_id: sub.callback_id,
+                        target: sub.target,
+                    });
+                }
+            }
         }
     }
 }
@@ -4769,7 +4913,8 @@ mod tests {
         state.clipboard.write_handles.clear();
         state.clipboard.next_write_handle = 1;
         state.clipboard.change_subscriptions.clear();
-        state.clipboard.last_content_hash = None;
+        state.clipboard.clipboard_content_hash = None;
+        state.clipboard.primary_content_hash = None;
         state.clipboard.last_poll_time = None;
     }
 
@@ -7447,5 +7592,86 @@ mod tests {
         let mut buf = [0u8; 10];
         let len = native_clipboard_read_chunk(1, 0, buf.as_mut_ptr(), 0);
         assert_eq!(len, 0, "Should return 0 for zero max_len");
+    }
+
+    // =========================================================================
+    // Additional Tests: Duplicate Subscription and SVG Validation
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_subscribe_duplicate_callback_returns_zero() {
+        reset_state();
+        let callback_id: u64 = 12345;
+
+        // First subscription should succeed
+        let result1 = native_clipboard_subscribe_changes(
+            ClipboardTarget::Clipboard as i32,
+            callback_id
+        );
+        assert_eq!(result1, 1, "First subscription should return 1");
+
+        // Duplicate subscription with same callback_id should return 0
+        let result2 = native_clipboard_subscribe_changes(
+            ClipboardTarget::Clipboard as i32,
+            callback_id
+        );
+        assert_eq!(result2, 0, "Duplicate subscription should return 0");
+
+        // Same callback_id but different target should still return 0
+        let result3 = native_clipboard_subscribe_changes(
+            ClipboardTarget::PrimarySelection as i32,
+            callback_id
+        );
+        assert_eq!(result3, 0, "Same callback_id different target should return 0");
+
+        // Verify only one subscription exists
+        let state = STATE.lock();
+        assert_eq!(state.clipboard.change_subscriptions.len(), 1);
+    }
+
+    #[test]
+    fn test_is_likely_svg_basic() {
+        // Valid SVG patterns
+        assert!(is_likely_svg("<svg>content</svg>"));
+        assert!(is_likely_svg("<svg width=\"100\">content</svg>"));
+        assert!(is_likely_svg("<svg\t>content</svg>"));
+        assert!(is_likely_svg("  <svg>content</svg>  ")); // With whitespace
+        assert!(is_likely_svg("<SVG>CONTENT</SVG>")); // Uppercase
+        assert!(is_likely_svg("<SvG>Mixed</SvG>")); // Mixed case
+    }
+
+    #[test]
+    fn test_is_likely_svg_with_xml_declaration() {
+        assert!(is_likely_svg("<?xml version=\"1.0\"?><svg>content</svg>"));
+        assert!(is_likely_svg("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg>content</svg>"));
+        assert!(is_likely_svg("<?XML VERSION=\"1.0\"?><SVG>CONTENT</SVG>")); // Uppercase
+    }
+
+    #[test]
+    fn test_is_likely_svg_with_namespace() {
+        assert!(is_likely_svg("<svg xmlns=\"http://www.w3.org/2000/svg\">content</svg>"));
+        assert!(is_likely_svg("<root xmlns=\"http://www.w3.org/2000/svg\"><svg/></root>"));
+    }
+
+    #[test]
+    fn test_is_likely_svg_rejects_non_svg() {
+        assert!(!is_likely_svg("Hello, World!"));
+        assert!(!is_likely_svg("<html><body>text</body></html>"));
+        assert!(!is_likely_svg("<div>not svg</div>"));
+        assert!(!is_likely_svg("<?xml version=\"1.0\"?><html></html>")); // XML but not SVG
+        assert!(!is_likely_svg("")); // Empty
+        assert!(!is_likely_svg("   ")); // Whitespace only
+    }
+
+    #[test]
+    fn test_is_likely_svg_edge_cases() {
+        // Should not match "svg" as a substring in other contexts
+        assert!(!is_likely_svg("<notsvg>content</notsvg>"));
+        assert!(!is_likely_svg("This text mentions <svg but is not SVG"));
+
+        // Should match with different whitespace after <svg
+        assert!(is_likely_svg("<svg\nwidth=\"100\">content</svg>"));
+        assert!(is_likely_svg("<svg\rwidth=\"100\">content</svg>"));
     }
 }

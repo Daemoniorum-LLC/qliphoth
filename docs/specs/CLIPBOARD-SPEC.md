@@ -1,7 +1,7 @@
 # Qliphoth Clipboard API Specification
 
-**Version:** 0.5.0
-**Date:** 2025-02-17
+**Version:** 0.5.1
+**Date:** 2025-02-18
 **Status:** Draft (Methodology Compliant)
 **SDD Phase:** Spec
 **Parent Spec:** NATIVE-RENDERING-SPEC.md
@@ -1014,6 +1014,20 @@ For true Wayland/async clipboard support:
    than firing `CLIPBOARD_ERR_CANCELLED` for pending operations (no pending state exists
    in synchronous implementation).
 
+4. **Binary custom formats**: Custom `application/*` formats containing binary (non-UTF-8)
+   data will be stored as lossy UTF-8 text, which corrupts non-text content. This is because
+   arboard doesn't support raw MIME type storage. Only text-based formats (JSON, XML, etc.)
+   are reliably preserved.
+
+5. **SVG validation**: The `image/svg+xml` format uses heuristic validation (checking for
+   `<svg` tags and XML declaration) rather than full XML parsing. Valid SVG with unusual
+   formatting may be rejected; non-SVG XML containing `<svg>` elements may be accepted.
+
+6. **Image hash for change detection**: Change notifications use a hash of the first 256
+   bytes of image data (plus dimensions) for performance. Two images differing only after
+   byte 256 would have the same hash, though this is unlikely in practice due to distinct
+   PNG/JPEG headers.
+
 ---
 
 ## 10. Security Considerations
@@ -1252,6 +1266,14 @@ native_clipboard_write_commit(h, callback_id)
 ---
 
 ## Changelog
+
+### v0.5.1 (2025-02-18)
+- **Audit fixes**: Addressed 4 issues from code review
+- Fixed target-specific change notifications (clipboard vs primary now tracked separately)
+- Improved SVG validation with `is_likely_svg()` heuristic function
+- Added doc comments for image hash performance optimization
+- Documented known limitations: binary custom formats, SVG validation, image hash
+- Added 6 new tests for duplicate subscription prevention and SVG validation
 
 ### v0.5.0 (2025-02-17)
 - **Phase 5 Complete**: Advanced Features
