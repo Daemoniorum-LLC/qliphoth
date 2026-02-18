@@ -4,7 +4,7 @@
 **Date:** 2025-02-17
 **Status:** ✅ Complete (All Phases Passing)
 **Reviewed:** 2025-02-17 - Added stronger assertions, more tests
-**Updated:** 2026-02-17 - 73/73 Rust unit tests passing (Including clipboard Phase 2: HTML, file lists)
+**Updated:** 2026-02-17 - 78/78 Rust unit tests passing (Including clipboard Phase 1-3: text, HTML, files, images)
 
 ---
 
@@ -939,11 +939,50 @@ fn spec_file_list_with_comments() {
 
 **Criteria:** All 20 clipboard tests pass (14 Phase 1 + 6 Phase 2).
 
+### Phase 3 Clipboard Tests: Image Support
+
+```sigil
+/// Capabilities include IMAGES
+fn spec_capabilities_includes_images() {
+    ≔ caps = native_clipboard_capabilities();
+    assert(caps & CLIPBOARD_CAP_IMAGES != 0, "Should have IMAGES capability");
+}
+
+/// Write image/png format stores correctly
+fn spec_write_image_png_format() {
+    ≔ handle = native_clipboard_write_begin(CLIPBOARD_TARGET);
+    ≔ result = native_clipboard_write_add_format(handle, "image/png", png_data, len);
+    assert(result == 1, "Should succeed");
+}
+
+/// PNG encode/decode roundtrip preserves data
+fn spec_encode_decode_png_roundtrip() {
+    ≔ png = encode_rgba_to_png(rgba_data, width, height);
+    ≔ (decoded, w, h) = decode_png_to_rgba(png);
+    assert(decoded == rgba_data, "Should roundtrip");
+}
+
+/// Invalid PNG data returns error
+fn spec_decode_png_invalid_data() {
+    ≔ result = decode_png_to_rgba("not a png");
+    assert(result.is_err(), "Should fail on invalid PNG");
+}
+
+/// Dimension mismatch returns error
+fn spec_encode_rgba_dimension_mismatch() {
+    ≔ result = encode_rgba_to_png(4_bytes, 2, 2); // 1 pixel for 2x2
+    assert(result.is_err(), "Should fail on mismatch");
+}
+```
+
+**Criteria:** All 25 clipboard tests pass (14 Phase 1 + 6 Phase 2 + 5 Phase 3).
+
 **Implementation Notes (2026-02-17):**
 - Async event-based API per CLIPBOARD-SPEC.md v0.2.0
 - arboard crate provides cross-platform clipboard access
 - Phase 1: text/plain and text/plain;charset=utf-8 MIME types
 - Phase 2: text/html, text/uri-list MIME types
+- Phase 3: image/png MIME type with PNG encode/decode
 - Per-callback CString storage prevents use-after-free
 - Timeout processing: 30s data lifetime, 60s write handle timeout
 - Return values: write_add_* returns 1/success, 0/failure
@@ -952,7 +991,10 @@ fn spec_file_list_with_comments() {
 - Handle overflow protection returns 0
 - HTML write uses arboard set().html() with optional plain text fallback
 - File list uses arboard set().file_list() and get().file_list()
-- Format detection probes clipboard for text, HTML, and file list availability
+- Format detection probes clipboard for text, HTML, file list, and images
+- PNG encoding via `image` crate (0.25) with minimal features
+- Reads image from clipboard via arboard, encodes to PNG for MIME output
+- Decodes PNG input to RGBA pixels for arboard clipboard write
 
 ---
 
@@ -968,14 +1010,14 @@ fn spec_file_list_with_comments() {
 | 6. Event Handling | 6 | ✅ 6/6 Passing |
 | 7. Timing | 5 | ✅ 5/5 Passing |
 | 8. Integration | 1 | ✅ 1/1 Passing |
-| 9. Clipboard API (Phase 1+2) | 20 | ✅ 20/20 Passing |
-| **Total** | **54** | **73/73 passing** |
+| 9. Clipboard API (Phase 1+2+3) | 25 | ✅ 25/25 Passing |
+| **Total** | **59** | **78/78 passing** |
 
 *Note: Total includes additional edge case tests beyond spec requirements.*
 
 ### Implementation Notes (2026-02-17)
 
-**Rust Unit Tests:** 73 tests in `lib.rs` cover complete FFI functionality:
+**Rust Unit Tests:** 78 tests in `lib.rs` cover complete FFI functionality:
 
 **Phase 1-3: Core Infrastructure**
 - Window creation/destruction with proper handle management

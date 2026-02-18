@@ -969,6 +969,51 @@ pub const CLIPBOARD_CAP_CHANGE_NOTIFY: u32 = 1 << 7;
 pub const CLIPBOARD_DATA_LIFETIME_SECONDS: u64 = 30;
 pub const CLIPBOARD_WRITE_HANDLE_TIMEOUT_SECONDS: u64 = 60;
 
+// -----------------------------------------------------------------------------
+// Image encoding/decoding helpers for clipboard
+// -----------------------------------------------------------------------------
+
+/// Encode RGBA pixels to PNG format
+fn encode_rgba_to_png(rgba_data: &[u8], width: u32, height: u32) -> Result<Vec<u8>, image::ImageError> {
+    use image::{ImageBuffer, Rgba, ImageEncoder};
+    use image::codecs::png::PngEncoder;
+
+    // Create image buffer from RGBA data
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_raw(
+        width,
+        height,
+        rgba_data.to_vec()
+    ).ok_or_else(|| image::ImageError::Parameter(
+        image::error::ParameterError::from_kind(
+            image::error::ParameterErrorKind::DimensionMismatch
+        )
+    ))?;
+
+    // Encode to PNG
+    let mut png_data = Vec::new();
+    let encoder = PngEncoder::new(&mut png_data);
+    encoder.write_image(
+        img.as_raw(),
+        width,
+        height,
+        image::ExtendedColorType::Rgba8,
+    )?;
+
+    Ok(png_data)
+}
+
+/// Decode PNG format to RGBA pixels
+/// Returns (rgba_data, width, height)
+fn decode_png_to_rgba(png_data: &[u8]) -> Result<(Vec<u8>, u32, u32), image::ImageError> {
+    use image::GenericImageView;
+
+    let img = image::load_from_memory_with_format(png_data, image::ImageFormat::Png)?;
+    let rgba = img.to_rgba8();
+    let (width, height) = img.dimensions();
+
+    Ok((rgba.into_raw(), width, height))
+}
+
 // Thread-local buffer for text input events (persists until next poll_event call)
 thread_local! {
     static TEXT_INPUT_BUFFER: std::cell::RefCell<std::ffi::CString> =
@@ -2871,7 +2916,7 @@ pub extern "C" fn native_clipboard_api_version() -> u32 {
 /// Returns: Bitfield of CLIPBOARD_CAP_* flags
 #[no_mangle]
 pub extern "C" fn native_clipboard_capabilities() -> u32 {
-    let mut caps = CLIPBOARD_CAP_READ | CLIPBOARD_CAP_WRITE | CLIPBOARD_CAP_HTML | CLIPBOARD_CAP_FILES;
+    let mut caps = CLIPBOARD_CAP_READ | CLIPBOARD_CAP_WRITE | CLIPBOARD_CAP_HTML | CLIPBOARD_CAP_FILES | CLIPBOARD_CAP_IMAGES;
 
     // Primary selection support on Linux
     #[cfg(target_os = "linux")]
@@ -2928,6 +2973,11 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
     // Check text/uri-list (file list)
     if clipboard.get().file_list().is_ok() {
         formats.push("text/uri-list".to_string());
+    }
+
+    // Check image/png
+    if clipboard.get().image().is_ok() {
+        formats.push("image/png".to_string());
     }
 
     let format_count = formats.len();
@@ -3066,6 +3116,20 @@ pub extern "C" fn native_clipboard_read_format(
                         .collect::<Vec<_>>()
                         .join("\n");
                     Ok(uri_list.into_bytes())
+                }
+                Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
+                Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+            }
+        }
+        "image/png" => {
+            match clipboard.get().image() {
+                Ok(img_data) => {
+                    // Encode RGBA pixels to PNG
+                    encode_rgba_to_png(
+                        &img_data.bytes,
+                        img_data.width as u32,
+                        img_data.height as u32,
+                    ).map_err(|_| CLIPBOARD_ERR_INTERNAL)
                 }
                 Err(arboard::Error::ContentNotAvailable) => Err(CLIPBOARD_ERR_EMPTY),
                 Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
@@ -3303,6 +3367,10 @@ pub extern "C" fn native_clipboard_write_commit(
     let clipboard = state.clipboard.clipboard.as_mut().unwrap();
 
     // Extract formats from builder
+    let image_data = builder.formats.iter()
+        .find(|(mime, _, _)| mime == "image/png")
+        .map(|(_, data, _)| data.clone());
+
     let html_data = builder.formats.iter()
         .find(|(mime, _, _)| mime == "text/html")
         .map(|(_, data, _)| data.clone());
@@ -3315,8 +3383,24 @@ pub extern "C" fn native_clipboard_write_commit(
         .find(|(mime, _, _)| mime == "text/uri-list")
         .map(|(_, data, _)| data.clone());
 
-    // Priority: HTML > file list > text (HTML can include text fallback)
-    let result: Result<(), i32> = if let Some(html_bytes) = html_data {
+    // Priority: image > HTML > file list > text
+    let result: Result<(), i32> = if let Some(png_bytes) = image_data {
+        // Decode PNG to RGBA, then set via arboard
+        match decode_png_to_rgba(&png_bytes) {
+            Ok((rgba_data, width, height)) => {
+                let img_data = arboard::ImageData {
+                    width: width as usize,
+                    height: height as usize,
+                    bytes: std::borrow::Cow::Owned(rgba_data),
+                };
+                match clipboard.set().image(img_data) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+                }
+            }
+            Err(_) => Err(CLIPBOARD_ERR_INTERNAL),
+        }
+    } else if let Some(html_bytes) = html_data {
         // HTML with optional plain text fallback
         match String::from_utf8(html_bytes) {
             Ok(html) => {
@@ -6217,5 +6301,104 @@ mod tests {
             uri_list.len() - 1,
         );
         assert_eq!(result, 1, "Should succeed adding file list with comments");
+    }
+
+    // =========================================================================
+    // Phase 3 Clipboard Tests: Image Support
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_clipboard_capabilities_includes_images() {
+        let caps = native_clipboard_capabilities();
+        assert!(caps & CLIPBOARD_CAP_IMAGES != 0, "Should have IMAGES capability");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_image_png_format() {
+        reset_state();
+
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        assert!(handle > 0);
+
+        // Create a minimal valid PNG (1x1 red pixel)
+        // This is a pre-encoded PNG header + IHDR + IDAT + IEND
+        let png_data: &[u8] = &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+            0x00, 0x00, 0x00, 0x0D, // IHDR length
+            0x49, 0x48, 0x44, 0x52, // "IHDR"
+            0x00, 0x00, 0x00, 0x01, // width: 1
+            0x00, 0x00, 0x00, 0x01, // height: 1
+            0x08, 0x06, // bit depth: 8, color type: RGBA
+            0x00, 0x00, 0x00, // compression, filter, interlace
+            0x1F, 0x15, 0xC4, 0x89, // IHDR CRC
+            0x00, 0x00, 0x00, 0x0D, // IDAT length
+            0x49, 0x44, 0x41, 0x54, // "IDAT"
+            0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00, 0x18, // compressed data
+            0xDD, 0x8D, 0xB4, // IDAT CRC (may need adjustment)
+            0x00, 0x00, 0x00, 0x00, // IEND length
+            0x49, 0x45, 0x4E, 0x44, // "IEND"
+            0xAE, 0x42, 0x60, 0x82, // IEND CRC
+        ];
+        let mime = b"image/png\0";
+
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr(),
+            png_data.as_ptr(),
+            png_data.len(),
+        );
+        assert_eq!(result, 1, "Should succeed adding image/png format");
+
+        // Verify format stored
+        let state = STATE.lock();
+        let builder = state.clipboard.write_handles.get(&handle).unwrap();
+        assert_eq!(builder.formats.len(), 1, "Should have 1 format");
+        assert_eq!(builder.formats[0].0, "image/png");
+    }
+
+    #[test]
+    fn test_encode_decode_png_roundtrip() {
+        // Test the helper functions directly
+        let width = 2u32;
+        let height = 2u32;
+        // 2x2 RGBA image: red, green, blue, white
+        let rgba_data: Vec<u8> = vec![
+            255, 0, 0, 255,     // red
+            0, 255, 0, 255,     // green
+            0, 0, 255, 255,     // blue
+            255, 255, 255, 255, // white
+        ];
+
+        // Encode to PNG
+        let png_bytes = encode_rgba_to_png(&rgba_data, width, height)
+            .expect("Encoding should succeed");
+
+        // Verify it's a valid PNG (starts with signature)
+        assert_eq!(&png_bytes[0..8], &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+        // Decode back
+        let (decoded_rgba, decoded_width, decoded_height) = decode_png_to_rgba(&png_bytes)
+            .expect("Decoding should succeed");
+
+        assert_eq!(decoded_width, width);
+        assert_eq!(decoded_height, height);
+        assert_eq!(decoded_rgba, rgba_data);
+    }
+
+    #[test]
+    fn test_decode_png_invalid_data() {
+        let invalid_data = b"not a png";
+        let result = decode_png_to_rgba(invalid_data);
+        assert!(result.is_err(), "Should fail on invalid PNG data");
+    }
+
+    #[test]
+    fn test_encode_rgba_dimension_mismatch() {
+        // Provide wrong amount of data for the dimensions
+        let rgba_data: Vec<u8> = vec![255, 0, 0, 255]; // Only 1 pixel
+        let result = encode_rgba_to_png(&rgba_data, 2, 2); // But claim 2x2
+        assert!(result.is_err(), "Should fail on dimension mismatch");
     }
 }
