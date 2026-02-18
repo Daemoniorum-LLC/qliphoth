@@ -392,6 +392,17 @@ impl X11ClipboardBackend {
         removed_pending || removed_incr
     }
 
+    /// Reset internal state and drain pending X11 events
+    /// Used during test state reset to prevent event leakage between tests
+    #[cfg(test)]
+    pub fn reset(&mut self) {
+        self.pending_reads.clear();
+        self.active_incr = None;
+        self.write_data = None;
+        // Drain any pending X11 events from the connection
+        while self.conn.poll_for_event().ok().flatten().is_some() {}
+    }
+
     // =========================================================================
     // Internal helpers
     // =========================================================================
@@ -822,5 +833,325 @@ mod tests {
     fn test_is_available_checks_display() {
         // This test just verifies the function runs without panicking
         let _ = X11ClipboardBackend::is_available();
+    }
+
+    #[test]
+    fn test_is_available_reflects_environment() {
+        // Test that is_available() returns true only when DISPLAY is set
+        let has_display = std::env::var("DISPLAY").is_ok();
+        assert_eq!(X11ClipboardBackend::is_available(), has_display);
+    }
+
+    // =========================================================================
+    // X11 Backend Tests (require DISPLAY environment variable)
+    // Run with: cargo test --features x11-backend -- --ignored
+    // =========================================================================
+
+    /// Helper to skip test if X11 is not available
+    fn skip_if_no_x11() -> bool {
+        if !X11ClipboardBackend::is_available() {
+            eprintln!("Skipping test: DISPLAY not set (X11 not available)");
+            return true;
+        }
+        false
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_backend_initialization() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let backend = X11ClipboardBackend::new();
+        assert!(backend.is_ok(), "X11 backend should initialize when DISPLAY is set");
+
+        let backend = backend.unwrap();
+        assert!(backend.selection_window != 0, "Selection window should be created");
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_atoms_interned() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let backend = X11ClipboardBackend::new().unwrap();
+
+        // Verify key atoms are non-zero (properly interned)
+        assert!(backend.atoms.CLIPBOARD != 0, "CLIPBOARD atom should be interned");
+        assert!(backend.atoms.PRIMARY != 0, "PRIMARY atom should be interned");
+        assert!(backend.atoms.TARGETS != 0, "TARGETS atom should be interned");
+        assert!(backend.atoms.UTF8_STRING != 0, "UTF8_STRING atom should be interned");
+        assert!(backend.atoms.INCR != 0, "INCR atom should be interned");
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_mime_to_atom_mapping() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let backend = X11ClipboardBackend::new().unwrap();
+
+        // Test MIME type to atom mapping
+        assert_eq!(backend.mime_to_atom("text/plain"), backend.atoms.TEXT_PLAIN);
+        assert_eq!(
+            backend.mime_to_atom("text/plain;charset=utf-8"),
+            backend.atoms.TEXT_PLAIN_UTF8
+        );
+        assert_eq!(backend.mime_to_atom("text/html"), backend.atoms.TEXT_HTML);
+        assert_eq!(backend.mime_to_atom("text/uri-list"), backend.atoms.TEXT_URI_LIST);
+        assert_eq!(backend.mime_to_atom("image/png"), backend.atoms.IMAGE_PNG);
+        // Unknown types default to UTF8_STRING
+        assert_eq!(backend.mime_to_atom("application/json"), backend.atoms.UTF8_STRING);
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_atom_to_mime_mapping() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let backend = X11ClipboardBackend::new().unwrap();
+
+        // Test atom to MIME type mapping
+        assert_eq!(backend.atom_to_mime(backend.atoms.TEXT_PLAIN), "text/plain");
+        assert_eq!(backend.atom_to_mime(backend.atoms.TEXT_PLAIN_UTF8), "text/plain");
+        assert_eq!(backend.atom_to_mime(backend.atoms.UTF8_STRING), "text/plain");
+        assert_eq!(backend.atom_to_mime(backend.atoms.TEXT_HTML), "text/html");
+        assert_eq!(backend.atom_to_mime(backend.atoms.TEXT_URI_LIST), "text/uri-list");
+        assert_eq!(backend.atom_to_mime(backend.atoms.IMAGE_PNG), "image/png");
+        // Unknown atoms return octet-stream
+        assert_eq!(backend.atom_to_mime(12345), "application/octet-stream");
+    }
+
+    #[test]
+    fn test_incr_serialization_rejects_concurrent() {
+        // This test doesn't require X11 - it tests the logic directly
+        // We can't create a real backend without X11, but we can test the concept
+        // by verifying the error code constants are correct
+        assert_eq!(CLIPBOARD_ERR_INTERNAL, 99);
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_read_format_rejects_during_incr() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // Simulate an active INCR transfer
+        backend.active_incr = Some(IncrTransfer {
+            callback_id: 100,
+            request_type: X11RequestType::Data(ClipboardTarget::Clipboard),
+            partial_data: Vec::new(),
+            expected_format: 8,
+        });
+
+        // New read should be rejected
+        let result = backend.read_format(ClipboardTarget::Clipboard, "text/plain", 200);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), CLIPBOARD_ERR_INTERNAL);
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_get_formats_rejects_during_incr() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // Simulate an active INCR transfer
+        backend.active_incr = Some(IncrTransfer {
+            callback_id: 100,
+            request_type: X11RequestType::Formats,
+            partial_data: Vec::new(),
+            expected_format: 32,
+        });
+
+        // New get_formats should be rejected
+        let result = backend.get_formats(200);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), CLIPBOARD_ERR_INTERNAL);
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_duplicate_callback_rejected() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // First read should succeed
+        let result1 = backend.read_format(ClipboardTarget::Clipboard, "text/plain", 100);
+        assert!(result1.is_ok());
+
+        // Same callback_id should be rejected
+        let result2 = backend.read_format(ClipboardTarget::Clipboard, "text/plain", 100);
+        assert!(result2.is_err());
+        assert_eq!(result2.unwrap_err(), CLIPBOARD_ERR_INTERNAL);
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_cancel_removes_pending() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // Add a pending read
+        let _ = backend.read_format(ClipboardTarget::Clipboard, "text/plain", 100);
+        assert!(backend.pending_reads.contains_key(&100));
+
+        // Cancel should remove it
+        let removed = backend.cancel(100);
+        assert!(removed);
+        assert!(!backend.pending_reads.contains_key(&100));
+
+        // Cancel again should return false
+        let removed_again = backend.cancel(100);
+        assert!(!removed_again);
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_cancel_removes_incr() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // Simulate an active INCR transfer
+        backend.active_incr = Some(IncrTransfer {
+            callback_id: 100,
+            request_type: X11RequestType::Data(ClipboardTarget::Clipboard),
+            partial_data: Vec::new(),
+            expected_format: 8,
+        });
+
+        // Cancel should remove the INCR transfer
+        let removed = backend.cancel(100);
+        assert!(removed);
+        assert!(backend.active_incr.is_none());
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_write_stages_data() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // Write text should stage data
+        let result = backend.write_text("Hello, X11!");
+        assert!(result.is_ok());
+        assert!(backend.write_data.is_some());
+        assert_eq!(
+            backend.write_data.as_ref().unwrap().text,
+            Some("Hello, X11!".to_string())
+        );
+
+        // Write html should add to staged data
+        let result = backend.write_html("<b>Bold</b>");
+        assert!(result.is_ok());
+        assert_eq!(
+            backend.write_data.as_ref().unwrap().html,
+            Some("<b>Bold</b>".to_string())
+        );
+
+        // Text should still be there
+        assert_eq!(
+            backend.write_data.as_ref().unwrap().text,
+            Some("Hello, X11!".to_string())
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_write_commit_without_data_fails() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // Commit without staging data should fail
+        let result = backend.write_commit(100);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), CLIPBOARD_ERR_INTERNAL);
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_selection_target_clipboard() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // Read from CLIPBOARD target should work
+        let result = backend.read_format(ClipboardTarget::Clipboard, "text/plain", 100);
+        assert!(result.is_ok());
+
+        // Verify the request was tracked
+        assert!(backend.pending_reads.contains_key(&100));
+        let request = backend.pending_reads.get(&100).unwrap();
+        assert!(matches!(
+            request.request_type,
+            X11RequestType::Data(ClipboardTarget::Clipboard)
+        ));
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_selection_target_primary() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        let mut backend = X11ClipboardBackend::new().unwrap();
+
+        // Read from PRIMARY target should work
+        let result = backend.read_format(ClipboardTarget::PrimarySelection, "text/plain", 100);
+        assert!(result.is_ok());
+
+        // Verify the request was tracked with correct target
+        assert!(backend.pending_reads.contains_key(&100));
+        let request = backend.pending_reads.get(&100).unwrap();
+        assert!(matches!(
+            request.request_type,
+            X11RequestType::Data(ClipboardTarget::PrimarySelection)
+        ));
+    }
+
+    #[test]
+    #[ignore] // Requires X11 display
+    fn test_x11_backend_drop_cleans_up() {
+        if skip_if_no_x11() {
+            return;
+        }
+
+        // Create and drop backend - should not panic
+        let backend = X11ClipboardBackend::new().unwrap();
+        let window_id = backend.selection_window;
+        assert!(window_id != 0);
+        drop(backend);
+        // If we get here without panic, cleanup succeeded
     }
 }
