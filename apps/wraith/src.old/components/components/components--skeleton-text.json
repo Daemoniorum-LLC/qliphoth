@@ -1,0 +1,175 @@
+{
+  "id": "ui/components/Skeleton.tsx:SkeletonText",
+  "name": "SkeletonText",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/Skeleton.tsx",
+    "code": "import React from 'react'\n\ninterface SkeletonProps {\n  className?: string\n  width?: string | number\n  height?: string | number\n  rounded?: 'none' | 'sm' | 'md' | 'lg' | 'full'\n  animate?: boolean\n}\n\nexport function Skeleton({\n  className = '',\n  width,\n  height,\n  rounded = 'md',\n  animate = true,\n}: SkeletonProps) {\n  const roundedClasses = {\n    none: '',\n    sm: 'rounded-sm',\n    md: 'rounded',\n    lg: 'rounded-lg',\n    full: 'rounded-full',\n  }\n\n  const style: React.CSSProperties = {}\n  if (width) style.width = typeof width === 'number' ? `${width}px` : width\n  if (height) style.height = typeof height === 'number' ? `${height}px` : height\n\n  return (\n    <div\n      className={`bg-[#3c3c3c] ${roundedClasses[rounded]} ${animate ? 'animate-pulse' : ''} ${className}`}\n      style={style}\n    />\n  )\n}\n\nexport function SkeletonText({\n  lines = 3,\n  className = '',\n}: {\n  lines?: number\n  className?: string\n}) {\n  return (\n    <div className={`space-y-2 ${className}`}>\n      {Array.from({ length: lines }).map((_, i) => (\n        <Skeleton\n          key={i}\n          height={14}\n          width={i === lines - 1 ? '60%' : '100%'}\n        />\n      ))}\n    </div>\n  )\n}\n\nexport function SkeletonCard({ className = '' }: { className?: string }) {\n  return (\n    <div className={`p-4 bg-[#252526] border border-[#3c3c3c] rounded-lg ${className}`}>\n      <div className=\"flex items-center gap-3 mb-4\">\n        <Skeleton width={40} height={40} rounded=\"full\" />\n        <div className=\"flex-1 space-y-2\">\n          <Skeleton height={14} width=\"50%\" />\n          <Skeleton height={10} width=\"30%\" />\n        </div>\n      </div>\n      <SkeletonText lines={2} />\n    </div>\n  )\n}\n\nexport function SkeletonList({\n  items = 5,\n  className = '',\n}: {\n  items?: number\n  className?: string\n}) {\n  return (\n    <div className={`space-y-2 ${className}`}>\n      {Array.from({ length: items }).map((_, i) => (\n        <div key={i} className=\"flex items-center gap-3 py-1.5\">\n          <Skeleton width={14} height={14} rounded=\"sm\" />\n          <Skeleton height={14} width={`${60 + Math.random() * 30}%`} />\n        </div>\n      ))}\n    </div>\n  )\n}\n\nexport function SkeletonFileTree({ depth = 3, className = '' }: { depth?: number; className?: string }) {\n  const renderLevel = (currentDepth: number, indent: number): React.ReactNode => {\n    if (currentDepth <= 0) return null\n\n    const itemCount = 2 + Math.floor(Math.random() * 3)\n\n    return Array.from({ length: itemCount }).map((_, i) => {\n      const isFolder = i === 0 && currentDepth > 1\n      return (\n        <div key={i}>\n          <div\n            className=\"flex items-center gap-2 py-1\"\n            style={{ paddingLeft: `${indent * 12}px` }}\n          >\n            <Skeleton width={14} height={14} rounded=\"sm\" />\n            <Skeleton height={12} width={`${50 + Math.random() * 80}px`} />\n          </div>\n          {isFolder && renderLevel(currentDepth - 1, indent + 1)}\n        </div>\n      )\n    })\n  }\n\n  return (\n    <div className={className}>\n      {renderLevel(depth, 0)}\n    </div>\n  )\n}\n\nexport function SkeletonEditor({ className = '' }: { className?: string }) {\n  return (\n    <div className={`bg-[#1e1e1e] ${className}`}>\n      {/* Header */}\n      <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c]\">\n        <Skeleton width={120} height={14} />\n      </div>\n      {/* Editor content */}\n      <div className=\"p-4 space-y-2\">\n        {Array.from({ length: 15 }).map((_, i) => (\n          <div key={i} className=\"flex items-center gap-3\">\n            <Skeleton width={24} height={12} className=\"opacity-50\" />\n            <Skeleton\n              height={12}\n              width={`${20 + Math.random() * 60}%`}\n              style={{ marginLeft: `${(i % 3) * 16}px` }}\n            />\n          </div>\n        ))}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "SkeletonText",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 38,
+        "start_col": 7,
+        "end_line": 56,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "lines",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "3",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "className",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "''",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "Expression",
+                  "code": "`space-y-2 ${className}`"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Map",
+                  "iterable": "Array.from({ length: lines })",
+                  "item_name": "_",
+                  "key_expr": "i",
+                  "body": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "Skeleton",
+                      "is_component": true,
+                      "attributes": [
+                        {
+                          "name": "key",
+                          "value": {
+                            "type": "Expression",
+                            "code": "i"
+                          },
+                          "is_event_handler": false
+                        },
+                        {
+                          "name": "height",
+                          "value": {
+                            "type": "Expression",
+                            "code": "14"
+                          },
+                          "is_event_handler": false
+                        },
+                        {
+                          "name": "width",
+                          "value": {
+                            "type": "Expression",
+                            "code": "i === lines - 1 ? '60%' : '100%'"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": []
+                    },
+                    "location": {
+                      "start_line": 48,
+                      "start_col": 8,
+                      "end_line": 52,
+                      "end_col": 10
+                    }
+                  }
+                },
+                "location": {
+                  "start_line": 47,
+                  "start_col": 6,
+                  "end_line": 53,
+                  "end_col": 9
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 46,
+            "start_col": 4,
+            "end_line": 54,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Skeleton"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/skeleton_text.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "lines",
+          "field_type": "Any",
+          "from_prop": "lines"
+        },
+        {
+          "name": "class_name",
+          "field_type": "Any",
+          "from_prop": "className"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "Skeleton"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

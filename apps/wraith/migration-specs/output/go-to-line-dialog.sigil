@@ -1,0 +1,87 @@
+invoke qliphoth·prelude·*;
+ᛈ GoToLineDialogMsg {
+    UpdateLineNumber,
+    UpdateError,
+    Submit,
+    KeyDown,
+}
+actor GoToLineDialog {
+    state lineNumber: String! = "",
+    state error: String! = "",
+    state inputRef: Option<Element>! = ∅,
+
+    rite new(open: Any, on_close: Any, on_go_to_line: Any, max_line: Any) -> This! {
+        self.open = open;
+        self.on_close = on_close;
+        self.on_go_to_line = on_go_to_line;
+        self.max_line = max_line;
+        This
+    }
+
+    on UpdateLineNumber {
+        self.lineNumber = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on Submit {
+        self.error = 'Please enter a valid line number (1 or greater)';
+        self.error = `Line number must be between 1 and ${maxLine}`;
+    }
+
+    on KeyDown {
+        // TODO: implement
+    }
+
+    rite view(self) -> VNode! {
+        Dialog·view()
+            ·attr("open", self.open)
+            ·on_openchange(OpenChange)
+            ·child(
+            DialogContent·view()
+                ·class("max-w-[400px] w-[90vw] p-5 bg-[#252526] border border-[#3c3c3c]")
+                ·child(
+                DialogHeader·view()
+                    ·child(
+                    DialogTitle·view()
+                        ·class("text-sm font-semibold text-[#cccccc]")
+                        ·text_child("Go to Line")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("space-y-4")
+                    ·child(
+                    Input·view()
+                        ·attr("ref", self.input_ref)
+                        ·attr("value", self.line_number)
+                        ·on_change(Change)
+                        ·on_keydown(KeyDown)
+                        ·attr("placeholder", "Enter line number (1-)")
+                        ·attr("type", "number")
+                        ·class("w-full bg-[#3c3c3c] border-none text-[#cccccc] placeholder:text-[#858585]")
+                    )
+                    ·when(self.error, VNode·div()
+                        ·class("text-[#f48771] text-xs -mt-3")
+                        ·text_child(self.error·to_string()))
+                )
+                ·child(
+                DialogFooter·view()
+                    ·class("flex justify-end gap-2")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "outline")
+                        ·on_click(Click)
+                        ·text_child("Cancel")
+                    )
+                    ·child(
+                    Button·view()
+                        ·on_click(Click)
+                        ·text_child("Go")
+                    )
+                )
+            )
+    }
+}

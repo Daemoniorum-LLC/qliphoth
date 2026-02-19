@@ -228,9 +228,9 @@ impl X11ClipboardBackend {
         Ok(())
     }
 
-    /// Query available clipboard formats
+    /// Query available clipboard formats for the specified target
     #[allow(dead_code)] // Called when FFI layer routes through X11 backend
-    pub fn get_formats(&mut self, callback_id: u64) -> Result<(), i32> {
+    pub fn get_formats(&mut self, target: ClipboardTarget, callback_id: u64) -> Result<(), i32> {
         // Reject if INCR transfer is active (can only handle one at a time)
         if self.active_incr.is_some() {
             log::debug!("X11 get_formats rejected: INCR transfer in progress");
@@ -242,11 +242,17 @@ impl X11ClipboardBackend {
             return Err(CLIPBOARD_ERR_INTERNAL);
         }
 
+        // Select X11 selection based on target
+        let selection = match target {
+            ClipboardTarget::Clipboard => self.atoms.CLIPBOARD,
+            ClipboardTarget::PrimarySelection => self.atoms.PRIMARY,
+        };
+
         // Request TARGETS to discover available formats
         self.conn
             .convert_selection(
                 self.selection_window,
-                self.atoms.CLIPBOARD,
+                selection,
                 self.atoms.TARGETS,
                 self.atoms._QLIPHOTH_CLIPBOARD,
                 x11rb::CURRENT_TIME,
@@ -978,7 +984,7 @@ mod tests {
         });
 
         // New get_formats should be rejected
-        let result = backend.get_formats(200);
+        let result = backend.get_formats(ClipboardTarget::Clipboard, 200);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), CLIPBOARD_ERR_INTERNAL);
     }

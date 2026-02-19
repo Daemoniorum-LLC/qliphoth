@@ -1,0 +1,246 @@
+invoke qliphoth·prelude·*;
+ᛈ EnvironmentPanelMsg {
+    UpdateEditingEnvId,
+    UpdateNewEnvName,
+    UpdateRevealedSecrets,
+    UpdateShowNewEnvInput,
+    SetActive,
+    AddEnvironment,
+    DeleteEnvironment,
+    UpdateVariable,
+    AddVariable,
+    DeleteVariable,
+    RenameEnvironment,
+}
+actor EnvironmentPanel {
+    state editingEnvId: Option<Any>~ = None,
+    state newEnvName: String! = "",
+    state revealedSecrets: Any~ = None,
+    state showNewEnvInput: bool! = false,
+
+    rite new(environments: Any, on_environments_change: Any, on_close: Any) -> This! {
+        self.environments = environments;
+        self.on_environments_change = on_environments_change;
+        self.on_close = on_close;
+        This
+    }
+
+    on UpdateEditingEnvId {
+        self.editingEnvId = msg.0;
+    }
+
+    on UpdateNewEnvName {
+        self.newEnvName = msg.0;
+    }
+
+    on UpdateRevealedSecrets {
+        self.revealedSecrets = msg.0;
+    }
+
+    on UpdateShowNewEnvInput {
+        self.showNewEnvInput = msg.0;
+    }
+
+    on SetActive {
+        // TODO: implement
+    }
+
+    on AddEnvironment {
+        self.newEnvName = '';
+        self.showNewEnvInput = false;
+        self.editingEnvId = newEnv.id;
+    }
+
+    on DeleteEnvironment {
+        self.editingEnvId = null;
+    }
+
+    on UpdateVariable {
+        // TODO: implement
+    }
+
+    on AddVariable {
+        // TODO: implement
+    }
+
+    on DeleteVariable {
+        // TODO: implement
+    }
+
+    on RenameEnvironment {
+        // TODO: implement
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("fixed inset-0 bg-black/50 flex items-center justify-center z-50")
+            ·attr("role", "dialog")
+            ·attr("aria-modal", "true")
+            ·attr("aria-labelledby", "env-panel-title")
+            ·on_click(Click)
+            ·child(
+            VNode·div()
+                ·class("bg-[#252526] rounded-lg w-[700px] max-h-[80vh] flex flex-col shadow-2xl")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center justify-between p-4 border-b border-[#3c3c3c]")
+                    ·child(
+                    VNode·h3()
+                        ·id("env-panel-title")
+                        ·class("text-white font-medium flex items-center gap-2")
+                        ·child(
+                        Globe·view()
+                            ·class("w-4 h-4 text-[#5bcefa]")
+                        )
+                        ·text_child("Manage Environments")
+                    )
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("p-1 hover:bg-[#3c3c3c] rounded")
+                        ·attr("aria-label", "Close environment panel")
+                        ·child(
+                        X·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex flex-1 overflow-hidden")
+                    ·child(
+                    VNode·div()
+                        ·class("w-48 border-r border-[#3c3c3c] flex flex-col")
+                        ·child(
+                        VNode·div()
+                            ·class("p-2 border-b border-[#3c3c3c]")
+                            ·when_else(self.show_new_env_input, VNode·div()
+                                ·class("flex gap-1")
+                                ·child(
+                                VNode·input()
+                                    ·attr("type", "text")
+                                    ·attr("value", self.new_env_name)
+                                    ·on_change(Change)
+                                    ·on_keydown(KeyDown)
+                                    ·attr("placeholder", "Environment name")
+                                    ·class("flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#5bcefa] rounded text-white")
+                                    ·attr("autoFocus", "true")
+                                    ·attr("aria-label", "New environment name")
+                                )
+                                ·child(
+                                VNode·button()
+                                    ·on_click(Click)
+                                    ·class("p-1 hover:bg-[#3c3c3c] rounded text-[#00ff7f]")
+                                    ·attr("aria-label", "Confirm new environment")
+                                    ·child(
+                                    Check·view()
+                                        ·class("w-3.5 h-3.5")
+                                    )
+                                )
+                                ·child(
+                                VNode·button()
+                                    ·on_click(Click)
+                                    ·class("p-1 hover:bg-[#3c3c3c] rounded text-[#f48771]")
+                                    ·attr("aria-label", "Cancel new environment")
+                                    ·child(
+                                    X·view()
+                                        ·class("w-3.5 h-3.5")
+                                    )
+                                ), Button·view()
+                                ·attr("size", "sm")
+                                ·attr("variant", "outline")
+                                ·on_click(Click)
+                                ·class("w-full text-xs")
+                                ·child(
+                                Plus·view()
+                                    ·class("w-3.5 h-3.5 mr-1")
+                                )
+                                ·text_child("New Environment"))
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex-1 overflow-auto p-2")
+                            ·when(environments.len() == 0, VNode·div()
+                                ·class("text-center text-xs text-[#808080] py-4")
+                                ·text_child("No environments yet"))
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex-1 flex flex-col overflow-hidden")
+                        ·when_else(self.editing_env, VNode·fragment()
+                            ·child(
+                            VNode·div()
+                                ·class("p-3 border-b border-[#3c3c3c] flex items-center gap-2")
+                                ·child(
+                                VNode·input()
+                                    ·attr("type", "text")
+                                    ·attr("value", editing_env.name)
+                                    ·on_change(Change)
+                                    ·class("flex-1 px-2 py-1 text-sm bg-transparent border-b border-transparent hover:border-[#3c3c3c] focus:border-[#5bcefa] text-white font-medium focus:outline-none")
+                                    ·attr("aria-label", "Environment name")
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[#808080]")
+                                    ·text_child(editing_env.variables.len()·to_string())
+                                    ·text_child("variables")
+                                )
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("flex-1 overflow-auto p-3")
+                                ·child(
+                                VNode·div()
+                                    ·class("text-xs text-[#808080] mb-3")
+                                    ·text_child("Variables can be used in requests with")
+                                    ·text_child("{{VARIABLE_NAME}}"·to_string())
+                                    ·text_child("or $")
+                                    ·text_child("{VARIABLE_NAME}"·to_string())
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("space-y-2")
+                                    ·text_child(None·to_string())
+                                )
+                                ·child(
+                                VNode·button()
+                                    ·on_click(Click)
+                                    ·class("mt-3 text-xs text-[#5bcefa] hover:text-[#7dd3fc] flex items-center gap-1")
+                                    ·child(
+                                    Plus·view()
+                                        ·class("w-3.5 h-3.5")
+                                    )
+                                    ·text_child("Add Variable")
+                                )
+                            ), VNode·div()
+                            ·class("flex-1 flex flex-col items-center justify-center text-center p-4")
+                            ·child(
+                            Globe·view()
+                                ·class("w-8 h-8 text-[#808080] mb-3")
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("text-sm text-[#cccccc] font-medium")
+                                ·text_child("Select an Environment")
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("text-xs text-[#808080] mt-1")
+                                ·text_child("Choose an environment from the list to edit its variables")
+                            ))
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex justify-end gap-2 p-4 border-t border-[#3c3c3c]")
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·text_child("Done")
+                    )
+                )
+            )
+    }
+}

@@ -1,0 +1,2249 @@
+{
+  "id": "ui/components/panels/SearchPanel.tsx:SearchPanel",
+  "name": "SearchPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/SearchPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Input, Spinner } from '@persona-framework/ui'\nimport { Search, XCircle, ChevronRight, ChevronDown, FileText } from 'lucide-react'\n\ninterface SearchMatch {\n  line: number\n  column: number\n  text: string\n  matchText: string\n}\n\ninterface FileMatches {\n  filePath: string\n  fileName: string\n  matches: SearchMatch[]\n  expanded: boolean\n}\n\ninterface SearchPanelProps {\n  onFileClick?: (filePath: string, line?: number) => void\n}\n\nexport function SearchPanel({ onFileClick }: SearchPanelProps) {\n  const [searchQuery, setSearchQuery] = useState('')\n  const [replaceQuery, setReplaceQuery] = useState('')\n  const [showReplace, setShowReplace] = useState(false)\n  const [caseSensitive, setCaseSensitive] = useState(false)\n  const [wholeWord, setWholeWord] = useState(false)\n  const [useRegex, setUseRegex] = useState(false)\n  const [includePattern, setIncludePattern] = useState('')\n  const [excludePattern, setExcludePattern] = useState('**/node_modules/**, **/.git/**, **/dist/**, **/build/**')\n  const [showFilters, setShowFilters] = useState(false)\n  const [results, setResults] = useState<FileMatches[]>([])\n  const [searching, setSearching] = useState(false)\n  const [totalMatches, setTotalMatches] = useState(0)\n\n  const handleSearch = async () => {\n    if (!searchQuery.trim()) {\n      setResults([])\n      return\n    }\n\n    setSearching(true)\n\n    try {\n      // Call backend search API\n      const params = new URLSearchParams({\n        query: searchQuery,\n        caseSensitive: caseSensitive.toString(),\n        wholeWord: wholeWord.toString(),\n        useRegex: useRegex.toString(),\n        include: includePattern,\n        exclude: excludePattern,\n      })\n\n      const response = await fetch(`/api/workspace/search?${params}`)\n      if (!response.ok) {\n        throw new Error('Search failed')\n      }\n\n      const data = await response.json()\n\n      // Transform results\n      const fileMatches: FileMatches[] = data.files.map((file: any) => ({\n        filePath: file.path,\n        fileName: file.path.split('/').pop() || file.path,\n        matches: file.matches.map((match: any) => ({\n          line: match.line,\n          column: match.column,\n          text: match.lineText,\n          matchText: match.matchText,\n        })),\n        expanded: true,\n      }))\n\n      setResults(fileMatches)\n      setTotalMatches(fileMatches.reduce((sum, f) => sum + f.matches.length, 0))\n    } catch (error) {\n      console.error('Search error:', error)\n      // Fallback: simple client-side search (limited)\n      setResults([])\n      setTotalMatches(0)\n    } finally {\n      setSearching(false)\n    }\n  }\n\n  const handleReplace = async (filePath: string, match: SearchMatch) => {\n    try {\n      const response = await fetch('/api/workspace/replace', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          filePath,\n          line: match.line,\n          column: match.column,\n          searchText: match.matchText,\n          replaceText: replaceQuery,\n        }),\n      })\n\n      if (response.ok) {\n        // Refresh search results\n        handleSearch()\n      }\n    } catch (error) {\n      console.error('Replace error:', error)\n    }\n  }\n\n  const handleReplaceAll = async () => {\n    try {\n      const response = await fetch('/api/workspace/replace-all', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          query: searchQuery,\n          replaceText: replaceQuery,\n          caseSensitive,\n          wholeWord,\n          useRegex,\n          include: includePattern,\n          exclude: excludePattern,\n        }),\n      })\n\n      if (response.ok) {\n        // Refresh search results\n        handleSearch()\n      }\n    } catch (error) {\n      console.error('Replace all error:', error)\n    }\n  }\n\n  const toggleFileExpanded = (index: number) => {\n    setResults(prev => prev.map((file, i) =>\n      i === index ? { ...file, expanded: !file.expanded } : file\n    ))\n  }\n\n  const highlightMatch = (text: string, matchText: string) => {\n    const index = caseSensitive\n      ? text.indexOf(matchText)\n      : text.toLowerCase().indexOf(matchText.toLowerCase())\n\n    if (index === -1) return <span>{text}</span>\n\n    return (\n      <>\n        {text.substring(0, index)}\n        <span className=\"bg-[#f59e0b44] text-[#f59e0b] font-semibold\">\n          {text.substring(index, index + matchText.length)}\n        </span>\n        {text.substring(index + matchText.length)}\n      </>\n    )\n  }\n\n  const handleMatchClick = (filePath: string, line: number) => {\n    onFileClick?.(filePath, line)\n  }\n\n  // Auto-search on Enter\n  useEffect(() => {\n    const handleKeyDown = (e: KeyboardEvent) => {\n      if (e.key === 'Enter' && document.activeElement?.tagName === 'INPUT') {\n        handleSearch()\n      }\n    }\n    window.addEventListener('keydown', handleKeyDown)\n    return () => window.removeEventListener('keydown', handleKeyDown)\n  }, [searchQuery, caseSensitive, wholeWord, useRegex, includePattern, excludePattern])\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n      {/* Search Section */}\n      <div className=\"p-3 border-b border-[#3c3c3c] flex flex-col gap-2\">\n        {/* Search Input */}\n        <div className=\"flex items-center gap-1\">\n          <div className=\"relative flex-1\">\n            <Search className=\"absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#858585]\" />\n            <Input\n              placeholder=\"Search\"\n              value={searchQuery}\n              onChange={(e) => setSearchQuery(e.target.value)}\n              className=\"h-7 text-xs pl-7 pr-7 bg-[#3c3c3c] border-[#3c3c3c]\"\n            />\n            {searchQuery && (\n              <XCircle\n                className=\"absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#858585] cursor-pointer hover:text-[#cccccc]\"\n                onClick={() => setSearchQuery('')}\n              />\n            )}\n          </div>\n          <div className=\"flex gap-0.5 ml-1\">\n            <Button\n              size=\"sm\"\n              variant={caseSensitive ? 'secondary' : 'ghost'}\n              onClick={() => setCaseSensitive(!caseSensitive)}\n              title=\"Match Case\"\n              className=\"h-7 w-7 p-0 text-xs\"\n            >\n              Aa\n            </Button>\n            <Button\n              size=\"sm\"\n              variant={wholeWord ? 'secondary' : 'ghost'}\n              onClick={() => setWholeWord(!wholeWord)}\n              title=\"Match Whole Word\"\n              className=\"h-7 w-7 p-0 text-xs\"\n            >\n              ab\n            </Button>\n            <Button\n              size=\"sm\"\n              variant={useRegex ? 'secondary' : 'ghost'}\n              onClick={() => setUseRegex(!useRegex)}\n              title=\"Use Regular Expression\"\n              className=\"h-7 w-7 p-0 text-xs\"\n            >\n              .*\n            </Button>\n          </div>\n        </div>\n\n        {/* Replace Toggle */}\n        <div className=\"flex gap-2 items-center text-[11px]\">\n          <Button\n            size=\"sm\"\n            variant={showReplace ? 'secondary' : 'ghost'}\n            onClick={() => setShowReplace(!showReplace)}\n            className=\"h-6 text-[11px]\"\n          >\n            Replace\n          </Button>\n          <Button\n            size=\"sm\"\n            variant={showFilters ? 'secondary' : 'ghost'}\n            onClick={() => setShowFilters(!showFilters)}\n            className=\"h-6 text-[11px]\"\n          >\n            Filters\n          </Button>\n          <Button\n            size=\"sm\"\n            onClick={handleSearch}\n            disabled={!searchQuery.trim()}\n            className=\"h-6 text-[11px]\"\n          >\n            Search\n          </Button>\n        </div>\n\n        {/* Replace Input */}\n        {showReplace && (\n          <div className=\"flex items-center gap-1\">\n            <Input\n              placeholder=\"Replace\"\n              value={replaceQuery}\n              onChange={(e) => setReplaceQuery(e.target.value)}\n              className=\"h-7 text-xs flex-1 bg-[#3c3c3c] border-[#3c3c3c]\"\n            />\n            <Button\n              size=\"sm\"\n              variant=\"ghost\"\n              disabled={results.length === 0}\n              onClick={handleReplaceAll}\n              className=\"h-7 text-[11px]\"\n            >\n              Replace All\n            </Button>\n          </div>\n        )}\n      </div>\n\n      {/* Filters Section */}\n      {showFilters && (\n        <div className=\"border-t border-[#3c3c3c] p-2 flex flex-col gap-2\">\n          <Input\n            placeholder=\"Files to include (e.g., **/*.ts, **/*.tsx)\"\n            value={includePattern}\n            onChange={(e) => setIncludePattern(e.target.value)}\n            className=\"h-7 text-xs bg-[#3c3c3c] border-[#3c3c3c]\"\n          />\n          <Input\n            placeholder=\"Files to exclude\"\n            value={excludePattern}\n            onChange={(e) => setExcludePattern(e.target.value)}\n            className=\"h-7 text-xs bg-[#3c3c3c] border-[#3c3c3c]\"\n          />\n        </div>\n      )}\n\n      {/* Results Summary */}\n      {results.length > 0 && (\n        <div className=\"px-3 py-2 border-b border-[#3c3c3c] text-xs text-[#858585] flex justify-between items-center\">\n          <span>\n            {totalMatches} {totalMatches === 1 ? 'result' : 'results'} in {results.length} {results.length === 1 ? 'file' : 'files'}\n          </span>\n        </div>\n      )}\n\n      {/* Results */}\n      <div className=\"flex-1 overflow-auto px-3 py-2\">\n        {searching && (\n          <div className=\"flex flex-col items-center gap-3 py-10 px-5\">\n            <Spinner className=\"h-6 w-6\" />\n            <span className=\"text-xs text-[#858585]\">Searching...</span>\n          </div>\n        )}\n\n        {!searching && searchQuery && results.length === 0 && (\n          <div className=\"py-10 px-5 text-center text-[#858585] text-[13px]\">\n            No results found for \"{searchQuery}\"\n          </div>\n        )}\n\n        {!searching && results.map((file, fileIndex) => (\n          <div key={fileIndex} className=\"mb-3\">\n            <div\n              className=\"flex items-center gap-1.5 px-2 py-1.5 bg-[#2b2b2b] rounded cursor-pointer text-xs hover:bg-[#333333]\"\n              onClick={() => toggleFileExpanded(fileIndex)}\n            >\n              {file.expanded ? (\n                <ChevronDown className=\"h-3 w-3\" />\n              ) : (\n                <ChevronRight className=\"h-3 w-3\" />\n              )}\n              <FileText className=\"h-3.5 w-3.5 text-[#4fc3f7]\" />\n              <span className=\"flex-1 text-[#cccccc] font-medium\">{file.fileName}</span>\n              <span className=\"text-[11px] text-[#858585] bg-[#3c3c3c] px-1.5 py-0.5 rounded-full\">\n                {file.matches.length}\n              </span>\n            </div>\n\n            {file.expanded && file.matches.map((match, matchIndex) => (\n              <div\n                key={matchIndex}\n                className=\"py-1 px-2 pl-7 text-xs cursor-pointer border-l-2 border-transparent hover:bg-[#2b2b2b] hover:border-[#4fc3f7]\"\n                onClick={() => handleMatchClick(file.filePath, match.line)}\n              >\n                <div className=\"flex gap-2 items-baseline\">\n                  <span className=\"text-[#858585] text-[11px] min-w-[40px]\">\n                    {match.line}:{match.column}\n                  </span>\n                  <span className=\"flex-1 font-mono text-[#d4d4d4] whitespace-pre overflow-hidden text-ellipsis\">\n                    {highlightMatch(match.text, match.matchText)}\n                  </span>\n                </div>\n              </div>\n            ))}\n          </div>\n        ))}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "SearchPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 23,
+        "start_col": 7,
+        "end_line": 358,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "onFileClick",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 24,
+            "start_col": 40,
+            "end_line": 24,
+            "end_col": 52
+          },
+          "state_name": "searchQuery",
+          "setter_name": "setSearchQuery",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 25,
+            "start_col": 42,
+            "end_line": 25,
+            "end_col": 54
+          },
+          "state_name": "replaceQuery",
+          "setter_name": "setReplaceQuery",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 26,
+            "start_col": 40,
+            "end_line": 26,
+            "end_col": 55
+          },
+          "state_name": "showReplace",
+          "setter_name": "setShowReplace",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 27,
+            "start_col": 44,
+            "end_line": 27,
+            "end_col": 59
+          },
+          "state_name": "caseSensitive",
+          "setter_name": "setCaseSensitive",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 28,
+            "start_col": 36,
+            "end_line": 28,
+            "end_col": 51
+          },
+          "state_name": "wholeWord",
+          "setter_name": "setWholeWord",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 29,
+            "start_col": 34,
+            "end_line": 29,
+            "end_col": 49
+          },
+          "state_name": "useRegex",
+          "setter_name": "setUseRegex",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 30,
+            "start_col": 46,
+            "end_line": 30,
+            "end_col": 58
+          },
+          "state_name": "includePattern",
+          "setter_name": "setIncludePattern",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 31,
+            "start_col": 46,
+            "end_line": 31,
+            "end_col": 113
+          },
+          "state_name": "excludePattern",
+          "setter_name": "setExcludePattern",
+          "initial_value": "\"**/node_modules/**, **/.git/**, **/dist/**, **/build/**\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 32,
+            "start_col": 40,
+            "end_line": 32,
+            "end_col": 55
+          },
+          "state_name": "showFilters",
+          "setter_name": "setShowFilters",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 33,
+            "start_col": 32,
+            "end_line": 33,
+            "end_col": 59
+          },
+          "state_name": "results",
+          "setter_name": "setResults",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 34,
+            "start_col": 36,
+            "end_line": 34,
+            "end_col": 51
+          },
+          "state_name": "searching",
+          "setter_name": "setSearching",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 35,
+            "start_col": 42,
+            "end_line": 35,
+            "end_col": 53
+          },
+          "state_name": "totalMatches",
+          "setter_name": "setTotalMatches",
+          "initial_value": "0",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 165,
+            "start_col": 2,
+            "end_line": 173,
+            "end_col": 87
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "searchQuery",
+            "caseSensitive",
+            "wholeWord",
+            "useRegex",
+            "includePattern",
+            "excludePattern"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-3 border-b border-[#3c3c3c] flex flex-col gap-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-1"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "relative flex-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Search",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#858585]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 182,
+                                    "start_col": 12,
+                                    "end_line": 182,
+                                    "end_col": 102
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Input",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "placeholder",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Search"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "searchQuery"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onChange",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "(e) => setSearchQuery(e.target.value)"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-7 text-xs pl-7 pr-7 bg-[#3c3c3c] border-[#3c3c3c]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 183,
+                                    "start_col": 12,
+                                    "end_line": 188,
+                                    "end_col": 14
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Conditional",
+                                    "condition": "searchQuery",
+                                    "consequent": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "XCircle",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#858585] cursor-pointer hover:text-[#cccccc]"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onClick",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "() => setSearchQuery('')"
+                                            },
+                                            "is_event_handler": true
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 190,
+                                        "start_col": 14,
+                                        "end_line": 193,
+                                        "end_col": 16
+                                      }
+                                    },
+                                    "alternate": null
+                                  },
+                                  "location": {
+                                    "start_line": 189,
+                                    "start_col": 12,
+                                    "end_line": 194,
+                                    "end_col": 14
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 181,
+                              "start_col": 10,
+                              "end_line": 195,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex gap-0.5 ml-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Button",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "variant",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "caseSensitive ? 'secondary' : 'ghost'"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => setCaseSensitive(!caseSensitive)"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "title",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Match Case"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-7 w-7 p-0 text-xs"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Aa"
+                                        },
+                                        "location": {
+                                          "start_line": 203,
+                                          "start_col": 13,
+                                          "end_line": 205,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 197,
+                                    "start_col": 12,
+                                    "end_line": 205,
+                                    "end_col": 21
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Button",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "variant",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "wholeWord ? 'secondary' : 'ghost'"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => setWholeWord(!wholeWord)"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "title",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Match Whole Word"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-7 w-7 p-0 text-xs"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "ab"
+                                        },
+                                        "location": {
+                                          "start_line": 212,
+                                          "start_col": 13,
+                                          "end_line": 214,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 206,
+                                    "start_col": 12,
+                                    "end_line": 214,
+                                    "end_col": 21
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Button",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "variant",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "useRegex ? 'secondary' : 'ghost'"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => setUseRegex(!useRegex)"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "title",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Use Regular Expression"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-7 w-7 p-0 text-xs"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": ".*"
+                                        },
+                                        "location": {
+                                          "start_line": 221,
+                                          "start_col": 13,
+                                          "end_line": 223,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 215,
+                                    "start_col": 12,
+                                    "end_line": 223,
+                                    "end_col": 21
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 196,
+                              "start_col": 10,
+                              "end_line": 224,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 180,
+                        "start_col": 8,
+                        "end_line": 225,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-2 items-center text-[11px]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "showReplace ? 'secondary' : 'ghost'"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setShowReplace(!showReplace)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-6 text-[11px]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Replace"
+                                  },
+                                  "location": {
+                                    "start_line": 234,
+                                    "start_col": 11,
+                                    "end_line": 236,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 229,
+                              "start_col": 10,
+                              "end_line": 236,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "showFilters ? 'secondary' : 'ghost'"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setShowFilters(!showFilters)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-6 text-[11px]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Filters"
+                                  },
+                                  "location": {
+                                    "start_line": 242,
+                                    "start_col": 11,
+                                    "end_line": 244,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 237,
+                              "start_col": 10,
+                              "end_line": 244,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "handleSearch"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "disabled",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "!searchQuery.trim()"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-6 text-[11px]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Search"
+                                  },
+                                  "location": {
+                                    "start_line": 250,
+                                    "start_col": 11,
+                                    "end_line": 252,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 245,
+                              "start_col": 10,
+                              "end_line": 252,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 228,
+                        "start_col": 8,
+                        "end_line": 253,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "showReplace",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex items-center gap-1"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Input",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "placeholder",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Replace"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "value",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "replaceQuery"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onChange",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "(e) => setReplaceQuery(e.target.value)"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "h-7 text-xs flex-1 bg-[#3c3c3c] border-[#3c3c3c]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 258,
+                                  "start_col": 12,
+                                  "end_line": 263,
+                                  "end_col": 14
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "variant",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "ghost"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "disabled",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "results.length === 0"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "handleReplaceAll"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "h-7 text-[11px]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Replace All"
+                                      },
+                                      "location": {
+                                        "start_line": 270,
+                                        "start_col": 13,
+                                        "end_line": 272,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 264,
+                                  "start_col": 12,
+                                  "end_line": 272,
+                                  "end_col": 21
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 257,
+                            "start_col": 10,
+                            "end_line": 273,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 256,
+                        "start_col": 8,
+                        "end_line": 274,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 178,
+                  "start_col": 6,
+                  "end_line": 275,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "showFilters",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "border-t border-[#3c3c3c] p-2 flex flex-col gap-2"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Input",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "placeholder",
+                                "value": {
+                                  "type": "String",
+                                  "value": "Files to include (e.g., **/*.ts, **/*.tsx)"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "value",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "includePattern"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onChange",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "(e) => setIncludePattern(e.target.value)"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "h-7 text-xs bg-[#3c3c3c] border-[#3c3c3c]"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 280,
+                            "start_col": 10,
+                            "end_line": 285,
+                            "end_col": 12
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Input",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "placeholder",
+                                "value": {
+                                  "type": "String",
+                                  "value": "Files to exclude"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "value",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "excludePattern"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onChange",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "(e) => setExcludePattern(e.target.value)"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "h-7 text-xs bg-[#3c3c3c] border-[#3c3c3c]"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 286,
+                            "start_col": 10,
+                            "end_line": 291,
+                            "end_col": 12
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 279,
+                      "start_col": 8,
+                      "end_line": 292,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 278,
+                  "start_col": 6,
+                  "end_line": 293,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "results.length > 0",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "px-3 py-2 border-b border-[#3c3c3c] text-xs text-[#858585] flex justify-between items-center"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "span",
+                            "is_component": false,
+                            "attributes": [],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "totalMatches"
+                                },
+                                "location": {
+                                  "start_line": 299,
+                                  "start_col": 12,
+                                  "end_line": 299,
+                                  "end_col": 26
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "totalMatches === 1 ? 'result' : 'results'"
+                                },
+                                "location": {
+                                  "start_line": 299,
+                                  "start_col": 27,
+                                  "end_line": 299,
+                                  "end_col": 70
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "in"
+                                },
+                                "location": {
+                                  "start_line": 299,
+                                  "start_col": 70,
+                                  "end_line": 299,
+                                  "end_col": 74
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "results.length"
+                                },
+                                "location": {
+                                  "start_line": 299,
+                                  "start_col": 74,
+                                  "end_line": 299,
+                                  "end_col": 90
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "results.length === 1 ? 'file' : 'files'"
+                                },
+                                "location": {
+                                  "start_line": 299,
+                                  "start_col": 91,
+                                  "end_line": 299,
+                                  "end_col": 132
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 298,
+                            "start_col": 10,
+                            "end_line": 300,
+                            "end_col": 17
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 297,
+                      "start_col": 8,
+                      "end_line": 301,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 296,
+                  "start_col": 6,
+                  "end_line": 302,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto px-3 py-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "searching",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col items-center gap-3 py-10 px-5"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Spinner",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "h-6 w-6"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 308,
+                                  "start_col": 12,
+                                  "end_line": 308,
+                                  "end_col": 43
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-xs text-[#858585]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Searching..."
+                                      },
+                                      "location": {
+                                        "start_line": 309,
+                                        "start_col": 53,
+                                        "end_line": 309,
+                                        "end_col": 65
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 309,
+                                  "start_col": 12,
+                                  "end_line": 309,
+                                  "end_col": 72
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 307,
+                            "start_col": 10,
+                            "end_line": 310,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 306,
+                        "start_col": 8,
+                        "end_line": 311,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "!searching && searchQuery && results.length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "py-10 px-5 text-center text-[#858585] text-[13px]"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "No results found for \""
+                                },
+                                "location": {
+                                  "start_line": 314,
+                                  "start_col": 77,
+                                  "end_line": 315,
+                                  "end_col": 34
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "searchQuery"
+                                },
+                                "location": {
+                                  "start_line": 315,
+                                  "start_col": 34,
+                                  "end_line": 315,
+                                  "end_col": 47
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "\""
+                                },
+                                "location": {
+                                  "start_line": 315,
+                                  "start_col": 47,
+                                  "end_line": 316,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 314,
+                            "start_col": 10,
+                            "end_line": 316,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 313,
+                        "start_col": 8,
+                        "end_line": 317,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "!searching && results.map((file, fileIndex) => (\n          <div key={fileIndex} className=\"mb-3\">\n            <div\n              className=\"flex items-center gap-1.5 px-2 py-1.5 bg-[#2b2b2b] rounded cursor-pointer text-xs hover:bg-[#333333]\"\n              onClick={() => toggleFileExpanded(fileIndex)}\n            >\n              {file.expanded ? (\n                <ChevronDown className=\"h-3 w-3\" />\n              ) : (\n                <ChevronRight className=\"h-3 w-3\" />\n              )}\n              <FileText className=\"h-3.5 w-3.5 text-[#4fc3f7]\" />\n              <span className=\"flex-1 text-[#cccccc] font-medium\">{file.fileName}</span>\n              <span className=\"text-[11px] text-[#858585] bg-[#3c3c3c] px-1.5 py-0.5 rounded-full\">\n                {file.matches.length}\n              </span>\n            </div>\n\n            {file.expanded && file.matches.map((match, matchIndex) => (\n              <div\n                key={matchIndex}\n                className=\"py-1 px-2 pl-7 text-xs cursor-pointer border-l-2 border-transparent hover:bg-[#2b2b2b] hover:border-[#4fc3f7]\"\n                onClick={() => handleMatchClick(file.filePath, match.line)}\n              >\n                <div className=\"flex gap-2 items-baseline\">\n                  <span className=\"text-[#858585] text-[11px] min-w-[40px]\">\n                    {match.line}:{match.column}\n                  </span>\n                  <span className=\"flex-1 font-mono text-[#d4d4d4] whitespace-pre overflow-hidden text-ellipsis\">\n                    {highlightMatch(match.text, match.matchText)}\n                  </span>\n                </div>\n              </div>\n            ))}\n          </div>\n        ))"
+                      },
+                      "location": {
+                        "start_line": 319,
+                        "start_col": 8,
+                        "end_line": 354,
+                        "end_col": 11
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 305,
+                  "start_col": 6,
+                  "end_line": 355,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 176,
+            "start_col": 4,
+            "end_line": 356,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleSearch",
+          "event_type": null,
+          "is_async": true,
+          "body_summary": "async () => {\n    if (!searchQuery.trim()) {\n      setResults([])\n      return\n    }\n\n    setSearching(true)\n\n    try {\n      // Call backend search API\n      const params = new URLSearchParams({\n        query: searchQuery,\n        caseSensitive: caseSensitive.toString(),\n        wholeWord: wholeWord.toString(),\n        useRegex: useRegex.toString(),\n        include: includePattern,\n        exclude: excludePattern,\n      })\n\n      const response = await fetch(`/api/workspace/search?${params}`)\n      if (!response.ok) {\n        throw new Error('Search failed')\n      }\n\n      const data = await response.json()\n\n      // Transform results\n      const fileMatches: FileMatches[] = data.files.map((file: any) => ({\n        filePath: file.path,\n        fileName: file.path.split('/').pop() || file.path,\n        matches: file.matches.map((match: any) => ({\n          line: match.line,\n          column: match.column,\n          text: match.lineText,\n          matchText: match.matchText,\n        })),\n        expanded: true,\n      }))\n\n      setResults(fileMatches)\n      setTotalMatches(fileMatches.reduce((sum, f) => sum + f.matches.length, 0))\n    } catch (error) {\n      console.error('Search error:', error)\n      // Fallback: simple client-side search (limited)\n      setResults([])\n      setTotalMatches(0)\n    } finally {\n      setSearching(false)\n    }\n  }",
+          "state_mutations": [
+            "setResults([])",
+            "setSearching(true)"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setResults",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "results"
+              },
+              "arguments": [
+                "[]"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setSearching",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "searching"
+              },
+              "arguments": [
+                "true"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "fetch",
+              "source": {
+                "type": "Global"
+              },
+              "arguments": [
+                "`/api/workspace/search?${params}`"
+              ],
+              "is_async": true
+            },
+            {
+              "name": "response.json",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": true
+            },
+            {
+              "name": "map",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "(file: any) => ({\n        filePath: file.path,\n        fileName: file.path.split('/').pop() || file.path,\n        matches: file.matches.map((match: any) => ({\n          line: match.line,\n          column: match.column,\n          text: match.lineText,\n          matchText: match.matchText,\n        })),\n        expanded: true,\n      })"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setResults",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "results"
+              },
+              "arguments": [
+                "fileMatches"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setTotalMatches",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "totalMatches"
+              },
+              "arguments": [
+                "fileMatches.reduce((sum, f) => sum + f.matches.length, 0)"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "fileMatches.reduce",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "(sum, f) => sum + f.matches.length",
+                "0"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setResults"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setSearching"
+            },
+            {
+              "kind": "ApiCall",
+              "method": "fetch"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setResults"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setTotalMatches"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": true,
+          "has_early_return": true
+        },
+        {
+          "name": "handleReplace",
+          "event_type": null,
+          "is_async": true,
+          "body_summary": "async (filePath: string, match: SearchMatch) => {\n    try {\n      const response = await fetch('/api/workspace/replace', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          filePath,\n          line: match.line,\n          column: match.column,\n          searchText: match.matchText,\n          replaceText: replaceQuery,\n        }),\n      })\n\n      if (response.ok) {\n        // Refresh search results\n        handleSearch()\n      }\n    } catch (error) {\n      console.error('Replace error:', error)\n    }\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "fetch",
+              "source": {
+                "type": "Global"
+              },
+              "arguments": [
+                "'/api/workspace/replace'",
+                "{\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          filePath,\n          line: match.line,\n          column: match.column,\n          searchText: match.matchText,\n          replaceText: replaceQuery,\n        }),\n      }"
+              ],
+              "is_async": true
+            },
+            {
+              "name": "handleSearch",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "ApiCall",
+              "method": "fetch"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "filePath",
+              "type_annotation": ": string"
+            },
+            {
+              "name": "match",
+              "type_annotation": ": SearchMatch"
+            }
+          ],
+          "has_conditionals": true,
+          "has_early_return": false
+        },
+        {
+          "name": "handleReplaceAll",
+          "event_type": null,
+          "is_async": true,
+          "body_summary": "async () => {\n    try {\n      const response = await fetch('/api/workspace/replace-all', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          query: searchQuery,\n          replaceText: replaceQuery,\n          caseSensitive,\n          wholeWord,\n          useRegex,\n          include: includePattern,\n          exclude: excludePattern,\n        }),\n      })\n\n      if (response.ok) {\n        // Refresh search results\n        handleSearch()\n      }\n    } catch (error) {\n      console.error('Replace all error:', error)\n    }\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "fetch",
+              "source": {
+                "type": "Global"
+              },
+              "arguments": [
+                "'/api/workspace/replace-all'",
+                "{\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          query: searchQuery,\n          replaceText: replaceQuery,\n          caseSensitive,\n          wholeWord,\n          useRegex,\n          include: includePattern,\n          exclude: excludePattern,\n        }),\n      }"
+              ],
+              "is_async": true
+            },
+            {
+              "name": "handleSearch",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "ApiCall",
+              "method": "fetch"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": true,
+          "has_early_return": false
+        },
+        {
+          "name": "handleMatchClick",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(filePath: string, line: number) => {\n    onFileClick?.(filePath, line)\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [],
+          "side_effects": [],
+          "parameters": [
+            {
+              "name": "filePath",
+              "type_annotation": ": string"
+            },
+            {
+              "name": "line",
+              "type_annotation": ": number"
+            }
+          ],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Button",
+        "Input",
+        "Search",
+        "Spinner",
+        "XCircle"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "searchQuery",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "replaceQuery",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showReplace",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "caseSensitive",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "wholeWord",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "useRegex",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "includePattern",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "excludePattern",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showFilters",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "results",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "searching",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "totalMatches",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/search_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:searchQuery",
+        "to_field": "searchQuery",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'searchQuery' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:replaceQuery",
+        "to_field": "replaceQuery",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'replaceQuery' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showReplace",
+        "to_field": "showReplace",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showReplace' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:caseSensitive",
+        "to_field": "caseSensitive",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'caseSensitive' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:wholeWord",
+        "to_field": "wholeWord",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'wholeWord' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:useRegex",
+        "to_field": "useRegex",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'useRegex' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:includePattern",
+        "to_field": "includePattern",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'includePattern' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:excludePattern",
+        "to_field": "excludePattern",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"**/node_modules/**, **/.git/**, **/dist/**, **/build/**\"",
+        "reasoning": "useState hook 'excludePattern' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showFilters",
+        "to_field": "showFilters",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showFilters' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:results",
+        "to_field": "results",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'results' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:searching",
+        "to_field": "searching",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'searching' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:totalMatches",
+        "to_field": "totalMatches",
+        "field_type": "i64",
+        "evidentiality": "!",
+        "initial_value": "0",
+        "reasoning": "useState hook 'totalMatches' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateSearchQuery",
+        "from_handler": "setSearchQuery",
+        "payload": null,
+        "state_changes": [
+          "self.searchQuery = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateReplaceQuery",
+        "from_handler": "setReplaceQuery",
+        "payload": null,
+        "state_changes": [
+          "self.replaceQuery = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowReplace",
+        "from_handler": "setShowReplace",
+        "payload": null,
+        "state_changes": [
+          "self.showReplace = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateCaseSensitive",
+        "from_handler": "setCaseSensitive",
+        "payload": null,
+        "state_changes": [
+          "self.caseSensitive = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateWholeWord",
+        "from_handler": "setWholeWord",
+        "payload": null,
+        "state_changes": [
+          "self.wholeWord = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateUseRegex",
+        "from_handler": "setUseRegex",
+        "payload": null,
+        "state_changes": [
+          "self.useRegex = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIncludePattern",
+        "from_handler": "setIncludePattern",
+        "payload": null,
+        "state_changes": [
+          "self.includePattern = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateExcludePattern",
+        "from_handler": "setExcludePattern",
+        "payload": null,
+        "state_changes": [
+          "self.excludePattern = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowFilters",
+        "from_handler": "setShowFilters",
+        "payload": null,
+        "state_changes": [
+          "self.showFilters = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateResults",
+        "from_handler": "setResults",
+        "payload": null,
+        "state_changes": [
+          "self.results = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSearching",
+        "from_handler": "setSearching",
+        "payload": null,
+        "state_changes": [
+          "self.searching = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateTotalMatches",
+        "from_handler": "setTotalMatches",
+        "payload": null,
+        "state_changes": [
+          "self.totalMatches = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Search",
+        "from_handler": "handleSearch",
+        "payload": null,
+        "state_changes": [
+          "self.results = []",
+          "self.searching = true"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Replace",
+        "from_handler": "handleReplace",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "ReplaceAll",
+        "from_handler": "handleReplaceAll",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "MatchClick",
+        "from_handler": "handleMatchClick",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[searchQuery,caseSensitive,wholeWord,useRegex,includePattern,excludePattern]",
+        "strategy": "inline",
+        "reasoning": "Deps [searchQuery, caseSensitive, wholeWord, useRegex, includePattern, excludePattern] → inline in handlers that change these",
+        "inline_in": "searchQuery_caseSensitive_wholeWord_useRegex_includePattern_excludePattern",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "on_file_click",
+          "field_type": "Any",
+          "from_prop": "onFileClick"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_12",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [searchQuery, caseSensitive, wholeWord, useRegex, includePattern, excludePattern] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onFileClick",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onFileClick' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Input",
+      "Search",
+      "Spinner",
+      "XCircle"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "12 state variables"
+  ],
+  "status": "pending"
+}

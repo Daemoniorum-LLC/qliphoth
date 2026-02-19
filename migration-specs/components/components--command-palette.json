@@ -1,0 +1,812 @@
+{
+  "id": "ui/components/CommandPalette.tsx:CommandPalette",
+  "name": "CommandPalette",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/CommandPalette.tsx",
+    "code": "import React, { useState, useEffect, useRef } from 'react'\nimport { Input, Dialog, DialogContent } from '@persona-framework/ui'\nimport { Search } from 'lucide-react'\n\nexport interface Command {\n  id: string\n  title: string\n  category: string\n  shortcut?: string\n  action: () => void\n}\n\ninterface CommandPaletteProps {\n  open: boolean\n  onClose: () => void\n  commands: Command[]\n}\n\nexport function CommandPalette({ open, onClose, commands }: CommandPaletteProps) {\n  const [searchQuery, setSearchQuery] = useState('')\n  const [selectedIndex, setSelectedIndex] = useState(0)\n  const inputRef = useRef<HTMLInputElement>(null)\n  const itemRefs = useRef<(HTMLDivElement | null)[]>([])\n\n  useEffect(() => {\n    if (open && inputRef.current) {\n      setTimeout(() => inputRef.current?.focus(), 100)\n      setSearchQuery('')\n      setSelectedIndex(0)\n    }\n  }, [open])\n\n  const fuzzyMatch = (text: string, query: string): boolean => {\n    if (!query) return true\n    const lowerText = text.toLowerCase()\n    const lowerQuery = query.toLowerCase()\n    let queryIndex = 0\n    for (let i = 0; i < lowerText.length && queryIndex < lowerQuery.length; i++) {\n      if (lowerText[i] === lowerQuery[queryIndex]) {\n        queryIndex++\n      }\n    }\n    return queryIndex === lowerQuery.length\n  }\n\n  const filteredCommands = commands.filter(cmd =>\n    fuzzyMatch(cmd.title, searchQuery) || fuzzyMatch(cmd.category, searchQuery)\n  )\n\n  const groupedCommands = filteredCommands.reduce((acc, cmd) => {\n    if (!acc[cmd.category]) {\n      acc[cmd.category] = []\n    }\n    acc[cmd.category].push(cmd)\n    return acc\n  }, {} as Record<string, Command[]>)\n\n  const flatCommands = filteredCommands\n\n  useEffect(() => {\n    const handleKeyDown = (e: KeyboardEvent) => {\n      if (!open) return\n\n      switch (e.key) {\n        case 'ArrowDown':\n          e.preventDefault()\n          setSelectedIndex(prev => (prev + 1) % flatCommands.length)\n          break\n        case 'ArrowUp':\n          e.preventDefault()\n          setSelectedIndex(prev => (prev - 1 + flatCommands.length) % flatCommands.length)\n          break\n        case 'Enter':\n          e.preventDefault()\n          if (flatCommands[selectedIndex]) {\n            flatCommands[selectedIndex].action()\n            onClose()\n          }\n          break\n        case 'Escape':\n          e.preventDefault()\n          onClose()\n          break\n      }\n    }\n\n    window.addEventListener('keydown', handleKeyDown)\n    return () => window.removeEventListener('keydown', handleKeyDown)\n  }, [open, flatCommands, selectedIndex, onClose])\n\n  useEffect(() => {\n    if (itemRefs.current[selectedIndex]) {\n      itemRefs.current[selectedIndex]?.scrollIntoView({\n        block: 'nearest',\n        behavior: 'smooth',\n      })\n    }\n  }, [selectedIndex])\n\n  if (!open) return null\n\n  return (\n    <Dialog open={open} onOpenChange={onClose}>\n      <DialogContent className=\"max-w-[600px] w-[90vw] max-h-[500px] p-0 overflow-hidden bg-[#252526] border border-[#3c3c3c]\">\n        <div className=\"p-3 border-b border-[#3c3c3c] bg-[#1e1e1e]\">\n          <div className=\"relative\">\n            <Search className=\"absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#858585]\" />\n            <Input\n              ref={inputRef}\n              value={searchQuery}\n              onChange={(e) => {\n                setSearchQuery(e.target.value)\n                setSelectedIndex(0)\n              }}\n              placeholder=\"Type a command or search...\"\n              className=\"w-full bg-[#3c3c3c] border-none text-[#cccccc] text-sm pl-10 pr-16 placeholder:text-[#858585]\"\n            />\n            {searchQuery && (\n              <span className=\"absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#858585]\">\n                {filteredCommands.length} result{filteredCommands.length !== 1 ? 's' : ''}\n              </span>\n            )}\n          </div>\n        </div>\n\n        <div className=\"max-h-[400px] overflow-y-auto p-1\">\n          {flatCommands.length === 0 ? (\n            <div className=\"py-10 px-5 text-center text-[#858585] text-sm\">\n              No commands found for \"{searchQuery}\"\n            </div>\n          ) : (\n            Object.entries(groupedCommands).map(([category, cmds]) => (\n              <div key={category}>\n                <div className=\"text-xs font-semibold text-[#858585] px-3 pt-2 pb-1 uppercase tracking-wide\">\n                  {category}\n                </div>\n                {cmds.map((cmd) => {\n                  const flatIndex = flatCommands.indexOf(cmd)\n                  return (\n                    <div\n                      key={cmd.id}\n                      ref={el => (itemRefs.current[flatIndex] = el)}\n                      className={`flex items-center justify-between py-2.5 px-3 cursor-pointer rounded text-sm text-[#cccccc] transition-colors ${\n                        flatIndex === selectedIndex\n                          ? 'bg-[#094771] hover:bg-[#0e5a8a]'\n                          : 'hover:bg-[#2a2d2e]'\n                      }`}\n                      onClick={() => {\n                        cmd.action()\n                        onClose()\n                      }}\n                      onMouseEnter={() => setSelectedIndex(flatIndex)}\n                    >\n                      <div className=\"flex flex-col gap-0.5\">\n                        <div className=\"font-medium text-[#cccccc]\">{cmd.title}</div>\n                      </div>\n                      {cmd.shortcut && (\n                        <div className=\"text-xs text-[#858585] bg-[#3c3c3c] px-1.5 py-0.5 rounded font-mono\">\n                          {cmd.shortcut}\n                        </div>\n                      )}\n                    </div>\n                  )\n                })}\n              </div>\n            ))\n          )}\n        </div>\n      </DialogContent>\n    </Dialog>\n  )\n}\n",
+    "extraction": {
+      "name": "CommandPalette",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 19,
+        "start_col": 7,
+        "end_line": 172,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "open",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onClose",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "commands",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 20,
+            "start_col": 40,
+            "end_line": 20,
+            "end_col": 52
+          },
+          "state_name": "searchQuery",
+          "setter_name": "setSearchQuery",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 21,
+            "start_col": 44,
+            "end_line": 21,
+            "end_col": 55
+          },
+          "state_name": "selectedIndex",
+          "setter_name": "setSelectedIndex",
+          "initial_value": "0",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 22,
+            "start_col": 19,
+            "end_line": 22,
+            "end_col": 49
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "inputRef",
+          "ref_type": "HTMLInputElement",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 23,
+            "start_col": 19,
+            "end_line": 23,
+            "end_col": 56
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "itemRefs",
+          "ref_type": "/* type */",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 25,
+            "start_col": 2,
+            "end_line": 31,
+            "end_col": 12
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "open"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 60,
+            "start_col": 2,
+            "end_line": 89,
+            "end_col": 50
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "open",
+            "flatCommands",
+            "selectedIndex",
+            "onClose"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 91,
+            "start_col": 2,
+            "end_line": 98,
+            "end_col": 21
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "selectedIndex"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "Dialog",
+            "is_component": true,
+            "attributes": [
+              {
+                "name": "open",
+                "value": {
+                  "type": "Expression",
+                  "code": "open"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "onOpenChange",
+                "value": {
+                  "type": "Expression",
+                  "code": "onClose"
+                },
+                "is_event_handler": true
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "DialogContent",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "max-w-[600px] w-[90vw] max-h-[500px] p-0 overflow-hidden bg-[#252526] border border-[#3c3c3c]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "p-3 border-b border-[#3c3c3c] bg-[#1e1e1e]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "relative"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Search",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#858585]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 107,
+                                    "start_col": 12,
+                                    "end_line": 107,
+                                    "end_col": 98
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Input",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "ref",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "inputRef"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "searchQuery"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onChange",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "(e) => {\n                setSearchQuery(e.target.value)\n                setSelectedIndex(0)\n              }"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "placeholder",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Type a command or search..."
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-full bg-[#3c3c3c] border-none text-[#cccccc] text-sm pl-10 pr-16 placeholder:text-[#858585]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 108,
+                                    "start_col": 12,
+                                    "end_line": 117,
+                                    "end_col": 14
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Conditional",
+                                    "condition": "searchQuery",
+                                    "consequent": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "span",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#858585]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "filteredCommands.length"
+                                            },
+                                            "location": {
+                                              "start_line": 120,
+                                              "start_col": 16,
+                                              "end_line": 120,
+                                              "end_col": 41
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "result"
+                                            },
+                                            "location": {
+                                              "start_line": 120,
+                                              "start_col": 41,
+                                              "end_line": 120,
+                                              "end_col": 48
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "filteredCommands.length !== 1 ? 's' : ''"
+                                            },
+                                            "location": {
+                                              "start_line": 120,
+                                              "start_col": 48,
+                                              "end_line": 120,
+                                              "end_col": 90
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 119,
+                                        "start_col": 14,
+                                        "end_line": 121,
+                                        "end_col": 21
+                                      }
+                                    },
+                                    "alternate": null
+                                  },
+                                  "location": {
+                                    "start_line": 118,
+                                    "start_col": 12,
+                                    "end_line": 122,
+                                    "end_col": 14
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 106,
+                              "start_col": 10,
+                              "end_line": 123,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 105,
+                        "start_col": 8,
+                        "end_line": 124,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "max-h-[400px] overflow-y-auto p-1"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "flatCommands.length === 0",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "py-10 px-5 text-center text-[#858585] text-sm"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "No commands found for \""
+                                      },
+                                      "location": {
+                                        "start_line": 128,
+                                        "start_col": 75,
+                                        "end_line": 129,
+                                        "end_col": 37
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "searchQuery"
+                                      },
+                                      "location": {
+                                        "start_line": 129,
+                                        "start_col": 37,
+                                        "end_line": 129,
+                                        "end_col": 50
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "\""
+                                      },
+                                      "location": {
+                                        "start_line": 129,
+                                        "start_col": 50,
+                                        "end_line": 130,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 128,
+                                  "start_col": 12,
+                                  "end_line": 130,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 127,
+                              "start_col": 10,
+                              "end_line": 167,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 126,
+                        "start_col": 8,
+                        "end_line": 168,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 104,
+                  "start_col": 6,
+                  "end_line": 169,
+                  "end_col": 22
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 103,
+            "start_col": 4,
+            "end_line": 170,
+            "end_col": 13
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Dialog",
+        "DialogContent",
+        "Input",
+        "Search"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "searchQuery",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "selectedIndex",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/command_palette.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:searchQuery",
+        "to_field": "searchQuery",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'searchQuery' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:selectedIndex",
+        "to_field": "selectedIndex",
+        "field_type": "i64",
+        "evidentiality": "!",
+        "initial_value": "0",
+        "reasoning": "useState hook 'selectedIndex' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:inputRef",
+        "to_field": "inputRef",
+        "field_type": "Option<Element>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'inputRef' becomes non-reactive state (no re-render on change)"
+      },
+      {
+        "from_hook": "useRef:itemRefs",
+        "to_field": "itemRefs",
+        "field_type": "Option</* type */>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'itemRefs' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateSearchQuery",
+        "from_handler": "setSearchQuery",
+        "payload": null,
+        "state_changes": [
+          "self.searchQuery = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSelectedIndex",
+        "from_handler": "setSelectedIndex",
+        "payload": null,
+        "state_changes": [
+          "self.selectedIndex = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[open]",
+        "strategy": "inline",
+        "reasoning": "Deps [open] → inline in handlers that change these",
+        "inline_in": "open",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[open,flatCommands,selectedIndex,onClose]",
+        "strategy": "inline",
+        "reasoning": "Deps [open, flatCommands, selectedIndex, onClose] → inline in handlers that change these",
+        "inline_in": "open_flatCommands_selectedIndex_onClose",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[selectedIndex]",
+        "strategy": "inline",
+        "reasoning": "Deps [selectedIndex] → inline in handlers that change these",
+        "inline_in": "selectedIndex",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "open",
+          "field_type": "Any",
+          "from_prop": "open"
+        },
+        {
+          "name": "on_close",
+          "field_type": "Any",
+          "from_prop": "onClose"
+        },
+        {
+          "name": "commands",
+          "field_type": "Any",
+          "from_prop": "commands"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_4",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [open] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_5",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [open, flatCommands, selectedIndex, onClose] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_6",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [selectedIndex] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onClose",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onClose' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Dialog",
+      "DialogContent",
+      "Input",
+      "Search"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

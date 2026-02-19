@@ -1,0 +1,130 @@
+// Minimal Counter Test Component
+// Tests the full native rendering stack: VNode → FFI → Rust → Screen
+//
+// Success criteria (from NATIVE-RENDERING-SPEC.md):
+// - Window appears
+// - Counter text renders
+// - Button click increments counter
+
+invoke qliphoth·prelude·*;
+invoke qliphoth·platform·native·{NativePlatform, NativeEvent, native_compute_layout, native_render};
+
+// Message IDs for event handling
+☉ const MSG_INCREMENT: u64 = 1;
+☉ const MSG_DECREMENT: u64 = 2;
+☉ const MSG_RESET: u64 = 3;
+
+/// Counter state
+☉ Σ CounterState {
+    count: i64!
+}
+
+⊢ CounterState {
+    ☉ rite new() -> Self! {
+        CounterState { count: 0 }
+    }
+
+    /// Handle increment message
+    rite handle_increment(&Δ self) {
+        self.count += 1;
+    }
+
+    /// Handle decrement message
+    rite handle_decrement(&Δ self) {
+        ⎇ self.count > 0 {
+            self.count -= 1;
+        }
+    }
+
+    /// Handle reset message
+    rite handle_reset(&Δ self) {
+        self.count = 0;
+    }
+
+    /// Dispatch message by ID
+    rite dispatch(&Δ self, message_id: u64) {
+        ⌥ message_id {
+            1 => self.handle_increment(),
+            2 => self.handle_decrement(),
+            3 => self.handle_reset(),
+            _ => {}
+        }
+    }
+
+    /// Render the counter view
+    rite view(&self) -> VNode! {
+        VNode·div()
+            ·style("display", "flex")
+            ·style("flex-direction", "column")
+            ·style("align-items", "center")
+            ·style("justify-content", "center")
+            ·style("width", "100%")
+            ·style("height", "100%")
+            ·style("background-color", "#1e1e1e")
+            ·child(
+                VNode·div()
+                    ·style("font-size", "48px")
+                    ·style("color", "#ffffff")
+                    ·style("margin-bottom", "20px")
+                    ·text_child(self.count.to_string())
+            )
+            ·child(
+                VNode·div()
+                    ·style("display", "flex")
+                    ·style("gap", "10px")
+                    ·child(
+                        VNode·button()
+                            ·style("padding", "10px 20px")
+                            ·style("font-size", "24px")
+                            ·style("background-color", "#dc3545")
+                            ·style("color", "#ffffff")
+                            ·style("border-radius", "5px")
+                            ·on_click(MSG_DECREMENT)
+                            ·text_child("-")
+                    )
+                    ·child(
+                        VNode·button()
+                            ·style("padding", "10px 20px")
+                            ·style("font-size", "24px")
+                            ·style("background-color", "#6c757d")
+                            ·style("color", "#ffffff")
+                            ·style("border-radius", "5px")
+                            ·on_click(MSG_RESET)
+                            ·text_child("Reset")
+                    )
+                    ·child(
+                        VNode·button()
+                            ·style("padding", "10px 20px")
+                            ·style("font-size", "24px")
+                            ·style("background-color", "#28a745")
+                            ·style("color", "#ffffff")
+                            ·style("border-radius", "5px")
+                            ·on_click(MSG_INCREMENT)
+                            ·text_child("+")
+                    )
+            )
+    }
+}
+
+/// Main entry point for counter test
+rite main() {
+    // Create native platform with window
+    ≔ Δ platform! = NativePlatform·new("Counter Test", 400, 300);
+
+    // Create counter state
+    ≔ Δ counter! = CounterState·new();
+
+    // Initial render
+    ≔ Δ current_view! = counter.view();
+    platform.mount(current_view);
+
+    // Render first frame
+    unsafe {
+        native_compute_layout(platform.window.handle);
+        native_render(platform.window.handle);
+    }
+
+    // Run native event loop (blocking)
+    // The runtime handles events internally
+    platform.run();
+}

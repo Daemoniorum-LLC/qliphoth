@@ -1,0 +1,1098 @@
+{
+  "id": "domains/terminal/components/TerminalPanel.tsx:TerminalPanel",
+  "name": "TerminalPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/terminal/components/TerminalPanel.tsx",
+    "code": "import React, { useEffect, useRef, useState } from 'react'\nimport {\n  Button,\n  Tabs,\n  TabsList,\n  TabsTrigger,\n  DropdownMenu,\n  DropdownMenuContent,\n  DropdownMenuItem,\n  DropdownMenuTrigger,\n} from '@persona-framework/ui'\nimport {\n  Plus,\n  X,\n  ChevronDown,\n  SplitSquareVertical,\n  SplitSquareHorizontal,\n} from 'lucide-react'\nimport { Terminal } from '@xterm/xterm'\nimport { FitAddon } from '@xterm/addon-fit'\nimport { Client, type StompSubscription } from '@stomp/stompjs'\nimport '@xterm/xterm/css/xterm.css'\n\ninterface TerminalOutput {\n  sessionId: string\n  type: 'STDOUT' | 'STDERR' | 'EXIT' | 'ERROR'\n  content: string\n  exitCode?: number | null\n  timestamp: string\n}\n\ntype TerminalProfile = 'bash' | 'zsh' | 'powershell' | 'sh' | 'fish'\ntype SplitMode = 'none' | 'vertical' | 'horizontal'\n\ninterface TerminalInstance {\n  id: string\n  profile: TerminalProfile\n  sessionId: string\n  workingDirectory: string\n  terminal: Terminal | null\n  fitAddon: FitAddon | null\n  stompClient: Client | null\n  subscription: StompSubscription | null\n  connectionStatus: 'disconnected' | 'connecting' | 'connected'\n}\n\nexport function TerminalPanel() {\n  const [terminals, setTerminals] = useState<TerminalInstance[]>([])\n  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)\n  const [splitMode, setSplitMode] = useState<SplitMode>('none')\n  const terminalRefs = useRef<Map<string, HTMLDivElement>>(new Map())\n\n  useEffect(() => {\n    if (terminals.length === 0) {\n      createTerminal('bash')\n    }\n  }, [])\n\n  const createTerminal = (profile: TerminalProfile) => {\n    const id = `terminal-${Date.now()}`\n    const sessionId = `session-${id}`\n\n    const newTerminal: TerminalInstance = {\n      id,\n      profile,\n      sessionId,\n      workingDirectory: '/home/user/persona-framework',\n      terminal: null,\n      fitAddon: null,\n      stompClient: null,\n      subscription: null,\n      connectionStatus: 'disconnected',\n    }\n\n    setTerminals((prev) => [...prev, newTerminal])\n    setActiveTerminalId(id)\n\n    setTimeout(() => initializeTerminal(id), 100)\n  }\n\n  const initializeTerminal = (terminalId: string) => {\n    const terminalDiv = terminalRefs.current.get(terminalId)\n    if (!terminalDiv) {\n      console.error(`Terminal div not found for ${terminalId}`)\n      return\n    }\n\n    const terminalInstance = terminals.find((t) => t.id === terminalId)\n    if (!terminalInstance) {\n      console.error(`Terminal instance not found for ${terminalId}`)\n      return\n    }\n\n    const terminal = new Terminal({\n      cursorBlink: true,\n      fontSize: 14,\n      fontFamily: \"Consolas, 'Courier New', monospace\",\n      theme: {\n        background: '#1e1e1e',\n        foreground: '#d4d4d4',\n        cursor: '#d4d4d4',\n        black: '#000000',\n        red: '#cd3131',\n        green: '#0dbc79',\n        yellow: '#e5e510',\n        blue: '#2472c8',\n        magenta: '#bc3fbc',\n        cyan: '#11a8cd',\n        white: '#e5e5e5',\n        brightBlack: '#666666',\n        brightRed: '#f14c4c',\n        brightGreen: '#23d18b',\n        brightYellow: '#f5f543',\n        brightBlue: '#3b8eea',\n        brightMagenta: '#d670d6',\n        brightCyan: '#29b8db',\n        brightWhite: '#e5e5e5',\n      },\n      rows: 30,\n      cols: 80,\n    })\n\n    const fitAddon = new FitAddon()\n    terminal.loadAddon(fitAddon)\n\n    terminal.open(terminalDiv)\n    fitAddon.fit()\n\n    terminal.writeln('╔═══════════════════════════════════════════════════════════╗')\n    terminal.writeln('║          Persona Framework - Terminal Panel              ║')\n    terminal.writeln('╚═══════════════════════════════════════════════════════════╝')\n    terminal.writeln('')\n    terminal.writeln(`Profile: ${terminalInstance.profile}`)\n    terminal.writeln(`Working directory: ${terminalInstance.workingDirectory}`)\n    terminal.writeln('')\n    terminal.writeln('Connecting to server...')\n    terminal.writeln('')\n\n    let currentCommand = ''\n\n    terminal.onData((data) => {\n      const code = data.charCodeAt(0)\n\n      if (code === 13) {\n        terminal.writeln('')\n\n        if (currentCommand.trim()) {\n          executeCommand(terminalId, currentCommand.trim())\n        }\n\n        currentCommand = ''\n        terminal.write('$ ')\n      }\n      else if (code === 127) {\n        if (currentCommand.length > 0) {\n          currentCommand = currentCommand.slice(0, -1)\n          terminal.write('\\b \\b')\n        }\n      }\n      else if (code === 3) {\n        terminal.writeln('^C')\n        currentCommand = ''\n        terminal.write('$ ')\n      }\n      else {\n        currentCommand += data\n        terminal.write(data)\n      }\n    })\n\n    setTerminals((prev) =>\n      prev.map((t) =>\n        t.id === terminalId\n          ? { ...t, terminal, fitAddon, connectionStatus: 'connecting' }\n          : t\n      )\n    )\n\n    initializeWebSocket(terminalId, terminal, terminalInstance.sessionId)\n  }\n\n  const initializeWebSocket = (\n    terminalId: string,\n    terminal: Terminal,\n    sessionId: string\n  ) => {\n    const wsUrl = `ws://localhost:8989/ws/terminal`\n\n    const client = new Client({\n      brokerURL: wsUrl,\n      reconnectDelay: 5000,\n      heartbeatIncoming: 4000,\n      heartbeatOutgoing: 4000,\n\n      onConnect: () => {\n        console.log(`[Terminal ${terminalId}] Connected to WebSocket`)\n        updateTerminalStatus(terminalId, 'connected')\n\n        terminal.writeln('\\x1B[32m✓ Connected to server\\x1B[0m')\n        terminal.writeln('')\n        terminal.write('$ ')\n\n        const subscription = client.subscribe(\n          `/topic/terminal/${sessionId}`,\n          (message) => {\n            const output: TerminalOutput = JSON.parse(message.body)\n            switch (output.type) {\n              case 'STDOUT':\n                terminal.writeln(output.content)\n                break\n              case 'STDERR':\n                terminal.writeln(`\\x1B[31m${output.content}\\x1B[0m`)\n                break\n              case 'EXIT':\n                if (output.exitCode === 0) {\n                  terminal.writeln(`\\x1B[32m${output.content}\\x1B[0m`)\n                } else {\n                  terminal.writeln(`\\x1B[31m${output.content}\\x1B[0m`)\n                }\n                terminal.writeln('')\n                terminal.write('$ ')\n                break\n              case 'ERROR':\n                terminal.writeln(`\\x1B[31m✗ Error: ${output.content}\\x1B[0m`)\n                terminal.writeln('')\n                terminal.write('$ ')\n                break\n            }\n          }\n        )\n\n        setTerminals((prev) =>\n          prev.map((t) => (t.id === terminalId ? { ...t, subscription } : t))\n        )\n      },\n\n      onStompError: (frame) => {\n        console.error(`[Terminal ${terminalId}] STOMP Error:`, frame.headers.message)\n        updateTerminalStatus(terminalId, 'disconnected')\n\n        terminal.writeln(`\\x1B[31m✗ STOMP Error: ${frame.headers.message}\\x1B[0m`)\n      },\n\n      onWebSocketError: (event) => {\n        console.error(`[Terminal ${terminalId}] WebSocket Error:`, event)\n        updateTerminalStatus(terminalId, 'disconnected')\n      },\n\n      onWebSocketClose: () => {\n        console.log(`[Terminal ${terminalId}] WebSocket closed`)\n        updateTerminalStatus(terminalId, 'disconnected')\n\n        terminal.writeln('')\n        terminal.writeln('\\x1B[33m✗ Disconnected from server\\x1B[0m')\n        terminal.writeln('Reconnecting...')\n      },\n\n      onDisconnect: () => {\n        console.log(`[Terminal ${terminalId}] Disconnected from STOMP`)\n        updateTerminalStatus(terminalId, 'disconnected')\n      },\n    })\n\n    client.activate()\n\n    setTerminals((prev) =>\n      prev.map((t) => (t.id === terminalId ? { ...t, stompClient: client } : t))\n    )\n  }\n\n  const updateTerminalStatus = (\n    terminalId: string,\n    status: 'disconnected' | 'connecting' | 'connected'\n  ) => {\n    setTerminals((prev) =>\n      prev.map((t) => (t.id === terminalId ? { ...t, connectionStatus: status } : t))\n    )\n  }\n\n  const executeCommand = (terminalId: string, command: string) => {\n    const terminalInstance = terminals.find((t) => t.id === terminalId)\n    if (!terminalInstance) return\n\n    const client = terminalInstance.stompClient\n    if (!client || !client.connected) {\n      if (terminalInstance.terminal) {\n        terminalInstance.terminal.writeln('\\x1B[31m✗ Not connected to server\\x1B[0m')\n        terminalInstance.terminal.writeln('')\n        terminalInstance.terminal.write('$ ')\n      }\n      return\n    }\n\n    const payload = {\n      sessionId: terminalInstance.sessionId,\n      command,\n      workingDirectory: terminalInstance.workingDirectory,\n      environment: {\n        SHELL: getShellPath(terminalInstance.profile),\n      },\n    }\n\n    client.publish({\n      destination: '/app/terminal/execute',\n      body: JSON.stringify(payload),\n    })\n  }\n\n  const getShellPath = (profile: TerminalProfile): string => {\n    switch (profile) {\n      case 'bash':\n        return '/bin/bash'\n      case 'zsh':\n        return '/bin/zsh'\n      case 'sh':\n        return '/bin/sh'\n      case 'fish':\n        return '/usr/bin/fish'\n      case 'powershell':\n        return '/usr/bin/pwsh'\n      default:\n        return '/bin/bash'\n    }\n  }\n\n  const closeTerminal = (terminalId: string) => {\n    const terminalInstance = terminals.find((t) => t.id === terminalId)\n    if (!terminalInstance) return\n\n    if (terminalInstance.subscription) {\n      terminalInstance.subscription.unsubscribe()\n    }\n    if (terminalInstance.stompClient) {\n      terminalInstance.stompClient.deactivate()\n    }\n    if (terminalInstance.terminal) {\n      terminalInstance.terminal.dispose()\n    }\n\n    const newTerminals = terminals.filter((t) => t.id !== terminalId)\n    setTerminals(newTerminals)\n\n    if (activeTerminalId === terminalId) {\n      setActiveTerminalId(newTerminals.length > 0 ? newTerminals[0].id : null)\n    }\n\n    if (newTerminals.length === 0) {\n      createTerminal('bash')\n    }\n  }\n\n  const getStatusText = (status: string) => {\n    switch (status) {\n      case 'connected':\n        return 'Connected'\n      case 'connecting':\n        return 'Connecting...'\n      case 'disconnected':\n        return 'Disconnected'\n    }\n  }\n\n  const getStatusDotClass = (status: string) => {\n    switch (status) {\n      case 'connected':\n        return 'bg-[#4ec9b0]'\n      case 'connecting':\n        return 'bg-[#dcdcaa]'\n      case 'disconnected':\n        return 'bg-[#f48771]'\n    }\n  }\n\n  const toggleSplitVertical = () => {\n    setSplitMode(splitMode === 'vertical' ? 'none' : 'vertical')\n  }\n\n  const toggleSplitHorizontal = () => {\n    setSplitMode(splitMode === 'horizontal' ? 'none' : 'horizontal')\n  }\n\n  const renderTerminal = (terminalId: string) => {\n    const terminalInstance = terminals.find((t) => t.id === terminalId)\n    if (!terminalInstance) return null\n\n    return (\n      <div key={terminalId} className=\"flex-1 flex flex-col min-w-0 min-h-0 relative\">\n        <div className=\"flex justify-between items-center px-3 py-1 bg-[#252526] border-b border-[#3c3c3c] text-[11px] text-[#858585]\">\n          <div className=\"flex items-center gap-2\">\n            <div className={`w-2 h-2 rounded-full ${getStatusDotClass(terminalInstance.connectionStatus)}`} />\n            <span>{getStatusText(terminalInstance.connectionStatus)}</span>\n          </div>\n          <div className=\"flex items-center gap-2\">\n            <span className=\"text-[10px] px-1.5 py-0.5 rounded bg-[#4fc3f722] text-[#4fc3f7] font-semibold uppercase\">\n              {terminalInstance.profile}\n            </span>\n            <span>{terminalInstance.sessionId}</span>\n          </div>\n        </div>\n\n        <div\n          className=\"flex-1 p-2 bg-[#1e1e1e] overflow-hidden\"\n          ref={(el) => {\n            if (el) {\n              terminalRefs.current.set(terminalId, el)\n            }\n          }}\n        />\n      </div>\n    )\n  }\n\n  const renderTerminals = () => {\n    const activeTerminal = terminals.find((t) => t.id === activeTerminalId)\n    if (!activeTerminal) return null\n\n    if (splitMode === 'none') {\n      return renderTerminal(activeTerminal.id)\n    }\n\n    const splitTerminals = terminals.slice(0, 2)\n\n    return (\n      <div className={`flex flex-1 min-h-0 overflow-hidden ${splitMode === 'vertical' ? 'flex-row' : 'flex-col'}`}>\n        {splitTerminals.map((term, index) => (\n          <React.Fragment key={term.id}>\n            {renderTerminal(term.id)}\n            {index === 0 && splitTerminals.length > 1 && (\n              <div\n                className={`bg-[#3c3c3c] hover:bg-[#007acc] ${\n                  splitMode === 'horizontal' ? 'w-full h-1 cursor-ns-resize' : 'w-1 h-full cursor-ew-resize'\n                }`}\n              />\n            )}\n          </React.Fragment>\n        ))}\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"flex flex-col h-full w-full bg-neutral-50 overflow-hidden\">\n      <div className=\"flex items-center justify-between px-2 py-1 bg-[#2b2b2b] border-b border-[#3c3c3c] gap-2\">\n        <div className=\"flex items-center gap-2 flex-1 min-w-0\">\n          <Tabs value={activeTerminalId || undefined} onValueChange={setActiveTerminalId}>\n            <TabsList className=\"h-8\">\n              {terminals.map((term) => (\n                <TabsTrigger key={term.id} value={term.id} className=\"text-xs\">\n                  {term.profile}\n                  <Button\n                    variant=\"ghost\"\n                    size=\"sm\"\n                    onClick={(e) => {\n                      e.stopPropagation()\n                      closeTerminal(term.id)\n                    }}\n                    className=\"ml-1 h-4 w-4 p-0\"\n                  >\n                    <X className=\"w-3 h-3\" />\n                  </Button>\n                </TabsTrigger>\n              ))}\n            </TabsList>\n          </Tabs>\n        </div>\n\n        <div className=\"flex items-center gap-1\">\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={toggleSplitVertical}\n            title=\"Split Vertically\"\n          >\n            <SplitSquareVertical className=\"w-4 h-4\" />\n          </Button>\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={toggleSplitHorizontal}\n            title=\"Split Horizontally\"\n          >\n            <SplitSquareHorizontal className=\"w-4 h-4\" />\n          </Button>\n\n          <DropdownMenu>\n            <DropdownMenuTrigger asChild>\n              <Button size=\"sm\" className=\"gap-1\">\n                <Plus className=\"w-4 h-4\" />\n                New Terminal\n                <ChevronDown className=\"w-3 h-3 ml-1\" />\n              </Button>\n            </DropdownMenuTrigger>\n            <DropdownMenuContent>\n              <DropdownMenuItem onClick={() => createTerminal('bash')}>Bash</DropdownMenuItem>\n              <DropdownMenuItem onClick={() => createTerminal('zsh')}>Zsh</DropdownMenuItem>\n              <DropdownMenuItem onClick={() => createTerminal('sh')}>Sh</DropdownMenuItem>\n              <DropdownMenuItem onClick={() => createTerminal('fish')}>Fish</DropdownMenuItem>\n              <DropdownMenuItem onClick={() => createTerminal('powershell')}>PowerShell</DropdownMenuItem>\n            </DropdownMenuContent>\n          </DropdownMenu>\n        </div>\n      </div>\n\n      {renderTerminals()}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "TerminalPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 47,
+        "start_col": 7,
+        "end_line": 507,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 48,
+            "start_col": 36,
+            "end_line": 48,
+            "end_col": 68
+          },
+          "state_name": "terminals",
+          "setter_name": "setTerminals",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 49,
+            "start_col": 50,
+            "end_line": 49,
+            "end_col": 79
+          },
+          "state_name": "activeTerminalId",
+          "setter_name": "setActiveTerminalId",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 50,
+            "start_col": 36,
+            "end_line": 50,
+            "end_col": 63
+          },
+          "state_name": "splitMode",
+          "setter_name": "setSplitMode",
+          "initial_value": "\"none\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 51,
+            "start_col": 23,
+            "end_line": 51,
+            "end_col": 69
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "terminalRefs",
+          "ref_type": "Map",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 53,
+            "start_col": 2,
+            "end_line": 57,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full w-full bg-neutral-50 overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between px-2 py-1 bg-[#2b2b2b] border-b border-[#3c3c3c] gap-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-2 flex-1 min-w-0"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Tabs",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "activeTerminalId || undefined"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onValueChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "setActiveTerminalId"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "TabsList",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-8"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Map",
+                                          "iterable": "terminals",
+                                          "item_name": "term",
+                                          "key_expr": "term.id",
+                                          "body": {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "TabsTrigger",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "key",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "term.id"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "term.id"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "text-xs"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "term.profile"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 449,
+                                                    "start_col": 18,
+                                                    "end_line": 449,
+                                                    "end_col": 32
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "Button",
+                                                    "is_component": true,
+                                                    "attributes": [
+                                                      {
+                                                        "name": "variant",
+                                                        "value": {
+                                                          "type": "String",
+                                                          "value": "ghost"
+                                                        },
+                                                        "is_event_handler": false
+                                                      },
+                                                      {
+                                                        "name": "size",
+                                                        "value": {
+                                                          "type": "String",
+                                                          "value": "sm"
+                                                        },
+                                                        "is_event_handler": false
+                                                      },
+                                                      {
+                                                        "name": "onClick",
+                                                        "value": {
+                                                          "type": "Expression",
+                                                          "code": "(e) => {\n                      e.stopPropagation()\n                      closeTerminal(term.id)\n                    }"
+                                                        },
+                                                        "is_event_handler": true
+                                                      },
+                                                      {
+                                                        "name": "className",
+                                                        "value": {
+                                                          "type": "String",
+                                                          "value": "ml-1 h-4 w-4 p-0"
+                                                        },
+                                                        "is_event_handler": false
+                                                      }
+                                                    ],
+                                                    "children": [
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "X",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "w-3 h-3"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": []
+                                                        },
+                                                        "location": {
+                                                          "start_line": 459,
+                                                          "start_col": 20,
+                                                          "end_line": 459,
+                                                          "end_col": 45
+                                                        }
+                                                      }
+                                                    ]
+                                                  },
+                                                  "location": {
+                                                    "start_line": 450,
+                                                    "start_col": 18,
+                                                    "end_line": 460,
+                                                    "end_col": 27
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 448,
+                                              "start_col": 16,
+                                              "end_line": 461,
+                                              "end_col": 30
+                                            }
+                                          }
+                                        },
+                                        "location": {
+                                          "start_line": 447,
+                                          "start_col": 14,
+                                          "end_line": 462,
+                                          "end_col": 17
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 446,
+                                    "start_col": 12,
+                                    "end_line": 463,
+                                    "end_col": 23
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 445,
+                              "start_col": 10,
+                              "end_line": 464,
+                              "end_col": 17
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 444,
+                        "start_col": 8,
+                        "end_line": 465,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-1"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "toggleSplitVertical"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Split Vertically"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SplitSquareVertical",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 474,
+                                    "start_col": 12,
+                                    "end_line": 474,
+                                    "end_col": 55
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 468,
+                              "start_col": 10,
+                              "end_line": 475,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "toggleSplitHorizontal"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Split Horizontally"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SplitSquareHorizontal",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 482,
+                                    "start_col": 12,
+                                    "end_line": 482,
+                                    "end_col": 57
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 476,
+                              "start_col": 10,
+                              "end_line": 483,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "DropdownMenu",
+                              "is_component": true,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "DropdownMenuTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "asChild",
+                                        "value": {
+                                          "type": "True"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "Button",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "size",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "sm"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "gap-1"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "Plus",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "className",
+                                                    "value": {
+                                                      "type": "String",
+                                                      "value": "w-4 h-4"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": []
+                                              },
+                                              "location": {
+                                                "start_line": 488,
+                                                "start_col": 16,
+                                                "end_line": 488,
+                                                "end_col": 44
+                                              }
+                                            },
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "New Terminal"
+                                              },
+                                              "location": {
+                                                "start_line": 488,
+                                                "start_col": 44,
+                                                "end_line": 490,
+                                                "end_col": 16
+                                              }
+                                            },
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "ChevronDown",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "className",
+                                                    "value": {
+                                                      "type": "String",
+                                                      "value": "w-3 h-3 ml-1"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": []
+                                              },
+                                              "location": {
+                                                "start_line": 490,
+                                                "start_col": 16,
+                                                "end_line": 490,
+                                                "end_col": 56
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 487,
+                                          "start_col": 14,
+                                          "end_line": 491,
+                                          "end_col": 23
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 486,
+                                    "start_col": 12,
+                                    "end_line": 492,
+                                    "end_col": 34
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "DropdownMenuContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "DropdownMenuItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => createTerminal('bash')"
+                                              },
+                                              "is_event_handler": true
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Bash"
+                                              },
+                                              "location": {
+                                                "start_line": 494,
+                                                "start_col": 71,
+                                                "end_line": 494,
+                                                "end_col": 75
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 494,
+                                          "start_col": 14,
+                                          "end_line": 494,
+                                          "end_col": 94
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "DropdownMenuItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => createTerminal('zsh')"
+                                              },
+                                              "is_event_handler": true
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Zsh"
+                                              },
+                                              "location": {
+                                                "start_line": 495,
+                                                "start_col": 70,
+                                                "end_line": 495,
+                                                "end_col": 73
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 495,
+                                          "start_col": 14,
+                                          "end_line": 495,
+                                          "end_col": 92
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "DropdownMenuItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => createTerminal('sh')"
+                                              },
+                                              "is_event_handler": true
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Sh"
+                                              },
+                                              "location": {
+                                                "start_line": 496,
+                                                "start_col": 69,
+                                                "end_line": 496,
+                                                "end_col": 71
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 496,
+                                          "start_col": 14,
+                                          "end_line": 496,
+                                          "end_col": 90
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "DropdownMenuItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => createTerminal('fish')"
+                                              },
+                                              "is_event_handler": true
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Fish"
+                                              },
+                                              "location": {
+                                                "start_line": 497,
+                                                "start_col": 71,
+                                                "end_line": 497,
+                                                "end_col": 75
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 497,
+                                          "start_col": 14,
+                                          "end_line": 497,
+                                          "end_col": 94
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "DropdownMenuItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => createTerminal('powershell')"
+                                              },
+                                              "is_event_handler": true
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "PowerShell"
+                                              },
+                                              "location": {
+                                                "start_line": 498,
+                                                "start_col": 77,
+                                                "end_line": 498,
+                                                "end_col": 87
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 498,
+                                          "start_col": 14,
+                                          "end_line": 498,
+                                          "end_col": 106
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 493,
+                                    "start_col": 12,
+                                    "end_line": 499,
+                                    "end_col": 34
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 485,
+                              "start_col": 10,
+                              "end_line": 500,
+                              "end_col": 25
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 467,
+                        "start_col": 8,
+                        "end_line": 501,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 443,
+                  "start_col": 6,
+                  "end_line": 502,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "renderTerminals()"
+                },
+                "location": {
+                  "start_line": 504,
+                  "start_col": 6,
+                  "end_line": 504,
+                  "end_col": 25
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 442,
+            "start_col": 4,
+            "end_line": 505,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "ChevronDown",
+        "DropdownMenu",
+        "DropdownMenuContent",
+        "DropdownMenuItem",
+        "DropdownMenuTrigger",
+        "Plus",
+        "SplitSquareHorizontal",
+        "SplitSquareVertical",
+        "Tabs",
+        "TabsList",
+        "TabsTrigger",
+        "X"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "terminals",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "activeTerminalId",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "splitMode",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/terminal_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:terminals",
+        "to_field": "terminals",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'terminals' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:activeTerminalId",
+        "to_field": "activeTerminalId",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'activeTerminalId' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:splitMode",
+        "to_field": "splitMode",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"none\"",
+        "reasoning": "useState hook 'splitMode' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:terminalRefs",
+        "to_field": "terminalRefs",
+        "field_type": "Option<Map>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'terminalRefs' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateTerminals",
+        "from_handler": "setTerminals",
+        "payload": null,
+        "state_changes": [
+          "self.terminals = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateActiveTerminalId",
+        "from_handler": "setActiveTerminalId",
+        "payload": null,
+        "state_changes": [
+          "self.activeTerminalId = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSplitMode",
+        "from_handler": "setSplitMode",
+        "payload": null,
+        "state_changes": [
+          "self.splitMode = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps → Mount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_mount",
+      "description": "Convert mount-only useEffect to lifecycle",
+      "react": "useEffect(() => { init(); }, []);",
+      "sigil": "on Mount { self.init(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "Button",
+      "ChevronDown",
+      "DropdownMenu",
+      "DropdownMenuContent",
+      "DropdownMenuItem",
+      "DropdownMenuTrigger",
+      "Plus",
+      "SplitSquareHorizontal",
+      "SplitSquareVertical",
+      "Tabs",
+      "TabsList",
+      "TabsTrigger",
+      "X"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

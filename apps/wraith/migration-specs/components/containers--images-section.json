@@ -1,0 +1,291 @@
+{
+  "id": "domains/devops/components/containers/ImagesSection.tsx:ImagesSection",
+  "name": "ImagesSection",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/containers/ImagesSection.tsx",
+    "code": "import { useState } from 'react'\nimport { Layers, Trash2, Tag, Upload, Download, Search } from 'lucide-react'\nimport { IconButton } from '@ui/components/atoms'\nimport { DataTable, SectionHeader, ActionMenu, ActionItem } from '../shared'\nimport { mockImages } from '../../mock-data'\nimport type { DockerImage } from '../../types'\n\nfunction formatBytes(bytes: number): string {\n  const units = ['B', 'KB', 'MB', 'GB']\n  let size = bytes\n  let unitIndex = 0\n  while (size >= 1024 && unitIndex < units.length - 1) {\n    size /= 1024\n    unitIndex++\n  }\n  return `${size.toFixed(1)} ${units[unitIndex]}`\n}\n\nfunction formatRelativeTime(dateStr: string): string {\n  const diff = Date.now() - new Date(dateStr).getTime()\n  const days = Math.floor(diff / 86400000)\n  const weeks = Math.floor(days / 7)\n  if (weeks > 0) return `${weeks}w ago`\n  if (days > 0) return `${days}d ago`\n  return 'Today'\n}\n\nfunction ImageActions({ image }: { image: DockerImage }) {\n  return (\n    <ActionMenu>\n      <ActionItem icon={<Tag className=\"h-3 w-3\" />} label=\"Tag\" onClick={() => {}} />\n      <ActionItem icon={<Upload className=\"h-3 w-3\" />} label=\"Push\" onClick={() => {}} />\n      <ActionItem icon={<Trash2 className=\"h-3 w-3\" />} label=\"Remove\" onClick={() => {}} variant=\"danger\" />\n    </ActionMenu>\n  )\n}\n\nexport function ImagesSection() {\n  const [filter, setFilter] = useState('')\n\n  const filteredImages = filter\n    ? mockImages.filter((img) =>\n        img.repoTags.some((tag) => tag.toLowerCase().includes(filter.toLowerCase()))\n      )\n    : mockImages\n\n  const columns = [\n    {\n      key: 'image',\n      header: 'Image',\n      render: (img: DockerImage) => (\n        <div className=\"flex items-center gap-2\">\n          <Layers className=\"h-4 w-4 text-[var(--accent-primary)]\" />\n          <div>\n            <div className=\"font-medium\">{img.repoTags[0]?.split(':')[0] || '<none>'}</div>\n            <div className=\"text-xs text-[var(--text-muted)]\">{img.id.slice(0, 19)}</div>\n          </div>\n        </div>\n      ),\n    },\n    {\n      key: 'tags',\n      header: 'Tags',\n      render: (img: DockerImage) => (\n        <div className=\"flex flex-wrap gap-1\">\n          {img.repoTags.map((tag) => (\n            <span\n              key={tag}\n              className=\"text-xs px-1.5 py-0.5 bg-[var(--bg-tertiary)] rounded text-[var(--text-secondary)]\"\n            >\n              {tag.split(':')[1] || 'latest'}\n            </span>\n          ))}\n        </div>\n      ),\n    },\n    {\n      key: 'size',\n      header: 'Size',\n      width: '100px',\n      render: (img: DockerImage) => (\n        <span className=\"text-[var(--text-secondary)] font-mono text-xs\">\n          {formatBytes(img.size)}\n        </span>\n      ),\n    },\n    {\n      key: 'created',\n      header: 'Created',\n      width: '100px',\n      render: (img: DockerImage) => (\n        <span className=\"text-[var(--text-secondary)]\">{formatRelativeTime(img.created)}</span>\n      ),\n    },\n    {\n      key: 'actions',\n      header: '',\n      width: '60px',\n      render: (img: DockerImage) => <ImageActions image={img} />,\n    },\n  ]\n\n  return (\n    <div className=\"h-full flex flex-col\">\n      <SectionHeader\n        title=\"Images\"\n        subtitle={`${filteredImages.length} image${filteredImages.length !== 1 ? 's' : ''}`}\n        icon={<Layers className=\"h-5 w-5\" />}\n        onRefresh={() => {}}\n        actions={\n          <div className=\"flex items-center gap-2\">\n            <div className=\"relative\">\n              <Search className=\"h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]\" />\n              <input\n                type=\"text\"\n                placeholder=\"Filter...\"\n                value={filter}\n                onChange={(e) => setFilter(e.target.value)}\n                className=\"pl-7 pr-3 py-1 text-xs bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded w-40 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]\"\n              />\n            </div>\n            <IconButton\n              icon={<Download className=\"h-3.5 w-3.5\" />}\n              size=\"sm\"\n              tooltip=\"Pull image\"\n              onClick={() => {}}\n            />\n          </div>\n        }\n      />\n\n      <div className=\"flex-1 overflow-auto\">\n        <DataTable\n          data={filteredImages}\n          columns={columns}\n          keyExtractor={(img) => img.id}\n          emptyMessage=\"No images found\"\n          compact\n        />\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "ImagesSection",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 38,
+        "start_col": 7,
+        "end_line": 143,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 39,
+            "start_col": 30,
+            "end_line": 39,
+            "end_col": 42
+          },
+          "state_name": "filter",
+          "setter_name": "setFilter",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "h-full flex flex-col"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "SectionHeader",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "title",
+                      "value": {
+                        "type": "String",
+                        "value": "Images"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "subtitle",
+                      "value": {
+                        "type": "Expression",
+                        "code": "`${filteredImages.length} image${filteredImages.length !== 1 ? 's' : ''}`"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "icon",
+                      "value": {
+                        "type": "Expression",
+                        "code": "<Layers className=\"h-5 w-5\" />"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onRefresh",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => {}"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "actions",
+                      "value": {
+                        "type": "Expression",
+                        "code": "<div className=\"flex items-center gap-2\">\n            <div className=\"relative\">\n              <Search className=\"h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]\" />\n              <input\n                type=\"text\"\n                placeholder=\"Filter...\"\n                value={filter}\n                onChange={(e) => setFilter(e.target.value)}\n                className=\"pl-7 pr-3 py-1 text-xs bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded w-40 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]\"\n              />\n            </div>\n            <IconButton\n              icon={<Download className=\"h-3.5 w-3.5\" />}\n              size=\"sm\"\n              tooltip=\"Pull image\"\n              onClick={() => {}}\n            />\n          </div>"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 105,
+                  "start_col": 6,
+                  "end_line": 130,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "DataTable",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "data",
+                            "value": {
+                              "type": "Expression",
+                              "code": "filteredImages"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "columns",
+                            "value": {
+                              "type": "Expression",
+                              "code": "columns"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "keyExtractor",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(img) => img.id"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "emptyMessage",
+                            "value": {
+                              "type": "String",
+                              "value": "No images found"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "compact",
+                            "value": {
+                              "type": "True"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 133,
+                        "start_col": 8,
+                        "end_line": 139,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 132,
+                  "start_col": 6,
+                  "end_line": 140,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 104,
+            "start_col": 4,
+            "end_line": 141,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "DataTable",
+        "SectionHeader"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "filter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/images_section.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:filter",
+        "to_field": "filter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'filter' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateFilter",
+        "from_handler": "setFilter",
+        "payload": null,
+        "state_changes": [
+          "self.filter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "DataTable",
+      "SectionHeader"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

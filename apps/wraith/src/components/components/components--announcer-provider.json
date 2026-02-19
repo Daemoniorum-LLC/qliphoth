@@ -1,0 +1,549 @@
+{
+  "id": "ui/components/Announcer.tsx:AnnouncerProvider",
+  "name": "AnnouncerProvider",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/Announcer.tsx",
+    "code": "import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react'\n\ntype AriaLive = 'polite' | 'assertive' | 'off'\n\ninterface Announcement {\n  id: string\n  message: string\n  priority: AriaLive\n}\n\ninterface AnnouncerContextType {\n  announce: (message: string, priority?: AriaLive) => void\n  announcePolite: (message: string) => void\n  announceAssertive: (message: string) => void\n}\n\nconst AnnouncerContext = createContext<AnnouncerContextType | null>(null)\n\nexport function useAnnouncer() {\n  const context = useContext(AnnouncerContext)\n  if (!context) {\n    throw new Error('useAnnouncer must be used within an AnnouncerProvider')\n  }\n  return context\n}\n\ninterface AnnouncerProviderProps {\n  children: ReactNode\n}\n\nexport function AnnouncerProvider({ children }: AnnouncerProviderProps) {\n  const [politeMessage, setPoliteMessage] = useState('')\n  const [assertiveMessage, setAssertiveMessage] = useState('')\n\n  const announce = useCallback((message: string, priority: AriaLive = 'polite') => {\n    if (priority === 'assertive') {\n      setAssertiveMessage(message)\n    } else {\n      setPoliteMessage(message)\n    }\n  }, [])\n\n  const announcePolite = useCallback((message: string) => {\n    announce(message, 'polite')\n  }, [announce])\n\n  const announceAssertive = useCallback((message: string) => {\n    announce(message, 'assertive')\n  }, [announce])\n\n  // Clear messages after they're announced\n  useEffect(() => {\n    if (politeMessage) {\n      const timeout = setTimeout(() => setPoliteMessage(''), 1000)\n      return () => clearTimeout(timeout)\n    }\n  }, [politeMessage])\n\n  useEffect(() => {\n    if (assertiveMessage) {\n      const timeout = setTimeout(() => setAssertiveMessage(''), 1000)\n      return () => clearTimeout(timeout)\n    }\n  }, [assertiveMessage])\n\n  return (\n    <AnnouncerContext.Provider value={{ announce, announcePolite, announceAssertive }}>\n      {children}\n      {/* Screen reader only live regions */}\n      <div\n        role=\"status\"\n        aria-live=\"polite\"\n        aria-atomic=\"true\"\n        className=\"sr-only\"\n        style={{\n          position: 'absolute',\n          width: '1px',\n          height: '1px',\n          padding: 0,\n          margin: '-1px',\n          overflow: 'hidden',\n          clip: 'rect(0, 0, 0, 0)',\n          whiteSpace: 'nowrap',\n          border: 0,\n        }}\n      >\n        {politeMessage}\n      </div>\n      <div\n        role=\"alert\"\n        aria-live=\"assertive\"\n        aria-atomic=\"true\"\n        className=\"sr-only\"\n        style={{\n          position: 'absolute',\n          width: '1px',\n          height: '1px',\n          padding: 0,\n          margin: '-1px',\n          overflow: 'hidden',\n          clip: 'rect(0, 0, 0, 0)',\n          whiteSpace: 'nowrap',\n          border: 0,\n        }}\n      >\n        {assertiveMessage}\n      </div>\n    </AnnouncerContext.Provider>\n  )\n}\n\n// Higher-order component for components that need announcer\nexport function withAnnouncer<P extends object>(\n  WrappedComponent: React.ComponentType<P & { announcer: AnnouncerContextType }>\n) {\n  return function WithAnnouncer(props: P) {\n    const announcer = useAnnouncer()\n    return <WrappedComponent {...props} announcer={announcer} />\n  }\n}\n\n// Utility hook for common announcements\nexport function useStatusAnnouncer() {\n  const { announcePolite, announceAssertive } = useAnnouncer()\n\n  return {\n    announceLoading: (item: string) => announcePolite(`Loading ${item}...`),\n    announceLoaded: (item: string) => announcePolite(`${item} loaded`),\n    announceSaved: (item: string) => announcePolite(`${item} saved`),\n    announceError: (message: string) => announceAssertive(`Error: ${message}`),\n    announceSuccess: (message: string) => announcePolite(message),\n    announceAction: (action: string) => announcePolite(action),\n  }\n}\n",
+    "extraction": {
+      "name": "AnnouncerProvider",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 31,
+        "start_col": 7,
+        "end_line": 110,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "children",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": true
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 32,
+            "start_col": 44,
+            "end_line": 32,
+            "end_col": 56
+          },
+          "state_name": "politeMessage",
+          "setter_name": "setPoliteMessage",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 33,
+            "start_col": 50,
+            "end_line": 33,
+            "end_col": 62
+          },
+          "state_name": "assertiveMessage",
+          "setter_name": "setAssertiveMessage",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 35,
+            "start_col": 19,
+            "end_line": 41,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 43,
+            "start_col": 25,
+            "end_line": 45,
+            "end_col": 16
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "announce"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 47,
+            "start_col": 28,
+            "end_line": 49,
+            "end_col": 16
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "announce"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 52,
+            "start_col": 2,
+            "end_line": 57,
+            "end_col": 21
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "politeMessage"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 59,
+            "start_col": 2,
+            "end_line": 64,
+            "end_col": 24
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "assertiveMessage"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "AnnouncerContext.Provider",
+            "is_component": true,
+            "attributes": [
+              {
+                "name": "value",
+                "value": {
+                  "type": "Expression",
+                  "code": "{ announce, announcePolite, announceAssertive }"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "children"
+                },
+                "location": {
+                  "start_line": 68,
+                  "start_col": 6,
+                  "end_line": 68,
+                  "end_col": 16
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "role",
+                      "value": {
+                        "type": "String",
+                        "value": "status"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "aria-live",
+                      "value": {
+                        "type": "String",
+                        "value": "polite"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "aria-atomic",
+                      "value": {
+                        "type": "String",
+                        "value": "true"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "sr-only"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "style",
+                      "value": {
+                        "type": "Expression",
+                        "code": "{\n          position: 'absolute',\n          width: '1px',\n          height: '1px',\n          padding: 0,\n          margin: '-1px',\n          overflow: 'hidden',\n          clip: 'rect(0, 0, 0, 0)',\n          whiteSpace: 'nowrap',\n          border: 0,\n        }"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "politeMessage"
+                      },
+                      "location": {
+                        "start_line": 87,
+                        "start_col": 8,
+                        "end_line": 87,
+                        "end_col": 23
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 70,
+                  "start_col": 6,
+                  "end_line": 88,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "role",
+                      "value": {
+                        "type": "String",
+                        "value": "alert"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "aria-live",
+                      "value": {
+                        "type": "String",
+                        "value": "assertive"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "aria-atomic",
+                      "value": {
+                        "type": "String",
+                        "value": "true"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "sr-only"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "style",
+                      "value": {
+                        "type": "Expression",
+                        "code": "{\n          position: 'absolute',\n          width: '1px',\n          height: '1px',\n          padding: 0,\n          margin: '-1px',\n          overflow: 'hidden',\n          clip: 'rect(0, 0, 0, 0)',\n          whiteSpace: 'nowrap',\n          border: 0,\n        }"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "assertiveMessage"
+                      },
+                      "location": {
+                        "start_line": 106,
+                        "start_col": 8,
+                        "end_line": 106,
+                        "end_col": 26
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 89,
+                  "start_col": 6,
+                  "end_line": 107,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 67,
+            "start_col": 4,
+            "end_line": 108,
+            "end_col": 32
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "AnnouncerContext"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "politeMessage",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "assertiveMessage",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/announcer_provider.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:politeMessage",
+        "to_field": "politeMessage",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'politeMessage' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:assertiveMessage",
+        "to_field": "assertiveMessage",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'assertiveMessage' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdatePoliteMessage",
+        "from_handler": "setPoliteMessage",
+        "payload": null,
+        "state_changes": [
+          "self.politeMessage = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateAssertiveMessage",
+        "from_handler": "setAssertiveMessage",
+        "payload": null,
+        "state_changes": [
+          "self.assertiveMessage = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[politeMessage]",
+        "strategy": "inline",
+        "reasoning": "Deps [politeMessage] → inline in handlers that change these",
+        "inline_in": "politeMessage",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[assertiveMessage]",
+        "strategy": "inline",
+        "reasoning": "Deps [assertiveMessage] → inline in handlers that change these",
+        "inline_in": "assertiveMessage",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "children",
+          "field_type": "Any",
+          "from_prop": "children"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useCallback_remove",
+      "description": "useCallback is not needed in actors",
+      "react": "const handleClick = useCallback(() => { ... }, [dep]);",
+      "sigil": "// No equivalent needed - actors don't re-render like React"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_5",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [politeMessage] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_6",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [assertiveMessage] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "AnnouncerContext"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

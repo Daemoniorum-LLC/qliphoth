@@ -1,0 +1,355 @@
+{
+  "id": "domains/devops/components/overview/OverviewSection.tsx:RecentPipelineRun",
+  "name": "RecentPipelineRun",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/overview/OverviewSection.tsx",
+    "code": "import {\n  Box, Layers, GitBranch, Cloud, Boxes, Key,\n  Activity, CheckCircle2, XCircle, AlertTriangle, Clock\n} from 'lucide-react'\nimport { StatusBadge, ResourceCard, ProviderIcon } from '../shared'\nimport { mockContainers, mockPipelines, mockProviders, mockInfraStacks, mockAlerts } from '../../mock-data'\nimport type { DevOpsSection } from '../../types'\n\ninterface OverviewSectionProps {\n  onNavigate: (section: DevOpsSection) => void\n}\n\nfunction StatCard({\n  title,\n  value,\n  icon,\n  items,\n  onClick,\n}: {\n  title: string\n  value: number\n  icon: React.ReactNode\n  items?: { label: string; value: number; variant?: 'success' | 'warning' | 'error' }[]\n  onClick?: () => void\n}) {\n  return (\n    <div\n      onClick={onClick}\n      className={`\n        bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4\n        ${onClick ? 'cursor-pointer hover:border-[var(--accent-primary)] transition-colors' : ''}\n      `}\n    >\n      <div className=\"flex items-center gap-3 mb-3\">\n        <div className=\"p-2 bg-[var(--accent-primary)]/10 rounded-lg text-[var(--accent-primary)]\">\n          {icon}\n        </div>\n        <div>\n          <div className=\"text-2xl font-semibold text-[var(--text-primary)]\">{value}</div>\n          <div className=\"text-xs text-[var(--text-secondary)]\">{title}</div>\n        </div>\n      </div>\n      {items && items.length > 0 && (\n        <div className=\"flex items-center gap-3 pt-3 border-t border-[var(--border-subtle)]\">\n          {items.map((item, idx) => (\n            <div key={idx} className=\"flex items-center gap-1.5\">\n              <div\n                className={`w-2 h-2 rounded-full ${\n                  item.variant === 'success' ? 'bg-[var(--accent-success)]' :\n                  item.variant === 'warning' ? 'bg-[var(--accent-warning)]' :\n                  item.variant === 'error' ? 'bg-[var(--accent-error)]' :\n                  'bg-[var(--text-muted)]'\n                }`}\n              />\n              <span className=\"text-xs text-[var(--text-muted)]\">{item.value} {item.label}</span>\n            </div>\n          ))}\n        </div>\n      )}\n    </div>\n  )\n}\n\nfunction RecentPipelineRun({ pipeline }: { pipeline: typeof mockPipelines[0] }) {\n  const run = pipeline.lastRun\n  if (!run) return null\n\n  const StatusIcon = run.status === 'success' ? CheckCircle2 :\n                     run.status === 'failure' ? XCircle :\n                     run.status === 'running' ? Clock : AlertTriangle\n\n  const statusColor = run.status === 'success' ? 'text-[var(--accent-success)]' :\n                      run.status === 'failure' ? 'text-[var(--accent-error)]' :\n                      run.status === 'running' ? 'text-[var(--accent-primary)]' :\n                      'text-[var(--text-muted)]'\n\n  return (\n    <div className=\"flex items-center justify-between py-2 px-3 hover:bg-[var(--bg-hover)] rounded transition-colors\">\n      <div className=\"flex items-center gap-3\">\n        <ProviderIcon provider={pipeline.provider} size=\"sm\" />\n        <div>\n          <div className=\"text-sm text-[var(--text-primary)]\">{pipeline.name}</div>\n          <div className=\"text-xs text-[var(--text-muted)]\">{run.commitMessage.slice(0, 50)}</div>\n        </div>\n      </div>\n      <div className=\"flex items-center gap-2\">\n        <StatusIcon className={`h-4 w-4 ${statusColor}`} />\n        <span className=\"text-xs font-mono text-[var(--text-muted)]\">#{run.number}</span>\n      </div>\n    </div>\n  )\n}\n\nfunction ActiveAlert({ alert }: { alert: typeof mockAlerts[0] }) {\n  const severityColor = alert.severity === 'critical' ? 'border-l-[var(--accent-error)]' :\n                        alert.severity === 'warning' ? 'border-l-[var(--accent-warning)]' :\n                        'border-l-[var(--accent-primary)]'\n\n  return (\n    <div className={`py-2 px-3 border-l-2 ${severityColor} hover:bg-[var(--bg-hover)] rounded-r transition-colors`}>\n      <div className=\"flex items-center justify-between\">\n        <span className=\"text-sm text-[var(--text-primary)]\">{alert.name}</span>\n        <StatusBadge status={alert.status} size=\"sm\" />\n      </div>\n      <p className=\"text-xs text-[var(--text-muted)] mt-0.5\">{alert.message}</p>\n    </div>\n  )\n}\n\nexport function OverviewSection({ onNavigate }: OverviewSectionProps) {\n  const runningContainers = mockContainers.filter((c) => c.state === 'running').length\n  const stoppedContainers = mockContainers.filter((c) => c.state !== 'running').length\n\n  const successPipelines = mockPipelines.filter((p) => p.lastRun?.status === 'success').length\n  const failedPipelines = mockPipelines.filter((p) => p.lastRun?.status === 'failure').length\n  const runningPipelines = mockPipelines.filter((p) => p.lastRun?.status === 'running').length\n\n  const connectedProviders = mockProviders.filter((p) => p.status === 'connected').length\n  const errorProviders = mockProviders.filter((p) => p.status === 'error').length\n\n  const firingAlerts = mockAlerts.filter((a) => a.status === 'firing').length\n\n  return (\n    <div className=\"h-full overflow-auto pr-1\">\n      <div className=\"mb-6\">\n        <h2 className=\"text-lg font-semibold text-[var(--text-primary)] mb-1\">DevOps Overview</h2>\n        <p className=\"text-sm text-[var(--text-secondary)]\">\n          Monitor your infrastructure, pipelines, and deployments\n        </p>\n      </div>\n\n      {/* Quick Stats */}\n      <div className=\"grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6\">\n        <StatCard\n          title=\"Containers\"\n          value={mockContainers.length}\n          icon={<Box className=\"h-5 w-5\" />}\n          items={[\n            { label: 'running', value: runningContainers, variant: 'success' },\n            { label: 'stopped', value: stoppedContainers },\n          ]}\n          onClick={() => onNavigate('containers')}\n        />\n        <StatCard\n          title=\"Pipelines\"\n          value={mockPipelines.length}\n          icon={<GitBranch className=\"h-5 w-5\" />}\n          items={[\n            { label: 'success', value: successPipelines, variant: 'success' },\n            { label: 'failed', value: failedPipelines, variant: 'error' },\n            { label: 'running', value: runningPipelines, variant: 'warning' },\n          ]}\n          onClick={() => onNavigate('pipelines')}\n        />\n        <StatCard\n          title=\"Cloud Providers\"\n          value={mockProviders.length}\n          icon={<Cloud className=\"h-5 w-5\" />}\n          items={[\n            { label: 'connected', value: connectedProviders, variant: 'success' },\n            { label: 'error', value: errorProviders, variant: 'error' },\n          ]}\n          onClick={() => onNavigate('providers')}\n        />\n        <StatCard\n          title=\"Infra Stacks\"\n          value={mockInfraStacks.length}\n          icon={<Boxes className=\"h-5 w-5\" />}\n          items={[\n            { label: 'active', value: mockInfraStacks.filter((s) => s.status === 'active').length, variant: 'success' },\n          ]}\n          onClick={() => onNavigate('infrastructure')}\n        />\n      </div>\n\n      {/* Two Column Layout */}\n      <div className=\"grid grid-cols-1 lg:grid-cols-2 gap-6\">\n        {/* Recent Pipeline Runs */}\n        <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden\">\n          <div className=\"flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]\">\n            <h3 className=\"text-sm font-medium text-[var(--text-primary)]\">Recent Pipeline Runs</h3>\n            <button\n              onClick={() => onNavigate('pipelines')}\n              className=\"text-xs text-[var(--accent-primary)] hover:underline\"\n            >\n              View all\n            </button>\n          </div>\n          <div className=\"p-2\">\n            {mockPipelines.slice(0, 4).map((pipeline) => (\n              <RecentPipelineRun key={pipeline.id} pipeline={pipeline} />\n            ))}\n          </div>\n        </div>\n\n        {/* Active Alerts */}\n        <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden\">\n          <div className=\"flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]\">\n            <div className=\"flex items-center gap-2\">\n              <h3 className=\"text-sm font-medium text-[var(--text-primary)]\">Active Alerts</h3>\n              {firingAlerts > 0 && (\n                <span className=\"px-1.5 py-0.5 text-xs bg-[var(--accent-error)]/20 text-[var(--accent-error)] rounded\">\n                  {firingAlerts} firing\n                </span>\n              )}\n            </div>\n            <button\n              onClick={() => onNavigate('monitoring')}\n              className=\"text-xs text-[var(--accent-primary)] hover:underline\"\n            >\n              View all\n            </button>\n          </div>\n          <div className=\"p-2 space-y-1\">\n            {mockAlerts.slice(0, 4).map((alert) => (\n              <ActiveAlert key={alert.id} alert={alert} />\n            ))}\n          </div>\n        </div>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "RecentPipelineRun",
+      "component_type": "functional",
+      "exported": false,
+      "export_type": null,
+      "location": {
+        "start_line": 64,
+        "start_col": 0,
+        "end_line": 92,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "pipeline",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex items-center justify-between py-2 px-3 hover:bg-[var(--bg-hover)] rounded transition-colors"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center gap-3"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "ProviderIcon",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "provider",
+                            "value": {
+                              "type": "Expression",
+                              "code": "pipeline.provider"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "size",
+                            "value": {
+                              "type": "String",
+                              "value": "sm"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 80,
+                        "start_col": 8,
+                        "end_line": 80,
+                        "end_col": 63
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-sm text-[var(--text-primary)]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "pipeline.name"
+                                  },
+                                  "location": {
+                                    "start_line": 82,
+                                    "start_col": 62,
+                                    "end_line": 82,
+                                    "end_col": 77
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 82,
+                              "start_col": 10,
+                              "end_line": 82,
+                              "end_col": 83
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-xs text-[var(--text-muted)]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "run.commitMessage.slice(0, 50)"
+                                  },
+                                  "location": {
+                                    "start_line": 83,
+                                    "start_col": 60,
+                                    "end_line": 83,
+                                    "end_col": 92
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 83,
+                              "start_col": 10,
+                              "end_line": 83,
+                              "end_col": 98
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 81,
+                        "start_col": 8,
+                        "end_line": 84,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 79,
+                  "start_col": 6,
+                  "end_line": 85,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center gap-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "StatusIcon",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "Expression",
+                              "code": "`h-4 w-4 ${statusColor}`"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 87,
+                        "start_col": 8,
+                        "end_line": 87,
+                        "end_col": 59
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "span",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-xs font-mono text-[var(--text-muted)]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "#"
+                            },
+                            "location": {
+                              "start_line": 88,
+                              "start_col": 69,
+                              "end_line": 88,
+                              "end_col": 70
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "run.number"
+                            },
+                            "location": {
+                              "start_line": 88,
+                              "start_col": 70,
+                              "end_line": 88,
+                              "end_col": 82
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 88,
+                        "start_col": 8,
+                        "end_line": 88,
+                        "end_col": 89
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 86,
+                  "start_col": 6,
+                  "end_line": 89,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 78,
+            "start_col": 4,
+            "end_line": 90,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "ProviderIcon",
+        "StatusIcon"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/recent_pipeline_run.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "pipeline",
+          "field_type": "Any",
+          "from_prop": "pipeline"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "ProviderIcon",
+      "StatusIcon"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

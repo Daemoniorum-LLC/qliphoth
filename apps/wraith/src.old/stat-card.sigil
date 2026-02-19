@@ -1,0 +1,47 @@
+invoke sigil_web·prelude·*;
+rite stat_card(title: Any, value: Any, icon: Any, items: Any, on_click: Any) -> VNode! {
+    VNode·div()
+        ·on_click(Click)
+        ·class("
+        bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4
+        
+      ")
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-3 mb-3")
+            ·child(
+            VNode·div()
+                ·class("p-2 bg-[var(--accent-primary)]/10 rounded-lg text-[var(--accent-primary)]")
+                ·text_child(icon·to_string())
+            )
+            ·child(
+            VNode·div()
+                ·child(
+                VNode·div()
+                    ·class("text-2xl font-semibold text-[var(--text-primary)]")
+                    ·text_child(value·to_string())
+                )
+                ·child(
+                VNode·div()
+                    ·class("text-xs text-[var(--text-secondary)]")
+                    ·text_child(title·to_string())
+                )
+            )
+        )
+        ·when(items ∧ items.len() > 0, VNode·div()
+            ·class("flex items-center gap-3 pt-3 border-t border-[var(--border-subtle)]")
+            // Map: ∀ item ∈ items
+            ·children(items.iter().map(|item| VNode·div()
+                    ·attr("key", idx)
+                    ·class("flex items-center gap-1.5")
+                    ·child(
+                    VNode·div()
+                        ·class("w-2 h-2 rounded-full ")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-xs text-[var(--text-muted)]")
+                        ·text_child(item.value·to_string())
+                        ·text_child(item.label·to_string())
+                    )).collect()))
+}

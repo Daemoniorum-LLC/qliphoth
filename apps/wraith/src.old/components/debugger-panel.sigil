@@ -1,0 +1,279 @@
+invoke qliphoth·prelude·*;
+ᛈ DebuggerPanelMsg {
+    UpdateDebugState,
+    UpdateBreakpoints,
+    UpdateVariables,
+    UpdateCallStack,
+    UpdateWatchExpressions,
+    UpdateNewWatchExpression,
+    UpdateActiveStackFrame,
+    Start,
+    Pause,
+    Stop,
+    StepOver,
+    StepInto,
+    StepOut,
+    Restart,
+}
+actor DebuggerPanel {
+    state debugState: String! = "stopped",
+    state breakpoints: Vec<Any>! = [],
+    state variables: Vec<Any>! = [],
+    state callStack: Vec<Any>! = [],
+    state watchExpressions: Vec<Any>! = [],
+    state newWatchExpression: String! = "",
+    state activeStackFrame: String! = "1",
+
+    on UpdateDebugState {
+        self.debugState = msg.0;
+    }
+
+    on UpdateBreakpoints {
+        self.breakpoints = msg.0;
+    }
+
+    on UpdateVariables {
+        self.variables = msg.0;
+    }
+
+    on UpdateCallStack {
+        self.callStack = msg.0;
+    }
+
+    on UpdateWatchExpressions {
+        self.watchExpressions = msg.0;
+    }
+
+    on UpdateNewWatchExpression {
+        self.newWatchExpression = msg.0;
+    }
+
+    on UpdateActiveStackFrame {
+        self.activeStackFrame = msg.0;
+    }
+
+    on Start {
+        self.debugState = "running";
+    }
+
+    on Pause {
+        self.debugState = "paused";
+    }
+
+    on Stop {
+        self.debugState = "stopped";
+    }
+
+    on StepOver {
+        // TODO: implement
+    }
+
+    on StepInto {
+        // TODO: implement
+    }
+
+    on StepOut {
+        // TODO: implement
+    }
+
+    on Restart {
+        self.debugState = "running";
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold text-white")
+                ·text_child("Debugger")
+            )
+            ·child(
+            VNode·div()
+                ·class("flex items-center gap-2 px-3 py-2 bg-[#252526] border-b border-[#3c3c3c] text-[11px] ")
+                ·child(
+                Circle·view()
+                    ·class("w-2 h-2 fill-current")
+                )
+                ·child(
+                VNode·span()
+                    ·text_child(get_status_text()·to_string())
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex gap-1 px-3 py-2 border-b border-[#3c3c3c] bg-[#252526]")
+                ·when(debug_state == "stopped", Button·view()
+                    ·attr("size", "sm")
+                    ·on_click(Click)
+                    ·attr("title", "Start Debugging (F5)")
+                    ·child(
+                    Play·view()
+                        ·class("w-4 h-4")
+                    ))
+                ·when(debug_state == "running", Button·view()
+                    ·attr("size", "sm")
+                    ·attr("variant", "ghost")
+                    ·on_click(Click)
+                    ·attr("title", "Pause")
+                    ·child(
+                    Pause·view()
+                        ·class("w-4 h-4")
+                    ))
+                ·when(debug_state ≠ "stopped", VNode·fragment()
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·attr("title", "Stop (Shift+F5)")
+                        ·child(
+                        Square·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·attr("title", "Restart (Ctrl+Shift+F5)")
+                        ·child(
+                        RotateCcw·view()
+                            ·class("w-4 h-4")
+                        )
+                    ))
+                ·when(debug_state == "paused", VNode·fragment()
+                    ·child(
+                    VNode·div()
+                        ·class("w-px h-6 bg-[#3c3c3c] mx-1")
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·attr("title", "Step Over (F10)")
+                        ·child(
+                        ArrowRightToLine·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·attr("title", "Step Into (F11)")
+                        ·child(
+                        ArrowDownToLine·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·attr("title", "Step Out (Shift+F11)")
+                        ·child(
+                        ArrowUpFromLine·view()
+                            ·class("w-4 h-4")
+                        )
+                    ))
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto")
+                ·child(
+                Accordion·view()
+                    ·attr("type", "multiple")
+                    ·attr("defaultValue", ["variables", "breakpoints", "callstack", "watch"])
+                    ·class("w-full")
+                    ·child(
+                    AccordionItem·view()
+                        ·attr("value", "variables")
+                        ·child(
+                        AccordionTrigger·view()
+                            ·class("px-3 py-2 text-[11px] font-semibold uppercase")
+                            ·text_child("Variables")
+                        )
+                        ·child(
+                        AccordionContent·view()
+                            ·text_child(None·to_string())
+                        )
+                    )
+                    ·child(
+                    AccordionItem·view()
+                        ·attr("value", "callstack")
+                        ·child(
+                        AccordionTrigger·view()
+                            ·class("px-3 py-2 text-[11px] font-semibold uppercase")
+                            ·text_child("Call Stack")
+                        )
+                        ·child(
+                        AccordionContent·view()
+                            ·text_child(None·to_string())
+                        )
+                    )
+                    ·child(
+                    AccordionItem·view()
+                        ·attr("value", "breakpoints")
+                        ·child(
+                        AccordionTrigger·view()
+                            ·class("px-3 py-2 text-[11px] font-semibold uppercase")
+                            ·text_child("Breakpoints (")
+                            ·text_child(self.breakpoints.len()·to_string())
+                            ·text_child(")")
+                        )
+                        ·child(
+                        AccordionContent·view()
+                            ·text_child(None·to_string())
+                        )
+                    )
+                    ·child(
+                    AccordionItem·view()
+                        ·attr("value", "watch")
+                        ·child(
+                        AccordionTrigger·view()
+                            ·class("px-3 py-2 text-[11px] font-semibold uppercase")
+                            ·text_child("Watch (")
+                            ·text_child(watch_expressions.len()·to_string())
+                            ·text_child(")")
+                        )
+                        ·child(
+                        AccordionContent·view()
+                            ·child(
+                            VNode·div()
+                                ·class("px-3 py-2 border-b border-[#3c3c3c]")
+                                ·child(
+                                VNode·div()
+                                    ·class("flex gap-1")
+                                    ·child(
+                                    Input·view()
+                                        ·attr("size", "sm")
+                                        ·attr("placeholder", "Add expression to watch")
+                                        ·attr("value", self.new_watch_expression)
+                                        ·on_change(Change)
+                                        ·on_keydown(KeyDown)
+                                        ·class("flex-1")
+                                    )
+                                    ·child(
+                                    Button·view()
+                                        ·attr("size", "sm")
+                                        ·attr("variant", "ghost")
+                                        ·on_click(Click)
+                                        ·child(
+                                        Plus·view()
+                                            ·class("w-3 h-3")
+                                        )
+                                    )
+                                )
+                            )
+                            ·text_child(None·to_string())
+                        )
+                    )
+                )
+            )
+    }
+}

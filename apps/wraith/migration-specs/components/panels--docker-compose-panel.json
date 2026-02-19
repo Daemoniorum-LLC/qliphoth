@@ -1,0 +1,1987 @@
+{
+  "id": "ui/components/panels/DockerComposePanel.tsx:DockerComposePanel",
+  "name": "DockerComposePanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/DockerComposePanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Checkbox, Input, Label, Spinner, Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@persona-framework/ui'\nimport {\n  Play,\n  FileText,\n  Settings,\n  Plus,\n  Trash2,\n} from 'lucide-react'\n\ninterface ServiceConfig {\n  name: string\n  enabled: boolean\n  image?: string\n  build?: string\n  ports: string[]\n  volumes: string[]\n  environment: { key: string; value: string }[]\n  dependsOn: string[]\n}\n\nexport function DockerComposePanel() {\n  const [services, setServices] = useState<ServiceConfig[]>([])\n  const [loading, setLoading] = useState(true)\n  const [generatedCompose, setGeneratedCompose] = useState<string>('')\n  const [showPreview, setShowPreview] = useState(false)\n\n  useEffect(() => {\n    fetchServices()\n  }, [])\n\n  const fetchServices = async () => {\n    setLoading(true)\n    try {\n      const response = await fetch('/api/docker/detect-services')\n      if (response.ok) {\n        const data = await response.json()\n        setServices(data.services || [])\n      } else {\n        setServices([\n          {\n            name: 'persona-framework',\n            enabled: true,\n            build: '.',\n            ports: ['8080:8080'],\n            volumes: ['./:/workspace'],\n            environment: [{ key: 'SPRING_PROFILES_ACTIVE', value: 'dev' }],\n            dependsOn: ['postgres'],\n          },\n          {\n            name: 'postgres',\n            enabled: true,\n            image: 'postgres:15-alpine',\n            ports: ['5432:5432'],\n            volumes: ['postgres-data:/var/lib/postgresql/data'],\n            environment: [\n              { key: 'POSTGRES_DB', value: 'hydra' },\n              { key: 'POSTGRES_USER', value: 'hydra' },\n              { key: 'POSTGRES_PASSWORD', value: 'hydra' },\n            ],\n            dependsOn: [],\n          },\n        ])\n      }\n    } catch (error) {\n      console.error('Failed to fetch services:', error)\n      setServices([])\n    } finally {\n      setLoading(false)\n    }\n  }\n\n  const toggleService = (index: number) => {\n    setServices(prev => prev.map((s, i) => i === index ? { ...s, enabled: !s.enabled } : s))\n  }\n\n  const updateService = (index: number, field: keyof ServiceConfig, value: any) => {\n    setServices(prev => prev.map((s, i) => i === index ? { ...s, [field]: value } : s))\n  }\n\n  const addPort = (index: number) => {\n    setServices(prev => prev.map((s, i) =>\n      i === index ? { ...s, ports: [...s.ports, ''] } : s\n    ))\n  }\n\n  const updatePort = (serviceIndex: number, portIndex: number, value: string) => {\n    setServices(prev => prev.map((s, i) =>\n      i === serviceIndex ? {\n        ...s,\n        ports: s.ports.map((p, pi) => pi === portIndex ? value : p)\n      } : s\n    ))\n  }\n\n  const removePort = (serviceIndex: number, portIndex: number) => {\n    setServices(prev => prev.map((s, i) =>\n      i === serviceIndex ? {\n        ...s,\n        ports: s.ports.filter((_, pi) => pi !== portIndex)\n      } : s\n    ))\n  }\n\n  const addVolume = (index: number) => {\n    setServices(prev => prev.map((s, i) =>\n      i === index ? { ...s, volumes: [...s.volumes, ''] } : s\n    ))\n  }\n\n  const updateVolume = (serviceIndex: number, volumeIndex: number, value: string) => {\n    setServices(prev => prev.map((s, i) =>\n      i === serviceIndex ? {\n        ...s,\n        volumes: s.volumes.map((v, vi) => vi === volumeIndex ? value : v)\n      } : s\n    ))\n  }\n\n  const removeVolume = (serviceIndex: number, volumeIndex: number) => {\n    setServices(prev => prev.map((s, i) =>\n      i === serviceIndex ? {\n        ...s,\n        volumes: s.volumes.filter((_, vi) => vi !== volumeIndex)\n      } : s\n    ))\n  }\n\n  const addEnvVar = (index: number) => {\n    setServices(prev => prev.map((s, i) =>\n      i === index ? { ...s, environment: [...s.environment, { key: '', value: '' }] } : s\n    ))\n  }\n\n  const updateEnvVar = (serviceIndex: number, envIndex: number, field: 'key' | 'value', value: string) => {\n    setServices(prev => prev.map((s, i) =>\n      i === serviceIndex ? {\n        ...s,\n        environment: s.environment.map((e, ei) =>\n          ei === envIndex ? { ...e, [field]: value } : e\n        )\n      } : s\n    ))\n  }\n\n  const removeEnvVar = (serviceIndex: number, envIndex: number) => {\n    setServices(prev => prev.map((s, i) =>\n      i === serviceIndex ? {\n        ...s,\n        environment: s.environment.filter((_, ei) => ei !== envIndex)\n      } : s\n    ))\n  }\n\n  const generateCompose = () => {\n    const enabledServices = services.filter(s => s.enabled)\n\n    if (enabledServices.length === 0) {\n      setGeneratedCompose('# No services selected\\n')\n      setShowPreview(true)\n      return\n    }\n\n    let yaml = 'version: \"3.8\"\\n\\nservices:\\n'\n\n    enabledServices.forEach(service => {\n      yaml += `  ${service.name}:\\n`\n\n      if (service.image) {\n        yaml += `    image: ${service.image}\\n`\n      }\n\n      if (service.build) {\n        yaml += `    build: ${service.build}\\n`\n      }\n\n      if (service.ports.length > 0) {\n        yaml += `    ports:\\n`\n        service.ports.forEach(port => {\n          if (port.trim()) yaml += `      - \"${port}\"\\n`\n        })\n      }\n\n      if (service.volumes.length > 0) {\n        yaml += `    volumes:\\n`\n        service.volumes.forEach(volume => {\n          if (volume.trim()) yaml += `      - ${volume}\\n`\n        })\n      }\n\n      if (service.environment.length > 0) {\n        yaml += `    environment:\\n`\n        service.environment.forEach(env => {\n          if (env.key.trim()) yaml += `      ${env.key}: ${env.value}\\n`\n        })\n      }\n\n      if (service.dependsOn.length > 0) {\n        yaml += `    depends_on:\\n`\n        service.dependsOn.forEach(dep => {\n          yaml += `      - ${dep}\\n`\n        })\n      }\n\n      yaml += '\\n'\n    })\n\n    yaml += 'volumes:\\n'\n    yaml += '  postgres-data:\\n'\n\n    setGeneratedCompose(yaml)\n    setShowPreview(true)\n  }\n\n  const saveCompose = async () => {\n    try {\n      const response = await fetch('/api/docker/save-compose', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ content: generatedCompose }),\n      })\n\n      if (response.ok) {\n        alert('docker-compose.yml saved successfully!')\n      } else {\n        alert('Failed to save docker-compose.yml')\n      }\n    } catch (error) {\n      console.error('Save error:', error)\n      alert('Failed to save docker-compose.yml')\n    }\n  }\n\n  if (loading) {\n    return (\n      <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-auto\">\n        <div className=\"px-4 py-3 border-b border-[#3c3c3c] text-sm font-semibold\">\n          Docker Compose Generator\n        </div>\n        <div className=\"flex flex-col items-center gap-3 px-5 py-10\">\n          <Spinner size=\"md\" />\n          <span>Detecting services...</span>\n        </div>\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-auto\">\n      <div className=\"px-4 py-3 border-b border-[#3c3c3c] text-sm font-semibold\">\n        Docker Compose Generator\n      </div>\n\n      <div className=\"flex flex-col gap-4 p-4\">\n        {services.map((service, serviceIndex) => (\n          <Accordion key={serviceIndex} type=\"single\" collapsible className=\"w-full\">\n            <AccordionItem value={serviceIndex.toString()}>\n              <AccordionTrigger>\n                <div className=\"flex items-center gap-3\">\n                  <Checkbox\n                    checked={service.enabled}\n                    onCheckedChange={() => toggleService(serviceIndex)}\n                    onClick={(e) => e.stopPropagation()}\n                  />\n                  <span className=\"text-sm font-semibold text-[#4fc3f7]\">{service.name}</span>\n                </div>\n              </AccordionTrigger>\n              <AccordionContent>\n                <div className=\"flex flex-col gap-2 ml-8\">\n                  <div className=\"flex gap-2 items-center\">\n                    <Label className=\"min-w-[80px] text-xs text-[#858585]\">\n                      {service.image ? 'Image' : 'Build'}\n                    </Label>\n                    <Input\n                      className=\"flex-1 text-[11px]\"\n                      value={service.image || service.build || ''}\n                      onChange={(e) =>\n                        updateService(serviceIndex, service.image ? 'image' : 'build', e.target.value)\n                      }\n                      size=\"sm\"\n                    />\n                  </div>\n\n                  <div>\n                    <Label className=\"min-w-[80px] text-xs text-[#858585]\">Ports</Label>\n                    {service.ports.map((port, portIndex) => (\n                      <div key={portIndex} className=\"flex gap-1 items-center mt-1\">\n                        <Input\n                          className=\"flex-1 text-[11px]\"\n                          value={port}\n                          onChange={(e) => updatePort(serviceIndex, portIndex, e.target.value)}\n                          placeholder=\"8080:8080\"\n                          size=\"sm\"\n                        />\n                        <Button\n                          size=\"sm\"\n                          variant=\"ghost\"\n                          onClick={() => removePort(serviceIndex, portIndex)}\n                        >\n                          <Trash2 className=\"w-3 h-3\" />\n                        </Button>\n                      </div>\n                    ))}\n                    <Button\n                      size=\"sm\"\n                      variant=\"ghost\"\n                      onClick={() => addPort(serviceIndex)}\n                      className=\"mt-1\"\n                    >\n                      <Plus className=\"w-3 h-3 mr-1\" />\n                      Add Port\n                    </Button>\n                  </div>\n\n                  <div>\n                    <Label className=\"min-w-[80px] text-xs text-[#858585]\">Volumes</Label>\n                    {service.volumes.map((volume, volumeIndex) => (\n                      <div key={volumeIndex} className=\"flex gap-1 items-center mt-1\">\n                        <Input\n                          className=\"flex-1 text-[11px]\"\n                          value={volume}\n                          onChange={(e) => updateVolume(serviceIndex, volumeIndex, e.target.value)}\n                          placeholder=\"./:/workspace\"\n                          size=\"sm\"\n                        />\n                        <Button\n                          size=\"sm\"\n                          variant=\"ghost\"\n                          onClick={() => removeVolume(serviceIndex, volumeIndex)}\n                        >\n                          <Trash2 className=\"w-3 h-3\" />\n                        </Button>\n                      </div>\n                    ))}\n                    <Button\n                      size=\"sm\"\n                      variant=\"ghost\"\n                      onClick={() => addVolume(serviceIndex)}\n                      className=\"mt-1\"\n                    >\n                      <Plus className=\"w-3 h-3 mr-1\" />\n                      Add Volume\n                    </Button>\n                  </div>\n\n                  <div>\n                    <Label className=\"min-w-[80px] text-xs text-[#858585]\">Environment</Label>\n                    {service.environment.map((env, envIndex) => (\n                      <div key={envIndex} className=\"flex gap-1 items-center mt-1\">\n                        <Input\n                          className=\"flex-1 text-[11px]\"\n                          value={env.key}\n                          onChange={(e) => updateEnvVar(serviceIndex, envIndex, 'key', e.target.value)}\n                          placeholder=\"KEY\"\n                          size=\"sm\"\n                        />\n                        <Input\n                          className=\"flex-1 text-[11px]\"\n                          value={env.value}\n                          onChange={(e) => updateEnvVar(serviceIndex, envIndex, 'value', e.target.value)}\n                          placeholder=\"value\"\n                          size=\"sm\"\n                        />\n                        <Button\n                          size=\"sm\"\n                          variant=\"ghost\"\n                          onClick={() => removeEnvVar(serviceIndex, envIndex)}\n                        >\n                          <Trash2 className=\"w-3 h-3\" />\n                        </Button>\n                      </div>\n                    ))}\n                    <Button\n                      size=\"sm\"\n                      variant=\"ghost\"\n                      onClick={() => addEnvVar(serviceIndex)}\n                      className=\"mt-1\"\n                    >\n                      <Plus className=\"w-3 h-3 mr-1\" />\n                      Add Variable\n                    </Button>\n                  </div>\n                </div>\n              </AccordionContent>\n            </AccordionItem>\n          </Accordion>\n        ))}\n\n        <div className=\"flex flex-col gap-3 border-t border-[#3c3c3c] pt-4\">\n          <Button\n            onClick={generateCompose}\n            disabled={services.filter(s => s.enabled).length === 0}\n          >\n            <Play className=\"w-4 h-4 mr-2\" />\n            Generate docker-compose.yml\n          </Button>\n\n          {showPreview && (\n            <>\n              <Label>Preview:</Label>\n              <div className=\"bg-[#1e1e1e] border border-[#3c3c3c] rounded-md p-3 font-mono text-[11px] max-h-[300px] overflow-auto whitespace-pre-wrap break-words\">\n                {generatedCompose}\n              </div>\n              <Button\n                variant=\"outline\"\n                onClick={saveCompose}\n              >\n                <FileText className=\"w-4 h-4 mr-2\" />\n                Save to Workspace\n              </Button>\n            </>\n          )}\n        </div>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "DockerComposePanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 22,
+        "start_col": 7,
+        "end_line": 417,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 23,
+            "start_col": 34,
+            "end_line": 23,
+            "end_col": 63
+          },
+          "state_name": "services",
+          "setter_name": "setServices",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 24,
+            "start_col": 32,
+            "end_line": 24,
+            "end_col": 46
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "true",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 25,
+            "start_col": 50,
+            "end_line": 25,
+            "end_col": 70
+          },
+          "state_name": "generatedCompose",
+          "setter_name": "setGeneratedCompose",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 26,
+            "start_col": 40,
+            "end_line": 26,
+            "end_col": 55
+          },
+          "state_name": "showPreview",
+          "setter_name": "setShowPreview",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 28,
+            "start_col": 2,
+            "end_line": 30,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-auto"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "px-4 py-3 border-b border-[#3c3c3c] text-sm font-semibold"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "Docker Compose Generator"
+                      },
+                      "location": {
+                        "start_line": 250,
+                        "start_col": 81,
+                        "end_line": 252,
+                        "end_col": 6
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 250,
+                  "start_col": 6,
+                  "end_line": 252,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex flex-col gap-4 p-4"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Map",
+                        "iterable": "services",
+                        "item_name": "service",
+                        "key_expr": "serviceIndex",
+                        "body": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Accordion",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "key",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "serviceIndex"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "type",
+                                "value": {
+                                  "type": "String",
+                                  "value": "single"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "collapsible",
+                                "value": {
+                                  "type": "True"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "w-full"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "AccordionItem",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "value",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "serviceIndex.toString()"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "AccordionTrigger",
+                                        "is_component": true,
+                                        "attributes": [],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "div",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "flex items-center gap-3"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "Checkbox",
+                                                    "is_component": true,
+                                                    "attributes": [
+                                                      {
+                                                        "name": "checked",
+                                                        "value": {
+                                                          "type": "Expression",
+                                                          "code": "service.enabled"
+                                                        },
+                                                        "is_event_handler": false
+                                                      },
+                                                      {
+                                                        "name": "onCheckedChange",
+                                                        "value": {
+                                                          "type": "Expression",
+                                                          "code": "() => toggleService(serviceIndex)"
+                                                        },
+                                                        "is_event_handler": true
+                                                      },
+                                                      {
+                                                        "name": "onClick",
+                                                        "value": {
+                                                          "type": "Expression",
+                                                          "code": "(e) => e.stopPropagation()"
+                                                        },
+                                                        "is_event_handler": true
+                                                      }
+                                                    ],
+                                                    "children": []
+                                                  },
+                                                  "location": {
+                                                    "start_line": 260,
+                                                    "start_col": 18,
+                                                    "end_line": 264,
+                                                    "end_col": 20
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "span",
+                                                    "is_component": false,
+                                                    "attributes": [
+                                                      {
+                                                        "name": "className",
+                                                        "value": {
+                                                          "type": "String",
+                                                          "value": "text-sm font-semibold text-[#4fc3f7]"
+                                                        },
+                                                        "is_event_handler": false
+                                                      }
+                                                    ],
+                                                    "children": [
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Expression",
+                                                          "code": "service.name"
+                                                        },
+                                                        "location": {
+                                                          "start_line": 265,
+                                                          "start_col": 73,
+                                                          "end_line": 265,
+                                                          "end_col": 87
+                                                        }
+                                                      }
+                                                    ]
+                                                  },
+                                                  "location": {
+                                                    "start_line": 265,
+                                                    "start_col": 18,
+                                                    "end_line": 265,
+                                                    "end_col": 94
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 259,
+                                              "start_col": 16,
+                                              "end_line": 266,
+                                              "end_col": 22
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 258,
+                                        "start_col": 14,
+                                        "end_line": 267,
+                                        "end_col": 33
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "AccordionContent",
+                                        "is_component": true,
+                                        "attributes": [],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "div",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "flex flex-col gap-2 ml-8"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "div",
+                                                    "is_component": false,
+                                                    "attributes": [
+                                                      {
+                                                        "name": "className",
+                                                        "value": {
+                                                          "type": "String",
+                                                          "value": "flex gap-2 items-center"
+                                                        },
+                                                        "is_event_handler": false
+                                                      }
+                                                    ],
+                                                    "children": [
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "Label",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "min-w-[80px] text-xs text-[#858585]"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": [
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Expression",
+                                                                "code": "service.image ? 'Image' : 'Build'"
+                                                              },
+                                                              "location": {
+                                                                "start_line": 272,
+                                                                "start_col": 22,
+                                                                "end_line": 272,
+                                                                "end_col": 57
+                                                              }
+                                                            }
+                                                          ]
+                                                        },
+                                                        "location": {
+                                                          "start_line": 271,
+                                                          "start_col": 20,
+                                                          "end_line": 273,
+                                                          "end_col": 28
+                                                        }
+                                                      },
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "Input",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "flex-1 text-[11px]"
+                                                              },
+                                                              "is_event_handler": false
+                                                            },
+                                                            {
+                                                              "name": "value",
+                                                              "value": {
+                                                                "type": "Expression",
+                                                                "code": "service.image || service.build || ''"
+                                                              },
+                                                              "is_event_handler": false
+                                                            },
+                                                            {
+                                                              "name": "onChange",
+                                                              "value": {
+                                                                "type": "Expression",
+                                                                "code": "(e) =>\n                        updateService(serviceIndex, service.image ? 'image' : 'build', e.target.value)"
+                                                              },
+                                                              "is_event_handler": true
+                                                            },
+                                                            {
+                                                              "name": "size",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "sm"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": []
+                                                        },
+                                                        "location": {
+                                                          "start_line": 274,
+                                                          "start_col": 20,
+                                                          "end_line": 281,
+                                                          "end_col": 22
+                                                        }
+                                                      }
+                                                    ]
+                                                  },
+                                                  "location": {
+                                                    "start_line": 270,
+                                                    "start_col": 18,
+                                                    "end_line": 282,
+                                                    "end_col": 24
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "div",
+                                                    "is_component": false,
+                                                    "attributes": [],
+                                                    "children": [
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "Label",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "min-w-[80px] text-xs text-[#858585]"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": [
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Text",
+                                                                "value": "Ports"
+                                                              },
+                                                              "location": {
+                                                                "start_line": 285,
+                                                                "start_col": 75,
+                                                                "end_line": 285,
+                                                                "end_col": 80
+                                                              }
+                                                            }
+                                                          ]
+                                                        },
+                                                        "location": {
+                                                          "start_line": 285,
+                                                          "start_col": 20,
+                                                          "end_line": 285,
+                                                          "end_col": 88
+                                                        }
+                                                      },
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Map",
+                                                          "iterable": "service.ports",
+                                                          "item_name": "port",
+                                                          "key_expr": "portIndex",
+                                                          "body": {
+                                                            "node_type": {
+                                                              "type": "Element",
+                                                              "tag": "div",
+                                                              "is_component": false,
+                                                              "attributes": [
+                                                                {
+                                                                  "name": "key",
+                                                                  "value": {
+                                                                    "type": "Expression",
+                                                                    "code": "portIndex"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                },
+                                                                {
+                                                                  "name": "className",
+                                                                  "value": {
+                                                                    "type": "String",
+                                                                    "value": "flex gap-1 items-center mt-1"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                }
+                                                              ],
+                                                              "children": [
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Element",
+                                                                    "tag": "Input",
+                                                                    "is_component": true,
+                                                                    "attributes": [
+                                                                      {
+                                                                        "name": "className",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "flex-1 text-[11px]"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "value",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "port"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "onChange",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "(e) => updatePort(serviceIndex, portIndex, e.target.value)"
+                                                                        },
+                                                                        "is_event_handler": true
+                                                                      },
+                                                                      {
+                                                                        "name": "placeholder",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "8080:8080"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "size",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "sm"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      }
+                                                                    ],
+                                                                    "children": []
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 288,
+                                                                    "start_col": 24,
+                                                                    "end_line": 294,
+                                                                    "end_col": 26
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Element",
+                                                                    "tag": "Button",
+                                                                    "is_component": true,
+                                                                    "attributes": [
+                                                                      {
+                                                                        "name": "size",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "sm"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "variant",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "ghost"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "onClick",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "() => removePort(serviceIndex, portIndex)"
+                                                                        },
+                                                                        "is_event_handler": true
+                                                                      }
+                                                                    ],
+                                                                    "children": [
+                                                                      {
+                                                                        "node_type": {
+                                                                          "type": "Element",
+                                                                          "tag": "Trash2",
+                                                                          "is_component": true,
+                                                                          "attributes": [
+                                                                            {
+                                                                              "name": "className",
+                                                                              "value": {
+                                                                                "type": "String",
+                                                                                "value": "w-3 h-3"
+                                                                              },
+                                                                              "is_event_handler": false
+                                                                            }
+                                                                          ],
+                                                                          "children": []
+                                                                        },
+                                                                        "location": {
+                                                                          "start_line": 300,
+                                                                          "start_col": 26,
+                                                                          "end_line": 300,
+                                                                          "end_col": 56
+                                                                        }
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 295,
+                                                                    "start_col": 24,
+                                                                    "end_line": 301,
+                                                                    "end_col": 33
+                                                                  }
+                                                                }
+                                                              ]
+                                                            },
+                                                            "location": {
+                                                              "start_line": 287,
+                                                              "start_col": 22,
+                                                              "end_line": 302,
+                                                              "end_col": 28
+                                                            }
+                                                          }
+                                                        },
+                                                        "location": {
+                                                          "start_line": 286,
+                                                          "start_col": 20,
+                                                          "end_line": 303,
+                                                          "end_col": 23
+                                                        }
+                                                      },
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "Button",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "size",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "sm"
+                                                              },
+                                                              "is_event_handler": false
+                                                            },
+                                                            {
+                                                              "name": "variant",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "ghost"
+                                                              },
+                                                              "is_event_handler": false
+                                                            },
+                                                            {
+                                                              "name": "onClick",
+                                                              "value": {
+                                                                "type": "Expression",
+                                                                "code": "() => addPort(serviceIndex)"
+                                                              },
+                                                              "is_event_handler": true
+                                                            },
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "mt-1"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": [
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Element",
+                                                                "tag": "Plus",
+                                                                "is_component": true,
+                                                                "attributes": [
+                                                                  {
+                                                                    "name": "className",
+                                                                    "value": {
+                                                                      "type": "String",
+                                                                      "value": "w-3 h-3 mr-1"
+                                                                    },
+                                                                    "is_event_handler": false
+                                                                  }
+                                                                ],
+                                                                "children": []
+                                                              },
+                                                              "location": {
+                                                                "start_line": 310,
+                                                                "start_col": 22,
+                                                                "end_line": 310,
+                                                                "end_col": 55
+                                                              }
+                                                            },
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Text",
+                                                                "value": "Add Port"
+                                                              },
+                                                              "location": {
+                                                                "start_line": 310,
+                                                                "start_col": 55,
+                                                                "end_line": 312,
+                                                                "end_col": 20
+                                                              }
+                                                            }
+                                                          ]
+                                                        },
+                                                        "location": {
+                                                          "start_line": 304,
+                                                          "start_col": 20,
+                                                          "end_line": 312,
+                                                          "end_col": 29
+                                                        }
+                                                      }
+                                                    ]
+                                                  },
+                                                  "location": {
+                                                    "start_line": 284,
+                                                    "start_col": 18,
+                                                    "end_line": 313,
+                                                    "end_col": 24
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "div",
+                                                    "is_component": false,
+                                                    "attributes": [],
+                                                    "children": [
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "Label",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "min-w-[80px] text-xs text-[#858585]"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": [
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Text",
+                                                                "value": "Volumes"
+                                                              },
+                                                              "location": {
+                                                                "start_line": 316,
+                                                                "start_col": 75,
+                                                                "end_line": 316,
+                                                                "end_col": 82
+                                                              }
+                                                            }
+                                                          ]
+                                                        },
+                                                        "location": {
+                                                          "start_line": 316,
+                                                          "start_col": 20,
+                                                          "end_line": 316,
+                                                          "end_col": 90
+                                                        }
+                                                      },
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Map",
+                                                          "iterable": "service.volumes",
+                                                          "item_name": "volume",
+                                                          "key_expr": "volumeIndex",
+                                                          "body": {
+                                                            "node_type": {
+                                                              "type": "Element",
+                                                              "tag": "div",
+                                                              "is_component": false,
+                                                              "attributes": [
+                                                                {
+                                                                  "name": "key",
+                                                                  "value": {
+                                                                    "type": "Expression",
+                                                                    "code": "volumeIndex"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                },
+                                                                {
+                                                                  "name": "className",
+                                                                  "value": {
+                                                                    "type": "String",
+                                                                    "value": "flex gap-1 items-center mt-1"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                }
+                                                              ],
+                                                              "children": [
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Element",
+                                                                    "tag": "Input",
+                                                                    "is_component": true,
+                                                                    "attributes": [
+                                                                      {
+                                                                        "name": "className",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "flex-1 text-[11px]"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "value",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "volume"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "onChange",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "(e) => updateVolume(serviceIndex, volumeIndex, e.target.value)"
+                                                                        },
+                                                                        "is_event_handler": true
+                                                                      },
+                                                                      {
+                                                                        "name": "placeholder",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "./:/workspace"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "size",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "sm"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      }
+                                                                    ],
+                                                                    "children": []
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 319,
+                                                                    "start_col": 24,
+                                                                    "end_line": 325,
+                                                                    "end_col": 26
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Element",
+                                                                    "tag": "Button",
+                                                                    "is_component": true,
+                                                                    "attributes": [
+                                                                      {
+                                                                        "name": "size",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "sm"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "variant",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "ghost"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "onClick",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "() => removeVolume(serviceIndex, volumeIndex)"
+                                                                        },
+                                                                        "is_event_handler": true
+                                                                      }
+                                                                    ],
+                                                                    "children": [
+                                                                      {
+                                                                        "node_type": {
+                                                                          "type": "Element",
+                                                                          "tag": "Trash2",
+                                                                          "is_component": true,
+                                                                          "attributes": [
+                                                                            {
+                                                                              "name": "className",
+                                                                              "value": {
+                                                                                "type": "String",
+                                                                                "value": "w-3 h-3"
+                                                                              },
+                                                                              "is_event_handler": false
+                                                                            }
+                                                                          ],
+                                                                          "children": []
+                                                                        },
+                                                                        "location": {
+                                                                          "start_line": 331,
+                                                                          "start_col": 26,
+                                                                          "end_line": 331,
+                                                                          "end_col": 56
+                                                                        }
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 326,
+                                                                    "start_col": 24,
+                                                                    "end_line": 332,
+                                                                    "end_col": 33
+                                                                  }
+                                                                }
+                                                              ]
+                                                            },
+                                                            "location": {
+                                                              "start_line": 318,
+                                                              "start_col": 22,
+                                                              "end_line": 333,
+                                                              "end_col": 28
+                                                            }
+                                                          }
+                                                        },
+                                                        "location": {
+                                                          "start_line": 317,
+                                                          "start_col": 20,
+                                                          "end_line": 334,
+                                                          "end_col": 23
+                                                        }
+                                                      },
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "Button",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "size",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "sm"
+                                                              },
+                                                              "is_event_handler": false
+                                                            },
+                                                            {
+                                                              "name": "variant",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "ghost"
+                                                              },
+                                                              "is_event_handler": false
+                                                            },
+                                                            {
+                                                              "name": "onClick",
+                                                              "value": {
+                                                                "type": "Expression",
+                                                                "code": "() => addVolume(serviceIndex)"
+                                                              },
+                                                              "is_event_handler": true
+                                                            },
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "mt-1"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": [
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Element",
+                                                                "tag": "Plus",
+                                                                "is_component": true,
+                                                                "attributes": [
+                                                                  {
+                                                                    "name": "className",
+                                                                    "value": {
+                                                                      "type": "String",
+                                                                      "value": "w-3 h-3 mr-1"
+                                                                    },
+                                                                    "is_event_handler": false
+                                                                  }
+                                                                ],
+                                                                "children": []
+                                                              },
+                                                              "location": {
+                                                                "start_line": 341,
+                                                                "start_col": 22,
+                                                                "end_line": 341,
+                                                                "end_col": 55
+                                                              }
+                                                            },
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Text",
+                                                                "value": "Add Volume"
+                                                              },
+                                                              "location": {
+                                                                "start_line": 341,
+                                                                "start_col": 55,
+                                                                "end_line": 343,
+                                                                "end_col": 20
+                                                              }
+                                                            }
+                                                          ]
+                                                        },
+                                                        "location": {
+                                                          "start_line": 335,
+                                                          "start_col": 20,
+                                                          "end_line": 343,
+                                                          "end_col": 29
+                                                        }
+                                                      }
+                                                    ]
+                                                  },
+                                                  "location": {
+                                                    "start_line": 315,
+                                                    "start_col": 18,
+                                                    "end_line": 344,
+                                                    "end_col": 24
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "div",
+                                                    "is_component": false,
+                                                    "attributes": [],
+                                                    "children": [
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "Label",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "min-w-[80px] text-xs text-[#858585]"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": [
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Text",
+                                                                "value": "Environment"
+                                                              },
+                                                              "location": {
+                                                                "start_line": 347,
+                                                                "start_col": 75,
+                                                                "end_line": 347,
+                                                                "end_col": 86
+                                                              }
+                                                            }
+                                                          ]
+                                                        },
+                                                        "location": {
+                                                          "start_line": 347,
+                                                          "start_col": 20,
+                                                          "end_line": 347,
+                                                          "end_col": 94
+                                                        }
+                                                      },
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Map",
+                                                          "iterable": "service.environment",
+                                                          "item_name": "env",
+                                                          "key_expr": "envIndex",
+                                                          "body": {
+                                                            "node_type": {
+                                                              "type": "Element",
+                                                              "tag": "div",
+                                                              "is_component": false,
+                                                              "attributes": [
+                                                                {
+                                                                  "name": "key",
+                                                                  "value": {
+                                                                    "type": "Expression",
+                                                                    "code": "envIndex"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                },
+                                                                {
+                                                                  "name": "className",
+                                                                  "value": {
+                                                                    "type": "String",
+                                                                    "value": "flex gap-1 items-center mt-1"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                }
+                                                              ],
+                                                              "children": [
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Element",
+                                                                    "tag": "Input",
+                                                                    "is_component": true,
+                                                                    "attributes": [
+                                                                      {
+                                                                        "name": "className",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "flex-1 text-[11px]"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "value",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "env.key"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "onChange",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "(e) => updateEnvVar(serviceIndex, envIndex, 'key', e.target.value)"
+                                                                        },
+                                                                        "is_event_handler": true
+                                                                      },
+                                                                      {
+                                                                        "name": "placeholder",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "KEY"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "size",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "sm"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      }
+                                                                    ],
+                                                                    "children": []
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 350,
+                                                                    "start_col": 24,
+                                                                    "end_line": 356,
+                                                                    "end_col": 26
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Element",
+                                                                    "tag": "Input",
+                                                                    "is_component": true,
+                                                                    "attributes": [
+                                                                      {
+                                                                        "name": "className",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "flex-1 text-[11px]"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "value",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "env.value"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "onChange",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "(e) => updateEnvVar(serviceIndex, envIndex, 'value', e.target.value)"
+                                                                        },
+                                                                        "is_event_handler": true
+                                                                      },
+                                                                      {
+                                                                        "name": "placeholder",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "value"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "size",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "sm"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      }
+                                                                    ],
+                                                                    "children": []
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 357,
+                                                                    "start_col": 24,
+                                                                    "end_line": 363,
+                                                                    "end_col": 26
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Element",
+                                                                    "tag": "Button",
+                                                                    "is_component": true,
+                                                                    "attributes": [
+                                                                      {
+                                                                        "name": "size",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "sm"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "variant",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "ghost"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "onClick",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "() => removeEnvVar(serviceIndex, envIndex)"
+                                                                        },
+                                                                        "is_event_handler": true
+                                                                      }
+                                                                    ],
+                                                                    "children": [
+                                                                      {
+                                                                        "node_type": {
+                                                                          "type": "Element",
+                                                                          "tag": "Trash2",
+                                                                          "is_component": true,
+                                                                          "attributes": [
+                                                                            {
+                                                                              "name": "className",
+                                                                              "value": {
+                                                                                "type": "String",
+                                                                                "value": "w-3 h-3"
+                                                                              },
+                                                                              "is_event_handler": false
+                                                                            }
+                                                                          ],
+                                                                          "children": []
+                                                                        },
+                                                                        "location": {
+                                                                          "start_line": 369,
+                                                                          "start_col": 26,
+                                                                          "end_line": 369,
+                                                                          "end_col": 56
+                                                                        }
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 364,
+                                                                    "start_col": 24,
+                                                                    "end_line": 370,
+                                                                    "end_col": 33
+                                                                  }
+                                                                }
+                                                              ]
+                                                            },
+                                                            "location": {
+                                                              "start_line": 349,
+                                                              "start_col": 22,
+                                                              "end_line": 371,
+                                                              "end_col": 28
+                                                            }
+                                                          }
+                                                        },
+                                                        "location": {
+                                                          "start_line": 348,
+                                                          "start_col": 20,
+                                                          "end_line": 372,
+                                                          "end_col": 23
+                                                        }
+                                                      },
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "Button",
+                                                          "is_component": true,
+                                                          "attributes": [
+                                                            {
+                                                              "name": "size",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "sm"
+                                                              },
+                                                              "is_event_handler": false
+                                                            },
+                                                            {
+                                                              "name": "variant",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "ghost"
+                                                              },
+                                                              "is_event_handler": false
+                                                            },
+                                                            {
+                                                              "name": "onClick",
+                                                              "value": {
+                                                                "type": "Expression",
+                                                                "code": "() => addEnvVar(serviceIndex)"
+                                                              },
+                                                              "is_event_handler": true
+                                                            },
+                                                            {
+                                                              "name": "className",
+                                                              "value": {
+                                                                "type": "String",
+                                                                "value": "mt-1"
+                                                              },
+                                                              "is_event_handler": false
+                                                            }
+                                                          ],
+                                                          "children": [
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Element",
+                                                                "tag": "Plus",
+                                                                "is_component": true,
+                                                                "attributes": [
+                                                                  {
+                                                                    "name": "className",
+                                                                    "value": {
+                                                                      "type": "String",
+                                                                      "value": "w-3 h-3 mr-1"
+                                                                    },
+                                                                    "is_event_handler": false
+                                                                  }
+                                                                ],
+                                                                "children": []
+                                                              },
+                                                              "location": {
+                                                                "start_line": 379,
+                                                                "start_col": 22,
+                                                                "end_line": 379,
+                                                                "end_col": 55
+                                                              }
+                                                            },
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Text",
+                                                                "value": "Add Variable"
+                                                              },
+                                                              "location": {
+                                                                "start_line": 379,
+                                                                "start_col": 55,
+                                                                "end_line": 381,
+                                                                "end_col": 20
+                                                              }
+                                                            }
+                                                          ]
+                                                        },
+                                                        "location": {
+                                                          "start_line": 373,
+                                                          "start_col": 20,
+                                                          "end_line": 381,
+                                                          "end_col": 29
+                                                        }
+                                                      }
+                                                    ]
+                                                  },
+                                                  "location": {
+                                                    "start_line": 346,
+                                                    "start_col": 18,
+                                                    "end_line": 382,
+                                                    "end_col": 24
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 269,
+                                              "start_col": 16,
+                                              "end_line": 383,
+                                              "end_col": 22
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 268,
+                                        "start_col": 14,
+                                        "end_line": 384,
+                                        "end_col": 33
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 257,
+                                  "start_col": 12,
+                                  "end_line": 385,
+                                  "end_col": 28
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 256,
+                            "start_col": 10,
+                            "end_line": 386,
+                            "end_col": 22
+                          }
+                        }
+                      },
+                      "location": {
+                        "start_line": 255,
+                        "start_col": 8,
+                        "end_line": 387,
+                        "end_col": 11
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex flex-col gap-3 border-t border-[#3c3c3c] pt-4"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "generateCompose"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "disabled",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "services.filter(s => s.enabled).length === 0"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Play",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4 mr-2"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 394,
+                                    "start_col": 12,
+                                    "end_line": 394,
+                                    "end_col": 45
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Generate docker-compose.yml"
+                                  },
+                                  "location": {
+                                    "start_line": 394,
+                                    "start_col": 45,
+                                    "end_line": 396,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 390,
+                              "start_col": 10,
+                              "end_line": 396,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "showPreview",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Fragment",
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Label",
+                                        "is_component": true,
+                                        "attributes": [],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Preview:"
+                                            },
+                                            "location": {
+                                              "start_line": 400,
+                                              "start_col": 21,
+                                              "end_line": 400,
+                                              "end_col": 29
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 400,
+                                        "start_col": 14,
+                                        "end_line": 400,
+                                        "end_col": 37
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "bg-[#1e1e1e] border border-[#3c3c3c] rounded-md p-3 font-mono text-[11px] max-h-[300px] overflow-auto whitespace-pre-wrap break-words"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "generatedCompose"
+                                            },
+                                            "location": {
+                                              "start_line": 402,
+                                              "start_col": 16,
+                                              "end_line": 402,
+                                              "end_col": 34
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 401,
+                                        "start_col": 14,
+                                        "end_line": 403,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Button",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "outline"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onClick",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "saveCompose"
+                                            },
+                                            "is_event_handler": true
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "FileText",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "w-4 h-4 mr-2"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 408,
+                                              "start_col": 16,
+                                              "end_line": 408,
+                                              "end_col": 53
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Save to Workspace"
+                                            },
+                                            "location": {
+                                              "start_line": 408,
+                                              "start_col": 53,
+                                              "end_line": 410,
+                                              "end_col": 14
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 404,
+                                        "start_col": 14,
+                                        "end_line": 410,
+                                        "end_col": 23
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 399,
+                                  "start_col": 12,
+                                  "end_line": 411,
+                                  "end_col": 15
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 398,
+                              "start_col": 10,
+                              "end_line": 412,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 389,
+                        "start_col": 8,
+                        "end_line": 413,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 254,
+                  "start_col": 6,
+                  "end_line": 414,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 249,
+            "start_col": 4,
+            "end_line": 415,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Accordion",
+        "AccordionContent",
+        "AccordionItem",
+        "AccordionTrigger",
+        "Button",
+        "Checkbox",
+        "FileText",
+        "Input",
+        "Label",
+        "Play",
+        "Plus",
+        "Trash2"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "services",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "generatedCompose",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showPreview",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/docker_compose_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:services",
+        "to_field": "services",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'services' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "true",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:generatedCompose",
+        "to_field": "generatedCompose",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'generatedCompose' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showPreview",
+        "to_field": "showPreview",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showPreview' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateServices",
+        "from_handler": "setServices",
+        "payload": null,
+        "state_changes": [
+          "self.services = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateGeneratedCompose",
+        "from_handler": "setGeneratedCompose",
+        "payload": null,
+        "state_changes": [
+          "self.generatedCompose = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowPreview",
+        "from_handler": "setShowPreview",
+        "payload": null,
+        "state_changes": [
+          "self.showPreview = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps → Mount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_mount",
+      "description": "Convert mount-only useEffect to lifecycle",
+      "react": "useEffect(() => { init(); }, []);",
+      "sigil": "on Mount { self.init(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "Accordion",
+      "AccordionContent",
+      "AccordionItem",
+      "AccordionTrigger",
+      "Button",
+      "Checkbox",
+      "FileText",
+      "Input",
+      "Label",
+      "Play",
+      "Plus",
+      "Trash2"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

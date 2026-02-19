@@ -1,0 +1,58 @@
+invoke qliphoth·prelude·*;
+ᛈ ConfirmDialogMsg {
+    Cancel,
+    Confirm,
+}
+rite confirm_dialog(open: Any, on_open_change: Any, title: Any, description: Any, confirm_label: Any, cancel_label: Any, on_confirm: Any, on_cancel: Any, variant: Any, is_loading: Any) -> VNode! {
+    Dialog·view()
+        ·attr("open", open)
+        ·on_openchange(OpenChange)
+        ·child(
+        DialogContent·view()
+            ·class("max-w-[400px] w-[90vw] p-5 bg-[#252526] border border-[#3c3c3c]")
+            ·attr("role", "alertdialog")
+            ·attr("aria-labelledby", "confirm-dialog-title")
+            ·attr("aria-describedby", "confirm-dialog-description")
+            ·child(
+            FocusTrap·view()
+                ·attr("active", open)
+                ·child(
+                DialogHeader·view()
+                    ·child(
+                    DialogTitle·view()
+                        ·id("confirm-dialog-title")
+                        ·class("flex items-center gap-2 text-sm font-semibold text-[#cccccc]")
+                        ·when(variant == "destructive", AlertTriangle·view()
+                            ·class("w-4 h-4 text-[#f48771]")
+                            ·attr("aria-hidden", "True"))
+                        ·text_child(title·to_string())
+                    )
+                    ·child(
+                    DialogDescription·view()
+                        ·id("confirm-dialog-description")
+                        ·class("text-[#858585] text-sm mt-2")
+                        ·text_child(description·to_string())
+                    )
+                )
+                ·child(
+                DialogFooter·view()
+                    ·class("flex justify-end gap-2 mt-4")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "outline")
+                        ·on_click(Click)
+                        ·when(is_loading, |n| n·attr("disabled", "True"))
+                        ·text_child(cancel_label·to_string())
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "destructive")
+                        ·on_click(Click)
+                        ·when(is_loading, |n| n·attr("disabled", "True"))
+                        ·attr("aria-busy", is_loading)
+                        ·text_child("Please wait..."·to_string())
+                    )
+                )
+            )
+        )
+}

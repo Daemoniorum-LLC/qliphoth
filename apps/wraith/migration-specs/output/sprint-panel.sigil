@@ -1,0 +1,226 @@
+invoke qliphoth·prelude·*;
+ᛈ SprintPanelMsg {
+    UpdateActiveSprint,
+    UpdateStats,
+    UpdateTasks,
+    UpdateVelocity,
+    UpdateLoading,
+    UpdateError,
+}
+actor SprintPanel {
+    state activeSprint: Option<Any>~ = None,
+    state stats: Option<Any>~ = None,
+    state tasks: Vec<Any>! = [],
+    state velocity: Vec<Any>! = [],
+    state loading: bool! = true,
+    state error: Option<Any>~ = None,
+
+    on UpdateActiveSprint {
+        self.activeSprint = msg.0;
+    }
+
+    on UpdateStats {
+        self.stats = msg.0;
+    }
+
+    on UpdateTasks {
+        self.tasks = msg.0;
+    }
+
+    on UpdateVelocity {
+        self.velocity = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("p-4 border-b border-[#3c3c3c] bg-[#252526]")
+                ·child(
+                VNode·div()
+                    ·class("text-lg font-semibold text-white mb-2")
+                    ·text_child("🏃")
+                    ·text_child(active_sprint.name·to_string())
+                )
+                ·when(active_sprint.goal, VNode·div()
+                    ·class("text-[13px] text-[#b0b0b0] mb-3 italic")
+                    ·text_child("\"")
+                    ·text_child(active_sprint.goal·to_string())
+                    ·text_child("\""))
+                ·child(
+                VNode·span()
+                    ·class("inline-block px-3 py-1 rounded-xl text-[11px] font-semibold uppercase ")
+                    ·text_child(active_sprint.status·to_string())
+                )
+                ·child(
+                VNode·div()
+                    ·class("text-[11px] text-[#808080] mt-2")
+                    ·text_child(new date(active_sprint.start_date).to_locale_date_string()·to_string())
+                    ·text_child("-")
+                    ·text_child(new date(active_sprint.end_date).to_locale_date_string()·to_string())
+                    ·text_child(stats ∧ " •  days remaining"·to_string())
+                )
+            )
+            ·when(stats ∧ stats.warnings.len() > 0, VNode·div()
+                ·class("p-4 pb-0")
+                // Map: ∀ warning ∈ stats.warnings
+                ·children(self.stats.warnings.iter().map(|warning| VNode·div()
+                        ·attr("key", self.idx)
+                        ·class("p-3 bg-[rgba(255,215,0,0.1)] border border-[#ffd700] rounded-md mb-4")
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-[#ffd700]")
+                            ·text_child("⚠️")
+                            ·text_child(warning·to_string())
+                        )).collect()))
+            ·when(self.stats, VNode·div()
+                ·class("grid grid-cols-2 gap-3 p-4 border-b border-[#3c3c3c]")
+                ·child(
+                VNode·div()
+                    ·class("p-3 bg-[#252526] rounded-md border border-[#3c3c3c]")
+                    ·child(
+                    VNode·div()
+                        ·class("text-[11px] text-[#808080] uppercase mb-1.5")
+                        ·text_child("Progress")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-2xl font-bold text-white")
+                        ·text_child(self.stats.completion_percentage·to_string())
+                        ·text_child("%")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[11px] text-[#b0b0b0] mt-1")
+                        ·text_child(self.stats.completed_tasks·to_string())
+                        ·text_child("of")
+                        ·text_child(self.stats.total_tasks·to_string())
+                        ·text_child("tasks")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("h-1.5 bg-[#3c3c3c] rounded-sm overflow-hidden mt-2")
+                        ·child(
+                        VNode·div()
+                            ·class("h-full bg-[#00ff7f] transition-all duration-300")
+                            ·style(∅)
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("p-3 bg-[#252526] rounded-md border border-[#3c3c3c]")
+                    ·child(
+                    VNode·div()
+                        ·class("text-[11px] text-[#808080] uppercase mb-1.5")
+                        ·text_child("Story Points")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-2xl font-bold text-white")
+                        ·text_child(self.stats.completed_story_points.to_fixed(0)·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[11px] text-[#b0b0b0] mt-1")
+                        ·text_child("of")
+                        ·text_child(self.stats.total_story_points.to_fixed(0)·to_string())
+                        ·text_child("points")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("h-1.5 bg-[#3c3c3c] rounded-sm overflow-hidden mt-2")
+                        ·child(
+                        VNode·div()
+                            ·class("h-full bg-[#9d00ff] transition-all duration-300")
+                            ·style(∅)
+                        )
+                    )
+                ))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto p-4")
+                ·child(
+                VNode·div()
+                    ·class("mb-6")
+                    ·child(
+                    VNode·div()
+                        ·class("text-sm font-semibold text-white mb-3 flex items-center gap-2")
+                        ·text_child("📋 Sprint Tasks (")
+                        ·text_child(self.tasks.len()·to_string())
+                        ·text_child(")")
+                    )
+                    ·when_else(self.tasks.len() > 0, VNode·div()
+                        ·class("flex flex-col gap-2")
+                        // Map: ∀ task ∈ tasks
+                        ·children(self.tasks.iter().map(|task| VNode·div()
+                                ·attr("key", task.id)
+                                ·class("p-3 bg-[#252526] rounded-md border border-[#3c3c3c] cursor-pointer transition-all hover:bg-[#2d2d30] hover:border-[#5bcefa]")
+                                ·child(
+                                VNode·div()
+                                    ·class("text-[13px] text-white mb-1")
+                                    ·text_child(task.title·to_string())
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("text-[11px] text-[#808080]")
+                                    ·text_child(task.status·to_string())
+                                    ·text_child(task.story_points ∧ " •  pts"·to_string())
+                                    ·text_child(task.assignee ∧ " • "·to_string())
+                                )).collect()), VNode·div()
+                        ·class("text-center py-5 text-[#808080] text-xs")
+                        ·text_child("No tasks in this sprint"))
+                )
+                ·when(self.velocity.len() > 0, VNode·div()
+                    ·class("mb-6")
+                    ·child(
+                    VNode·div()
+                        ·class("text-sm font-semibold text-white mb-3 flex items-center gap-2")
+                        ·text_child("📈 Team Velocity (Last 5 Sprints)")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("mt-4 p-4 bg-[#252526] rounded-md border border-[#3c3c3c]")
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-end gap-3 h-[120px] mt-4")
+                            // Map: ∀ point ∈ velocity
+                            ·children(self.velocity.iter().map(|point| VNode·div()
+                                    ·attr("key", point.sprint_id)
+                                    ·class("flex-1 flex flex-col items-center gap-2")
+                                    ·child(
+                                    VNode·div()
+                                        ·class("w-full bg-[#5bcefa] rounded-t transition-all duration-300")
+                                        ·style(∅)
+                                        ·attr("title", " pts completed")
+                                    )
+                                    ·child(
+                                    VNode·div()
+                                        ·class("text-[10px] text-[#808080] text-center")
+                                        ·text_child(point.sprint_name.substring(0, 10)·to_string())
+                                        ·text_child("...")
+                                        ·child(
+                                        VNode·br()
+                                        )
+                                        ·text_child(point.completed_points.to_fixed(0)·to_string())
+                                        ·text_child("pts")
+                                    )).collect())
+                        )
+                        ·when(self.stats, VNode·div()
+                            ·class("mt-4 text-xs text-[#b0b0b0] text-center")
+                            ·text_child("Average Velocity:")
+                            ·text_child(self.stats.average_velocity.to_fixed(1)·to_string())
+                            ·text_child("points/sprint"))
+                    ))
+            )
+    }
+}

@@ -1,0 +1,452 @@
+invoke sigil_web·prelude·*;
+ᛈ SourceControlPanelMsg {
+    UpdateActiveTab,
+    UpdateCurrentBranch,
+    UpdateCommitMessage,
+    UpdateFiles,
+    UpdateBranches,
+    UpdateCommits,
+    UpdateLoading,
+    UpdateAhead,
+    UpdateBehind,
+    UpdateNotification,
+    UpdateNewBranchDialogOpen,
+    UpdateNewBranchName,
+    UpdateCreatingBranch,
+}
+actor SourceControlPanel {
+    state activeTab: String! = "changes",
+    state currentBranch: String! = "main",
+    state commitMessage: String! = "",
+    state files: Vec<Any>! = [],
+    state branches: Vec<Any>! = [],
+    state commits: Vec<Any>! = [],
+    state loading: bool! = false,
+    state ahead: i64! = 0,
+    state behind: i64! = 0,
+    state notification: Option<Any>~ = None,
+    state newBranchDialogOpen: bool! = false,
+    state newBranchName: String! = "",
+    state creatingBranch: bool! = false,
+
+    on UpdateActiveTab {
+        self.activeTab = msg.0;
+    }
+
+    on UpdateCurrentBranch {
+        self.currentBranch = msg.0;
+    }
+
+    on UpdateCommitMessage {
+        self.commitMessage = msg.0;
+    }
+
+    on UpdateFiles {
+        self.files = msg.0;
+    }
+
+    on UpdateBranches {
+        self.branches = msg.0;
+    }
+
+    on UpdateCommits {
+        self.commits = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateAhead {
+        self.ahead = msg.0;
+    }
+
+    on UpdateBehind {
+        self.behind = msg.0;
+    }
+
+    on UpdateNotification {
+        self.notification = msg.0;
+    }
+
+    on UpdateNewBranchDialogOpen {
+        self.newBranchDialogOpen = msg.0;
+    }
+
+    on UpdateNewBranchName {
+        self.newBranchName = msg.0;
+    }
+
+    on UpdateCreatingBranch {
+        self.creatingBranch = msg.0;
+    }
+
+    on Mount {
+        // Empty deps → Mount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] relative")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c] bg-[#2b2b2b]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-2 text-xs font-medium text-white")
+                    ·child(
+                    GitBranch·view()
+                        ·class("w-3.5 h-3.5")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·text_child(self.current_branch·to_string())
+                    )
+                    ·when((ahead > 0 ∨ behind > 0), VNode·fragment()
+                        ·when(ahead > 0, Badge·view()
+                            ·attr("variant", "default")
+                            ·class("text-[10px]")
+                            ·text_child("↑")
+                            ·text_child(self.ahead·to_string()))
+                        ·when(behind > 0, Badge·view()
+                            ·attr("variant", "default")
+                            ·class("text-[10px]")
+                            ·text_child("↓")
+                            ·text_child(self.behind·to_string())))
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-1")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Pull")
+                        ·child(
+                        Download·view()
+                            ·class("w-3.5 h-3.5")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Push")
+                        ·when(ahead = 0, |n| n·attr("disabled", "true"))
+                        ·child(
+                        Upload·view()
+                            ·class("w-3.5 h-3.5")
+                        )
+                    )
+                    ·child(
+                    DropdownMenu·view()
+                        ·child(
+                        DropdownMenuTrigger·view()
+                            ·attr("asChild", "true")
+                            ·child(
+                            Button·view()
+                                ·attr("variant", "ghost")
+                                ·attr("size", "sm")
+                                ·child(
+                                MoreHorizontal·view()
+                                    ·class("w-3.5 h-3.5")
+                                )
+                            )
+                        )
+                        ·child(
+                        DropdownMenuContent·view()
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Stage All Changes")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("New Branch")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Switch Branch")
+                            )
+                        )
+                    )
+                )
+            )
+            ·child(
+            Tabs·view()
+                ·attr("value", self.active_tab)
+                ·on_valuechange(ValueChange)
+                ·class("flex flex-col flex-1")
+                ·child(
+                VNode·div()
+                    ·class("px-3 py-2 border-b border-[#3c3c3c]")
+                    ·child(
+                    TabsList·view()
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "changes")
+                            ·text_child("Changes")
+                            ·when(self.files.len() > 0, Badge·view()
+                                ·attr("variant", "secondary")
+                                ·class("ml-1.5 text-[10px]")
+                                ·text_child(self.files.len()·to_string()))
+                        )
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "branches")
+                            ·text_child("Branches")
+                        )
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "history")
+                            ·text_child("History")
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex-1 overflow-auto")
+                    ·child(
+                    TabsContent·view()
+                        ·attr("value", "changes")
+                        ·class("h-full")
+                        ·child(
+                        VNode·div()
+                            ·class("px-3 py-3 border-b border-[#3c3c3c]")
+                            ·child(
+                            VNode·textarea()
+                                ·class("w-full bg-[#1e1e1e] border border-[#3c3c3c] rounded p-2 text-xs text-[#cccccc] resize-none focus:outline-none focus:border-[#4fc3f7]")
+                                ·attr("placeholder", "Commit message...")
+                                ·attr("value", self.commit_message)
+                                ·on_change(Change)
+                                ·attr("rows", 3)
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("flex gap-2 mt-2")
+                                ·child(
+                                Button·view()
+                                    ·attr("size", "sm")
+                                    ·on_click(Click)
+                                    ·when(staged_files.len() = 0 ∨ ¬commit_message.trim() ∨ loading, |n| n·attr("disabled", "true"))
+                                    ·child(
+                                    Save·view()
+                                        ·class("w-3 h-3 mr-1")
+                                    )
+                                    ·text_child("Commit (")
+                                    ·text_child(staged_files.len()·to_string())
+                                    ·text_child(")")
+                                )
+                                ·child(
+                                Button·view()
+                                    ·attr("size", "sm")
+                                    ·attr("variant", "outline")
+                                    ·on_click(Click)
+                                    ·when(unstaged_files.len() = 0, |n| n·attr("disabled", "true"))
+                                    ·text_child("Stage All")
+                                )
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("px-3 py-3")
+                            ·when(self.loading, VNode·div()
+                                ·class("flex flex-col items-center gap-3 px-5 py-10")
+                                ·child(
+                                Spinner·view()
+                                    ·attr("size", "md")
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·text_child("Loading...")
+                                ))
+                            ·when(¬loading ∧ files.len() = 0, VNode·div()
+                                ·class("px-5 py-10 text-center text-[#858585] text-xs")
+                                ·text_child("No changes to commit"))
+                            ·when(¬loading ∧ staged_files.len() > 0, VNode·fragment()
+                                ·child(
+                                VNode·div()
+                                    ·class("text-[11px] font-semibold text-[#858585] uppercase mb-2")
+                                    ·text_child("Staged Changes (")
+                                    ·text_child(staged_files.len()·to_string())
+                                    ·text_child(")")
+                                )
+                                // Map: ∀ file ∈ stagedFiles
+                                ·children(self.staged_files.iter().map(|file| VNode·div()
+                                        ·attr("key", file.path)
+                                        ·class("flex items-center gap-2 px-2 py-1.5 bg-[#252526] border border-transparent rounded hover:border-[#4fc3f7] mb-1")
+                                        ·child(
+                                        Checkbox·view()
+                                            ·when(file.staged, |n| n·attr("checked", "true"))
+                                            ·on_checkedchange(CheckedChange)
+                                        )
+                                        ·child(
+                                        VNode·div()
+                                            ·class("text-xs font-semibold min-w-[16px]")
+                                            ·text_child(get_status_icon(file.status)·to_string())
+                                        )
+                                        ·child(
+                                        VNode·div()
+                                            ·class("flex-1 text-xs text-[#cccccc] truncate")
+                                            ·text_child(file.path·to_string())
+                                        )).collect()))
+                            ·when(¬loading ∧ unstaged_files.len() > 0, VNode·fragment()
+                                ·child(
+                                VNode·div()
+                                    ·class("text-[11px] font-semibold text-[#858585] uppercase mb-2 mt-4")
+                                    ·text_child("Changes (")
+                                    ·text_child(unstaged_files.len()·to_string())
+                                    ·text_child(")")
+                                )
+                                // Map: ∀ file ∈ unstagedFiles
+                                ·children(self.unstaged_files.iter().map(|file| VNode·div()
+                                        ·attr("key", file.path)
+                                        ·class("flex items-center gap-2 px-2 py-1.5 bg-[#252526] border border-transparent rounded hover:border-[#4fc3f7] mb-1")
+                                        ·child(
+                                        Checkbox·view()
+                                            ·when(file.staged, |n| n·attr("checked", "true"))
+                                            ·on_checkedchange(CheckedChange)
+                                        )
+                                        ·child(
+                                        VNode·div()
+                                            ·class("text-xs font-semibold min-w-[16px]")
+                                            ·text_child(get_status_icon(file.status)·to_string())
+                                        )
+                                        ·child(
+                                        VNode·div()
+                                            ·class("flex-1 text-xs text-[#cccccc] truncate")
+                                            ·text_child(file.path·to_string())
+                                        )).collect()))
+                        )
+                    )
+                    ·child(
+                    TabsContent·view()
+                        ·attr("value", "branches")
+                        ·class("px-3 py-3")
+                        // Map: ∀ branch ∈ branches
+                        ·children(self.branches.iter().map(|branch| VNode·div()
+                                ·attr("key", branch.name)
+                                ·class("flex items-center gap-2 px-3 py-2 bg-[#252526] border border-[#3c3c3c] rounded mb-1 cursor-pointer hover:bg-[#2b2b2b] hover:border-[#4fc3f7]")
+                                ·on_click(Click)
+                                ·child(
+                                GitBranch·view()
+                                    ·class("w-3.5 h-3.5")
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("flex-1 text-xs )
+                                    ·text_child(branch.name·to_string())
+                                )
+                                ·when(branch.current, CheckCircle·view()
+                                    ·class("text-[#4fc3f7] w-3.5 h-3.5"))).collect())
+                    )
+                    ·child(
+                    TabsContent·view()
+                        ·attr("value", "history")
+                        ·class("px-3 py-3")
+                        // Map: ∀ commit ∈ commits
+                        ·children(self.commits.iter().map(|commit| VNode·div()
+                                ·attr("key", commit.hash)
+                                ·class("px-2.5 py-2.5 bg-[#252526] border border-[#3c3c3c] rounded mb-2")
+                                ·child(
+                                VNode·div()
+                                    ·class("text-[11px] text-[#4fc3f7] font-mono mb-1")
+                                    ·text_child(commit.abbreviated·to_string())
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("text-xs text-white font-medium mb-1")
+                                    ·text_child(commit.message·to_string())
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("text-[10px] text-[#858585]")
+                                    ·text_child(commit.author·to_string())
+                                    ·text_child("•")
+                                    ·text_child(new date(commit.date).to_locale_string()·to_string())
+                                )).collect())
+                    )
+                )
+            )
+            ·when(self.notification, VNode·div()
+                ·class("absolute bottom-4 left-4 right-4 p-3 rounded-lg flex items-center gap-2 text-xs animate-in slide-in-from-bottom-2 ")
+                ·when_else(self.notification.type = "success", CheckCircle·view()
+                    ·class("w-4 h-4 flex-shrink-0"), AlertTriangle·view()
+                    ·class("w-4 h-4 flex-shrink-0"))
+                ·child(
+                VNode·span()
+                    ·class("flex-1")
+                    ·text_child(self.notification.message·to_string())
+                )
+                ·child(
+                VNode·button()
+                    ·on_click(Click)
+                    ·class("text-current opacity-60 hover:opacity-100")
+                    ·child(
+                    XCircle·view()
+                        ·class("w-4 h-4")
+                    )
+                ))
+            ·child(
+            Dialog·view()
+                ·attr("open", self.new_branch_dialog_open)
+                ·on_openchange(OpenChange)
+                ·child(
+                DialogContent·view()
+                    ·class("max-w-[400px] bg-[#252526] border-[#3c3c3c]")
+                    ·child(
+                    DialogHeader·view()
+                        ·child(
+                        DialogTitle·view()
+                            ·class("text-white")
+                            ·text_child("Create New Branch")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("py-4")
+                        ·child(
+                        Input·view()
+                            ·attr("placeholder", "Branch name (e.g., feature/my-feature)")
+                            ·attr("value", self.new_branch_name)
+                            ·on_change(Change)
+                            ·on_keydown(KeyDown)
+                            ·class("bg-[#1e1e1e] border-[#3c3c3c] text-[#cccccc]")
+                            ·attr("autoFocus", "true")
+                            ·when(self.creating_branch, |n| n·attr("disabled", "true"))
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-[11px] text-[#858585] mt-2")
+                            ·text_child("Branch will be created from:")
+                            ·child(
+                            VNode·span()
+                                ·class("text-[#4fc3f7]")
+                                ·text_child(self.current_branch·to_string())
+                            )
+                        )
+                    )
+                    ·child(
+                    DialogFooter·view()
+                        ·child(
+                        Button·view()
+                            ·attr("variant", "outline")
+                            ·on_click(Click)
+                            ·when(self.creating_branch, |n| n·attr("disabled", "true"))
+                            ·text_child("Cancel")
+                        )
+                        ·child(
+                        Button·view()
+                            ·on_click(Click)
+                            ·when(¬new_branch_name.trim() ∨ creating_branch, |n| n·attr("disabled", "true"))
+                            ·text_child("Creating..." ·to_string())
+                        )
+                    )
+                )
+            )
+    }
+}

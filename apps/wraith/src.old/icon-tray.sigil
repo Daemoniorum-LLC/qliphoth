@@ -1,0 +1,50 @@
+invoke sigil_web·prelude·*;
+actor IconTray {
+    state draggedIndex: Option<Any>! = ∅,
+    state dragOverIndex: Option<Any>! = ∅,
+
+    rite new(panels: Any, active_panel: Any, side: Any, is_narrow: Any, on_panel_click: Any, on_panel_reorder: Any, drag_over_tray: Any, on_tray_drag_over: Any, on_tray_drag_leave: Any) -> This! {
+        self.panels = panels;
+        self.active_panel = active_panel;
+        self.side = side;
+        self.is_narrow = is_narrow;
+        self.on_panel_click = on_panel_click;
+        self.on_panel_reorder = on_panel_reorder;
+        self.drag_over_tray = drag_over_tray;
+        self.on_tray_drag_over = on_tray_drag_over;
+        self.on_tray_drag_leave = on_tray_drag_leave;
+        This
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·attr("data-testid", "-icon-tray")
+            ·attr("role", "toolbar")
+            ·attr("aria-label", " panel toolbar")
+            ·attr("aria-orientation", "horizontal" )
+            ·on_dragover(DragOver)
+            ·on_dragleave(DragLeave)
+            ·class("
+        flex bg-[var(--bg-secondary)] transition-colors duration-200
+        
+         border-[var(--border-primary)]
+        )
+            // Map: ∀ panel ∈ panels
+            ·children(self.panels.iter().map(|panel| VNode·div()
+                    ·attr("key", panel.id)
+                    ·attr("data-tray-index", self.index)
+                    ·child(
+                    IconTrayItem·view()
+                        ·attr("icon", panel.icon)
+                        ·attr("label", panel.name)
+                        ·attr("active", active_panel = panel.id)
+                        ·attr("side", self.side)
+                        ·on_click(Click)
+                        ·on_dragstart(DragStart)
+                        ·on_dragover(DragOver)
+                        ·on_drop(Drop)
+                        ·on_dragend(DragEnd)
+                        ·on_keydown(KeyDown)
+                    )).collect())
+    }
+}

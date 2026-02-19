@@ -35,13 +35,44 @@ invoke crate·platform·{DomElement, FetchOptions, FetchResponse};
 
 /// Native event from the platform
 ☉ ᛈ NativeEvent {
-    Click { x: i32, y: i32 },
-    KeyDown { key: u32, modifiers: u32 },
-    KeyUp { key: u32, modifiers: u32 },
-    MouseMove { x: i32, y: i32 },
-    Resize { width: i32, height: i32 },
+    Click { x: f32, y: f32, button: i32, callback_id: u64 },
+    DblClick { x: f32, y: f32, callback_id: u64 },
+    MouseDown { x: f32, y: f32, button: i32, callback_id: u64 },
+    MouseUp { x: f32, y: f32, button: i32, callback_id: u64 },
+    MouseMove { x: f32, y: f32, callback_id: u64 },
+    MouseEnter { x: f32, y: f32, callback_id: u64 },
+    MouseLeave { x: f32, y: f32, callback_id: u64 },
+    KeyDown { key: i32, modifiers: i32, callback_id: u64 },
+    KeyUp { key: i32, modifiers: i32, callback_id: u64 },
+    TextInput { text: String, callback_id: u64 },
+    Focus { callback_id: u64 },
+    Blur { callback_id: u64 },
+    Input { value: String, callback_id: u64 },
+    Change { value: String, callback_id: u64 },
+    Submit { callback_id: u64 },
+    Scroll { delta_x: f32, delta_y: f32, callback_id: u64 },
+    Resize { width: u32, height: u32 },
     Close,
-    Redraw,
+    AnimationFrame { callback_id: u64 },
+    Timeout { callback_id: u64 },
+}
+
+/// Raw event data structure from FFI (must match Rust layout)
+#[repr(C)]
+☉ Σ NativeEventData {
+    event_type: i32!
+    callback_id: u64!
+    x: f32!
+    y: f32!
+    button: i32!
+    key: i32!
+    modifiers: i32!
+    text_ptr: *const i8!
+    text_len: usize!
+    width: u32!
+    height: u32!
+    delta_x: f32!
+    delta_y: f32!
 }
 
 // =============================================================================
@@ -51,7 +82,7 @@ invoke crate·platform·{DomElement, FetchOptions, FetchResponse};
 // These extern functions are provided by the native runtime library
 // Actual implementation depends on graphics backend (GTK, wgpu, etc.)
 
-⊞ "C" {
+extern "C" {
     // Window management
     rite native_create_window(title: *const i8, width: i32, height: i32) -> usize;
     rite native_destroy_window(handle: usize);
@@ -79,8 +110,8 @@ invoke crate·platform·{DomElement, FetchOptions, FetchResponse};
     rite native_remove_event_listener(widget: usize, event_type: i32, callback_id: u64);
 
     // Event loop
-    rite native_poll_events() -> i32;  // Returns event type, -1 if none
-    rite native_get_event_data(out_data: *mut u8, max_len: usize) -> usize;
+    rite native_poll_event(out_event: *mut NativeEventData) -> i32;
+    rite native_poll_events() -> i32;  // Process all pending, returns count
     rite native_run_event_loop();
     rite native_request_redraw(window: usize);
 
@@ -93,6 +124,14 @@ invoke crate·platform·{DomElement, FetchOptions, FetchResponse};
     // Clipboard
     rite native_clipboard_read(out_buf: *mut i8, max_len: usize) -> usize;
     rite native_clipboard_write(content: *const i8);
+
+    // Root element
+    rite native_set_root(window: usize, element: usize);
+    rite native_get_root(window: usize) -> usize;
+
+    // Layout
+    rite native_compute_layout(window: usize);
+    rite native_render(window: usize);
 }
 
 // =============================================================================
@@ -282,18 +321,134 @@ invoke crate·platform·{DomElement, FetchOptions, FetchResponse};
         unsafe { native_run_event_loop() }
     }
 
-    /// Poll for events (non-blocking)
-    rite poll_events(&self) -> Option<NativeEvent>? {
-        ≔ event_type! = unsafe { native_poll_events() };
-        ⌥ event_type {
-            -1 => None,
-            0 => Some(NativeEvent·Click { x: 0, y: 0 }),  // TODO: parse event data
-            1 => Some(NativeEvent·KeyDown { key: 0, modifiers: 0 }),
-            2 => Some(NativeEvent·Resize { width: 0, height: 0 }),
-            3 => Some(NativeEvent·Close),
-            4 => Some(NativeEvent·Redraw),
+    /// Poll for a single event (non-blocking)
+    /// Returns None if no events are pending
+    rite poll_event(&self) -> Option<NativeEvent>? {
+        ≔ Δ event_data! = NativeEventData {
+            event_type: -1,
+            callback_id: 0,
+            x: 0.0,
+            y: 0.0,
+            button: 0,
+            key: 0,
+            modifiers: 0,
+            text_ptr: std·ptr·null(),
+            text_len: 0,
+            width: 0,
+            height: 0,
+            delta_x: 0.0,
+            delta_y: 0.0,
+        };
+
+        ≔ result! = unsafe { native_poll_event(&Δ event_data) };
+
+        ⎇ result < 0 {
+            None
+        } ⎉ {
+            self.parse_event_data(&event_data)
+        }
+    }
+
+    /// Parse raw event data into a NativeEvent
+    rite parse_event_data(&self, data: &NativeEventData) -> Option<NativeEvent>? {
+        ⌥ data.event_type {
+            // Click
+            0 => Some(NativeEvent·Click {
+                x: data.x,
+                y: data.y,
+                button: data.button,
+                callback_id: data.callback_id,
+            }),
+            // DblClick
+            1 => Some(NativeEvent·DblClick {
+                x: data.x,
+                y: data.y,
+                callback_id: data.callback_id,
+            }),
+            // MouseDown
+            2 => Some(NativeEvent·MouseDown {
+                x: data.x,
+                y: data.y,
+                button: data.button,
+                callback_id: data.callback_id,
+            }),
+            // MouseUp
+            3 => Some(NativeEvent·MouseUp {
+                x: data.x,
+                y: data.y,
+                button: data.button,
+                callback_id: data.callback_id,
+            }),
+            // MouseMove
+            4 => Some(NativeEvent·MouseMove {
+                x: data.x,
+                y: data.y,
+                callback_id: data.callback_id,
+            }),
+            // MouseEnter
+            5 => Some(NativeEvent·MouseEnter {
+                x: data.x,
+                y: data.y,
+                callback_id: data.callback_id,
+            }),
+            // MouseLeave
+            6 => Some(NativeEvent·MouseLeave {
+                x: data.x,
+                y: data.y,
+                callback_id: data.callback_id,
+            }),
+            // KeyDown
+            10 => Some(NativeEvent·KeyDown {
+                key: data.key,
+                modifiers: data.modifiers,
+                callback_id: data.callback_id,
+            }),
+            // KeyUp
+            11 => Some(NativeEvent·KeyUp {
+                key: data.key,
+                modifiers: data.modifiers,
+                callback_id: data.callback_id,
+            }),
+            // TextInput
+            12 => {
+                ≔ text! = ⎇ data.text_ptr != std·ptr·null() && data.text_len > 0 {
+                    unsafe {
+                        String·from_raw_parts(data.text_ptr as *mut u8, data.text_len, data.text_len)
+                    }
+                } ⎉ {
+                    "".to_string()
+                };
+                Some(NativeEvent·TextInput { text, callback_id: data.callback_id })
+            },
+            // Focus
+            20 => Some(NativeEvent·Focus { callback_id: data.callback_id }),
+            // Blur
+            21 => Some(NativeEvent·Blur { callback_id: data.callback_id }),
+            // Scroll
+            30 => Some(NativeEvent·Scroll {
+                delta_x: data.delta_x,
+                delta_y: data.delta_y,
+                callback_id: data.callback_id,
+            }),
+            // Resize
+            40 => Some(NativeEvent·Resize {
+                width: data.width,
+                height: data.height,
+            }),
+            // Close
+            50 => Some(NativeEvent·Close),
+            // AnimationFrame
+            60 => Some(NativeEvent·AnimationFrame { callback_id: data.callback_id }),
+            // Timeout
+            61 => Some(NativeEvent·Timeout { callback_id: data.callback_id }),
+            // Unknown
             _ => None,
         }
+    }
+
+    /// Process all pending events (non-blocking)
+    rite process_events(&self) -> i32! {
+        unsafe { native_poll_events() }
     }
 
     /// Request window redraw
@@ -305,9 +460,146 @@ invoke crate·platform·{DomElement, FetchOptions, FetchResponse};
     // Internal helpers
     // =========================================================================
 
+    /// Recursively create native widgets from a VNode tree
+    /// Returns the handle of the root widget created
     rite create_from_vnode(&Δ self, node: &VNode) -> usize! {
-        // TODO: Recursively create native widgets from VNode tree
-        0
+        ⌥ node {
+            VNode·Element(el) => {
+                // Create the element
+                ≔ handle! = unsafe {
+                    native_create_widget(
+                        self.window.handle,
+                        el.tag.as_ptr() as *const i8
+                    )
+                };
+
+                // Store in our widget map
+                ≔ widget! = NativeWidget {
+                    handle,
+                    tag: el.tag.clone(),
+                    children: Vec·new(),
+                };
+                self.widgets.insert(handle, widget);
+
+                // Apply attributes
+                ∀ (name, value) ∈ &el.attrs {
+                    unsafe {
+                        native_set_attribute(
+                            handle,
+                            name.as_ptr() as *const i8,
+                            value.as_ptr() as *const i8
+                        )
+                    };
+                }
+
+                // Apply styles
+                ∀ (property, value) ∈ &el.styles {
+                    unsafe {
+                        native_set_style(
+                            handle,
+                            property.as_ptr() as *const i8,
+                            value.as_ptr() as *const i8
+                        )
+                    };
+                }
+
+                // Register event listeners
+                ∀ (event_name, message_id) ∈ &el.events {
+                    ≔ event_code! = event_name_to_code(event_name);
+                    ⎇ event_code >= 0 {
+                        unsafe {
+                            native_add_event_listener(handle, event_code, *message_id)
+                        };
+                        self.event_listeners.insert(*message_id, (handle, code_to_event_type(event_code)));
+                    }
+                }
+
+                // Recursively create and append children
+                ∀ child ∈ &el.children {
+                    ≔ child_handle! = self.create_from_vnode(child);
+                    ⎇ child_handle > 0 {
+                        unsafe { native_append_child(handle, child_handle) };
+                        // Update our widget's children list
+                        ⌥ self.widgets.get_mut(&handle) {
+                            Some(w) => { w.children.push(child_handle); }
+                            None => {}
+                        }
+                    }
+                }
+
+                handle
+            }
+
+            VNode·Text(text) => {
+                ≔ handle! = unsafe {
+                    native_create_text(
+                        self.window.handle,
+                        text.content.as_ptr() as *const i8
+                    )
+                };
+
+                // Store in widget map
+                ≔ widget! = NativeWidget {
+                    handle,
+                    tag: "#text".to_string(),
+                    children: Vec·new(),
+                };
+                self.widgets.insert(handle, widget);
+
+                handle
+            }
+
+            VNode·Fragment(frag) => {
+                // Fragments don't have a wrapper element in native
+                // Create a transparent container div
+                ≔ handle! = unsafe {
+                    native_create_widget(
+                        self.window.handle,
+                        "div".as_ptr() as *const i8
+                    )
+                };
+
+                ≔ widget! = NativeWidget {
+                    handle,
+                    tag: "div".to_string(),
+                    children: Vec·new(),
+                };
+                self.widgets.insert(handle, widget);
+
+                // Make it invisible/transparent
+                unsafe {
+                    native_set_style(handle, "display".as_ptr() as *const i8, "contents".as_ptr() as *const i8)
+                };
+
+                // Create and append all children
+                ∀ child ∈ &frag.children {
+                    ≔ child_handle! = self.create_from_vnode(child);
+                    ⎇ child_handle > 0 {
+                        unsafe { native_append_child(handle, child_handle) };
+                        ⌥ self.widgets.get_mut(&handle) {
+                            Some(w) => { w.children.push(child_handle); }
+                            None => {}
+                        }
+                    }
+                }
+
+                handle
+            }
+
+            VNode·Empty => {
+                // Empty nodes don't create any native widget
+                0
+            }
+        }
+    }
+
+    /// Mount a VNode tree as the root of the window
+    rite mount(&Δ self, root: VNode) {
+        ≔ root_handle! = self.create_from_vnode(&root);
+        ⎇ root_handle > 0 {
+            self.root_element = Some(root_handle);
+            unsafe { native_set_root(self.window.handle, root_handle) };
+        }
     }
 }
 
@@ -333,5 +625,49 @@ rite event_type_to_code(event: &EventType) -> i32! {
         EventType·Change => 31,
         EventType·Submit => 32,
         _ => -1,
+    }
+}
+
+/// Convert event name string to event code
+rite event_name_to_code(name: &str) -> i32! {
+    ⌥ name {
+        "click" => 0,
+        "dblclick" => 1,
+        "mousedown" => 2,
+        "mouseup" => 3,
+        "mousemove" => 4,
+        "mouseenter" => 5,
+        "mouseleave" => 6,
+        "keydown" => 10,
+        "keyup" => 11,
+        "keypress" => 12,
+        "focus" => 20,
+        "blur" => 21,
+        "input" => 30,
+        "change" => 31,
+        "submit" => 32,
+        _ => -1,
+    }
+}
+
+/// Convert event code back to EventType
+rite code_to_event_type(code: i32) -> EventType! {
+    ⌥ code {
+        0 => EventType·Click,
+        1 => EventType·DblClick,
+        2 => EventType·MouseDown,
+        3 => EventType·MouseUp,
+        4 => EventType·MouseMove,
+        5 => EventType·MouseEnter,
+        6 => EventType·MouseLeave,
+        10 => EventType·KeyDown,
+        11 => EventType·KeyUp,
+        12 => EventType·KeyPress,
+        20 => EventType·Focus,
+        21 => EventType·Blur,
+        30 => EventType·Input,
+        31 => EventType·Change,
+        32 => EventType·Submit,
+        _ => EventType·Click,  // Default fallback
     }
 }

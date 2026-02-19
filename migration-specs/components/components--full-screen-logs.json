@@ -1,0 +1,1613 @@
+{
+  "id": "ui/components/FullScreenLogs.tsx:FullScreenLogs",
+  "name": "FullScreenLogs",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/FullScreenLogs.tsx",
+    "code": "import React from 'react'\nimport { Button, Input, Select, SelectTrigger, SelectContent, SelectItem, SelectValue, Badge } from '@persona-framework/ui'\nimport { useQuery } from '@tanstack/react-query'\nimport { getDefaultApiClient } from '@shared/api/client'\nimport { X, Search, Filter, RefreshCw } from 'lucide-react'\n\ninterface LogEntry {\n  timestamp: string\n  level: string\n  logger: string\n  thread?: string\n  message: string\n  throwable?: string\n}\n\ninterface FullScreenLogsProps {\n  onClose: () => void\n}\n\nconst escapeHtml = (text: string) => {\n  return text\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#039;')\n}\n\nconst renderMarkdown = (text: string) => {\n  const escaped = escapeHtml(text)\n  return escaped\n    .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')\n    .replace(/\\*(.*?)\\*/g, '<em>$1</em>')\n    .replace(/`(.*?)`/g, '<code style=\"background: #2d2d2d; padding: 2px 4px; border-radius: 3px; font-family: monospace;\">$1</code>')\n    .replace(/\\[(.*?)\\]\\((.*?)\\)/g, '<a href=\"$2\" style=\"color: #60a5fa; text-decoration: underline;\" target=\"_blank\">$1</a>')\n}\n\nexport function FullScreenLogs({ onClose }: FullScreenLogsProps) {\n  const [logType, setLogType] = React.useState('agent')\n  const [levelFilter, setLevelFilter] = React.useState('ALL')\n  const [searchQuery, setSearchQuery] = React.useState('')\n  const [loggerFilter, setLoggerFilter] = React.useState('')\n  const [autoScroll, setAutoScroll] = React.useState(true)\n  const [expandedTraces, setExpandedTraces] = React.useState<Set<number>>(new Set())\n  const scrollRef = React.useRef<HTMLDivElement>(null)\n\n  const { data: logs = [], refetch } = useQuery<LogEntry[]>({\n    queryKey: ['fullscreen-logs', logType, levelFilter, searchQuery],\n    queryFn: async () => {\n      const client = getDefaultApiClient()\n      const params: any = { limit: 1000, logType }\n      if (levelFilter !== 'ALL') params.level = levelFilter\n      if (searchQuery) params.search = searchQuery\n      const res = await client.get('/logs', { params })\n      return res?.data || []\n    },\n    refetchInterval: 2000,\n    retry: false,\n  })\n\n  const filteredLogs = React.useMemo(() => {\n    if (!loggerFilter) return logs\n    return logs.filter(log =>\n      log.logger && log.logger.toLowerCase().includes(loggerFilter.toLowerCase())\n    )\n  }, [logs, loggerFilter])\n\n  React.useEffect(() => {\n    if (autoScroll && scrollRef.current) {\n      scrollRef.current.scrollTop = scrollRef.current.scrollHeight\n    }\n  }, [filteredLogs, autoScroll])\n\n  const getLevelColor = (level: string) => {\n    switch (level.toUpperCase()) {\n      case 'ERROR': return '#f48771'\n      case 'WARN': return '#fbbf24'\n      case 'INFO': return '#60a5fa'\n      case 'DEBUG': return '#a78bfa'\n      default: return '#cccccc'\n    }\n  }\n\n  const getLevelBadge = (level: string): \"danger\" | \"warning\" | \"info\" | \"default\" => {\n    switch (level.toUpperCase()) {\n      case 'ERROR': return 'danger'\n      case 'WARN': return 'warning'\n      case 'INFO': return 'info'\n      default: return 'default'\n    }\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n      <div className=\"flex items-center justify-between px-4 py-3 border-b border-[#3c3c3c] text-sm font-semibold\">\n        <span>Live Logs Viewer</span>\n        <Button variant=\"ghost\" size=\"sm\" onClick={onClose}>\n          <X className=\"w-4 h-4\" />\n        </Button>\n      </div>\n      <div className=\"flex flex-col gap-2 p-3 border-b border-[#3c3c3c]\">\n        <div className=\"flex gap-2 items-center flex-wrap\">\n          <Select value={logType} onValueChange={setLogType}>\n            <SelectTrigger className=\"w-[140px]\">\n              <SelectValue />\n            </SelectTrigger>\n            <SelectContent>\n              <SelectItem value=\"application\">System Logs</SelectItem>\n              <SelectItem value=\"agent\">Agent Logs</SelectItem>\n            </SelectContent>\n          </Select>\n          <Select value={levelFilter} onValueChange={setLevelFilter}>\n            <SelectTrigger className=\"w-[110px]\">\n              <SelectValue />\n            </SelectTrigger>\n            <SelectContent>\n              <SelectItem value=\"ALL\">All Levels</SelectItem>\n              <SelectItem value=\"ERROR\">ERROR</SelectItem>\n              <SelectItem value=\"WARN\">WARN</SelectItem>\n              <SelectItem value=\"INFO\">INFO</SelectItem>\n              <SelectItem value=\"DEBUG\">DEBUG</SelectItem>\n            </SelectContent>\n          </Select>\n          <Input\n            size=\"sm\"\n            placeholder=\"Search message...\"\n            value={searchQuery}\n            onChange={(e) => setSearchQuery(e.target.value)}\n            className=\"w-[200px]\"\n          />\n          <Input\n            size=\"sm\"\n            placeholder=\"Filter logger...\"\n            value={loggerFilter}\n            onChange={(e) => setLoggerFilter(e.target.value)}\n            className=\"w-[150px]\"\n          />\n          <Button\n            variant={autoScroll ? 'default' : 'outline'}\n            size=\"sm\"\n            onClick={() => setAutoScroll(!autoScroll)}\n          >\n            Auto-scroll\n          </Button>\n          <Button\n            size=\"sm\"\n            variant=\"ghost\"\n            onClick={() => refetch()}\n          >\n            <RefreshCw className=\"w-4 h-4\" />\n          </Button>\n        </div>\n        <div className=\"text-[11px] text-[#858585]\">\n          {filteredLogs.length} entries • Refresh: 2s\n        </div>\n      </div>\n      <div ref={scrollRef} className=\"flex-1 overflow-y-auto p-3 font-mono text-xs\">\n        {filteredLogs.length === 0 ? (\n          <div className=\"text-center text-[#858585] p-8\">\n            No logs found\n          </div>\n        ) : (\n          filteredLogs.map((log, idx) => {\n            const isExpanded = expandedTraces.has(idx)\n            const toggleExpanded = () => {\n              const newSet = new Set(expandedTraces)\n              if (isExpanded) {\n                newSet.delete(idx)\n              } else {\n                newSet.add(idx)\n              }\n              setExpandedTraces(newSet)\n            }\n\n            let timestamp = null\n            try {\n              if (log.timestamp) {\n                const trimmed = log.timestamp.trim()\n                timestamp = new Date(trimmed).toLocaleTimeString('en-US', {\n                  hour12: false,\n                  hour: '2-digit',\n                  minute: '2-digit',\n                  second: '2-digit'\n                })\n              }\n            } catch (e) {\n              timestamp = log.timestamp?.trim()\n            }\n\n            const loggerShortName = log.logger && log.logger !== 'unknown'\n              ? log.logger.split('.').slice(-2).join('.')\n              : 'system'\n\n            return (\n              <div\n                key={idx}\n                className=\"px-2.5 py-1.5 rounded mb-1 whitespace-pre-wrap break-words\"\n                style={{\n                  backgroundColor: log.level === 'ERROR' ? '#2d1e1e' : log.level === 'WARN' ? '#2d2a1e' : 'transparent',\n                  borderLeft: `3px solid ${getLevelColor(log.level)}`\n                }}\n              >\n                <div className=\"flex gap-2.5 items-center mb-1\">\n                  {timestamp && (\n                    <span className=\"text-[#858585] text-[11px] min-w-[80px] font-mono\">\n                      {timestamp}\n                    </span>\n                  )}\n                  <Badge variant={getLevelBadge(log.level)} className=\"text-[10px]\">\n                    {log.level}\n                  </Badge>\n                  <span className=\"text-[#858585] text-[11px]\">\n                    {loggerShortName}\n                  </span>\n                  {log.thread && (\n                    <span className=\"text-[#666] text-[10px]\">\n                      [{log.thread}]\n                    </span>\n                  )}\n                </div>\n                <div\n                  className=\"ml-2.5\"\n                  style={{ color: getLevelColor(log.level) }}\n                  dangerouslySetInnerHTML={{ __html: renderMarkdown(log.message) }}\n                />\n                {log.throwable && (\n                  <div className=\"mt-1.5 ml-2.5\">\n                    <div\n                      onClick={toggleExpanded}\n                      className=\"text-[#f48771] text-[11px] cursor-pointer select-none inline-flex items-center gap-1\"\n                    >\n                      <span>{isExpanded ? '▼' : '▶'}</span>\n                      <span>Stack Trace ({log.throwable.split('\\n').length} lines)</span>\n                    </div>\n                    {isExpanded && (\n                      <div className=\"text-[#f48771] text-[10px] mt-1 pl-2.5 border-l-2 border-[#f48771] font-mono whitespace-pre-wrap\">\n                        {log.throwable}\n                      </div>\n                    )}\n                  </div>\n                )}\n              </div>\n            )\n          })\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "FullScreenLogs",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 38,
+        "start_col": 7,
+        "end_line": 249,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "onClose",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 39,
+            "start_col": 32,
+            "end_line": 39,
+            "end_col": 55
+          },
+          "state_name": "logType",
+          "setter_name": "setLogType",
+          "initial_value": "\"agent\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 40,
+            "start_col": 40,
+            "end_line": 40,
+            "end_col": 61
+          },
+          "state_name": "levelFilter",
+          "setter_name": "setLevelFilter",
+          "initial_value": "\"ALL\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 41,
+            "start_col": 40,
+            "end_line": 41,
+            "end_col": 58
+          },
+          "state_name": "searchQuery",
+          "setter_name": "setSearchQuery",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 42,
+            "start_col": 42,
+            "end_line": 42,
+            "end_col": 60
+          },
+          "state_name": "loggerFilter",
+          "setter_name": "setLoggerFilter",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 43,
+            "start_col": 38,
+            "end_line": 43,
+            "end_col": 58
+          },
+          "state_name": "autoScroll",
+          "setter_name": "setAutoScroll",
+          "initial_value": "true",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 44,
+            "start_col": 46,
+            "end_line": 44,
+            "end_col": 84
+          },
+          "state_name": "expandedTraces",
+          "setter_name": "setExpandedTraces",
+          "initial_value": "/* expr */",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 45,
+            "start_col": 20,
+            "end_line": 45,
+            "end_col": 54
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "scrollRef",
+          "ref_type": "HTMLDivElement",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 61,
+            "start_col": 23,
+            "end_line": 66,
+            "end_col": 26
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "logs",
+            "loggerFilter"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 68,
+            "start_col": 2,
+            "end_line": 72,
+            "end_col": 32
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "filteredLogs",
+            "autoScroll"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [
+        {
+          "name": "useQuery",
+          "location": {
+            "start_line": 47,
+            "start_col": 39,
+            "end_line": 59,
+            "end_col": 4
+          },
+          "arguments": [
+            "{}"
+          ],
+          "expanded_arguments": [
+            {
+              "kind": "Object",
+              "properties": [
+                {
+                  "name": "queryKey",
+                  "value_kind": {
+                    "kind": "Array",
+                    "elements": [
+                      "'fullscreen-logs'",
+                      "logType",
+                      "levelFilter",
+                      "searchQuery"
+                    ]
+                  }
+                },
+                {
+                  "name": "queryFn",
+                  "value_kind": {
+                    "kind": "Callback",
+                    "params": [],
+                    "body_summary": "{\n      const client = getDefaultApiClient()\n      const params: any = { limit: 1000, logType }\n      if (levelFilter !== 'ALL') params.level = levelFilter\n      if (searchQuery) params.search = searchQuery\n      const res = await client.get('/logs', { params })\n      return res?.data || []\n    }",
+                    "calls": [
+                      {
+                        "name": "getDefaultApiClient",
+                        "source": {
+                          "type": "Unknown"
+                        },
+                        "arguments": [],
+                        "is_async": false
+                      },
+                      {
+                        "name": "client.get",
+                        "source": {
+                          "type": "Unknown"
+                        },
+                        "arguments": [
+                          "'/logs'",
+                          "{ params }"
+                        ],
+                        "is_async": true
+                      }
+                    ],
+                    "side_effects": []
+                  }
+                },
+                {
+                  "name": "refetchInterval",
+                  "value_kind": {
+                    "kind": "Simple",
+                    "value": "2000"
+                  }
+                },
+                {
+                  "name": "retry",
+                  "value_kind": {
+                    "kind": "Simple",
+                    "value": "false"
+                  }
+                }
+              ]
+            }
+          ],
+          "returned_values": [
+            {
+              "name": "refetch",
+              "is_function": false,
+              "original_name": null
+            }
+          ],
+          "is_zustand": false
+        }
+      ],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between px-4 py-3 border-b border-[#3c3c3c] text-sm font-semibold"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "span",
+                        "is_component": false,
+                        "attributes": [],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Live Logs Viewer"
+                            },
+                            "location": {
+                              "start_line": 96,
+                              "start_col": 14,
+                              "end_line": 96,
+                              "end_col": 30
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 96,
+                        "start_col": 8,
+                        "end_line": 96,
+                        "end_col": 37
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Button",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "variant",
+                            "value": {
+                              "type": "String",
+                              "value": "ghost"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "size",
+                            "value": {
+                              "type": "String",
+                              "value": "sm"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "onClose"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "X",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "w-4 h-4"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 98,
+                              "start_col": 10,
+                              "end_line": 98,
+                              "end_col": 35
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 97,
+                        "start_col": 8,
+                        "end_line": 99,
+                        "end_col": 17
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 95,
+                  "start_col": 6,
+                  "end_line": 100,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex flex-col gap-2 p-3 border-b border-[#3c3c3c]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-2 items-center flex-wrap"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Select",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "logType"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onValueChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "setLogType"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SelectTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-[140px]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectValue",
+                                          "is_component": true,
+                                          "attributes": [],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 105,
+                                          "start_col": 14,
+                                          "end_line": 105,
+                                          "end_col": 29
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 104,
+                                    "start_col": 12,
+                                    "end_line": 106,
+                                    "end_col": 28
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SelectContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "application"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "System Logs"
+                                              },
+                                              "location": {
+                                                "start_line": 108,
+                                                "start_col": 46,
+                                                "end_line": 108,
+                                                "end_col": 57
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 108,
+                                          "start_col": 14,
+                                          "end_line": 108,
+                                          "end_col": 70
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "agent"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Agent Logs"
+                                              },
+                                              "location": {
+                                                "start_line": 109,
+                                                "start_col": 40,
+                                                "end_line": 109,
+                                                "end_col": 50
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 109,
+                                          "start_col": 14,
+                                          "end_line": 109,
+                                          "end_col": 63
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 107,
+                                    "start_col": 12,
+                                    "end_line": 110,
+                                    "end_col": 28
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 103,
+                              "start_col": 10,
+                              "end_line": 111,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Select",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "levelFilter"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onValueChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "setLevelFilter"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SelectTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-[110px]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectValue",
+                                          "is_component": true,
+                                          "attributes": [],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 114,
+                                          "start_col": 14,
+                                          "end_line": 114,
+                                          "end_col": 29
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 113,
+                                    "start_col": 12,
+                                    "end_line": 115,
+                                    "end_col": 28
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SelectContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "ALL"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "All Levels"
+                                              },
+                                              "location": {
+                                                "start_line": 117,
+                                                "start_col": 38,
+                                                "end_line": 117,
+                                                "end_col": 48
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 117,
+                                          "start_col": 14,
+                                          "end_line": 117,
+                                          "end_col": 61
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "ERROR"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "ERROR"
+                                              },
+                                              "location": {
+                                                "start_line": 118,
+                                                "start_col": 40,
+                                                "end_line": 118,
+                                                "end_col": 45
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 118,
+                                          "start_col": 14,
+                                          "end_line": 118,
+                                          "end_col": 58
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "WARN"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "WARN"
+                                              },
+                                              "location": {
+                                                "start_line": 119,
+                                                "start_col": 39,
+                                                "end_line": 119,
+                                                "end_col": 43
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 119,
+                                          "start_col": 14,
+                                          "end_line": 119,
+                                          "end_col": 56
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "INFO"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "INFO"
+                                              },
+                                              "location": {
+                                                "start_line": 120,
+                                                "start_col": 39,
+                                                "end_line": 120,
+                                                "end_col": 43
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 120,
+                                          "start_col": 14,
+                                          "end_line": 120,
+                                          "end_col": 56
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "DEBUG"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "DEBUG"
+                                              },
+                                              "location": {
+                                                "start_line": 121,
+                                                "start_col": 40,
+                                                "end_line": 121,
+                                                "end_col": 45
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 121,
+                                          "start_col": 14,
+                                          "end_line": 121,
+                                          "end_col": 58
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 116,
+                                    "start_col": 12,
+                                    "end_line": 122,
+                                    "end_col": 28
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 112,
+                              "start_col": 10,
+                              "end_line": 123,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Input",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "placeholder",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Search message..."
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "searchQuery"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => setSearchQuery(e.target.value)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "w-[200px]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 124,
+                              "start_col": 10,
+                              "end_line": 130,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Input",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "placeholder",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Filter logger..."
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "loggerFilter"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => setLoggerFilter(e.target.value)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "w-[150px]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 131,
+                              "start_col": 10,
+                              "end_line": 137,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "autoScroll ? 'default' : 'outline'"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setAutoScroll(!autoScroll)"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Auto-scroll"
+                                  },
+                                  "location": {
+                                    "start_line": 142,
+                                    "start_col": 11,
+                                    "end_line": 144,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 138,
+                              "start_col": 10,
+                              "end_line": 144,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => refetch()"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "RefreshCw",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 150,
+                                    "start_col": 12,
+                                    "end_line": 150,
+                                    "end_col": 45
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 145,
+                              "start_col": 10,
+                              "end_line": 151,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 102,
+                        "start_col": 8,
+                        "end_line": 152,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-[11px] text-[#858585]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "filteredLogs.length"
+                            },
+                            "location": {
+                              "start_line": 154,
+                              "start_col": 10,
+                              "end_line": 154,
+                              "end_col": 31
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "entries • Refresh: 2s"
+                            },
+                            "location": {
+                              "start_line": 154,
+                              "start_col": 31,
+                              "end_line": 155,
+                              "end_col": 8
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 153,
+                        "start_col": 8,
+                        "end_line": 155,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 101,
+                  "start_col": 6,
+                  "end_line": 156,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "ref",
+                      "value": {
+                        "type": "Expression",
+                        "code": "scrollRef"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-y-auto p-3 font-mono text-xs"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "filteredLogs.length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-center text-[#858585] p-8"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "No logs found"
+                                },
+                                "location": {
+                                  "start_line": 159,
+                                  "start_col": 58,
+                                  "end_line": 161,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 159,
+                            "start_col": 10,
+                            "end_line": 161,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 158,
+                        "start_col": 8,
+                        "end_line": 245,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 157,
+                  "start_col": 6,
+                  "end_line": 246,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 94,
+            "start_col": 4,
+            "end_line": 247,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "Input",
+        "RefreshCw",
+        "Select",
+        "SelectContent",
+        "SelectItem",
+        "SelectTrigger",
+        "SelectValue",
+        "X"
+      ],
+      "architecture": {
+        "service_actors": [
+          {
+            "name": "QueryService",
+            "derived_from": [
+              "useQuery"
+            ],
+            "responsibilities": [],
+            "owned_state": [
+              "refetch"
+            ],
+            "messages": []
+          }
+        ],
+        "state_ownership": [
+          {
+            "state_name": "refetch",
+            "owner": "QueryService",
+            "access_pattern": "shared",
+            "source": "useQuery"
+          },
+          {
+            "state_name": "logType",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "levelFilter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "searchQuery",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loggerFilter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "autoScroll",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "expandedTraces",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/full_screen_logs.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:logType",
+        "to_field": "logType",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"agent\"",
+        "reasoning": "useState hook 'logType' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:levelFilter",
+        "to_field": "levelFilter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"ALL\"",
+        "reasoning": "useState hook 'levelFilter' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:searchQuery",
+        "to_field": "searchQuery",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'searchQuery' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loggerFilter",
+        "to_field": "loggerFilter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'loggerFilter' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:autoScroll",
+        "to_field": "autoScroll",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "true",
+        "reasoning": "useState hook 'autoScroll' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:expandedTraces",
+        "to_field": "expandedTraces",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "/* expr */",
+        "reasoning": "useState hook 'expandedTraces' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:scrollRef",
+        "to_field": "scrollRef",
+        "field_type": "Option<HTMLDivElement>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'scrollRef' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateLogType",
+        "from_handler": "setLogType",
+        "payload": null,
+        "state_changes": [
+          "self.logType = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLevelFilter",
+        "from_handler": "setLevelFilter",
+        "payload": null,
+        "state_changes": [
+          "self.levelFilter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSearchQuery",
+        "from_handler": "setSearchQuery",
+        "payload": null,
+        "state_changes": [
+          "self.searchQuery = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoggerFilter",
+        "from_handler": "setLoggerFilter",
+        "payload": null,
+        "state_changes": [
+          "self.loggerFilter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateAutoScroll",
+        "from_handler": "setAutoScroll",
+        "payload": null,
+        "state_changes": [
+          "self.autoScroll = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateExpandedTraces",
+        "from_handler": "setExpandedTraces",
+        "payload": null,
+        "state_changes": [
+          "self.expandedTraces = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[filteredLogs,autoScroll]",
+        "strategy": "inline",
+        "reasoning": "Deps [filteredLogs, autoScroll] → inline in handlers that change these",
+        "inline_in": "filteredLogs_autoScroll",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "on_close",
+          "field_type": "Any",
+          "from_prop": "onClose"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_8",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [filteredLogs, autoScroll] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onClose",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onClose' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Input",
+      "RefreshCw",
+      "Select",
+      "SelectContent",
+      "SelectItem",
+      "SelectTrigger",
+      "SelectValue",
+      "X"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "6 state variables"
+  ],
+  "status": "pending"
+}

@@ -7,6 +7,7 @@
 invoke std·collections·HashMap;
 invoke crate·core·vdom·{VNode, Patch};
 invoke crate·core·events·{Event, EventType};
+invoke crate·platform·native·NativePlatform;
 
 // =============================================================================
 // Core Types
@@ -178,6 +179,7 @@ invoke crate·core·events·{Event, EventType};
 ☉ ᛈ Platform {
     Browser(BrowserPlatform),
     Server(ServerPlatform),
+    Native(NativePlatform),
 }
 
 ⊢ Platform {
@@ -191,11 +193,22 @@ invoke crate·core·events·{Event, EventType};
         Platform·Server(ServerPlatform·new())
     }
 
+    /// Create native platform
+    ☉ rite native(title: &str, width: i32, height: i32) -> Self! {
+        Platform·Native(NativePlatform·new(title, width, height))
+    }
+
+    /// Create native platform with defaults
+    ☉ rite native_default() -> Self! {
+        Platform·Native(NativePlatform·default())
+    }
+
     /// Query DOM element by selector
     ☉ rite query_selector(&self, selector: &str) -> Option<DomElement>? {
         ⌥ self {
             Platform·Browser(p) => p·query_selector(selector),
             Platform·Server(_) => None,
+            Platform·Native(p) => p·query_selector(selector),
         }
     }
 
@@ -204,6 +217,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·create_element(tag),
             Platform·Server(p) => p·create_element(tag),
+            Platform·Native(p) => p·create_element(tag),
         }
     }
 
@@ -212,6 +226,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·create_text(content),
             Platform·Server(p) => p·create_text(content),
+            Platform·Native(p) => p·create_text(content),
         }
     }
 
@@ -220,6 +235,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·apply_patch(patch),
             Platform·Server(_) => {},
+            Platform·Native(p) => p·apply_patch(patch),
         }
     }
 
@@ -228,6 +244,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·add_event_listener(element, event, message_id),
             Platform·Server(_) => {},
+            Platform·Native(p) => p·add_event_listener(element, event, message_id),
         }
     }
 
@@ -236,6 +253,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·remove_event_listener(element, event, message_id),
             Platform·Server(_) => {},
+            Platform·Native(p) => p·remove_event_listener(element, event, message_id),
         }
     }
 
@@ -244,6 +262,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·window_size(),
             Platform·Server(_) => (0, 0),
+            Platform·Native(p) => p·window_size(),
         }
     }
 
@@ -252,6 +271,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·request_animation_frame(message_id),
             Platform·Server(_) => 0,
+            Platform·Native(p) => p·request_animation_frame(message_id),
         }
     }
 
@@ -260,6 +280,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·cancel_animation_frame(id),
             Platform·Server(_) => {},
+            Platform·Native(p) => p·cancel_animation_frame(id),
         }
     }
 
@@ -268,6 +289,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·set_timeout(message_id, delay_ms),
             Platform·Server(_) => 0,
+            Platform·Native(p) => p·set_timeout(message_id, delay_ms),
         }
     }
 
@@ -276,6 +298,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·clear_timeout(id),
             Platform·Server(_) => {},
+            Platform·Native(p) => p·clear_timeout(id),
         }
     }
 
@@ -284,6 +307,7 @@ invoke crate·core·events·{Event, EventType};
         ⌥ self {
             Platform·Browser(p) => p·set_interval(message_id, interval_ms),
             Platform·Server(_) => 0,
+            Platform·Native(p) => p·set_interval(message_id, interval_ms),
         }
     }
 
@@ -291,6 +315,7 @@ invoke crate·core·events·{Event, EventType};
     ☉ rite clear_interval(&self, id: u64) {
         ⌥ self {
             Platform·Browser(p) => p·clear_interval(id),
+            Platform·Native(p) => p·clear_interval(id),
             Platform·Server(_) => {},
         }
     }

@@ -1,0 +1,1463 @@
+{
+  "id": "ui/components/panels/BookmarksPanel.tsx:BookmarksPanel",
+  "name": "BookmarksPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/BookmarksPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button } from '@persona-framework/ui'\nimport { Bookmark, Trash2, Plus, FileCode, X, Tag } from 'lucide-react'\n\nconst STORAGE_KEY = 'wraith_bookmarks'\n\ninterface BookmarkItem {\n  id: string\n  filePath: string\n  line: number\n  label?: string\n  color: 'blue' | 'green' | 'yellow' | 'red' | 'purple'\n  createdAt: number\n}\n\nconst COLORS = {\n  blue: { bg: 'bg-[rgba(91,206,250,0.2)]', border: 'border-[#5bcefa]', text: 'text-[#5bcefa]' },\n  green: { bg: 'bg-[rgba(0,255,127,0.2)]', border: 'border-[#00ff7f]', text: 'text-[#00ff7f]' },\n  yellow: { bg: 'bg-[rgba(255,215,0,0.2)]', border: 'border-[#ffd700]', text: 'text-[#ffd700]' },\n  red: { bg: 'bg-[rgba(244,135,113,0.2)]', border: 'border-[#f48771]', text: 'text-[#f48771]' },\n  purple: { bg: 'bg-[rgba(157,0,255,0.2)]', border: 'border-[#9d00ff]', text: 'text-[#9d00ff]' },\n}\n\nfunction loadBookmarks(): BookmarkItem[] {\n  try {\n    const stored = localStorage.getItem(STORAGE_KEY)\n    if (stored) {\n      const parsed = JSON.parse(stored)\n      if (Array.isArray(parsed)) return parsed\n    }\n  } catch {\n    // Invalid storage\n  }\n  return []\n}\n\nfunction saveBookmarks(bookmarks: BookmarkItem[]) {\n  try {\n    localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks))\n  } catch {\n    // Storage unavailable\n  }\n}\n\ninterface BookmarksPanelProps {\n  onFileClick?: (filePath: string, line?: number) => void\n}\n\nexport function BookmarksPanel({ onFileClick }: BookmarksPanelProps) {\n  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(() => loadBookmarks())\n  const [showAddForm, setShowAddForm] = useState(false)\n  const [newBookmark, setNewBookmark] = useState({\n    filePath: '',\n    line: 1,\n    label: '',\n    color: 'blue' as BookmarkItem['color'],\n  })\n  const [filter, setFilter] = useState('')\n\n  useEffect(() => {\n    saveBookmarks(bookmarks)\n  }, [bookmarks])\n\n  const addBookmark = () => {\n    if (!newBookmark.filePath.trim()) return\n\n    const bookmark: BookmarkItem = {\n      id: crypto.randomUUID(),\n      filePath: newBookmark.filePath.trim(),\n      line: newBookmark.line,\n      label: newBookmark.label.trim() || undefined,\n      color: newBookmark.color,\n      createdAt: Date.now(),\n    }\n\n    setBookmarks([bookmark, ...bookmarks])\n    setNewBookmark({ filePath: '', line: 1, label: '', color: 'blue' })\n    setShowAddForm(false)\n  }\n\n  const removeBookmark = (id: string) => {\n    setBookmarks(bookmarks.filter(b => b.id !== id))\n  }\n\n  const handleBookmarkClick = (bookmark: BookmarkItem) => {\n    onFileClick?.(bookmark.filePath, bookmark.line)\n  }\n\n  const filteredBookmarks = bookmarks.filter(b =>\n    b.filePath.toLowerCase().includes(filter.toLowerCase()) ||\n    b.label?.toLowerCase().includes(filter.toLowerCase())\n  )\n\n  const getFileName = (path: string) => path.split('/').pop() || path\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n      <div className=\"p-3 border-b border-[#3c3c3c] bg-[#252526]\">\n        <div className=\"flex items-center justify-between mb-3\">\n          <div className=\"flex items-center gap-2\">\n            <Bookmark className=\"w-4 h-4 text-[#5bcefa]\" />\n            <span className=\"text-sm font-medium text-white\">Bookmarks</span>\n            <span className=\"text-xs text-[#808080]\">({bookmarks.length})</span>\n          </div>\n          <Button\n            size=\"sm\"\n            variant=\"ghost\"\n            onClick={() => setShowAddForm(!showAddForm)}\n            className=\"h-7 w-7 p-0\"\n            aria-label={showAddForm ? 'Cancel add bookmark' : 'Add bookmark'}\n          >\n            {showAddForm ? <X className=\"w-4 h-4\" /> : <Plus className=\"w-4 h-4\" />}\n          </Button>\n        </div>\n\n        <input\n          type=\"text\"\n          placeholder=\"Filter bookmarks...\"\n          value={filter}\n          onChange={(e) => setFilter(e.target.value)}\n          className=\"w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n        />\n      </div>\n\n      {showAddForm && (\n        <div className=\"p-3 border-b border-[#3c3c3c] bg-[#2d2d30]\">\n          <div className=\"flex flex-col gap-2\">\n            <input\n              type=\"text\"\n              placeholder=\"File path (e.g., src/index.ts)\"\n              value={newBookmark.filePath}\n              onChange={(e) => setNewBookmark({ ...newBookmark, filePath: e.target.value })}\n              className=\"w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n            />\n            <div className=\"flex gap-2\">\n              <input\n                type=\"number\"\n                min={1}\n                placeholder=\"Line\"\n                value={newBookmark.line}\n                onChange={(e) => setNewBookmark({ ...newBookmark, line: parseInt(e.target.value) || 1 })}\n                className=\"w-20 px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n              />\n              <input\n                type=\"text\"\n                placeholder=\"Label (optional)\"\n                value={newBookmark.label}\n                onChange={(e) => setNewBookmark({ ...newBookmark, label: e.target.value })}\n                className=\"flex-1 px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n              />\n            </div>\n            <div className=\"flex items-center gap-2\">\n              <span className=\"text-xs text-[#808080]\">Color:</span>\n              {(Object.keys(COLORS) as BookmarkItem['color'][]).map(color => (\n                <button\n                  key={color}\n                  onClick={() => setNewBookmark({ ...newBookmark, color })}\n                  className={`w-5 h-5 rounded-full border-2 transition-transform ${\n                    newBookmark.color === color ? 'scale-125' : ''\n                  } ${COLORS[color].bg} ${COLORS[color].border}`}\n                  aria-label={`Select ${color} color`}\n                />\n              ))}\n            </div>\n            <Button size=\"sm\" onClick={addBookmark} disabled={!newBookmark.filePath.trim()}>\n              <Plus className=\"w-3.5 h-3.5 mr-1.5\" />\n              Add Bookmark\n            </Button>\n          </div>\n        </div>\n      )}\n\n      <div className=\"flex-1 overflow-auto\">\n        {filteredBookmarks.length === 0 ? (\n          <div className=\"flex flex-col items-center justify-center h-full p-6 text-center\">\n            <div className=\"p-3 bg-[#252526] rounded-full mb-4\">\n              <Bookmark className=\"w-8 h-8 text-[#858585]\" />\n            </div>\n            <div className=\"text-sm text-[#cccccc] font-medium mb-1\">\n              {bookmarks.length === 0 ? 'No bookmarks yet' : 'No matching bookmarks'}\n            </div>\n            <div className=\"text-xs text-[#858585]\">\n              {bookmarks.length === 0\n                ? 'Add bookmarks to quickly navigate to important code'\n                : 'Try a different search term'}\n            </div>\n          </div>\n        ) : (\n          <div className=\"p-2\">\n            {filteredBookmarks.map(bookmark => {\n              const colorStyle = COLORS[bookmark.color]\n              return (\n                <div\n                  key={bookmark.id}\n                  className={`group flex items-start gap-2 p-2 rounded-md cursor-pointer transition-all hover:bg-[#2d2d30] mb-1 border-l-2 ${colorStyle.border}`}\n                  onClick={() => handleBookmarkClick(bookmark)}\n                >\n                  <FileCode className={`w-4 h-4 mt-0.5 flex-shrink-0 ${colorStyle.text}`} />\n                  <div className=\"flex-1 min-w-0\">\n                    <div className=\"text-sm text-white truncate\" title={bookmark.filePath}>\n                      {getFileName(bookmark.filePath)}\n                    </div>\n                    <div className=\"text-xs text-[#808080] truncate\" title={bookmark.filePath}>\n                      {bookmark.filePath}:{bookmark.line}\n                    </div>\n                    {bookmark.label && (\n                      <div className=\"flex items-center gap-1 mt-1\">\n                        <Tag className=\"w-3 h-3 text-[#808080]\" />\n                        <span className=\"text-xs text-[#b0b0b0]\">{bookmark.label}</span>\n                      </div>\n                    )}\n                  </div>\n                  <button\n                    onClick={(e) => {\n                      e.stopPropagation()\n                      removeBookmark(bookmark.id)\n                    }}\n                    className=\"opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#5a1d1d] transition-opacity\"\n                    aria-label=\"Remove bookmark\"\n                  >\n                    <Trash2 className=\"w-3.5 h-3.5 text-[#f48771]\" />\n                  </button>\n                </div>\n              )\n            })}\n          </div>\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "BookmarksPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 49,
+        "start_col": 7,
+        "end_line": 231,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "onFileClick",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 50,
+            "start_col": 36,
+            "end_line": 50,
+            "end_col": 83
+          },
+          "state_name": "bookmarks",
+          "setter_name": "setBookmarks",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 51,
+            "start_col": 40,
+            "end_line": 51,
+            "end_col": 55
+          },
+          "state_name": "showAddForm",
+          "setter_name": "setShowAddForm",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 52,
+            "start_col": 40,
+            "end_line": 57,
+            "end_col": 4
+          },
+          "state_name": "newBookmark",
+          "setter_name": "setNewBookmark",
+          "initial_value": "∅",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 58,
+            "start_col": 30,
+            "end_line": 58,
+            "end_col": 42
+          },
+          "state_name": "filter",
+          "setter_name": "setFilter",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 60,
+            "start_col": 2,
+            "end_line": 62,
+            "end_col": 17
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "bookmarks"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-3 border-b border-[#3c3c3c] bg-[#252526]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center justify-between mb-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center gap-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Bookmark",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4 text-[#5bcefa]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 101,
+                                    "start_col": 12,
+                                    "end_line": 101,
+                                    "end_col": 59
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-sm font-medium text-white"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Bookmarks"
+                                        },
+                                        "location": {
+                                          "start_line": 102,
+                                          "start_col": 61,
+                                          "end_line": 102,
+                                          "end_col": 70
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 102,
+                                    "start_col": 12,
+                                    "end_line": 102,
+                                    "end_col": 77
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-[#808080]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "("
+                                        },
+                                        "location": {
+                                          "start_line": 103,
+                                          "start_col": 53,
+                                          "end_line": 103,
+                                          "end_col": 54
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "bookmarks.length"
+                                        },
+                                        "location": {
+                                          "start_line": 103,
+                                          "start_col": 54,
+                                          "end_line": 103,
+                                          "end_col": 72
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": ")"
+                                        },
+                                        "location": {
+                                          "start_line": 103,
+                                          "start_col": 72,
+                                          "end_line": 103,
+                                          "end_col": 73
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 103,
+                                    "start_col": 12,
+                                    "end_line": 103,
+                                    "end_col": 80
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 100,
+                              "start_col": 10,
+                              "end_line": 104,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setShowAddForm(!showAddForm)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-7 w-7 p-0"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "aria-label",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "showAddForm ? 'Cancel add bookmark' : 'Add bookmark'"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Conditional",
+                                    "condition": "showAddForm",
+                                    "consequent": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "X",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 112,
+                                        "start_col": 27,
+                                        "end_line": 112,
+                                        "end_col": 52
+                                      }
+                                    },
+                                    "alternate": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Plus",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 112,
+                                        "start_col": 55,
+                                        "end_line": 112,
+                                        "end_col": 83
+                                      }
+                                    }
+                                  },
+                                  "location": {
+                                    "start_line": 112,
+                                    "start_col": 12,
+                                    "end_line": 112,
+                                    "end_col": 84
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 105,
+                              "start_col": 10,
+                              "end_line": 113,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 99,
+                        "start_col": 8,
+                        "end_line": 114,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "input",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "type",
+                            "value": {
+                              "type": "String",
+                              "value": "text"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "placeholder",
+                            "value": {
+                              "type": "String",
+                              "value": "Filter bookmarks..."
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "filter"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onChange",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(e) => setFilter(e.target.value)"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 116,
+                        "start_col": 8,
+                        "end_line": 122,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 98,
+                  "start_col": 6,
+                  "end_line": 123,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "showAddForm",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "p-3 border-b border-[#3c3c3c] bg-[#2d2d30]"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col gap-2"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "input",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "type",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "placeholder",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "File path (e.g., src/index.ts)"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "value",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "newBookmark.filePath"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onChange",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "(e) => setNewBookmark({ ...newBookmark, filePath: e.target.value })"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 128,
+                                  "start_col": 12,
+                                  "end_line": 134,
+                                  "end_col": 14
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex gap-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "input",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "type",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "number"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "min",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "1"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "placeholder",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Line"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "newBookmark.line"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => setNewBookmark({ ...newBookmark, line: parseInt(e.target.value) || 1 })"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-20 px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 136,
+                                        "start_col": 14,
+                                        "end_line": 143,
+                                        "end_col": 16
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "input",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "type",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "placeholder",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Label (optional)"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "newBookmark.label"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => setNewBookmark({ ...newBookmark, label: e.target.value })"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex-1 px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 144,
+                                        "start_col": 14,
+                                        "end_line": 150,
+                                        "end_col": 16
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 135,
+                                  "start_col": 12,
+                                  "end_line": 151,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex items-center gap-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "span",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-xs text-[#808080]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Color:"
+                                            },
+                                            "location": {
+                                              "start_line": 153,
+                                              "start_col": 55,
+                                              "end_line": 153,
+                                              "end_col": 61
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 153,
+                                        "start_col": 14,
+                                        "end_line": 153,
+                                        "end_col": 68
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Map",
+                                        "iterable": "(Object.keys(COLORS) as BookmarkItem['color'][])",
+                                        "item_name": "color",
+                                        "key_expr": "color",
+                                        "body": {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "button",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "key",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "color"
+                                                },
+                                                "is_event_handler": false
+                                              },
+                                              {
+                                                "name": "onClick",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "() => setNewBookmark({ ...newBookmark, color })"
+                                                },
+                                                "is_event_handler": true
+                                              },
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "`w-5 h-5 rounded-full border-2 transition-transform ${\n                    newBookmark.color === color ? 'scale-125' : ''\n                  } ${COLORS[color].bg} ${COLORS[color].border}`"
+                                                },
+                                                "is_event_handler": false
+                                              },
+                                              {
+                                                "name": "aria-label",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "`Select ${color} color`"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": []
+                                          },
+                                          "location": {
+                                            "start_line": 155,
+                                            "start_col": 16,
+                                            "end_line": 162,
+                                            "end_col": 18
+                                          }
+                                        }
+                                      },
+                                      "location": {
+                                        "start_line": 154,
+                                        "start_col": 14,
+                                        "end_line": 163,
+                                        "end_col": 17
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 152,
+                                  "start_col": 12,
+                                  "end_line": 164,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "addBookmark"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "disabled",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "!newBookmark.filePath.trim()"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Plus",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-3.5 h-3.5 mr-1.5"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 166,
+                                        "start_col": 14,
+                                        "end_line": 166,
+                                        "end_col": 53
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Add Bookmark"
+                                      },
+                                      "location": {
+                                        "start_line": 166,
+                                        "start_col": 53,
+                                        "end_line": 168,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 165,
+                                  "start_col": 12,
+                                  "end_line": 168,
+                                  "end_col": 21
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 127,
+                            "start_col": 10,
+                            "end_line": 169,
+                            "end_col": 16
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 126,
+                      "start_col": 8,
+                      "end_line": 170,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 125,
+                  "start_col": 6,
+                  "end_line": 171,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "filteredBookmarks.length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col items-center justify-center h-full p-6 text-center"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "p-3 bg-[#252526] rounded-full mb-4"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Bookmark",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-8 h-8 text-[#858585]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 177,
+                                        "start_col": 14,
+                                        "end_line": 177,
+                                        "end_col": 61
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 176,
+                                  "start_col": 12,
+                                  "end_line": 178,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-sm text-[#cccccc] font-medium mb-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "bookmarks.length === 0 ? 'No bookmarks yet' : 'No matching bookmarks'"
+                                      },
+                                      "location": {
+                                        "start_line": 180,
+                                        "start_col": 14,
+                                        "end_line": 180,
+                                        "end_col": 85
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 179,
+                                  "start_col": 12,
+                                  "end_line": 181,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-xs text-[#858585]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "bookmarks.length === 0\n                ? 'Add bookmarks to quickly navigate to important code'\n                : 'Try a different search term'"
+                                      },
+                                      "location": {
+                                        "start_line": 183,
+                                        "start_col": 14,
+                                        "end_line": 185,
+                                        "end_col": 48
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 182,
+                                  "start_col": 12,
+                                  "end_line": 186,
+                                  "end_col": 18
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 175,
+                            "start_col": 10,
+                            "end_line": 187,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-2"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "filteredBookmarks.map(bookmark => {\n              const colorStyle = COLORS[bookmark.color]\n              return (\n                <div\n                  key={bookmark.id}\n                  className={`group flex items-start gap-2 p-2 rounded-md cursor-pointer transition-all hover:bg-[#2d2d30] mb-1 border-l-2 ${colorStyle.border}`}\n                  onClick={() => handleBookmarkClick(bookmark)}\n                >\n                  <FileCode className={`w-4 h-4 mt-0.5 flex-shrink-0 ${colorStyle.text}`} />\n                  <div className=\"flex-1 min-w-0\">\n                    <div className=\"text-sm text-white truncate\" title={bookmark.filePath}>\n                      {getFileName(bookmark.filePath)}\n                    </div>\n                    <div className=\"text-xs text-[#808080] truncate\" title={bookmark.filePath}>\n                      {bookmark.filePath}:{bookmark.line}\n                    </div>\n                    {bookmark.label && (\n                      <div className=\"flex items-center gap-1 mt-1\">\n                        <Tag className=\"w-3 h-3 text-[#808080]\" />\n                        <span className=\"text-xs text-[#b0b0b0]\">{bookmark.label}</span>\n                      </div>\n                    )}\n                  </div>\n                  <button\n                    onClick={(e) => {\n                      e.stopPropagation()\n                      removeBookmark(bookmark.id)\n                    }}\n                    className=\"opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#5a1d1d] transition-opacity\"\n                    aria-label=\"Remove bookmark\"\n                  >\n                    <Trash2 className=\"w-3.5 h-3.5 text-[#f48771]\" />\n                  </button>\n                </div>\n              )\n            })"
+                                },
+                                "location": {
+                                  "start_line": 190,
+                                  "start_col": 12,
+                                  "end_line": 225,
+                                  "end_col": 15
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 189,
+                            "start_col": 10,
+                            "end_line": 226,
+                            "end_col": 16
+                          }
+                        }
+                      },
+                      "location": {
+                        "start_line": 174,
+                        "start_col": 8,
+                        "end_line": 227,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 173,
+                  "start_col": 6,
+                  "end_line": 228,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 97,
+            "start_col": 4,
+            "end_line": 229,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleBookmarkClick",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(bookmark: BookmarkItem) => {\n    onFileClick?.(bookmark.filePath, bookmark.line)\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [],
+          "side_effects": [],
+          "parameters": [
+            {
+              "name": "bookmark",
+              "type_annotation": ": BookmarkItem"
+            }
+          ],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Bookmark",
+        "Button",
+        "Plus",
+        "X"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "bookmarks",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showAddForm",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "newBookmark",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "filter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/bookmarks_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:bookmarks",
+        "to_field": "bookmarks",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'bookmarks' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showAddForm",
+        "to_field": "showAddForm",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showAddForm' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:newBookmark",
+        "to_field": "newBookmark",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "∅",
+        "reasoning": "useState hook 'newBookmark' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:filter",
+        "to_field": "filter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'filter' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateBookmarks",
+        "from_handler": "setBookmarks",
+        "payload": null,
+        "state_changes": [
+          "self.bookmarks = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowAddForm",
+        "from_handler": "setShowAddForm",
+        "payload": null,
+        "state_changes": [
+          "self.showAddForm = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateNewBookmark",
+        "from_handler": "setNewBookmark",
+        "payload": null,
+        "state_changes": [
+          "self.newBookmark = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateFilter",
+        "from_handler": "setFilter",
+        "payload": null,
+        "state_changes": [
+          "self.filter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "BookmarkClick",
+        "from_handler": "handleBookmarkClick",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[bookmarks]",
+        "strategy": "inline",
+        "reasoning": "Deps [bookmarks] → inline in handlers that change these",
+        "inline_in": "bookmarks",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "on_file_click",
+          "field_type": "Any",
+          "from_prop": "onFileClick"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_4",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [bookmarks] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onFileClick",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onFileClick' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Bookmark",
+      "Button",
+      "Plus",
+      "X"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

@@ -1,0 +1,91 @@
+invoke qliphoth·prelude·*;
+rite model_config_panel(config: Any, on_change: Any) -> VNode! {
+    VNode·div()
+        ·class("flex flex-col gap-4")
+        ·child(
+        VNode·div()
+            ·class("flex flex-col gap-2")
+            ·child(
+            VNode·div()
+                ·class("flex flex-col gap-1")
+                ·child(
+                Label·view()
+                    ·class("font-semibold")
+                    ·text_child("Temperature")
+                    ·text_child(" "·to_string())
+                    ·child(
+                    VNode·span()
+                        ·class("text-muted-foreground font-semibold")
+                        ·text_child(config.temperature.to_fixed(2)·to_string())
+                    )
+                )
+                ·child(
+                Slider·view()
+                    ·attr("max", 2)
+                    ·attr("min", 0)
+                    ·on_valuechange(ValueChange)
+                    ·attr("step", 0.1)
+                    ·attr("value", [config.temperature])
+                )
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex flex-col gap-2")
+            ·child(
+            Label·view()
+                ·class("font-semibold")
+                ·text_child("Max Tokens")
+            )
+            ·child(
+            Input·view()
+                ·on_change(Change)
+                ·attr("type", "number")
+                ·attr("value", config.max_tokens.to_string())
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex flex-col gap-2")
+            ·child(
+            VNode·div()
+                ·class("flex flex-col gap-1")
+                ·child(
+                Label·view()
+                    ·class("font-semibold")
+                    ·text_child("Top P")
+                    ·text_child(" "·to_string())
+                    ·child(
+                    VNode·span()
+                        ·class("text-muted-foreground font-semibold")
+                        ·text_child(config.top_p.to_fixed(2)·to_string())
+                    )
+                )
+                ·child(
+                Slider·view()
+                    ·attr("max", 1)
+                    ·attr("min", 0)
+                    ·on_valuechange(ValueChange)
+                    ·attr("step", 0.05)
+                    ·attr("value", [config.top_p])
+                )
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex flex-col gap-2")
+            ·child(
+            Label·view()
+                ·class("font-semibold")
+                ·text_child("Stop Sequences")
+            )
+            ·child(
+            Textarea·view()
+                ·on_change(Change)
+                ·attr("placeholder", "One per line")
+                ·attr("rows", 3)
+                ·attr("value", config.stop_sequences.join("\n"))
+                ·class("resize-y")
+            )
+        )
+}

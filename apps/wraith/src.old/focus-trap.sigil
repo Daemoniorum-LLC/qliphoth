@@ -1,0 +1,20 @@
+invoke sigil_web·prelude·*;
+actor FocusTrap {
+    state containerRef: Option<HTMLDivElement>! = ∅,
+    state previouslyFocusedRef: Option<Any>! = ∅,
+
+    rite new(children: Any, active: Any, return_focus_on_deactivate: Any, auto_focus: Any) -> This! {
+        self.children = children;
+        self.active = active;
+        self.return_focus_on_deactivate = return_focus_on_deactivate;
+        self.auto_focus = auto_focus;
+        This
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·attr("ref", self.container_ref)
+            ·class("contents")
+            ·text_child(self.children·to_string())
+    }
+}

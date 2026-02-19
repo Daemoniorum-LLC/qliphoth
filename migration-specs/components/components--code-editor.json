@@ -1,0 +1,1270 @@
+{
+  "id": "ui/components/CodeEditor.tsx:CodeEditor",
+  "name": "CodeEditor",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/CodeEditor.tsx",
+    "code": "import { useState, useEffect, useRef } from 'react'\nimport Editor from '@monaco-editor/react'\nimport { Button } from '@persona-framework/ui'\nimport { Save, Loader2, Check } from 'lucide-react'\nimport { getDefaultApiClient } from '@shared/api/client'\nimport { AICodeAssistant } from './AICodeAssistant'\nimport { CollaborativeEditor } from './CollaborativeEditor'\nimport { getMonacoLanguage } from '../config/languages'\nimport type * as Monaco from 'monaco-editor'\n\ninterface EditorSettings {\n  theme?: 'dark' | 'light' | 'high-contrast'\n  fontSize?: number\n  fontFamily?: string\n  tabSize?: number\n  insertSpaces?: boolean\n  wordWrap?: boolean\n  lineNumbers?: boolean\n  minimap?: boolean\n  renderWhitespace?: boolean\n  cursorBlinking?: 'blink' | 'smooth' | 'phase' | 'expand' | 'solid'\n  cursorStyle?: 'line' | 'block' | 'underline'\n}\n\ninterface CodeEditorProps {\n  filePath: string | null\n  settings?: EditorSettings\n}\n\nexport function CodeEditor({ filePath, settings }: CodeEditorProps) {\n  const [content, setContent] = useState<string>('')\n  const [loading, setLoading] = useState(false)\n  const [saving, setSaving] = useState(false)\n  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')\n  const [error, setError] = useState<string | null>(null)\n  const [isDirty, setIsDirty] = useState(false)\n  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)\n\n  const handleSave = async () => {\n    if (!filePath || !isDirty || saving) return\n\n    setSaving(true)\n    setSaveStatus('idle')\n\n    try {\n      const client = getDefaultApiClient()\n      await client.post('/project/file', { path: filePath, content })\n      setIsDirty(false)\n      setError(null)\n      setSaveStatus('saved')\n      // Reset saved indicator after 2 seconds\n      setTimeout(() => setSaveStatus('idle'), 2000)\n    } catch (err: any) {\n      setError(err.message || 'Failed to save file')\n      setSaveStatus('error')\n    } finally {\n      setSaving(false)\n    }\n  }\n\n  useEffect(() => {\n    const handleKeyDown = (e: KeyboardEvent) => {\n      if ((e.ctrlKey || e.metaKey) && e.key === 's') {\n        e.preventDefault()\n        handleSave()\n      }\n    }\n    window.addEventListener('keydown', handleKeyDown)\n    return () => window.removeEventListener('keydown', handleKeyDown)\n  }, [filePath, isDirty, content])\n\n  useEffect(() => {\n    if (!filePath) {\n      setContent('')\n      setError(null)\n      setIsDirty(false)\n      return\n    }\n\n    setLoading(true)\n    setError(null)\n    setIsDirty(false)\n\n    const absolutePath = filePath.startsWith('/') ? filePath : `/workspace/persona-framework/${filePath}`\n\n    fetch(`/api/project/read?path=${encodeURIComponent(absolutePath)}`)\n      .then(response => {\n        if (!response.ok) {\n          if (response.status === 404) {\n            throw new Error('API endpoint /api/project/read not found. Backend support needed.')\n          }\n          throw new Error(`Failed to read file: ${response.statusText}`)\n        }\n        return response.json()\n      })\n      .then(data => {\n        setContent(data.content || '')\n        setLoading(false)\n      })\n      .catch(err => {\n        setError(err.message)\n        setLoading(false)\n      })\n  }, [filePath])\n\n  const getLanguage = (path: string | null): string => {\n    if (!path) return 'plaintext'\n    return getMonacoLanguage(path)\n  }\n\n  if (!filePath) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"p-5 text-center text-[#858585]\">\n          Select a file from the workspace to view\n        </div>\n      </div>\n    )\n  }\n\n  if (loading) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs font-mono\">\n          {filePath}\n        </div>\n        <div className=\"p-5 text-center text-[#858585]\">Loading...</div>\n      </div>\n    )\n  }\n\n  if (error) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs font-mono\">\n          {filePath}\n        </div>\n        <div className=\"p-5 text-[#f48771]\">{error}</div>\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n      <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs font-mono\">\n        <span>{filePath}</span>\n        {isDirty && <span className=\"text-[#f59e0b] ml-2\" title=\"Unsaved changes\">●</span>}\n\n        {/* Save status indicator */}\n        <div className=\"ml-auto flex items-center gap-2\">\n          {saveStatus === 'saved' && (\n            <span className=\"flex items-center gap-1 text-[#4ade80] text-xs animate-in fade-in duration-200\">\n              <Check className=\"w-3 h-3\" />\n              Saved\n            </span>\n          )}\n          {saveStatus === 'error' && (\n            <span className=\"text-[#f48771] text-xs\">Save failed</span>\n          )}\n\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={handleSave}\n            disabled={!isDirty || saving}\n            title=\"Save (Ctrl+S)\"\n          >\n            {saving ? (\n              <Loader2 className=\"w-4 h-4 animate-spin\" />\n            ) : (\n              <Save className=\"w-4 h-4\" />\n            )}\n          </Button>\n        </div>\n      </div>\n      <div className=\"flex-1 min-h-0 relative\">\n        <Editor\n          height=\"100%\"\n          language={getLanguage(filePath)}\n          value={content}\n          theme={settings?.theme === 'light' ? 'vs-light' : settings?.theme === 'high-contrast' ? 'hc-black' : 'vs-dark'}\n          onChange={(value) => {\n            setContent(value || '')\n            setIsDirty(true)\n          }}\n          onMount={(editor, monaco) => {\n            editorRef.current = editor\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyD, () => {\n              editor.trigger('keyboard', 'editor.action.addSelectionToNextFindMatch', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyL, () => {\n              editor.trigger('keyboard', 'editor.action.selectHighlights', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Backslash, () => {\n              editor.trigger('keyboard', 'editor.action.jumpToBracket', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.BracketLeft, () => {\n              editor.trigger('keyboard', 'editor.fold', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.BracketRight, () => {\n              editor.trigger('keyboard', 'editor.unfold', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {\n              setTimeout(() => {\n                if (editor.getModel()) {\n                  editor.trigger('keyboard', 'editor.foldAll', {})\n                }\n              }, 10)\n            })\n\n            editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => {\n              editor.trigger('keyboard', 'editor.action.selectAllMatches', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyR, () => {\n              editor.trigger('keyboard', 'editor.action.refactor', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, () => {\n              editor.trigger('keyboard', 'editor.action.quickFix', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyO, () => {\n              editor.trigger('keyboard', 'editor.action.organizeImports', {})\n            })\n          }}\n          options={{\n            readOnly: false,\n            minimap: { enabled: settings?.minimap ?? true },\n            fontSize: settings?.fontSize ?? 14,\n            fontFamily: settings?.fontFamily ?? \"'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace\",\n            tabSize: settings?.tabSize ?? 2,\n            insertSpaces: settings?.insertSpaces ?? true,\n            multiCursorModifier: 'alt',\n            multiCursorMergeOverlapping: true,\n            multiCursorPaste: 'spread',\n            matchBrackets: 'always',\n            autoClosingBrackets: 'languageDefined',\n            autoClosingQuotes: 'languageDefined',\n            autoSurround: 'languageDefined',\n            bracketPairColorization: {\n              enabled: true,\n            },\n            guides: {\n              bracketPairs: true,\n              indentation: true,\n            },\n            folding: true,\n            foldingStrategy: 'indentation',\n            showFoldingControls: 'mouseover',\n            foldingHighlight: true,\n            unfoldOnClickAfterEndOfLine: true,\n            find: {\n              addExtraSpaceOnTop: false,\n              autoFindInSelection: 'never',\n              seedSearchStringFromSelection: 'selection',\n              globalFindClipboard: false,\n              loop: true,\n            },\n            wordWrap: settings?.wordWrap ? 'on' : 'off',\n            lineNumbers: settings?.lineNumbers ?? true ? 'on' : 'off',\n            renderWhitespace: settings?.renderWhitespace ? 'all' : 'none',\n            cursorBlinking: settings?.cursorBlinking ?? 'blink',\n            cursorStyle: settings?.cursorStyle ?? 'line',\n            scrollBeyondLastLine: false,\n            automaticLayout: true,\n            suggest: {\n              showKeywords: true,\n              showSnippets: true,\n              showClasses: true,\n              showFunctions: true,\n              showVariables: true,\n              showModules: true,\n              showProperties: true,\n              showMethods: true,\n            },\n            quickSuggestions: {\n              other: true,\n              comments: false,\n              strings: false,\n            },\n            suggestOnTriggerCharacters: true,\n            acceptSuggestionOnCommitCharacter: true,\n            acceptSuggestionOnEnter: 'on',\n            tabCompletion: 'on',\n            wordBasedSuggestions: 'matchingDocuments',\n            parameterHints: {\n              enabled: true,\n              cycle: true,\n            },\n            hover: {\n              enabled: true,\n              delay: 300,\n            },\n            lightbulb: {\n              enabled: 'on',\n            },\n            codeActionsOnSave: {},\n            gotoLocation: {\n              multipleDefinitions: 'goto',\n              multipleTypeDefinitions: 'goto',\n              multipleDeclarations: 'goto',\n              multipleImplementations: 'goto',\n              multipleReferences: 'goto',\n            },\n            referenceInfos: true,\n            formatOnType: true,\n            formatOnPaste: false,\n            renderValidationDecorations: 'on',\n            'semanticHighlighting.enabled': true,\n            rename: {\n              enablePreview: true,\n            },\n            codeActionsOnSave: {\n              'source.organizeImports': 'explicit',\n              'source.fixAll': 'explicit',\n            },\n            formatOnSave: false,\n            formatOnType: true,\n            formatOnPaste: true,\n          }}\n        />\n        <AICodeAssistant editor={editorRef.current} enabled={true} />\n        <CollaborativeEditor\n          editor={editorRef.current}\n          filePath={filePath}\n          userId={localStorage.getItem('wraith_user_id') || `user-${Date.now()}`}\n          userName={localStorage.getItem('wraith_user_name') || 'Anonymous'}\n          enabled={true}\n        />\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "CodeEditor",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 30,
+        "start_col": 7,
+        "end_line": 340,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "filePath",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "settings",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 31,
+            "start_col": 32,
+            "end_line": 31,
+            "end_col": 52
+          },
+          "state_name": "content",
+          "setter_name": "setContent",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 32,
+            "start_col": 32,
+            "end_line": 32,
+            "end_col": 47
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 33,
+            "start_col": 30,
+            "end_line": 33,
+            "end_col": 45
+          },
+          "state_name": "saving",
+          "setter_name": "setSaving",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 34,
+            "start_col": 38,
+            "end_line": 34,
+            "end_col": 82
+          },
+          "state_name": "saveStatus",
+          "setter_name": "setSaveStatus",
+          "initial_value": "\"idle\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 35,
+            "start_col": 28,
+            "end_line": 35,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 36,
+            "start_col": 32,
+            "end_line": 36,
+            "end_col": 47
+          },
+          "state_name": "isDirty",
+          "setter_name": "setIsDirty",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 37,
+            "start_col": 20,
+            "end_line": 37,
+            "end_col": 76
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "editorRef",
+          "ref_type": "/* type */",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 61,
+            "start_col": 2,
+            "end_line": 70,
+            "end_col": 34
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "filePath",
+            "isDirty",
+            "content"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 72,
+            "start_col": 2,
+            "end_line": 104,
+            "end_col": 16
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "filePath"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "w-full h-full flex flex-col bg-[#1e1e1e]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs font-mono"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "span",
+                        "is_component": false,
+                        "attributes": [],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "filePath"
+                            },
+                            "location": {
+                              "start_line": 146,
+                              "start_col": 14,
+                              "end_line": 146,
+                              "end_col": 24
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 146,
+                        "start_col": 8,
+                        "end_line": 146,
+                        "end_col": 31
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "isDirty",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "span",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-[#f59e0b] ml-2"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "title",
+                                "value": {
+                                  "type": "String",
+                                  "value": "Unsaved changes"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "●"
+                                },
+                                "location": {
+                                  "start_line": 147,
+                                  "start_col": 82,
+                                  "end_line": 147,
+                                  "end_col": 83
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 147,
+                            "start_col": 20,
+                            "end_line": 147,
+                            "end_col": 90
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 147,
+                        "start_col": 8,
+                        "end_line": 147,
+                        "end_col": 91
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "ml-auto flex items-center gap-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "saveStatus === 'saved'",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex items-center gap-1 text-[#4ade80] text-xs animate-in fade-in duration-200"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Check",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-3 h-3"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 153,
+                                        "start_col": 14,
+                                        "end_line": 153,
+                                        "end_col": 43
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Saved"
+                                      },
+                                      "location": {
+                                        "start_line": 153,
+                                        "start_col": 43,
+                                        "end_line": 155,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 152,
+                                  "start_col": 12,
+                                  "end_line": 155,
+                                  "end_col": 19
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 151,
+                              "start_col": 10,
+                              "end_line": 156,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "saveStatus === 'error'",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[#f48771] text-xs"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Save failed"
+                                      },
+                                      "location": {
+                                        "start_line": 158,
+                                        "start_col": 53,
+                                        "end_line": 158,
+                                        "end_col": 64
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 158,
+                                  "start_col": 12,
+                                  "end_line": 158,
+                                  "end_col": 71
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 157,
+                              "start_col": 10,
+                              "end_line": 159,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "handleSave"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "disabled",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "!isDirty || saving"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Save (Ctrl+S)"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Conditional",
+                                    "condition": "saving",
+                                    "consequent": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Loader2",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4 animate-spin"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 169,
+                                        "start_col": 14,
+                                        "end_line": 169,
+                                        "end_col": 58
+                                      }
+                                    },
+                                    "alternate": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Save",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 171,
+                                        "start_col": 14,
+                                        "end_line": 171,
+                                        "end_col": 42
+                                      }
+                                    }
+                                  },
+                                  "location": {
+                                    "start_line": 168,
+                                    "start_col": 12,
+                                    "end_line": 172,
+                                    "end_col": 14
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 161,
+                              "start_col": 10,
+                              "end_line": 173,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 150,
+                        "start_col": 8,
+                        "end_line": 174,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 145,
+                  "start_col": 6,
+                  "end_line": 175,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 min-h-0 relative"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Editor",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "height",
+                            "value": {
+                              "type": "String",
+                              "value": "100%"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "language",
+                            "value": {
+                              "type": "Expression",
+                              "code": "getLanguage(filePath)"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "content"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "theme",
+                            "value": {
+                              "type": "Expression",
+                              "code": "settings?.theme === 'light' ? 'vs-light' : settings?.theme === 'high-contrast' ? 'hc-black' : 'vs-dark'"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onChange",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(value) => {\n            setContent(value || '')\n            setIsDirty(true)\n          }"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "onMount",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(editor, monaco) => {\n            editorRef.current = editor\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyD, () => {\n              editor.trigger('keyboard', 'editor.action.addSelectionToNextFindMatch', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyL, () => {\n              editor.trigger('keyboard', 'editor.action.selectHighlights', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Backslash, () => {\n              editor.trigger('keyboard', 'editor.action.jumpToBracket', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.BracketLeft, () => {\n              editor.trigger('keyboard', 'editor.fold', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.BracketRight, () => {\n              editor.trigger('keyboard', 'editor.unfold', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {\n              setTimeout(() => {\n                if (editor.getModel()) {\n                  editor.trigger('keyboard', 'editor.foldAll', {})\n                }\n              }, 10)\n            })\n\n            editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => {\n              editor.trigger('keyboard', 'editor.action.selectAllMatches', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyR, () => {\n              editor.trigger('keyboard', 'editor.action.refactor', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, () => {\n              editor.trigger('keyboard', 'editor.action.quickFix', {})\n            })\n\n            editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyO, () => {\n              editor.trigger('keyboard', 'editor.action.organizeImports', {})\n            })\n          }"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "options",
+                            "value": {
+                              "type": "Expression",
+                              "code": "{\n            readOnly: false,\n            minimap: { enabled: settings?.minimap ?? true },\n            fontSize: settings?.fontSize ?? 14,\n            fontFamily: settings?.fontFamily ?? \"'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace\",\n            tabSize: settings?.tabSize ?? 2,\n            insertSpaces: settings?.insertSpaces ?? true,\n            multiCursorModifier: 'alt',\n            multiCursorMergeOverlapping: true,\n            multiCursorPaste: 'spread',\n            matchBrackets: 'always',\n            autoClosingBrackets: 'languageDefined',\n            autoClosingQuotes: 'languageDefined',\n            autoSurround: 'languageDefined',\n            bracketPairColorization: {\n              enabled: true,\n            },\n            guides: {\n              bracketPairs: true,\n              indentation: true,\n            },\n            folding: true,\n            foldingStrategy: 'indentation',\n            showFoldingControls: 'mouseover',\n            foldingHighlight: true,\n            unfoldOnClickAfterEndOfLine: true,\n            find: {\n              addExtraSpaceOnTop: false,\n              autoFindInSelection: 'never',\n              seedSearchStringFromSelection: 'selection',\n              globalFindClipboard: false,\n              loop: true,\n            },\n            wordWrap: settings?.wordWrap ? 'on' : 'off',\n            lineNumbers: settings?.lineNumbers ?? true ? 'on' : 'off',\n            renderWhitespace: settings?.renderWhitespace ? 'all' : 'none',\n            cursorBlinking: settings?.cursorBlinking ?? 'blink',\n            cursorStyle: settings?.cursorStyle ?? 'line',\n            scrollBeyondLastLine: false,\n            automaticLayout: true,\n            suggest: {\n              showKeywords: true,\n              showSnippets: true,\n              showClasses: true,\n              showFunctions: true,\n              showVariables: true,\n              showModules: true,\n              showProperties: true,\n              showMethods: true,\n            },\n            quickSuggestions: {\n              other: true,\n              comments: false,\n              strings: false,\n            },\n            suggestOnTriggerCharacters: true,\n            acceptSuggestionOnCommitCharacter: true,\n            acceptSuggestionOnEnter: 'on',\n            tabCompletion: 'on',\n            wordBasedSuggestions: 'matchingDocuments',\n            parameterHints: {\n              enabled: true,\n              cycle: true,\n            },\n            hover: {\n              enabled: true,\n              delay: 300,\n            },\n            lightbulb: {\n              enabled: 'on',\n            },\n            codeActionsOnSave: {},\n            gotoLocation: {\n              multipleDefinitions: 'goto',\n              multipleTypeDefinitions: 'goto',\n              multipleDeclarations: 'goto',\n              multipleImplementations: 'goto',\n              multipleReferences: 'goto',\n            },\n            referenceInfos: true,\n            formatOnType: true,\n            formatOnPaste: false,\n            renderValidationDecorations: 'on',\n            'semanticHighlighting.enabled': true,\n            rename: {\n              enablePreview: true,\n            },\n            codeActionsOnSave: {\n              'source.organizeImports': 'explicit',\n              'source.fixAll': 'explicit',\n            },\n            formatOnSave: false,\n            formatOnType: true,\n            formatOnPaste: true,\n          }"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 177,
+                        "start_col": 8,
+                        "end_line": 328,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "AICodeAssistant",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "editor",
+                            "value": {
+                              "type": "Expression",
+                              "code": "editorRef.current"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "enabled",
+                            "value": {
+                              "type": "Expression",
+                              "code": "true"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 329,
+                        "start_col": 8,
+                        "end_line": 329,
+                        "end_col": 69
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "CollaborativeEditor",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "editor",
+                            "value": {
+                              "type": "Expression",
+                              "code": "editorRef.current"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "filePath",
+                            "value": {
+                              "type": "Expression",
+                              "code": "filePath"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "userId",
+                            "value": {
+                              "type": "Expression",
+                              "code": "localStorage.getItem('wraith_user_id') || `user-${Date.now()}`"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "userName",
+                            "value": {
+                              "type": "Expression",
+                              "code": "localStorage.getItem('wraith_user_name') || 'Anonymous'"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "enabled",
+                            "value": {
+                              "type": "Expression",
+                              "code": "true"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 330,
+                        "start_col": 8,
+                        "end_line": 336,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 176,
+                  "start_col": 6,
+                  "end_line": 337,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 144,
+            "start_col": 4,
+            "end_line": 338,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleSave",
+          "event_type": null,
+          "is_async": true,
+          "body_summary": "async () => {\n    if (!filePath || !isDirty || saving) return\n\n    setSaving(true)\n    setSaveStatus('idle')\n\n    try {\n      const client = getDefaultApiClient()\n      await client.post('/project/file', { path: filePath, content })\n      setIsDirty(false)\n      setError(null)\n      setSaveStatus('saved')\n      // Reset saved indicator after 2 seconds\n      setTimeout(() => setSaveStatus('idle'), 2000)\n    } catch (err: any) {\n      setError(err.message || 'Failed to save file')\n      setSaveStatus('error')\n    } finally {\n      setSaving(false)\n    }\n  }",
+          "state_mutations": [
+            "setSaving(true)",
+            "setSaveStatus('idle')"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setSaving",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "saving"
+              },
+              "arguments": [
+                "true"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setSaveStatus",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "saveStatus"
+              },
+              "arguments": [
+                "'idle'"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "getDefaultApiClient",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            },
+            {
+              "name": "client.post",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "'/project/file'",
+                "{ path: filePath, content }"
+              ],
+              "is_async": true
+            },
+            {
+              "name": "setIsDirty",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "isDirty"
+              },
+              "arguments": [
+                "false"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setError",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "error"
+              },
+              "arguments": [
+                "null"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setSaveStatus",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "saveStatus"
+              },
+              "arguments": [
+                "'saved'"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setTimeout",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "timeout"
+              },
+              "arguments": [
+                "() => setSaveStatus('idle')",
+                "2000"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setSaveStatus",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "saveStatus"
+              },
+              "arguments": [
+                "'idle'"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setSaving"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setSaveStatus"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setIsDirty"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setError"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setSaveStatus"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setTimeout"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setSaveStatus"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": true,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "AICodeAssistant",
+        "Button",
+        "Check",
+        "CollaborativeEditor",
+        "Editor",
+        "Loader2",
+        "Save"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "content",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "saving",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "saveStatus",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "isDirty",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/code_editor.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:content",
+        "to_field": "content",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'content' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:saving",
+        "to_field": "saving",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'saving' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:saveStatus",
+        "to_field": "saveStatus",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"idle\"",
+        "reasoning": "useState hook 'saveStatus' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:isDirty",
+        "to_field": "isDirty",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'isDirty' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:editorRef",
+        "to_field": "editorRef",
+        "field_type": "Option</* type */>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'editorRef' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateContent",
+        "from_handler": "setContent",
+        "payload": null,
+        "state_changes": [
+          "self.content = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSaving",
+        "from_handler": "setSaving",
+        "payload": null,
+        "state_changes": [
+          "self.saving = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSaveStatus",
+        "from_handler": "setSaveStatus",
+        "payload": null,
+        "state_changes": [
+          "self.saveStatus = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIsDirty",
+        "from_handler": "setIsDirty",
+        "payload": null,
+        "state_changes": [
+          "self.isDirty = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Save",
+        "from_handler": "handleSave",
+        "payload": null,
+        "state_changes": [
+          "self.saving = true",
+          "self.saveStatus = 'idle'"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[filePath,isDirty,content]",
+        "strategy": "inline",
+        "reasoning": "Deps [filePath, isDirty, content] → inline in handlers that change these",
+        "inline_in": "filePath_isDirty_content",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[filePath]",
+        "strategy": "inline",
+        "reasoning": "Deps [filePath] → inline in handlers that change these",
+        "inline_in": "filePath",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "file_path",
+          "field_type": "Any",
+          "from_prop": "filePath"
+        },
+        {
+          "name": "settings",
+          "field_type": "Any",
+          "from_prop": "settings"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_7",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [filePath, isDirty, content] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_8",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [filePath] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "AICodeAssistant",
+      "Button",
+      "Check",
+      "CollaborativeEditor",
+      "Editor",
+      "Loader2",
+      "Save"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "6 state variables"
+  ],
+  "status": "pending"
+}

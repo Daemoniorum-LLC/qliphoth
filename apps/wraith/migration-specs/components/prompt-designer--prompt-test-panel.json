@@ -1,0 +1,1355 @@
+{
+  "id": "domains/prompts/components/PromptDesigner/PromptTestPanel.tsx:PromptTestPanel",
+  "name": "PromptTestPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/prompts/components/PromptDesigner/PromptTestPanel.tsx",
+    "code": "import { useState } from \"react\"\nimport {\n  Button,\n  Card,\n  Label,\n  Select,\n  SelectContent,\n  SelectItem,\n  SelectTrigger,\n  SelectValue,\n  Spinner,\n  Textarea,\n} from \"@persona-framework/ui\"\nimport { Play } from \"lucide-react\"\nimport { makeHttpClient } from '../../../../data/https'\n\nconst http = makeHttpClient('/api')\n\ninterface PromptTestPanelProps {\n  promptContent: string\n  variables: Record<string, string>\n}\n\nexport function PromptTestPanel({ promptContent, variables }: PromptTestPanelProps) {\n  const [selectedModel, setSelectedModel] = useState(\"claude-3-sonnet\")\n  const [testInput, setTestInput] = useState(\"\")\n  const [output, setOutput] = useState(\"\")\n  const [isRunning, setIsRunning] = useState(false)\n  const [metadata, setMetadata] = useState<{\n    duration: number\n    tokensUsed: number\n  } | null>(null)\n\n  const runTest = async () => {\n    setIsRunning(true)\n    setOutput(\"\")\n    setMetadata(null)\n\n    const startTime = Date.now()\n\n    let processedPrompt = promptContent\n    Object.entries(variables).forEach(([key, value]) => {\n      processedPrompt = processedPrompt.replace(new RegExp(`{{${key}}}`, \"g\"), value)\n    })\n\n    try {\n      const response = await http.post('/public/chat/PAIMON', {\n        messages: [\n          { role: 'system', content: processedPrompt },\n          { role: 'user', content: testInput || 'Hello' }\n        ]\n      })\n\n      const duration = Date.now() - startTime\n      const completion = response.data\n\n      setOutput(completion.message || completion.content || JSON.stringify(completion, null, 2))\n      setMetadata({\n        tokensUsed: completion.tokensUsed || completion.usage?.totalTokens || 0,\n        duration\n      })\n    } catch (error: any) {\n      const duration = Date.now() - startTime\n      setOutput(`Error: ${error?.response?.data?.message || error?.message || 'Failed to execute prompt'}`)\n      setMetadata({ tokensUsed: 0, duration })\n    } finally {\n      setIsRunning(false)\n    }\n  }\n\n  return (\n    <div className=\"flex flex-col gap-3 h-full\">\n      <Label className=\"font-semibold\">Test Prompt</Label>\n\n      <div className=\"flex items-end flex-wrap gap-2\">\n        <div className=\"flex-1 min-w-[200px]\">\n          <Label className=\"text-sm\">Model</Label>\n          <Select value={selectedModel} onValueChange={setSelectedModel}>\n            <SelectTrigger>\n              <SelectValue />\n            </SelectTrigger>\n            <SelectContent>\n              <SelectItem value=\"qwen2.5-coder:7b-instruct-q4_0\">Qwen 2.5 Coder 7B</SelectItem>\n              <SelectItem value=\"llama3.1:8b\">Llama 3.1 8B</SelectItem>\n              <SelectItem value=\"llama3.2:1b\">Llama 3.2 1B</SelectItem>\n            </SelectContent>\n          </Select>\n        </div>\n        <Button\n          disabled={isRunning || !promptContent}\n          onClick={runTest}\n        >\n          <Play className=\"mr-2 h-4 w-4\" />\n          Run Test\n        </Button>\n      </div>\n\n      <div>\n        <Label className=\"text-sm\">Test Input</Label>\n        <Textarea\n          onChange={(e) => setTestInput(e.target.value)}\n          placeholder=\"Enter test input...\"\n          rows={3}\n          value={testInput}\n          className=\"resize-y\"\n        />\n      </div>\n\n      <div className=\"flex-1 min-h-[200px]\">\n        <Label className=\"text-sm\">Output</Label>\n        <Card className=\"flex-1 overflow-auto p-3\">\n          {isRunning && (\n            <div className=\"flex items-center gap-2\">\n              <Spinner size=\"sm\" />\n              <span className=\"text-muted-foreground\">Running test...</span>\n            </div>\n          )}\n          {!isRunning && !output && (\n            <div className=\"text-muted-foreground\">\n              Configure your prompt and click \"Run Test\" to see results.\n            </div>\n          )}\n          {!isRunning && output && (\n            <>\n              <div className=\"whitespace-pre-wrap\">\n                {output}\n              </div>\n              {metadata && (\n                <div className=\"flex flex-wrap gap-4 text-sm text-muted-foreground mt-2\">\n                  <span>\n                    Tokens:\n                    {\" \"}\n                    <strong>{metadata.tokensUsed}</strong>\n                  </span>\n                  <span>\n                    Duration:\n                    {\" \"}\n                    <strong>\n                      {metadata.duration}\n                      ms\n                    </strong>\n                  </span>\n                </div>\n              )}\n            </>\n          )}\n        </Card>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "PromptTestPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 24,
+        "start_col": 7,
+        "end_line": 151,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "promptContent",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "variables",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 25,
+            "start_col": 44,
+            "end_line": 25,
+            "end_col": 71
+          },
+          "state_name": "selectedModel",
+          "setter_name": "setSelectedModel",
+          "initial_value": "\"claude-3-sonnet\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 26,
+            "start_col": 36,
+            "end_line": 26,
+            "end_col": 48
+          },
+          "state_name": "testInput",
+          "setter_name": "setTestInput",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 27,
+            "start_col": 30,
+            "end_line": 27,
+            "end_col": 42
+          },
+          "state_name": "output",
+          "setter_name": "setOutput",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 28,
+            "start_col": 36,
+            "end_line": 28,
+            "end_col": 51
+          },
+          "state_name": "isRunning",
+          "setter_name": "setIsRunning",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 29,
+            "start_col": 34,
+            "end_line": 32,
+            "end_col": 17
+          },
+          "state_name": "metadata",
+          "setter_name": "setMetadata",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col gap-3 h-full"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Label",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "font-semibold"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "Test Prompt"
+                      },
+                      "location": {
+                        "start_line": 73,
+                        "start_col": 39,
+                        "end_line": 73,
+                        "end_col": 50
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 73,
+                  "start_col": 6,
+                  "end_line": 73,
+                  "end_col": 58
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-end flex-wrap gap-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex-1 min-w-[200px]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Label",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-sm"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Model"
+                                  },
+                                  "location": {
+                                    "start_line": 77,
+                                    "start_col": 37,
+                                    "end_line": 77,
+                                    "end_col": 42
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 77,
+                              "start_col": 10,
+                              "end_line": 77,
+                              "end_col": 50
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Select",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "selectedModel"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onValueChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "setSelectedModel"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SelectTrigger",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectValue",
+                                          "is_component": true,
+                                          "attributes": [],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 80,
+                                          "start_col": 14,
+                                          "end_line": 80,
+                                          "end_col": 29
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 79,
+                                    "start_col": 12,
+                                    "end_line": 81,
+                                    "end_col": 28
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SelectContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "qwen2.5-coder:7b-instruct-q4_0"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Qwen 2.5 Coder 7B"
+                                              },
+                                              "location": {
+                                                "start_line": 83,
+                                                "start_col": 65,
+                                                "end_line": 83,
+                                                "end_col": 82
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 83,
+                                          "start_col": 14,
+                                          "end_line": 83,
+                                          "end_col": 95
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "llama3.1:8b"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Llama 3.1 8B"
+                                              },
+                                              "location": {
+                                                "start_line": 84,
+                                                "start_col": 46,
+                                                "end_line": 84,
+                                                "end_col": 58
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 84,
+                                          "start_col": 14,
+                                          "end_line": 84,
+                                          "end_col": 71
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "llama3.2:1b"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Llama 3.2 1B"
+                                              },
+                                              "location": {
+                                                "start_line": 85,
+                                                "start_col": 46,
+                                                "end_line": 85,
+                                                "end_col": 58
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 85,
+                                          "start_col": 14,
+                                          "end_line": 85,
+                                          "end_col": 71
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 82,
+                                    "start_col": 12,
+                                    "end_line": 86,
+                                    "end_col": 28
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 78,
+                              "start_col": 10,
+                              "end_line": 87,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 76,
+                        "start_col": 8,
+                        "end_line": 88,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Button",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "disabled",
+                            "value": {
+                              "type": "Expression",
+                              "code": "isRunning || !promptContent"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "runTest"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Play",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "mr-2 h-4 w-4"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 93,
+                              "start_col": 10,
+                              "end_line": 93,
+                              "end_col": 43
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Run Test"
+                            },
+                            "location": {
+                              "start_line": 93,
+                              "start_col": 43,
+                              "end_line": 95,
+                              "end_col": 8
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 89,
+                        "start_col": 8,
+                        "end_line": 95,
+                        "end_col": 17
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 75,
+                  "start_col": 6,
+                  "end_line": 96,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Label",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-sm"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Test Input"
+                            },
+                            "location": {
+                              "start_line": 99,
+                              "start_col": 35,
+                              "end_line": 99,
+                              "end_col": 45
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 99,
+                        "start_col": 8,
+                        "end_line": 99,
+                        "end_col": 53
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Textarea",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "onChange",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(e) => setTestInput(e.target.value)"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "placeholder",
+                            "value": {
+                              "type": "String",
+                              "value": "Enter test input..."
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "rows",
+                            "value": {
+                              "type": "Expression",
+                              "code": "3"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "testInput"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "resize-y"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 100,
+                        "start_col": 8,
+                        "end_line": 106,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 98,
+                  "start_col": 6,
+                  "end_line": 107,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 min-h-[200px]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Label",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-sm"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Output"
+                            },
+                            "location": {
+                              "start_line": 110,
+                              "start_col": 35,
+                              "end_line": 110,
+                              "end_col": 41
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 110,
+                        "start_col": 8,
+                        "end_line": 110,
+                        "end_col": 49
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Card",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex-1 overflow-auto p-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "isRunning",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex items-center gap-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Spinner",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "size",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "sm"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 114,
+                                        "start_col": 14,
+                                        "end_line": 114,
+                                        "end_col": 35
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "span",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-muted-foreground"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Running test..."
+                                            },
+                                            "location": {
+                                              "start_line": 115,
+                                              "start_col": 54,
+                                              "end_line": 115,
+                                              "end_col": 69
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 115,
+                                        "start_col": 14,
+                                        "end_line": 115,
+                                        "end_col": 76
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 113,
+                                  "start_col": 12,
+                                  "end_line": 116,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 112,
+                              "start_col": 10,
+                              "end_line": 117,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "!isRunning && !output",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-muted-foreground"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Configure your prompt and click \"Run Test\" to see results."
+                                      },
+                                      "location": {
+                                        "start_line": 119,
+                                        "start_col": 51,
+                                        "end_line": 121,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 119,
+                                  "start_col": 12,
+                                  "end_line": 121,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 118,
+                              "start_col": 10,
+                              "end_line": 122,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "!isRunning && output",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Fragment",
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "whitespace-pre-wrap"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "output"
+                                            },
+                                            "location": {
+                                              "start_line": 126,
+                                              "start_col": 16,
+                                              "end_line": 126,
+                                              "end_col": 24
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 125,
+                                        "start_col": 14,
+                                        "end_line": 127,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Conditional",
+                                        "condition": "metadata",
+                                        "consequent": {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "div",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "flex flex-wrap gap-4 text-sm text-muted-foreground mt-2"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Element",
+                                                  "tag": "span",
+                                                  "is_component": false,
+                                                  "attributes": [],
+                                                  "children": [
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Text",
+                                                        "value": "Tokens:"
+                                                      },
+                                                      "location": {
+                                                        "start_line": 130,
+                                                        "start_col": 24,
+                                                        "end_line": 132,
+                                                        "end_col": 20
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Expression",
+                                                        "code": "\" \""
+                                                      },
+                                                      "location": {
+                                                        "start_line": 132,
+                                                        "start_col": 20,
+                                                        "end_line": 132,
+                                                        "end_col": 25
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Element",
+                                                        "tag": "strong",
+                                                        "is_component": false,
+                                                        "attributes": [],
+                                                        "children": [
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Expression",
+                                                              "code": "metadata.tokensUsed"
+                                                            },
+                                                            "location": {
+                                                              "start_line": 133,
+                                                              "start_col": 28,
+                                                              "end_line": 133,
+                                                              "end_col": 49
+                                                            }
+                                                          }
+                                                        ]
+                                                      },
+                                                      "location": {
+                                                        "start_line": 133,
+                                                        "start_col": 20,
+                                                        "end_line": 133,
+                                                        "end_col": 58
+                                                      }
+                                                    }
+                                                  ]
+                                                },
+                                                "location": {
+                                                  "start_line": 130,
+                                                  "start_col": 18,
+                                                  "end_line": 134,
+                                                  "end_col": 25
+                                                }
+                                              },
+                                              {
+                                                "node_type": {
+                                                  "type": "Element",
+                                                  "tag": "span",
+                                                  "is_component": false,
+                                                  "attributes": [],
+                                                  "children": [
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Text",
+                                                        "value": "Duration:"
+                                                      },
+                                                      "location": {
+                                                        "start_line": 135,
+                                                        "start_col": 24,
+                                                        "end_line": 137,
+                                                        "end_col": 20
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Expression",
+                                                        "code": "\" \""
+                                                      },
+                                                      "location": {
+                                                        "start_line": 137,
+                                                        "start_col": 20,
+                                                        "end_line": 137,
+                                                        "end_col": 25
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Element",
+                                                        "tag": "strong",
+                                                        "is_component": false,
+                                                        "attributes": [],
+                                                        "children": [
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Expression",
+                                                              "code": "metadata.duration"
+                                                            },
+                                                            "location": {
+                                                              "start_line": 139,
+                                                              "start_col": 22,
+                                                              "end_line": 139,
+                                                              "end_col": 41
+                                                            }
+                                                          },
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Text",
+                                                              "value": "ms"
+                                                            },
+                                                            "location": {
+                                                              "start_line": 139,
+                                                              "start_col": 41,
+                                                              "end_line": 141,
+                                                              "end_col": 20
+                                                            }
+                                                          }
+                                                        ]
+                                                      },
+                                                      "location": {
+                                                        "start_line": 138,
+                                                        "start_col": 20,
+                                                        "end_line": 141,
+                                                        "end_col": 29
+                                                      }
+                                                    }
+                                                  ]
+                                                },
+                                                "location": {
+                                                  "start_line": 135,
+                                                  "start_col": 18,
+                                                  "end_line": 142,
+                                                  "end_col": 25
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 129,
+                                            "start_col": 16,
+                                            "end_line": 143,
+                                            "end_col": 22
+                                          }
+                                        },
+                                        "alternate": null
+                                      },
+                                      "location": {
+                                        "start_line": 128,
+                                        "start_col": 14,
+                                        "end_line": 144,
+                                        "end_col": 16
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 124,
+                                  "start_col": 12,
+                                  "end_line": 145,
+                                  "end_col": 15
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 123,
+                              "start_col": 10,
+                              "end_line": 146,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 111,
+                        "start_col": 8,
+                        "end_line": 147,
+                        "end_col": 15
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 109,
+                  "start_col": 6,
+                  "end_line": 148,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 72,
+            "start_col": 4,
+            "end_line": 149,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "Card",
+        "Label",
+        "Play",
+        "Select",
+        "SelectContent",
+        "SelectItem",
+        "SelectTrigger",
+        "SelectValue",
+        "Spinner",
+        "Textarea"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "selectedModel",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "testInput",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "output",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "isRunning",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "metadata",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/prompt_test_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:selectedModel",
+        "to_field": "selectedModel",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"claude-3-sonnet\"",
+        "reasoning": "useState hook 'selectedModel' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:testInput",
+        "to_field": "testInput",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'testInput' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:output",
+        "to_field": "output",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'output' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:isRunning",
+        "to_field": "isRunning",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'isRunning' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:metadata",
+        "to_field": "metadata",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'metadata' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateSelectedModel",
+        "from_handler": "setSelectedModel",
+        "payload": null,
+        "state_changes": [
+          "self.selectedModel = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateTestInput",
+        "from_handler": "setTestInput",
+        "payload": null,
+        "state_changes": [
+          "self.testInput = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateOutput",
+        "from_handler": "setOutput",
+        "payload": null,
+        "state_changes": [
+          "self.output = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIsRunning",
+        "from_handler": "setIsRunning",
+        "payload": null,
+        "state_changes": [
+          "self.isRunning = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateMetadata",
+        "from_handler": "setMetadata",
+        "payload": null,
+        "state_changes": [
+          "self.metadata = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "prompt_content",
+          "field_type": "Any",
+          "from_prop": "promptContent"
+        },
+        {
+          "name": "variables",
+          "field_type": "Any",
+          "from_prop": "variables"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Card",
+      "Label",
+      "Play",
+      "Select",
+      "SelectContent",
+      "SelectItem",
+      "SelectTrigger",
+      "SelectValue",
+      "Spinner",
+      "Textarea"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

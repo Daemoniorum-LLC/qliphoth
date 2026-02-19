@@ -1,0 +1,125 @@
+invoke sigil_web·prelude·*;
+ᛈ ProviderCardMsg {
+    UpdateExpanded,
+}
+actor ProviderCard {
+    state expanded: bool! = false,
+
+    rite new(provider: Any) -> This! {
+        self.provider = provider;
+        This
+    }
+
+    on UpdateExpanded {
+        self.expanded = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--bg-hover)]")
+                ·on_click(Click)
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3")
+                    ·child(
+                    VNode·button()
+                        ·class("text-[var(--text-secondary)]")
+                        ·when_else(self.expanded, ChevronDown·view()
+                            ·class("h-4 w-4"), ChevronRight·view()
+                            ·class("h-4 w-4"))
+                    )
+                    ·child(
+                    ProviderIcon·view()
+                        ·attr("provider", provider.provider)
+                        ·attr("size", "lg")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2")
+                            ·child(
+                            VNode·span()
+                                ·class("font-medium text-[var(--text-primary)]")
+                                ·text_child(provider.name·to_string())
+                            )
+                            ·child(
+                            StatusBadge·view()
+                                ·attr("status", provider.status)
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2 text-xs text-[var(--text-muted)] mt-0.5")
+                            ·when(provider.region, VNode·fragment()
+                                ·child(
+                                Globe·view()
+                                    ·class("h-3 w-3")
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·text_child(provider.region·to_string())
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·class("text-[var(--border-primary)]")
+                                    ·text_child("•")
+                                ))
+                            ·child(
+                            VNode·span()
+                                ·text_child("Synced")
+                                ·text_child(format_relative_time(provider.last_sync)·to_string())
+                            )
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·on_click(Click)
+                    ·child(
+                    IconButton·view()
+                        ·attr("icon", None)
+                        ·attr("size", "sm")
+                        ·attr("tooltip", "Sync")
+                        ·on_click(Click)
+                    )
+                    ·child(
+                    IconButton·view()
+                        ·attr("icon", None)
+                        ·attr("size", "sm")
+                        ·attr("tooltip", "Settings")
+                        ·on_click(Click)
+                    )
+                    ·child(
+                    ActionMenu·view()
+                        ·child(
+                        ActionItem·view()
+                            ·attr("icon", None)
+                            ·attr("label", "Sync")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        ActionItem·view()
+                            ·attr("icon", None)
+                            ·attr("label", "Configure")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        ActionItem·view()
+                            ·attr("icon", None)
+                            ·attr("label", "Disconnect")
+                            ·on_click(Click)
+                            ·attr("variant", "danger")
+                        )
+                    )
+                )
+            )
+            ·when(self.expanded, VNode·div()
+                ·class("border-t border-[var(--border-subtle)] bg-[var(--bg-primary)] p-4")
+                ·text_child(get_provider_resources()·to_string()))
+    }
+}

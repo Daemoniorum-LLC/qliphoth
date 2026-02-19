@@ -1,0 +1,197 @@
+invoke qliphoth·prelude·*;
+ᛈ PromptDesignerMsg {
+    UpdatePromptContent,
+    UpdateVariables,
+    UpdateExamples,
+    UpdateConfig,
+    UpdateVersions,
+    UpdateRightPanelTab,
+    UpdateSaveStatus,
+}
+☉ actor PromptDesigner {
+    state promptContent: String! = "",
+    state variables: Vec<Any>! = [],
+    state examples: Vec<Any>! = [],
+    state config: Option<Any>~ = ∅,
+    state versions: Any~ = None,
+    state rightPanelTab: String! = "variables",
+    state saveStatus: String! = "idle",
+
+    on UpdatePromptContent {
+        self.promptContent = msg.0;
+    }
+
+    on UpdateVariables {
+        self.variables = msg.0;
+    }
+
+    on UpdateExamples {
+        self.examples = msg.0;
+    }
+
+    on UpdateConfig {
+        self.config = msg.0;
+    }
+
+    on UpdateVersions {
+        self.versions = msg.0;
+    }
+
+    on UpdateRightPanelTab {
+        self.rightPanelTab = msg.0;
+    }
+
+    on UpdateSaveStatus {
+        self.saveStatus = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col gap-4 h-full")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between gap-3")
+                ·child(
+                VNode·h2()
+                    ·class("text-2xl font-semibold m-0")
+                    ·text_child("Prompt Designer")
+                )
+                ·child(
+                Button·view()
+                    ·on_click(Click)
+                    ·when_else(self.save_status == "saved", VNode·fragment()
+                        ·child(
+                        Check·view()
+                            ·class("mr-2 h-4 w-4 text-green-400")
+                        )
+                        ·text_child("Saved!"), VNode·fragment()
+                        ·child(
+                        Save·view()
+                            ·class("mr-2 h-4 w-4")
+                        )
+                        ·text_child("Save Version"))
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("grid grid-cols-3 gap-4 flex-1 min-h-0")
+                ·child(
+                VNode·div()
+                    ·class("bg-secondary rounded-lg h-full overflow-hidden")
+                    ·child(
+                    VNode·div()
+                        ·class("flex flex-col gap-3 min-h-0 overflow-auto p-4")
+                        ·child(
+                        VNode·h3()
+                            ·class("text-lg font-semibold m-0")
+                            ·text_child("Prompt Editor")
+                        )
+                        ·child(
+                        PromptEditor·view()
+                            ·on_change(Change)
+                            ·attr("value", self.prompt_content)
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("bg-secondary rounded-lg h-full overflow-hidden")
+                    ·child(
+                    VNode·div()
+                        ·class("flex flex-col gap-3 min-h-0 overflow-auto p-4")
+                        ·child(
+                        VNode·h3()
+                            ·class("text-lg font-semibold m-0")
+                            ·text_child("Live Test")
+                        )
+                        ·child(
+                        PromptTestPanel·view()
+                            ·attr("promptContent", self.prompt_content)
+                            ·attr("variables", self.variables_map)
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("bg-secondary rounded-lg h-full overflow-hidden")
+                    ·child(
+                    VNode·div()
+                        ·class("flex flex-col gap-3 min-h-0 overflow-auto p-4")
+                        ·child(
+                        Tabs·view()
+                            ·attr("value", self.right_panel_tab)
+                            ·on_valuechange(ValueChange)
+                            ·child(
+                            TabsList·view()
+                                ·class("grid w-full grid-cols-4")
+                                ·child(
+                                TabsTrigger·view()
+                                    ·attr("value", "variables")
+                                    ·text_child("Variables")
+                                )
+                                ·child(
+                                TabsTrigger·view()
+                                    ·attr("value", "config")
+                                    ·text_child("Config")
+                                )
+                                ·child(
+                                TabsTrigger·view()
+                                    ·attr("value", "examples")
+                                    ·text_child("Examples")
+                                )
+                                ·child(
+                                TabsTrigger·view()
+                                    ·attr("value", "history")
+                                    ·text_child("History")
+                                )
+                            )
+                            ·child(
+                            TabsContent·view()
+                                ·attr("value", "variables")
+                                ·class("mt-4 space-y-4")
+                                ·child(
+                                VariablesEditor·view()
+                                    ·on_change(Change)
+                                    ·attr("variables", self.variables)
+                                )
+                                ·child(
+                                PromptMetrics·view()
+                                    ·attr("content", self.prompt_content)
+                                )
+                            )
+                            ·child(
+                            TabsContent·view()
+                                ·attr("value", "config")
+                                ·class("mt-4")
+                                ·child(
+                                ModelConfigPanel·view()
+                                    ·attr("config", self.config)
+                                    ·on_change(Change)
+                                )
+                            )
+                            ·child(
+                            TabsContent·view()
+                                ·attr("value", "examples")
+                                ·class("mt-4")
+                                ·child(
+                                FewShotExampleBuilder·view()
+                                    ·attr("examples", self.examples)
+                                    ·on_change(Change)
+                                )
+                            )
+                            ·child(
+                            TabsContent·view()
+                                ·attr("value", "history")
+                                ·class("mt-4")
+                                ·child(
+                                PromptVersionHistory·view()
+                                    ·on_restore(Restore)
+                                    ·attr("versions", self.versions)
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+    }
+}

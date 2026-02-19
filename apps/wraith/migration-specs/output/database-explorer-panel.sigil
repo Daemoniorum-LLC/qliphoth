@@ -1,0 +1,359 @@
+invoke qliphoth·prelude·*;
+ᛈ DatabaseExplorerPanelMsg {
+    UpdateConnections,
+    UpdateActiveConnection,
+    UpdateTables,
+    UpdateExpandedTables,
+    UpdateQuery,
+    UpdateQueryResult,
+    UpdateLoading,
+    UpdateError,
+    UpdateShowAddConnection,
+    UpdateNewConnection,
+    UpdateActiveTab,
+}
+actor DatabaseExplorerPanel {
+    state connections: Any~ = None,
+    state activeConnection: Option<Any>~ = None,
+    state tables: Vec<Any>! = [],
+    state expandedTables: Any~ = None,
+    state query: String! = "SELECT * FROM ",
+    state queryResult: Option<Any>~ = None,
+    state loading: bool! = false,
+    state error: Option<Any>~ = None,
+    state showAddConnection: bool! = false,
+    state newConnection: Option<Any>~ = ∅,
+    state activeTab: String! = "schema",
+
+    on UpdateConnections {
+        self.connections = msg.0;
+    }
+
+    on UpdateActiveConnection {
+        self.activeConnection = msg.0;
+    }
+
+    on UpdateTables {
+        self.tables = msg.0;
+    }
+
+    on UpdateExpandedTables {
+        self.expandedTables = msg.0;
+    }
+
+    on UpdateQuery {
+        self.query = msg.0;
+    }
+
+    on UpdateQueryResult {
+        self.queryResult = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateShowAddConnection {
+        self.showAddConnection = msg.0;
+    }
+
+    on UpdateNewConnection {
+        self.newConnection = msg.0;
+    }
+
+    on UpdateActiveTab {
+        self.activeTab = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("w-56 border-r border-[#3c3c3c] flex flex-col")
+                ·child(
+                VNode·div()
+                    ·class("p-2 border-b border-[#3c3c3c] bg-[#252526]")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center justify-between mb-2")
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2")
+                            ·child(
+                            Database·view()
+                                ·class("w-4 h-4 text-[#5bcefa]")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-xs font-medium text-white")
+                                ·text_child("Connections")
+                            )
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·on_click(Click)
+                            ·class("h-6 w-6 p-0")
+                            ·attr("aria-label", "Add connection")
+                            ·when_else(self.show_add_connection, X·view()
+                                ·class("w-3.5 h-3.5"), Plus·view()
+                                ·class("w-3.5 h-3.5"))
+                        )
+                    )
+                    ·when(self.show_add_connection, VNode·div()
+                        ·class("flex flex-col gap-1.5 mt-2 p-2 bg-[#2d2d30] rounded")
+                        ·child(
+                        VNode·input()
+                            ·attr("type", "text")
+                            ·attr("placeholder", "Connection name")
+                            ·attr("value", new_connection.name ∨ "")
+                            ·on_change(Change)
+                            ·class("w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                        )
+                        ·child(
+                        VNode·select()
+                            ·attr("value", new_connection.type)
+                            ·on_change(Change)
+                            ·class("w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]")
+                            ·child(
+                            VNode·option()
+                                ·attr("value", "postgresql")
+                                ·text_child("PostgreSQL")
+                            )
+                            ·child(
+                            VNode·option()
+                                ·attr("value", "mysql")
+                                ·text_child("MySQL")
+                            )
+                            ·child(
+                            VNode·option()
+                                ·attr("value", "sqlite")
+                                ·text_child("SQLite")
+                            )
+                            ·child(
+                            VNode·option()
+                                ·attr("value", "mongodb")
+                                ·text_child("MongoDB")
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex gap-1.5")
+                            ·child(
+                            VNode·input()
+                                ·attr("type", "text")
+                                ·attr("placeholder", "Host")
+                                ·attr("value", new_connection.host ∨ "")
+                                ·on_change(Change)
+                                ·class("flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                            )
+                            ·child(
+                            VNode·input()
+                                ·attr("type", "number")
+                                ·attr("placeholder", "Port")
+                                ·attr("value", new_connection.port ∨ "")
+                                ·on_change(Change)
+                                ·class("w-16 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                            )
+                        )
+                        ·child(
+                        VNode·input()
+                            ·attr("type", "text")
+                            ·attr("placeholder", "Database name")
+                            ·attr("value", new_connection.database ∨ "")
+                            ·on_change(Change)
+                            ·class("w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                        )
+                        ·child(
+                        VNode·input()
+                            ·attr("type", "text")
+                            ·attr("placeholder", "Username")
+                            ·attr("value", new_connection.username ∨ "")
+                            ·on_change(Change)
+                            ·class("w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                        )
+                        ·child(
+                        VNode·input()
+                            ·attr("type", "password")
+                            ·attr("placeholder", "Password")
+                            ·attr("value", new_connection.password ∨ "")
+                            ·on_change(Change)
+                            ·class("w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·when(¬new_connection.name?.trim(), |n| n·attr("disabled", "true"))
+                            ·child(
+                            Plus·view()
+                                ·class("w-3 h-3 mr-1")
+                            )
+                            ·text_child("Add")
+                        ))
+                )
+                ·child(
+                VNode·div()
+                    ·class("p-2 border-b border-[#3c3c3c] max-h-32 overflow-auto")
+                    ·when(self.connections.len() == 0, VNode·div()
+                        ·class("text-center text-xs text-[#808080] py-2")
+                        ·text_child("No connections"))
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex-1 overflow-auto p-2")
+                    ·text_child(None·to_string())
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 flex flex-col overflow-hidden")
+                ·child(
+                VNode·div()
+                    ·class("p-3 border-b border-[#3c3c3c] bg-[#252526]")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2 mb-2")
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-[#808080]")
+                            ·text_child("Query")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex-1")
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·when(loading ∨ ¬active_connection ∨ ¬query.trim(), |n| n·attr("disabled", "true"))
+                            ·when_else(self.loading, Spinner·view()
+                                ·attr("size", "sm"), VNode·fragment()
+                                ·child(
+                                Play·view()
+                                    ·class("w-3.5 h-3.5 mr-1.5")
+                                )
+                                ·text_child("Execute"))
+                        )
+                    )
+                    ·child(
+                    VNode·textarea()
+                        ·attr("value", self.query)
+                        ·on_change(Change)
+                        ·attr("placeholder", "SELECT * FROM table_name WHERE ...")
+                        ·class("w-full h-20 p-2 text-sm bg-[#2d2d30] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] resize-none")
+                        ·on_keydown(KeyDown)
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#606060] mt-1")
+                        ·text_child("Ctrl+Enter to execute")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex-1 overflow-auto")
+                    ·when(self.loading, VNode·div()
+                        ·class("flex flex-col items-center justify-center h-full gap-3")
+                        ·child(
+                        Spinner·view()
+                            ·attr("size", "lg")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-sm text-[#b0b0b0]")
+                            ·text_child("Executing query...")
+                        ))
+                    ·when(self.error, VNode·div()
+                        ·class("p-4 m-3 bg-[rgba(244,135,113,0.1)] border border-[#f48771] rounded")
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2 text-sm text-[#f48771] font-medium")
+                            ·child(
+                            AlertTriangle·view()
+                                ·class("w-4 h-4")
+                            )
+                            ·text_child("Query Error")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-[#b0b0b0] mt-1")
+                            ·text_child(self.error·to_string())
+                        ))
+                    ·when(query_result ∧ ¬loading, VNode·div()
+                        ·class("p-3")
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-4 mb-3 text-xs text-[#808080]")
+                            ·child(
+                            VNode·span()
+                                ·text_child(query_result.row_count·to_string())
+                                ·text_child("rows")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child(query_result.duration·to_string())
+                                ·text_child("ms")
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("overflow-auto rounded border border-[#3c3c3c]")
+                            ·child(
+                            VNode·table()
+                                ·class("w-full text-xs")
+                                ·child(
+                                VNode·thead()
+                                    ·class("bg-[#252526] sticky top-0")
+                                    ·child(
+                                    VNode·tr()
+                                        // Map: ∀ col ∈ queryResult.columns
+                                        ·children(query_result.columns.iter().map(|col| VNode·th()
+                                                ·attr("key", col)
+                                                ·class("px-3 py-2 text-left text-[#b0b0b0] font-medium border-b border-[#3c3c3c]")
+                                                ·text_child(col·to_string())).collect())
+                                    )
+                                )
+                                ·child(
+                                VNode·tbody()
+                                    // Map: ∀ row ∈ queryResult.rows
+                                    ·children(query_result.rows.iter().map(|row| VNode·tr()
+                                            ·attr("key", self.idx)
+                                            ·class("hover:bg-[#2d2d30]")
+                                            // Map: ∀ col ∈ queryResult.columns
+                                            ·children(query_result.columns.iter().map(|col| VNode·td()
+                                                    ·attr("key", col)
+                                                    ·class("px-3 py-1.5 text-white font-mono border-b border-[#3c3c3c]")
+                                                    ·when(row.get(col) == null, VNode·span()
+                                                        ·class("text-[#606060] italic")
+                                                        ·text_child("NULL"))).collect())).collect())
+                                )
+                            )
+                        ))
+                    ·when(¬loading ∧ ¬error ∧ ¬query_result, VNode·div()
+                        ·class("flex flex-col items-center justify-center h-full text-center")
+                        ·child(
+                        Database·view()
+                            ·class("w-8 h-8 text-[#858585] mb-3")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-sm text-[#cccccc] font-medium")
+                            ·text_child("No results yet")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-[#858585]")
+                            ·text_child("Write a query and click Execute"·to_string())
+                        ))
+                )
+            )
+    }
+}

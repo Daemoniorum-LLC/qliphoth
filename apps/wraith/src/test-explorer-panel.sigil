@@ -1,0 +1,325 @@
+invoke qliphoth·prelude·*;
+ᛈ TestExplorerPanelMsg {
+    UpdateSearchQuery,
+    UpdateTestSuites,
+    UpdateLoading,
+    UpdateRunning,
+    UpdateProgress,
+    UpdateFilterStatus,
+    UpdateWatchMode,
+    UpdateCoverage,
+    UpdateShowCoverage,
+}
+☉ actor TestExplorerPanel {
+    state searchQuery: String! = "",
+    state testSuites: Vec<Any>! = [],
+    state loading: bool! = false,
+    state running: bool! = false,
+    state progress: i64! = 0,
+    state filterStatus: String! = "all",
+    state watchMode: bool! = false,
+    state coverage: Option<Any>~ = None,
+    state showCoverage: bool! = false,
+
+    on UpdateSearchQuery {
+        self.searchQuery = msg.0;
+    }
+
+    on UpdateTestSuites {
+        self.testSuites = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateRunning {
+        self.running = msg.0;
+    }
+
+    on UpdateProgress {
+        self.progress = msg.0;
+    }
+
+    on UpdateFilterStatus {
+        self.filterStatus = msg.0;
+    }
+
+    on UpdateWatchMode {
+        self.watchMode = msg.0;
+    }
+
+    on UpdateCoverage {
+        self.coverage = msg.0;
+    }
+
+    on UpdateShowCoverage {
+        self.showCoverage = msg.0;
+    }
+
+    on Mount {
+        // Empty deps → Mount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c] bg-[#2b2b2b]")
+                ·child(
+                VNode·div()
+                    ·class("text-[13px] font-semibold text-white")
+                    ·text_child("Test Explorer")
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-1")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", ⎇ self.watch_mode { "default" } ⎉ { "ghost" })
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", ⎇ self.watch_mode { "Disable Watch Mode" } ⎉ { "Enable Watch Mode" })
+                        ·child(
+                        Eye·view()
+                            ·class("w-3.5 h-3.5")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("variant", ⎇ self.show_coverage { "default" } ⎉ { "ghost" })
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", ⎇ self.show_coverage { "Disable Coverage" } ⎉ { "Enable Coverage" })
+                        ·child(
+                        Shield·view()
+                            ·class("w-3.5 h-3.5")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·when(self.running ∨ self.loading, |n| n·attr("disabled", "true"))
+                        ·child(
+                        Play·view()
+                            ·class("w-3.5 h-3.5 mr-1")
+                        )
+                        ·text_child("Run All")
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·when(self.loading, |n| n·attr("disabled", "true"))
+                        ·attr("title", "Refresh")
+                        ·child(
+                        RotateCcw·view()
+                            ·class("w-3.5 h-3.5")
+                        )
+                    )
+                    ·child(
+                    DropdownMenu·view()
+                        ·child(
+                        DropdownMenuTrigger·view()
+                            ·attr("asChild", "true")
+                            ·child(
+                            Button·view()
+                                ·attr("variant", "ghost")
+                                ·attr("size", "sm")
+                                ·attr("title", "Filter")
+                                ·child(
+                                Filter·view()
+                                    ·class("w-3.5 h-3.5")
+                                )
+                            )
+                        )
+                        ·child(
+                        DropdownMenuContent·view()
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Show All")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Show Passed")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Show Failed")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Show Skipped")
+                            )
+                        )
+                    )
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c]")
+                ·child(
+                VNode·div()
+                    ·class("relative")
+                    ·child(
+                    Search·view()
+                        ·class("absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858585]")
+                    )
+                    ·child(
+                    Input·view()
+                        ·attr("placeholder", "Search tests...")
+                        ·attr("value", self.search_query)
+                        ·on_change(Change)
+                        ·attr("size", "sm")
+                        ·class("w-full pl-8")
+                    )
+                )
+            )
+            ·when(self.running, VNode·div()
+                ·class("px-3 pb-2")
+                ·child(
+                Progress·view()
+                    ·attr("value", self.progress)
+                    ·class("w-full")
+                )
+                ·when(self.watch_mode, VNode·div()
+                    ·class("text-[10px] text-[#4fc3f7] mt-1")
+                    ·text_child("⚡ Watch mode active")))
+            ·when(self.show_coverage ∧ self.coverage, VNode·div()
+                ·class("px-3 py-2 bg-[#252526] border-b border-[#3c3c3c] text-[11px]")
+                ·child(
+                VNode·div()
+                    ·class("mb-1 font-semibold")
+                    ·text_child("Code Coverage:")
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-3")
+                    ·child(
+                    VNode·div()
+                        ·child(
+                        VNode·span()
+                            ·class("text-[#858585]")
+                            ·text_child("Lines:")
+                        )
+                        ·text_child(" "·to_string())
+                        ·child(
+                        Badge·view()
+                            ·attr("variant", ⎇ self.coverage.line >= 80 { "default" } ⎉ { ⎇ self.coverage.line >= 60 { "default" } ⎉ { "destructive" } })
+                            ·class("text-[10px]")
+                            ·text_child(self.coverage.line·to_string())
+                            ·text_child("%")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·child(
+                        VNode·span()
+                            ·class("text-[#858585]")
+                            ·text_child("Branches:")
+                        )
+                        ·text_child(" "·to_string())
+                        ·child(
+                        Badge·view()
+                            ·attr("variant", ⎇ self.coverage.branch >= 80 { "default" } ⎉ { ⎇ self.coverage.branch >= 60 { "default" } ⎉ { "destructive" } })
+                            ·class("text-[10px]")
+                            ·text_child(self.coverage.branch·to_string())
+                            ·text_child("%")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·child(
+                        VNode·span()
+                            ·class("text-[#858585]")
+                            ·text_child("Statements:")
+                        )
+                        ·text_child(" "·to_string())
+                        ·child(
+                        Badge·view()
+                            ·attr("variant", ⎇ self.coverage.statement >= 80 { "default" } ⎉ { ⎇ self.coverage.statement >= 60 { "default" } ⎉ { "destructive" } })
+                            ·class("text-[10px]")
+                            ·text_child(self.coverage.statement·to_string())
+                            ·text_child("%")
+                        )
+                    )
+                ))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto px-3 py-3")
+                ·when(self.loading, VNode·div()
+                    ·class("flex flex-col items-center gap-3 px-5 py-10")
+                    ·child(
+                    Spinner·view()
+                        ·attr("size", "md")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·text_child("Discovering tests...")
+                    ))
+                ·when(¬self.loading ∧ self.filtered_suites.len() == 0, VNode·div()
+                    ·class("px-5 py-10 text-center text-[#858585] text-[13px]")
+                    ·text_child(⎇ self.search_query { "No tests found for \"" + self.search_query.to_string() + "\"" } ⎉ { "No tests discovered" }·to_string()))
+                ·text_child(None·to_string())
+            )
+            ·child(
+            VNode·div()
+                ·class("flex items-center gap-4 px-3 py-2 border-t border-[#3c3c3c] bg-[#252526] text-[11px]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·child(
+                    VNode·span()
+                        ·text_child("Total:")
+                    )
+                    ·child(
+                    VNode·strong()
+                        ·text_child(self.total_tests·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·child(
+                    CheckCircle·view()
+                        ·class("text-[#4ec9b0] w-3 h-3")
+                    )
+                    ·child(
+                    VNode·strong()
+                        ·text_child(self.passed_tests·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·child(
+                    XCircle·view()
+                        ·class("text-[#f48771] w-3 h-3")
+                    )
+                    ·child(
+                    VNode·strong()
+                        ·text_child(self.failed_tests·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·child(
+                    AlertCircle·view()
+                        ·class("text-[#858585] w-3 h-3")
+                    )
+                    ·child(
+                    VNode·strong()
+                        ·text_child(self.skipped_tests·to_string())
+                    )
+                )
+            )
+    }
+}

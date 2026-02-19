@@ -1,0 +1,176 @@
+{
+  "id": "ui/components/Breadcrumbs.tsx:Breadcrumbs",
+  "name": "Breadcrumbs",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/Breadcrumbs.tsx",
+    "code": "import React from 'react'\nimport { ChevronRight, FileText } from 'lucide-react'\n\ninterface BreadcrumbsProps {\n  filePath?: string | null\n  onNavigate?: (path: string) => void\n}\n\nexport function Breadcrumbs({ filePath, onNavigate }: BreadcrumbsProps) {\n  if (!filePath) {\n    return (\n      <div className=\"flex items-center gap-1 px-3 py-1.5 bg-[#252526] border-b border-[#3c3c3c] text-xs text-[#cccccc] overflow-hidden whitespace-nowrap\">\n        <FileText className=\"w-3.5 h-3.5 mr-1 text-[#007acc]\" />\n        <span className=\"text-[#858585]\">No file selected</span>\n      </div>\n    )\n  }\n\n  const segments = filePath.split('/').filter(Boolean)\n  const paths = segments.map((_, index) => '/' + segments.slice(0, index + 1).join('/'))\n\n  return (\n    <div className=\"flex items-center gap-1 px-3 py-1.5 bg-[#252526] border-b border-[#3c3c3c] text-xs text-[#cccccc] overflow-hidden whitespace-nowrap\">\n      <FileText className=\"w-3.5 h-3.5 mr-1 text-[#007acc]\" />\n\n      {segments.map((segment, index) => {\n        const isLast = index === segments.length - 1\n        return (\n          <React.Fragment key={index}>\n            {index > 0 && <ChevronRight className=\"w-3 h-3 text-[#858585]\" />}\n            <div\n              className={`inline-flex items-center px-1.5 py-0.5 rounded transition-colors ${\n                isLast\n                  ? 'font-semibold cursor-default'\n                  : 'cursor-pointer hover:bg-[#2a2d2e]'\n              }`}\n              onClick={() => !isLast && onNavigate?.(paths[index])}\n              title={paths[index]}\n            >\n              {segment}\n            </div>\n          </React.Fragment>\n        )\n      })}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "Breadcrumbs",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 9,
+        "start_col": 7,
+        "end_line": 47,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "filePath",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onNavigate",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex items-center gap-1 px-3 py-1.5 bg-[#252526] border-b border-[#3c3c3c] text-xs text-[#cccccc] overflow-hidden whitespace-nowrap"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "FileText",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "w-3.5 h-3.5 mr-1 text-[#007acc]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 24,
+                  "start_col": 6,
+                  "end_line": 24,
+                  "end_col": 62
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "segments.map((segment, index) => {\n        const isLast = index === segments.length - 1\n        return (\n          <React.Fragment key={index}>\n            {index > 0 && <ChevronRight className=\"w-3 h-3 text-[#858585]\" />}\n            <div\n              className={`inline-flex items-center px-1.5 py-0.5 rounded transition-colors ${\n                isLast\n                  ? 'font-semibold cursor-default'\n                  : 'cursor-pointer hover:bg-[#2a2d2e]'\n              }`}\n              onClick={() => !isLast && onNavigate?.(paths[index])}\n              title={paths[index]}\n            >\n              {segment}\n            </div>\n          </React.Fragment>\n        )\n      })"
+                },
+                "location": {
+                  "start_line": 26,
+                  "start_col": 6,
+                  "end_line": 44,
+                  "end_col": 9
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 23,
+            "start_col": 4,
+            "end_line": 45,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "FileText"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/breadcrumbs.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "file_path",
+          "field_type": "Any",
+          "from_prop": "filePath"
+        },
+        {
+          "name": "on_navigate",
+          "field_type": "Any",
+          "from_prop": "onNavigate"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onNavigate",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onNavigate' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "FileText"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

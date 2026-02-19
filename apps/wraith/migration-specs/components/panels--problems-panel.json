@@ -1,0 +1,2185 @@
+{
+  "id": "ui/components/panels/ProblemsPanel.tsx:ProblemsPanel",
+  "name": "ProblemsPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/ProblemsPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Input, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '@persona-framework/ui'\nimport {\n  AlertCircle,\n  AlertTriangle,\n  Info,\n  X,\n  RotateCcw,\n  Search,\n  Filter,\n  ChevronRight,\n} from 'lucide-react'\n\ninterface Problem {\n  id: string\n  severity: 'error' | 'warning' | 'info'\n  message: string\n  source: string\n  filePath: string\n  line: number\n  column: number\n  code?: string\n  category?: string\n}\n\ninterface ProblemGroup {\n  filePath: string\n  problems: Problem[]\n  expanded: boolean\n}\n\ntype TabValue = 'all' | 'errors' | 'warnings' | 'info'\n\nexport function ProblemsPanel() {\n  const [activeTab, setActiveTab] = useState<TabValue>('all')\n  const [searchQuery, setSearchQuery] = useState('')\n  const [problemGroups, setProblemGroups] = useState<ProblemGroup[]>([])\n\n  useEffect(() => {\n    loadProblems()\n\n    const interval = setInterval(loadProblems, 5000)\n    return () => clearInterval(interval)\n  }, [])\n\n  const loadProblems = async () => {\n    try {\n      const response = await fetch('/api/diagnostics/all')\n      if (response.ok) {\n        const data = await response.json()\n        const grouped = groupProblemsByFile(data.problems || getMockProblems())\n        setProblemGroups(grouped)\n      } else {\n        const grouped = groupProblemsByFile(getMockProblems())\n        setProblemGroups(grouped)\n      }\n    } catch (error) {\n      console.error('Failed to load problems:', error)\n      const grouped = groupProblemsByFile(getMockProblems())\n      setProblemGroups(grouped)\n    }\n  }\n\n  const getMockProblems = (): Problem[] => {\n    return [\n      {\n        id: 'prob-1',\n        severity: 'error',\n        message: 'Unresolved reference: PersonaService',\n        source: 'Kotlin Compiler',\n        filePath: '/leviathan/src/main/kotlin/Controller.kt',\n        line: 45,\n        column: 23,\n        code: 'UNRESOLVED_REFERENCE',\n        category: 'compilation',\n      },\n      {\n        id: 'prob-2',\n        severity: 'error',\n        message: 'Type mismatch: inferred type is String but Int was expected',\n        source: 'Kotlin Compiler',\n        filePath: '/leviathan/src/main/kotlin/Controller.kt',\n        line: 67,\n        column: 15,\n        code: 'TYPE_MISMATCH',\n        category: 'compilation',\n      },\n      {\n        id: 'prob-3',\n        severity: 'warning',\n        message: 'Unused import statement',\n        source: 'Kotlin Compiler',\n        filePath: '/leviathan/src/main/kotlin/Controller.kt',\n        line: 5,\n        column: 1,\n        code: 'UNUSED_IMPORT',\n        category: 'style',\n      },\n      {\n        id: 'prob-4',\n        severity: 'error',\n        message: 'cannot find symbol: method processData()',\n        source: 'Java Compiler',\n        filePath: '/persona-core/src/main/java/DataProcessor.java',\n        line: 123,\n        column: 12,\n        category: 'compilation',\n      },\n      {\n        id: 'prob-8',\n        severity: 'error',\n        message: \"Property 'userData' does not exist on type 'User'\",\n        source: 'TypeScript',\n        filePath: '/bael/src/components/UserProfile.tsx',\n        line: 78,\n        column: 18,\n        code: 'TS2339',\n        category: 'type-check',\n      },\n      {\n        id: 'prob-9',\n        severity: 'warning',\n        message: \"'useState' is defined but never used\",\n        source: 'ESLint',\n        filePath: '/bael/src/components/UserProfile.tsx',\n        line: 3,\n        column: 10,\n        code: 'no-unused-vars',\n        category: 'lint',\n      },\n      {\n        id: 'prob-10',\n        severity: 'info',\n        message: 'Consider using optional chaining: user?.name',\n        source: 'ESLint',\n        filePath: '/bael/src/components/UserProfile.tsx',\n        line: 92,\n        column: 20,\n        code: 'prefer-optional-chain',\n        category: 'suggestion',\n      },\n    ]\n  }\n\n  const groupProblemsByFile = (problems: Problem[]): ProblemGroup[] => {\n    const groups: { [key: string]: Problem[] } = {}\n\n    problems.forEach((problem) => {\n      if (!groups[problem.filePath]) {\n        groups[problem.filePath] = []\n      }\n      groups[problem.filePath].push(problem)\n    })\n\n    return Object.entries(groups).map(([filePath, problems]) => ({\n      filePath,\n      problems: problems.sort((a, b) => a.line - b.line),\n      expanded: true,\n    }))\n  }\n\n  const toggleGroup = (filePath: string) => {\n    setProblemGroups((prev) =>\n      prev.map((group) =>\n        group.filePath === filePath ? { ...group, expanded: !group.expanded } : group\n      )\n    )\n  }\n\n  const getSeverityIcon = (severity: Problem['severity']) => {\n    switch (severity) {\n      case 'error':\n        return <AlertCircle className=\"text-[#f48771] w-3.5 h-3.5\" />\n      case 'warning':\n        return <AlertTriangle className=\"text-[#f59e0b] w-3.5 h-3.5\" />\n      case 'info':\n        return <Info className=\"text-[#4fc3f7] w-3.5 h-3.5\" />\n    }\n  }\n\n  const filterProblems = (problems: Problem[]): Problem[] => {\n    return problems.filter((problem) => {\n      if (activeTab !== 'all') {\n        if (activeTab === 'errors' && problem.severity !== 'error') return false\n        if (activeTab === 'warnings' && problem.severity !== 'warning') return false\n        if (activeTab === 'info' && problem.severity !== 'info') return false\n      }\n\n      if (searchQuery) {\n        const query = searchQuery.toLowerCase()\n        return (\n          problem.message.toLowerCase().includes(query) ||\n          problem.filePath.toLowerCase().includes(query) ||\n          problem.source.toLowerCase().includes(query)\n        )\n      }\n\n      return true\n    })\n  }\n\n  const filteredGroups = problemGroups\n    .map((group) => ({\n      ...group,\n      problems: filterProblems(group.problems),\n    }))\n    .filter((group) => group.problems.length > 0)\n\n  const allProblems = problemGroups.flatMap((g) => g.problems)\n  const errorCount = allProblems.filter((p) => p.severity === 'error').length\n  const warningCount = allProblems.filter((p) => p.severity === 'warning').length\n  const infoCount = allProblems.filter((p) => p.severity === 'info').length\n\n  const handleProblemClick = (problem: Problem) => {\n    console.log('Jump to:', problem.filePath, problem.line, problem.column)\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n      <div className=\"flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c] bg-[#2b2b2b]\">\n        <div className=\"text-[13px] font-semibold text-white\">Problems</div>\n\n        <div className=\"flex gap-1\">\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={loadProblems}\n            title=\"Refresh\"\n          >\n            <RotateCcw className=\"w-3.5 h-3.5\" />\n          </Button>\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            title=\"Clear All\"\n          >\n            <X className=\"w-3.5 h-3.5\" />\n          </Button>\n        </div>\n      </div>\n\n      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabValue)} className=\"flex flex-col flex-1\">\n        <div className=\"px-3 py-2 border-b border-[#3c3c3c]\">\n          <TabsList>\n            <TabsTrigger value=\"all\">\n              All\n              <Badge variant=\"secondary\" className=\"ml-1.5 text-[10px]\">{allProblems.length}</Badge>\n            </TabsTrigger>\n            <TabsTrigger value=\"errors\">\n              Errors\n              <Badge variant=\"destructive\" className=\"ml-1.5 text-[10px]\">{errorCount}</Badge>\n            </TabsTrigger>\n            <TabsTrigger value=\"warnings\">\n              Warnings\n              <Badge variant=\"default\" className=\"ml-1.5 text-[10px]\">{warningCount}</Badge>\n            </TabsTrigger>\n            <TabsTrigger value=\"info\">\n              Info\n              <Badge variant=\"secondary\" className=\"ml-1.5 text-[10px]\">{infoCount}</Badge>\n            </TabsTrigger>\n          </TabsList>\n        </div>\n\n        <div className=\"px-3 py-2 border-b border-[#3c3c3c]\">\n          <div className=\"relative\">\n            <Search className=\"absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858585]\" />\n            <Input\n              placeholder=\"Filter problems...\"\n              value={searchQuery}\n              onChange={(e) => setSearchQuery(e.target.value)}\n              size=\"sm\"\n              className=\"w-full pl-8\"\n            />\n          </div>\n        </div>\n\n        <TabsContent value={activeTab} className=\"flex-1 overflow-auto\">\n          {filteredGroups.length === 0 && (\n            <div className=\"px-5 py-10 text-center text-[#858585] text-[13px]\">\n              {allProblems.length === 0\n                ? 'No problems detected!'\n                : `No problems match your filter`}\n            </div>\n          )}\n\n          {filteredGroups.map((group) => (\n            <div key={group.filePath} className=\"border-b border-[#3c3c3c]\">\n              <div\n                className=\"flex items-center gap-2 px-3 py-2 bg-[#252526] cursor-pointer hover:bg-[#2b2b2b]\"\n                onClick={() => toggleGroup(group.filePath)}\n              >\n                <ChevronRight\n                  className={`w-3 h-3 min-w-[12px] transition-transform ${group.expanded ? 'rotate-90' : ''}`}\n                />\n                <div className=\"flex-1 text-xs font-semibold text-[#cccccc]\">\n                  {group.filePath.split('/').pop()}\n                </div>\n                <div className=\"text-[11px] text-[#858585]\">\n                  {group.problems.length} problem{group.problems.length !== 1 ? 's' : ''}\n                </div>\n              </div>\n\n              {group.expanded && (\n                <div className=\"bg-[#1e1e1e]\">\n                  {group.problems.map((problem) => (\n                    <div\n                      key={problem.id}\n                      className=\"flex items-start gap-2 px-3 py-2 border-b border-[#2b2b2b] cursor-pointer hover:bg-[#252526] transition-colors\"\n                      onClick={() => handleProblemClick(problem)}\n                    >\n                      <div className=\"mt-0.5\">{getSeverityIcon(problem.severity)}</div>\n                      <div className=\"flex-1 min-w-0\">\n                        <div className=\"text-xs text-[#cccccc] mb-1 leading-[1.4]\">{problem.message}</div>\n                        <div className=\"flex items-center gap-2 text-[10px] text-[#858585]\">\n                          <span>{problem.source}</span>\n                          <span>•</span>\n                          <span className=\"font-mono\">\n                            {group.filePath.split('/').pop()}:{problem.line}:{problem.column}\n                          </span>\n                          {problem.code && (\n                            <>\n                              <span>•</span>\n                              <span className=\"text-[#4fc3f7]\">{problem.code}</span>\n                            </>\n                          )}\n                        </div>\n                      </div>\n                    </div>\n                  ))}\n                </div>\n              )}\n            </div>\n          ))}\n        </TabsContent>\n      </Tabs>\n\n      <div className=\"flex items-center gap-4 px-3 py-2 border-t border-[#3c3c3c] bg-[#252526] text-[11px]\">\n        <div className=\"flex items-center gap-1.5\">\n          <AlertCircle className=\"text-[#f48771] w-3 h-3\" />\n          <strong>{errorCount}</strong>\n          <span>Errors</span>\n        </div>\n        <div className=\"flex items-center gap-1.5\">\n          <AlertTriangle className=\"text-[#f59e0b] w-3 h-3\" />\n          <strong>{warningCount}</strong>\n          <span>Warnings</span>\n        </div>\n        <div className=\"flex items-center gap-1.5\">\n          <Info className=\"text-[#4fc3f7] w-3 h-3\" />\n          <strong>{infoCount}</strong>\n          <span>Info</span>\n        </div>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "ProblemsPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 34,
+        "start_col": 7,
+        "end_line": 356,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 35,
+            "start_col": 36,
+            "end_line": 35,
+            "end_col": 61
+          },
+          "state_name": "activeTab",
+          "setter_name": "setActiveTab",
+          "initial_value": "\"all\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 36,
+            "start_col": 40,
+            "end_line": 36,
+            "end_col": 52
+          },
+          "state_name": "searchQuery",
+          "setter_name": "setSearchQuery",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 37,
+            "start_col": 44,
+            "end_line": 37,
+            "end_col": 72
+          },
+          "state_name": "problemGroups",
+          "setter_name": "setProblemGroups",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 39,
+            "start_col": 2,
+            "end_line": 44,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c] bg-[#2b2b2b]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-[13px] font-semibold text-white"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Problems"
+                            },
+                            "location": {
+                              "start_line": 221,
+                              "start_col": 62,
+                              "end_line": 221,
+                              "end_col": 70
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 221,
+                        "start_col": 8,
+                        "end_line": 221,
+                        "end_col": 76
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-1"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "loadProblems"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Refresh"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "RotateCcw",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-3.5 h-3.5"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 230,
+                                    "start_col": 12,
+                                    "end_line": 230,
+                                    "end_col": 49
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 224,
+                              "start_col": 10,
+                              "end_line": 231,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Clear All"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "X",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-3.5 h-3.5"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 237,
+                                    "start_col": 12,
+                                    "end_line": 237,
+                                    "end_col": 41
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 232,
+                              "start_col": 10,
+                              "end_line": 238,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 223,
+                        "start_col": 8,
+                        "end_line": 239,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 220,
+                  "start_col": 6,
+                  "end_line": 240,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Tabs",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "value",
+                      "value": {
+                        "type": "Expression",
+                        "code": "activeTab"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onValueChange",
+                      "value": {
+                        "type": "Expression",
+                        "code": "(value) => setActiveTab(value as TabValue)"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex flex-col flex-1"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "px-3 py-2 border-b border-[#3c3c3c]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "TabsList",
+                              "is_component": true,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "TabsTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "all"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "All"
+                                        },
+                                        "location": {
+                                          "start_line": 245,
+                                          "start_col": 37,
+                                          "end_line": 247,
+                                          "end_col": 14
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "Badge",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "variant",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "secondary"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "ml-1.5 text-[10px]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Expression",
+                                                "code": "allProblems.length"
+                                              },
+                                              "location": {
+                                                "start_line": 247,
+                                                "start_col": 72,
+                                                "end_line": 247,
+                                                "end_col": 92
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 247,
+                                          "start_col": 14,
+                                          "end_line": 247,
+                                          "end_col": 100
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 245,
+                                    "start_col": 12,
+                                    "end_line": 248,
+                                    "end_col": 26
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "TabsTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "errors"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Errors"
+                                        },
+                                        "location": {
+                                          "start_line": 249,
+                                          "start_col": 40,
+                                          "end_line": 251,
+                                          "end_col": 14
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "Badge",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "variant",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "destructive"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "ml-1.5 text-[10px]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Expression",
+                                                "code": "errorCount"
+                                              },
+                                              "location": {
+                                                "start_line": 251,
+                                                "start_col": 74,
+                                                "end_line": 251,
+                                                "end_col": 86
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 251,
+                                          "start_col": 14,
+                                          "end_line": 251,
+                                          "end_col": 94
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 249,
+                                    "start_col": 12,
+                                    "end_line": 252,
+                                    "end_col": 26
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "TabsTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "warnings"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Warnings"
+                                        },
+                                        "location": {
+                                          "start_line": 253,
+                                          "start_col": 42,
+                                          "end_line": 255,
+                                          "end_col": 14
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "Badge",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "variant",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "default"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "ml-1.5 text-[10px]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Expression",
+                                                "code": "warningCount"
+                                              },
+                                              "location": {
+                                                "start_line": 255,
+                                                "start_col": 70,
+                                                "end_line": 255,
+                                                "end_col": 84
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 255,
+                                          "start_col": 14,
+                                          "end_line": 255,
+                                          "end_col": 92
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 253,
+                                    "start_col": 12,
+                                    "end_line": 256,
+                                    "end_col": 26
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "TabsTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "info"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Info"
+                                        },
+                                        "location": {
+                                          "start_line": 257,
+                                          "start_col": 38,
+                                          "end_line": 259,
+                                          "end_col": 14
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "Badge",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "variant",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "secondary"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "ml-1.5 text-[10px]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Expression",
+                                                "code": "infoCount"
+                                              },
+                                              "location": {
+                                                "start_line": 259,
+                                                "start_col": 72,
+                                                "end_line": 259,
+                                                "end_col": 83
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 259,
+                                          "start_col": 14,
+                                          "end_line": 259,
+                                          "end_col": 91
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 257,
+                                    "start_col": 12,
+                                    "end_line": 260,
+                                    "end_col": 26
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 244,
+                              "start_col": 10,
+                              "end_line": 261,
+                              "end_col": 21
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 243,
+                        "start_col": 8,
+                        "end_line": 262,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "px-3 py-2 border-b border-[#3c3c3c]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "relative"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Search",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858585]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 266,
+                                    "start_col": 12,
+                                    "end_line": 266,
+                                    "end_col": 102
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Input",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "placeholder",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Filter problems..."
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "searchQuery"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onChange",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "(e) => setSearchQuery(e.target.value)"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-full pl-8"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 267,
+                                    "start_col": 12,
+                                    "end_line": 273,
+                                    "end_col": 14
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 265,
+                              "start_col": 10,
+                              "end_line": 274,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 264,
+                        "start_col": 8,
+                        "end_line": 275,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "TabsContent",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "activeTab"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex-1 overflow-auto"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "filteredGroups.length === 0",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "px-5 py-10 text-center text-[#858585] text-[13px]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "allProblems.length === 0\n                ? 'No problems detected!'\n                : `No problems match your filter`"
+                                      },
+                                      "location": {
+                                        "start_line": 280,
+                                        "start_col": 14,
+                                        "end_line": 282,
+                                        "end_col": 50
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 279,
+                                  "start_col": 12,
+                                  "end_line": 283,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 278,
+                              "start_col": 10,
+                              "end_line": 284,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Map",
+                              "iterable": "filteredGroups",
+                              "item_name": "group",
+                              "key_expr": "group.filePath",
+                              "body": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "key",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "group.filePath"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "border-b border-[#3c3c3c]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex items-center gap-2 px-3 py-2 bg-[#252526] cursor-pointer hover:bg-[#2b2b2b]"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onClick",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "() => toggleGroup(group.filePath)"
+                                            },
+                                            "is_event_handler": true
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "ChevronRight",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "`w-3 h-3 min-w-[12px] transition-transform ${group.expanded ? 'rotate-90' : ''}`"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 292,
+                                              "start_col": 16,
+                                              "end_line": 294,
+                                              "end_col": 18
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "div",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "flex-1 text-xs font-semibold text-[#cccccc]"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "group.filePath.split('/').pop()"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 296,
+                                                    "start_col": 18,
+                                                    "end_line": 296,
+                                                    "end_col": 51
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 295,
+                                              "start_col": 16,
+                                              "end_line": 297,
+                                              "end_col": 22
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "div",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "text-[11px] text-[#858585]"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "group.problems.length"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 299,
+                                                    "start_col": 18,
+                                                    "end_line": 299,
+                                                    "end_col": 41
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "problem"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 299,
+                                                    "start_col": 41,
+                                                    "end_line": 299,
+                                                    "end_col": 49
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "group.problems.length !== 1 ? 's' : ''"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 299,
+                                                    "start_col": 49,
+                                                    "end_line": 299,
+                                                    "end_col": 89
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 298,
+                                              "start_col": 16,
+                                              "end_line": 300,
+                                              "end_col": 22
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 288,
+                                        "start_col": 14,
+                                        "end_line": 301,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Conditional",
+                                        "condition": "group.expanded",
+                                        "consequent": {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "div",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "bg-[#1e1e1e]"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Map",
+                                                  "iterable": "group.problems",
+                                                  "item_name": "problem",
+                                                  "key_expr": "problem.id",
+                                                  "body": {
+                                                    "node_type": {
+                                                      "type": "Element",
+                                                      "tag": "div",
+                                                      "is_component": false,
+                                                      "attributes": [
+                                                        {
+                                                          "name": "key",
+                                                          "value": {
+                                                            "type": "Expression",
+                                                            "code": "problem.id"
+                                                          },
+                                                          "is_event_handler": false
+                                                        },
+                                                        {
+                                                          "name": "className",
+                                                          "value": {
+                                                            "type": "String",
+                                                            "value": "flex items-start gap-2 px-3 py-2 border-b border-[#2b2b2b] cursor-pointer hover:bg-[#252526] transition-colors"
+                                                          },
+                                                          "is_event_handler": false
+                                                        },
+                                                        {
+                                                          "name": "onClick",
+                                                          "value": {
+                                                            "type": "Expression",
+                                                            "code": "() => handleProblemClick(problem)"
+                                                          },
+                                                          "is_event_handler": true
+                                                        }
+                                                      ],
+                                                      "children": [
+                                                        {
+                                                          "node_type": {
+                                                            "type": "Element",
+                                                            "tag": "div",
+                                                            "is_component": false,
+                                                            "attributes": [
+                                                              {
+                                                                "name": "className",
+                                                                "value": {
+                                                                  "type": "String",
+                                                                  "value": "mt-0.5"
+                                                                },
+                                                                "is_event_handler": false
+                                                              }
+                                                            ],
+                                                            "children": [
+                                                              {
+                                                                "node_type": {
+                                                                  "type": "Expression",
+                                                                  "code": "getSeverityIcon(problem.severity)"
+                                                                },
+                                                                "location": {
+                                                                  "start_line": 311,
+                                                                  "start_col": 46,
+                                                                  "end_line": 311,
+                                                                  "end_col": 81
+                                                                }
+                                                              }
+                                                            ]
+                                                          },
+                                                          "location": {
+                                                            "start_line": 311,
+                                                            "start_col": 22,
+                                                            "end_line": 311,
+                                                            "end_col": 87
+                                                          }
+                                                        },
+                                                        {
+                                                          "node_type": {
+                                                            "type": "Element",
+                                                            "tag": "div",
+                                                            "is_component": false,
+                                                            "attributes": [
+                                                              {
+                                                                "name": "className",
+                                                                "value": {
+                                                                  "type": "String",
+                                                                  "value": "flex-1 min-w-0"
+                                                                },
+                                                                "is_event_handler": false
+                                                              }
+                                                            ],
+                                                            "children": [
+                                                              {
+                                                                "node_type": {
+                                                                  "type": "Element",
+                                                                  "tag": "div",
+                                                                  "is_component": false,
+                                                                  "attributes": [
+                                                                    {
+                                                                      "name": "className",
+                                                                      "value": {
+                                                                        "type": "String",
+                                                                        "value": "text-xs text-[#cccccc] mb-1 leading-[1.4]"
+                                                                      },
+                                                                      "is_event_handler": false
+                                                                    }
+                                                                  ],
+                                                                  "children": [
+                                                                    {
+                                                                      "node_type": {
+                                                                        "type": "Expression",
+                                                                        "code": "problem.message"
+                                                                      },
+                                                                      "location": {
+                                                                        "start_line": 313,
+                                                                        "start_col": 83,
+                                                                        "end_line": 313,
+                                                                        "end_col": 100
+                                                                      }
+                                                                    }
+                                                                  ]
+                                                                },
+                                                                "location": {
+                                                                  "start_line": 313,
+                                                                  "start_col": 24,
+                                                                  "end_line": 313,
+                                                                  "end_col": 106
+                                                                }
+                                                              },
+                                                              {
+                                                                "node_type": {
+                                                                  "type": "Element",
+                                                                  "tag": "div",
+                                                                  "is_component": false,
+                                                                  "attributes": [
+                                                                    {
+                                                                      "name": "className",
+                                                                      "value": {
+                                                                        "type": "String",
+                                                                        "value": "flex items-center gap-2 text-[10px] text-[#858585]"
+                                                                      },
+                                                                      "is_event_handler": false
+                                                                    }
+                                                                  ],
+                                                                  "children": [
+                                                                    {
+                                                                      "node_type": {
+                                                                        "type": "Element",
+                                                                        "tag": "span",
+                                                                        "is_component": false,
+                                                                        "attributes": [],
+                                                                        "children": [
+                                                                          {
+                                                                            "node_type": {
+                                                                              "type": "Expression",
+                                                                              "code": "problem.source"
+                                                                            },
+                                                                            "location": {
+                                                                              "start_line": 315,
+                                                                              "start_col": 32,
+                                                                              "end_line": 315,
+                                                                              "end_col": 48
+                                                                            }
+                                                                          }
+                                                                        ]
+                                                                      },
+                                                                      "location": {
+                                                                        "start_line": 315,
+                                                                        "start_col": 26,
+                                                                        "end_line": 315,
+                                                                        "end_col": 55
+                                                                      }
+                                                                    },
+                                                                    {
+                                                                      "node_type": {
+                                                                        "type": "Element",
+                                                                        "tag": "span",
+                                                                        "is_component": false,
+                                                                        "attributes": [],
+                                                                        "children": [
+                                                                          {
+                                                                            "node_type": {
+                                                                              "type": "Text",
+                                                                              "value": "•"
+                                                                            },
+                                                                            "location": {
+                                                                              "start_line": 316,
+                                                                              "start_col": 32,
+                                                                              "end_line": 316,
+                                                                              "end_col": 33
+                                                                            }
+                                                                          }
+                                                                        ]
+                                                                      },
+                                                                      "location": {
+                                                                        "start_line": 316,
+                                                                        "start_col": 26,
+                                                                        "end_line": 316,
+                                                                        "end_col": 40
+                                                                      }
+                                                                    },
+                                                                    {
+                                                                      "node_type": {
+                                                                        "type": "Element",
+                                                                        "tag": "span",
+                                                                        "is_component": false,
+                                                                        "attributes": [
+                                                                          {
+                                                                            "name": "className",
+                                                                            "value": {
+                                                                              "type": "String",
+                                                                              "value": "font-mono"
+                                                                            },
+                                                                            "is_event_handler": false
+                                                                          }
+                                                                        ],
+                                                                        "children": [
+                                                                          {
+                                                                            "node_type": {
+                                                                              "type": "Expression",
+                                                                              "code": "group.filePath.split('/').pop()"
+                                                                            },
+                                                                            "location": {
+                                                                              "start_line": 318,
+                                                                              "start_col": 28,
+                                                                              "end_line": 318,
+                                                                              "end_col": 61
+                                                                            }
+                                                                          },
+                                                                          {
+                                                                            "node_type": {
+                                                                              "type": "Text",
+                                                                              "value": ":"
+                                                                            },
+                                                                            "location": {
+                                                                              "start_line": 318,
+                                                                              "start_col": 61,
+                                                                              "end_line": 318,
+                                                                              "end_col": 62
+                                                                            }
+                                                                          },
+                                                                          {
+                                                                            "node_type": {
+                                                                              "type": "Expression",
+                                                                              "code": "problem.line"
+                                                                            },
+                                                                            "location": {
+                                                                              "start_line": 318,
+                                                                              "start_col": 62,
+                                                                              "end_line": 318,
+                                                                              "end_col": 76
+                                                                            }
+                                                                          },
+                                                                          {
+                                                                            "node_type": {
+                                                                              "type": "Text",
+                                                                              "value": ":"
+                                                                            },
+                                                                            "location": {
+                                                                              "start_line": 318,
+                                                                              "start_col": 76,
+                                                                              "end_line": 318,
+                                                                              "end_col": 77
+                                                                            }
+                                                                          },
+                                                                          {
+                                                                            "node_type": {
+                                                                              "type": "Expression",
+                                                                              "code": "problem.column"
+                                                                            },
+                                                                            "location": {
+                                                                              "start_line": 318,
+                                                                              "start_col": 77,
+                                                                              "end_line": 318,
+                                                                              "end_col": 93
+                                                                            }
+                                                                          }
+                                                                        ]
+                                                                      },
+                                                                      "location": {
+                                                                        "start_line": 317,
+                                                                        "start_col": 26,
+                                                                        "end_line": 319,
+                                                                        "end_col": 33
+                                                                      }
+                                                                    },
+                                                                    {
+                                                                      "node_type": {
+                                                                        "type": "Conditional",
+                                                                        "condition": "problem.code",
+                                                                        "consequent": {
+                                                                          "node_type": {
+                                                                            "type": "Fragment",
+                                                                            "children": [
+                                                                              {
+                                                                                "node_type": {
+                                                                                  "type": "Element",
+                                                                                  "tag": "span",
+                                                                                  "is_component": false,
+                                                                                  "attributes": [],
+                                                                                  "children": [
+                                                                                    {
+                                                                                      "node_type": {
+                                                                                        "type": "Text",
+                                                                                        "value": "•"
+                                                                                      },
+                                                                                      "location": {
+                                                                                        "start_line": 322,
+                                                                                        "start_col": 36,
+                                                                                        "end_line": 322,
+                                                                                        "end_col": 37
+                                                                                      }
+                                                                                    }
+                                                                                  ]
+                                                                                },
+                                                                                "location": {
+                                                                                  "start_line": 322,
+                                                                                  "start_col": 30,
+                                                                                  "end_line": 322,
+                                                                                  "end_col": 44
+                                                                                }
+                                                                              },
+                                                                              {
+                                                                                "node_type": {
+                                                                                  "type": "Element",
+                                                                                  "tag": "span",
+                                                                                  "is_component": false,
+                                                                                  "attributes": [
+                                                                                    {
+                                                                                      "name": "className",
+                                                                                      "value": {
+                                                                                        "type": "String",
+                                                                                        "value": "text-[#4fc3f7]"
+                                                                                      },
+                                                                                      "is_event_handler": false
+                                                                                    }
+                                                                                  ],
+                                                                                  "children": [
+                                                                                    {
+                                                                                      "node_type": {
+                                                                                        "type": "Expression",
+                                                                                        "code": "problem.code"
+                                                                                      },
+                                                                                      "location": {
+                                                                                        "start_line": 323,
+                                                                                        "start_col": 63,
+                                                                                        "end_line": 323,
+                                                                                        "end_col": 77
+                                                                                      }
+                                                                                    }
+                                                                                  ]
+                                                                                },
+                                                                                "location": {
+                                                                                  "start_line": 323,
+                                                                                  "start_col": 30,
+                                                                                  "end_line": 323,
+                                                                                  "end_col": 84
+                                                                                }
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          "location": {
+                                                                            "start_line": 321,
+                                                                            "start_col": 28,
+                                                                            "end_line": 324,
+                                                                            "end_col": 31
+                                                                          }
+                                                                        },
+                                                                        "alternate": null
+                                                                      },
+                                                                      "location": {
+                                                                        "start_line": 320,
+                                                                        "start_col": 26,
+                                                                        "end_line": 325,
+                                                                        "end_col": 28
+                                                                      }
+                                                                    }
+                                                                  ]
+                                                                },
+                                                                "location": {
+                                                                  "start_line": 314,
+                                                                  "start_col": 24,
+                                                                  "end_line": 326,
+                                                                  "end_col": 30
+                                                                }
+                                                              }
+                                                            ]
+                                                          },
+                                                          "location": {
+                                                            "start_line": 312,
+                                                            "start_col": 22,
+                                                            "end_line": 327,
+                                                            "end_col": 28
+                                                          }
+                                                        }
+                                                      ]
+                                                    },
+                                                    "location": {
+                                                      "start_line": 306,
+                                                      "start_col": 20,
+                                                      "end_line": 328,
+                                                      "end_col": 26
+                                                    }
+                                                  }
+                                                },
+                                                "location": {
+                                                  "start_line": 305,
+                                                  "start_col": 18,
+                                                  "end_line": 329,
+                                                  "end_col": 21
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 304,
+                                            "start_col": 16,
+                                            "end_line": 330,
+                                            "end_col": 22
+                                          }
+                                        },
+                                        "alternate": null
+                                      },
+                                      "location": {
+                                        "start_line": 303,
+                                        "start_col": 14,
+                                        "end_line": 331,
+                                        "end_col": 16
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 287,
+                                  "start_col": 12,
+                                  "end_line": 332,
+                                  "end_col": 18
+                                }
+                              }
+                            },
+                            "location": {
+                              "start_line": 286,
+                              "start_col": 10,
+                              "end_line": 333,
+                              "end_col": 13
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 277,
+                        "start_col": 8,
+                        "end_line": 334,
+                        "end_col": 22
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 242,
+                  "start_col": 6,
+                  "end_line": 335,
+                  "end_col": 13
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center gap-4 px-3 py-2 border-t border-[#3c3c3c] bg-[#252526] text-[11px]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-1.5"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "AlertCircle",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-[#f48771] w-3 h-3"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 339,
+                              "start_col": 10,
+                              "end_line": 339,
+                              "end_col": 60
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "strong",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "errorCount"
+                                  },
+                                  "location": {
+                                    "start_line": 340,
+                                    "start_col": 18,
+                                    "end_line": 340,
+                                    "end_col": 30
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 340,
+                              "start_col": 10,
+                              "end_line": 340,
+                              "end_col": 39
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "span",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Errors"
+                                  },
+                                  "location": {
+                                    "start_line": 341,
+                                    "start_col": 16,
+                                    "end_line": 341,
+                                    "end_col": 22
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 341,
+                              "start_col": 10,
+                              "end_line": 341,
+                              "end_col": 29
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 338,
+                        "start_col": 8,
+                        "end_line": 342,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-1.5"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "AlertTriangle",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-[#f59e0b] w-3 h-3"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 344,
+                              "start_col": 10,
+                              "end_line": 344,
+                              "end_col": 62
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "strong",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "warningCount"
+                                  },
+                                  "location": {
+                                    "start_line": 345,
+                                    "start_col": 18,
+                                    "end_line": 345,
+                                    "end_col": 32
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 345,
+                              "start_col": 10,
+                              "end_line": 345,
+                              "end_col": 41
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "span",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Warnings"
+                                  },
+                                  "location": {
+                                    "start_line": 346,
+                                    "start_col": 16,
+                                    "end_line": 346,
+                                    "end_col": 24
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 346,
+                              "start_col": 10,
+                              "end_line": 346,
+                              "end_col": 31
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 343,
+                        "start_col": 8,
+                        "end_line": 347,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-1.5"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Info",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-[#4fc3f7] w-3 h-3"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 349,
+                              "start_col": 10,
+                              "end_line": 349,
+                              "end_col": 53
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "strong",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "infoCount"
+                                  },
+                                  "location": {
+                                    "start_line": 350,
+                                    "start_col": 18,
+                                    "end_line": 350,
+                                    "end_col": 29
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 350,
+                              "start_col": 10,
+                              "end_line": 350,
+                              "end_col": 38
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "span",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Info"
+                                  },
+                                  "location": {
+                                    "start_line": 351,
+                                    "start_col": 16,
+                                    "end_line": 351,
+                                    "end_col": 20
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 351,
+                              "start_col": 10,
+                              "end_line": 351,
+                              "end_col": 27
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 348,
+                        "start_col": 8,
+                        "end_line": 352,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 337,
+                  "start_col": 6,
+                  "end_line": 353,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 219,
+            "start_col": 4,
+            "end_line": 354,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleProblemClick",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(problem: Problem) => {\n    console.log('Jump to:', problem.filePath, problem.line, problem.column)\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "console.log",
+              "source": {
+                "type": "Global"
+              },
+              "arguments": [
+                "'Jump to:'",
+                "problem.filePath",
+                "problem.line",
+                "problem.column"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "ConsoleLog"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "problem",
+              "type_annotation": ": Problem"
+            }
+          ],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "AlertCircle",
+        "AlertTriangle",
+        "Badge",
+        "Button",
+        "ChevronRight",
+        "Info",
+        "Input",
+        "RotateCcw",
+        "Search",
+        "Tabs",
+        "TabsContent",
+        "TabsList",
+        "TabsTrigger",
+        "X"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "activeTab",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "searchQuery",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "problemGroups",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/problems_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:activeTab",
+        "to_field": "activeTab",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"all\"",
+        "reasoning": "useState hook 'activeTab' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:searchQuery",
+        "to_field": "searchQuery",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'searchQuery' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:problemGroups",
+        "to_field": "problemGroups",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'problemGroups' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateActiveTab",
+        "from_handler": "setActiveTab",
+        "payload": null,
+        "state_changes": [
+          "self.activeTab = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSearchQuery",
+        "from_handler": "setSearchQuery",
+        "payload": null,
+        "state_changes": [
+          "self.searchQuery = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateProblemGroups",
+        "from_handler": "setProblemGroups",
+        "payload": null,
+        "state_changes": [
+          "self.problemGroups = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "ProblemClick",
+        "from_handler": "handleProblemClick",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps with cleanup → Mount/Unmount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_mount",
+      "description": "Convert mount-only useEffect to lifecycle",
+      "react": "useEffect(() => { init(); }, []);",
+      "sigil": "on Mount { self.init(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "AlertCircle",
+      "AlertTriangle",
+      "Badge",
+      "Button",
+      "ChevronRight",
+      "Info",
+      "Input",
+      "RotateCcw",
+      "Search",
+      "Tabs",
+      "TabsContent",
+      "TabsList",
+      "TabsTrigger",
+      "X"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

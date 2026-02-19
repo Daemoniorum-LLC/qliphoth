@@ -1,6 +1,6 @@
 # Qliphoth Clipboard API Specification
 
-**Version:** 0.5.2
+**Version:** 0.7.1
 **Date:** 2026-02-18
 **Status:** Draft (Methodology Compliant)
 **SDD Phase:** Spec
@@ -33,10 +33,21 @@ The following are explicitly out of scope for this specification:
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `native_clipboard_read` | ⚠️ Stub | Returns 0, no implementation |
-| `native_clipboard_write` | ⚠️ Stub | No-op, no implementation |
-| MIME support | ❌ None | Current API assumes plain text |
-| Async support | ❌ None | Current API is synchronous |
+| Async read API | ✅ Complete | `native_clipboard_read_format()`, `get_formats()`, `get_data()` |
+| Async write API | ✅ Complete | `write_begin()`, `write_add_format()`, `write_commit()` |
+| MIME support | ✅ Complete | text/plain, text/html, image/png, image/jpeg, text/uri-list, custom |
+| Primary selection | ✅ Complete | X11 and Wayland native support |
+| X11 backend | ✅ Complete | Native x11rb with INCR protocol |
+| Wayland backend | ✅ Complete | Native smithay-clipboard (text only) |
+| Platform detection | ✅ Complete | Auto-detects Wayland/X11/XWayland |
+| Security limits | ✅ Complete | 100MB/format, 32 formats max, MIME validation |
+| Change notifications | ✅ Complete | Polling-based (500ms) |
+| Deprecated sync API | ⚠️ Legacy | `native_clipboard_read/write` for compatibility |
+
+**Future Enhancements (Phase 6E):** TODO(#clipboard-6e)
+- Full MIME discovery on Wayland (requires raw wayland-client, smithay-clipboard is text-only)
+- Clipboard change notifications via native protocols (vs polling)
+- macOS/Windows native backends if arboard proves insufficient
 
 ---
 
@@ -861,11 +872,11 @@ copy_password(password: bytes):
 
 | Crate | Purpose | Notes |
 |-------|---------|-------|
-| `arboard` | Cross-platform clipboard | Active, supports images, primary selection |
-| `wl-clipboard-rs` | Wayland-native | Better async support on Wayland |
-| `x11-clipboard` | X11-native | More control for X11 edge cases |
+| `arboard` | Cross-platform clipboard | Active, supports images, primary selection; used as fallback |
+| `x11rb` | X11-native (implemented) | Pure Rust X11 bindings; used for Phase 6B X11 backend |
+| `wl-clipboard-rs` | Wayland-native | Better async support on Wayland; planned for Phase 6C |
 
-**Recommendation:** Start with `arboard` for simplicity. It handles most cases well and has active maintenance.
+**Recommendation:** Use `x11rb` on Linux X11 sessions for true async support, with `arboard` as fallback for macOS/Windows/headless environments.
 
 ### 8.2 Internal State
 
@@ -1005,42 +1016,115 @@ Implemented pending operation tracking with arboard backend:
 - [x] Fire `CLIPBOARD_ERR_TIMEOUT` for operations exceeding 30s timeout
 - [x] Reject duplicate `callback_id` when operation already pending
 
-#### Phase 6B-D: Native Async Backends (Future)
+#### Phase 6B: X11 Native Async Backend ✓ COMPLETE
 
-For true native Wayland/X11 async support:
+Implemented native X11 clipboard support using x11rb, replacing arboard for Linux X11 sessions:
 
-- [ ] X11 backend: Replace arboard with native x11rb selection protocol
-- [ ] Wayland backend: Replace arboard with native wl-clipboard/data-device protocol
-- [ ] Platform detection: Auto-detect Wayland vs X11 and use appropriate backend
-- [ ] Keep arboard as fallback for macOS/Windows
+- [x] X11 backend module: `clipboard_x11.rs` with full X11 selection protocol
+- [x] X11 connection management: Lazy initialization with DISPLAY detection
+- [x] Atom interning: CLIPBOARD, PRIMARY, TARGETS, UTF8_STRING, INCR, and MIME atoms
+- [x] Read path: ConvertSelection → SelectionNotify → GetProperty flow
+- [x] INCR protocol: Chunked transfer for large data (>256KB), serialized for correctness
+- [x] Write path: SetSelectionOwner → SelectionRequest → property response flow
+- [x] Ownership verification: GetSelectionOwner check after SetSelectionOwner
+- [x] Target support: Clipboard and PrimarySelection via separate X11 atoms
+- [x] Format discovery: TARGETS query with atom-to-MIME mapping
+- [x] Event integration: X11 events processed via native_poll_event()
+- [x] Graceful fallback: Falls back to arboard when X11 unavailable
+- [x] Feature flag: `x11-backend` feature for conditional compilation
+- [x] Test coverage: 17 X11-specific tests, 2 xclip integration tests
+
+**Architecture:**
+```
+FFI Layer (lib.rs)
+    ├── [X11 available?] → X11ClipboardBackend.read_format()
+    └── [fallback] → arboard (existing code)
+
+X11 Backend (clipboard_x11.rs)
+    ├── conn: RustConnection
+    ├── atoms: ClipboardAtoms (pre-interned)
+    ├── selection_window: u32 (hidden 1x1)
+    ├── pending_reads: HashMap<u64, X11ReadRequest>
+    ├── active_incr: Option<IncrTransfer> (serialized)
+    └── write_data: Option<X11WriteData>
+```
+
+#### Phase 6C: Wayland Native Backend ✓ COMPLETE
+
+Implemented native Wayland clipboard support using smithay-clipboard:
+
+- [x] Wayland backend module: `clipboard_wayland.rs` using smithay-clipboard
+- [x] Lazy initialization from winit window's wl_display handle
+- [x] Text format support: text/plain, text/html via smithay-clipboard
+- [x] Primary selection: Full support via `load_primary()` / `store_primary()`
+- [x] FFI routing: Wayland → X11 → arboard fallback chain
+- [x] Feature flag: `wayland-backend` for conditional compilation
+- [x] Both `x11-backend` and `wayland-backend` can be enabled simultaneously
+
+**Limitation:** smithay-clipboard only supports text formats. Image formats (image/png, etc.)
+fall back to arboard. A future enhancement could use raw wayland-client for full format support.
+
+#### Phase 6D: Platform Auto-Detection ✓ COMPLETE
+
+Implemented runtime platform detection and unified backend selection:
+
+- [x] `LinuxDisplayServer` enum: Wayland, X11, XWayland, Unknown
+- [x] `detect_display_server()`: Runtime detection via environment variables
+- [x] `clipboard_backend_description()`: Human-readable backend status
+- [x] `native_clipboard_available()`: Check if native backends can be used
+- [x] FFI functions: `native_get_display_server()`, `native_clipboard_has_native_backend()`
+- [x] `native-clipboard` feature: Combines x11-backend + wayland-backend for easy auto-detection
+- [x] Startup logging: Displays detected display server and active clipboard backend
+- [x] arboard fallback: Used for macOS/Windows/headless/unsupported formats
+
+**Auto-detection logic:**
+- XWayland → Prefer Wayland backend (native to compositor)
+- Wayland only → Use Wayland backend
+- X11 only → Use X11 backend
+- Neither → Use arboard fallback
+
+#### Phase 6E: Future Enhancements (Optional)
+
+For additional clipboard improvements:
+
+- [ ] Full MIME type support on Wayland via raw wayland-client (smithay-clipboard is text-only)
+- [ ] Clipboard change notifications on Wayland
+- [ ] macOS/Windows native backends (if arboard proves insufficient)
 
 ### Known Limitations (Current Implementation)
 
-1. **Synchronous backend**: Clipboard operations use arboard which is synchronous.
-   True async native backends (X11/Wayland) are planned for Phase 6B-D. However,
-   pending operation tracking is in place (Phase 6A) so cancel/timeout events work.
+1. **Wayland text-only via smithay-clipboard**: The Wayland backend (smithay-clipboard)
+   only supports text formats (text/plain, text/html). Image formats fall back to arboard.
+   Both X11 and Wayland backends support primary selection.
 
-2. **Primary selection on Wayland**: Requires `zwp_primary_selection_v1` protocol.
-   Currently uses arboard's X11/Wayland abstraction.
+2. **Wayland backend lazy initialization**: Requires a winit window to initialize. The backend
+   is created on first clipboard operation when a window exists.
 
-3. **Pending operations brief**: With synchronous arboard backend, operations are
-   tracked as "pending" only briefly during execution. In practice, operations
-   complete before `native_clipboard_cancel()` can be called. True cancelable
-   async operations require Phase 6B-D native backends.
+3. **INCR transfers serialized**: The X11 backend processes only one INCR (large data)
+   transfer at a time to avoid property conflicts. Concurrent large clipboard reads
+   will be queued. This is by design for correctness.
 
-4. **Binary custom formats**: Custom `application/*` formats containing binary (non-UTF-8)
-   data will be stored as lossy UTF-8 text, which corrupts non-text content. This is because
-   arboard doesn't support raw MIME type storage. Only text-based formats (JSON, XML, etc.)
-   are reliably preserved.
+4. **X11 sensitive data flag**: The sensitive data flag is logged but not enforced on X11,
+   as X11 has no native concept of private clipboard data. Clipboard managers may still
+   capture sensitive content.
 
-5. **SVG validation**: The `image/svg+xml` format uses heuristic validation (checking for
+5. **Binary custom formats (arboard fallback)**: When using arboard backend (non-X11 or
+   `x11-backend` feature disabled), custom `application/*` formats containing binary
+   (non-UTF-8) data will be stored as lossy UTF-8 text. The X11 backend handles binary
+   formats correctly.
+
+6. **SVG validation**: The `image/svg+xml` format uses heuristic validation (checking for
    `<svg` tags and XML declaration) rather than full XML parsing. Valid SVG with unusual
    formatting may be rejected; non-SVG XML containing `<svg>` elements may be accepted.
 
-6. **Image hash for change detection**: Change notifications use a hash of the first 256
+7. **Image hash for change detection**: Change notifications use a hash of the first 256
    bytes of image data (plus dimensions) for performance. Two images differing only after
    byte 256 would have the same hash, though this is unlikely in practice due to distinct
    PNG/JPEG headers.
+
+8. **X11 DISPLAY required**: The X11 backend requires the DISPLAY environment variable
+   to be set. In headless environments (CI, SSH without X forwarding), the backend falls
+   back to arboard automatically.
 
 ---
 
@@ -1280,6 +1364,42 @@ native_clipboard_write_commit(h, callback_id)
 ---
 
 ## Changelog
+
+### v0.7.0 (2026-02-18)
+- **Phase 6D Complete**: Platform Auto-Detection
+- Added `LinuxDisplayServer` enum with Wayland, X11, XWayland, Unknown variants
+- Added `detect_display_server()` function for runtime platform detection
+- Added `clipboard_backend_description()` for human-readable backend status
+- Added `native_clipboard_available()` to check native backend availability
+- Added FFI functions: `native_get_display_server()`, `native_clipboard_has_native_backend()`
+- Added `native-clipboard` feature that combines x11-backend + wayland-backend
+- Added startup logging showing detected display server and active clipboard backend
+- Added 6 platform detection unit tests
+- XWayland sessions now correctly prefer Wayland backend over X11
+
+### v0.7.1 (2026-02-18)
+- **Security Audit Fixes**: Addressed all issues from code review
+- Added `CLIPBOARD_MAX_FORMAT_SIZE` (100MB) enforcement per spec §10.4
+- Added `CLIPBOARD_MAX_FORMATS` (32) enforcement per spec §10.4
+- Added `is_valid_mime_type()` validation per spec §10.4
+- Fixed X11 `get_formats()` to support PrimarySelection target (was CLIPBOARD-only)
+- Improved Wayland `get_formats()` documentation about format discovery limitations
+- Updated Current State table to reflect complete implementation status
+
+### v0.6.0 (2026-02-18)
+- **Phase 6B Complete**: X11 Native Async Backend
+- Added native X11 clipboard backend using x11rb (`clipboard_x11.rs`)
+- Implemented full X11 selection protocol: ConvertSelection, SelectionNotify, SelectionRequest
+- Implemented INCR protocol for large data transfers (>256KB), serialized for correctness
+- Added target parameter support (Clipboard vs PrimarySelection)
+- Added ownership verification via GetSelectionOwner after SetSelectionOwner
+- Added TARGETS query for format discovery with atom-to-MIME mapping
+- Integrated X11 events into native_poll_event() event loop
+- Added graceful fallback to arboard when X11 unavailable
+- Added `x11-backend` feature flag for conditional compilation
+- Added 17 X11-specific unit tests, 2 xclip integration tests
+- Updated Known Limitations to reflect X11 backend capabilities
+- Updated recommended crates table with x11rb
 
 ### v0.5.1 (2025-02-18)
 - **Audit fixes**: Addressed 4 issues from code review

@@ -1,0 +1,212 @@
+invoke sigil_web·prelude·*;
+ᛈ DependencyViewerPanelMsg {
+    UpdateDependencies,
+    UpdateLoading,
+    UpdateChecking,
+    UpdateError,
+    UpdateFilter,
+    UpdateExpandedGroups,
+    UpdateShowOutdatedOnly,
+}
+actor DependencyViewerPanel {
+    state dependencies: Vec<Any>! = [],
+    state loading: bool! = true,
+    state checking: bool! = false,
+    state error: Option<Any>~ = None,
+    state filter: String! = "",
+    state expandedGroups: Any~ = None,
+    state showOutdatedOnly: bool! = false,
+
+    on UpdateDependencies {
+        self.dependencies = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateChecking {
+        self.checking = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateFilter {
+        self.filter = msg.0;
+    }
+
+    on UpdateExpandedGroups {
+        self.expandedGroups = msg.0;
+    }
+
+    on UpdateShowOutdatedOnly {
+        self.showOutdatedOnly = msg.0;
+    }
+
+    on Mount {
+        // Empty deps → Mount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c] bg-[#252526]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center justify-between mb-3")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        Package·view()
+                            ·class("w-4 h-4 text-[#5bcefa]")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-sm font-medium text-white")
+                            ·text_child("Dependencies")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-[#808080]")
+                            ·text_child("(")
+                            ·text_child(stats.total·to_string())
+                            ·text_child(")")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·when(self.checking, |n| n·attr("disabled", "true"))
+                        ·class("h-7 px-2")
+                        ·attr("aria-label", "Check for updates")
+                        ·child(
+                        RefreshCw·view()
+                            ·class("w-3.5 h-3.5 mr-1.5 )
+                        )
+                        ·text_child("Checking..." ·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("grid grid-cols-4 gap-2 mb-3")
+                    ·child(
+                    VNode·div()
+                        ·class("p-2 bg-[#2d2d30] rounded text-center")
+                        ·child(
+                        VNode·div()
+                            ·class("text-lg font-bold text-white")
+                            ·text_child(stats.total·to_string())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-[10px] text-[#808080] uppercase")
+                            ·text_child("Total")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("p-2 bg-[#2d2d30] rounded text-center")
+                        ·child(
+                        VNode·div()
+                            ·class("text-lg font-bold text-[#ffd700]")
+                            ·text_child(stats.outdated·to_string())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-[10px] text-[#808080] uppercase")
+                            ·text_child("Updates")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("p-2 bg-[#2d2d30] rounded text-center")
+                        ·child(
+                        VNode·div()
+                            ·class("text-lg font-bold text-[#f48771]")
+                            ·text_child(stats.major_outdated·to_string())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-[10px] text-[#808080] uppercase")
+                            ·text_child("Major")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("p-2 bg-[#2d2d30] rounded text-center")
+                        ·child(
+                        VNode·div()
+                            ·class("text-lg font-bold text-[#ef4444]")
+                            ·text_child(stats.vulnerable·to_string())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-[10px] text-[#808080] uppercase")
+                            ·text_child("Vulns")
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-2")
+                    ·child(
+                    VNode·div()
+                        ·class("flex-1 relative")
+                        ·child(
+                        Search·view()
+                            ·class("absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#808080]")
+                        )
+                        ·child(
+                        VNode·input()
+                            ·attr("type", "text")
+                            ·attr("placeholder", "Filter packages...")
+                            ·attr("value", self.filter)
+                            ·on_change(Change)
+                            ·class("w-full pl-8 pr-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                        )
+                    )
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("px-2 py-1.5 text-xs rounded transition-colors )
+                        ·child(
+                        ArrowUp·view()
+                            ·class("w-3.5 h-3.5")
+                        )
+                    )
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto p-2")
+                ·text_child(None·to_string())
+                ·when(groups.len() = 0, VNode·div()
+                    ·class("flex flex-col items-center justify-center h-full p-6 text-center")
+                    ·child(
+                    VNode·div()
+                        ·class("p-3 bg-[#252526] rounded-full mb-4")
+                        ·child(
+                        Package·view()
+                            ·class("w-8 h-8 text-[#858585]")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-sm text-[#cccccc] font-medium mb-1")
+                        ·text_child("No matching packages")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-xs text-[#858585]")
+                        ·text_child("Try a different search term")
+                    ))
+            )
+    }
+}

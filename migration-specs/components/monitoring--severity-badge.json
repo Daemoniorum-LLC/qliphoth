@@ -1,0 +1,128 @@
+{
+  "id": "domains/devops/components/monitoring/MonitoringSection.tsx:SeverityBadge",
+  "name": "SeverityBadge",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/monitoring/MonitoringSection.tsx",
+    "code": "import { useState } from 'react'\nimport {\n  Activity, AlertTriangle, Bell, BellOff, Check,\n  Clock, TrendingUp, TrendingDown, Minus\n} from 'lucide-react'\nimport { IconButton } from '@ui/components/atoms'\nimport { StatusBadge, SectionHeader, DataTable } from '../shared'\nimport { mockAlerts } from '../../mock-data'\nimport type { Alert } from '../../types'\n\nfunction formatRelativeTime(dateStr: string): string {\n  const diff = Date.now() - new Date(dateStr).getTime()\n  const mins = Math.floor(diff / 60000)\n  const hours = Math.floor(diff / 3600000)\n  const days = Math.floor(diff / 86400000)\n  if (days > 0) return `${days}d ago`\n  if (hours > 0) return `${hours}h ago`\n  if (mins > 0) return `${mins}m ago`\n  return 'Just now'\n}\n\nfunction SeverityBadge({ severity }: { severity: Alert['severity'] }) {\n  const config = {\n    critical: { variant: 'error' as const, icon: <AlertTriangle className=\"h-3 w-3\" /> },\n    warning: { variant: 'warning' as const, icon: <AlertTriangle className=\"h-3 w-3\" /> },\n    info: { variant: 'accent' as const, icon: <Bell className=\"h-3 w-3\" /> },\n  }\n  const { variant, icon } = config[severity]\n  return (\n    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium\n      ${variant === 'error' ? 'bg-[var(--accent-error)]/20 text-[var(--accent-error)]' : ''}\n      ${variant === 'warning' ? 'bg-[var(--accent-warning)]/20 text-[var(--accent-warning)]' : ''}\n      ${variant === 'accent' ? 'bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]' : ''}\n    `}>\n      {icon}\n      {severity}\n    </span>\n  )\n}\n\nfunction MetricCard({\n  title,\n  value,\n  unit,\n  trend,\n  trendValue,\n}: {\n  title: string\n  value: number\n  unit: string\n  trend: 'up' | 'down' | 'stable'\n  trendValue?: string\n}) {\n  const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus\n  const trendColor = trend === 'up' ? 'text-[var(--accent-error)]' : trend === 'down' ? 'text-[var(--accent-success)]' : 'text-[var(--text-muted)]'\n\n  return (\n    <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4\">\n      <div className=\"flex items-center justify-between mb-2\">\n        <span className=\"text-xs text-[var(--text-secondary)]\">{title}</span>\n        {trendValue && (\n          <div className={`flex items-center gap-1 text-xs ${trendColor}`}>\n            <TrendIcon className=\"h-3 w-3\" />\n            <span>{trendValue}</span>\n          </div>\n        )}\n      </div>\n      <div className=\"flex items-baseline gap-1\">\n        <span className=\"text-2xl font-semibold text-[var(--text-primary)]\">{value}</span>\n        <span className=\"text-sm text-[var(--text-muted)]\">{unit}</span>\n      </div>\n    </div>\n  )\n}\n\nfunction MiniChart({ data, color }: { data: number[]; color: string }) {\n  const max = Math.max(...data)\n  const min = Math.min(...data)\n  const range = max - min || 1\n\n  return (\n    <div className=\"flex items-end gap-0.5 h-8\">\n      {data.map((value, idx) => (\n        <div\n          key={idx}\n          className=\"w-1 rounded-t\"\n          style={{\n            height: `${((value - min) / range) * 100}%`,\n            minHeight: '4px',\n            backgroundColor: color,\n            opacity: 0.6 + (idx / data.length) * 0.4,\n          }}\n        />\n      ))}\n    </div>\n  )\n}\n\nexport function MonitoringSection() {\n  const [alertFilter, setAlertFilter] = useState<'all' | 'firing' | 'resolved'>('all')\n\n  const filteredAlerts = alertFilter === 'all'\n    ? mockAlerts\n    : mockAlerts.filter((a) => a.status === alertFilter)\n\n  // Sample metric data\n  const cpuData = [45, 52, 48, 61, 58, 72, 68, 75, 82, 78, 85, 80]\n  const memoryData = [62, 64, 65, 68, 70, 72, 75, 78, 82, 85, 88, 92]\n  const requestsData = [120, 135, 142, 128, 156, 168, 145, 172, 185, 192, 178, 195]\n\n  const alertColumns = [\n    {\n      key: 'severity',\n      header: 'Severity',\n      width: '100px',\n      render: (a: Alert) => <SeverityBadge severity={a.severity} />,\n    },\n    {\n      key: 'name',\n      header: 'Alert',\n      render: (a: Alert) => (\n        <div>\n          <div className=\"font-medium text-[var(--text-primary)]\">{a.name}</div>\n          <div className=\"text-xs text-[var(--text-muted)]\">{a.message}</div>\n        </div>\n      ),\n    },\n    {\n      key: 'source',\n      header: 'Source',\n      width: '120px',\n      render: (a: Alert) => (\n        <span className=\"text-xs text-[var(--text-secondary)]\">{a.source}</span>\n      ),\n    },\n    {\n      key: 'status',\n      header: 'Status',\n      width: '100px',\n      render: (a: Alert) => <StatusBadge status={a.status} />,\n    },\n    {\n      key: 'time',\n      header: 'Time',\n      width: '100px',\n      render: (a: Alert) => (\n        <span className=\"text-xs text-[var(--text-muted)]\">{formatRelativeTime(a.timestamp)}</span>\n      ),\n    },\n    {\n      key: 'actions',\n      header: '',\n      width: '80px',\n      render: (a: Alert) => (\n        <div className=\"flex items-center gap-1\">\n          {a.status === 'firing' && (\n            <IconButton icon={<Check className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Acknowledge\" onClick={() => {}} />\n          )}\n          <IconButton icon={<BellOff className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Silence\" onClick={() => {}} />\n        </div>\n      ),\n    },\n  ]\n\n  return (\n    <div className=\"h-full flex flex-col\">\n      <SectionHeader\n        title=\"Monitoring\"\n        subtitle=\"System health & alerts\"\n        icon={<Activity className=\"h-5 w-5\" />}\n        onRefresh={() => {}}\n      />\n\n      <div className=\"flex-1 overflow-auto space-y-6 pr-1\">\n        {/* Metrics Overview */}\n        <div>\n          <h3 className=\"text-xs font-medium text-[var(--text-secondary)] mb-3\">System Metrics</h3>\n          <div className=\"grid grid-cols-3 gap-3\">\n            <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4\">\n              <div className=\"flex items-center justify-between mb-3\">\n                <span className=\"text-xs text-[var(--text-secondary)]\">CPU Usage</span>\n                <span className=\"text-xs text-[var(--accent-error)]\">+12%</span>\n              </div>\n              <div className=\"flex items-end justify-between\">\n                <div>\n                  <span className=\"text-2xl font-semibold text-[var(--text-primary)]\">80</span>\n                  <span className=\"text-sm text-[var(--text-muted)]\">%</span>\n                </div>\n                <MiniChart data={cpuData} color=\"var(--accent-error)\" />\n              </div>\n            </div>\n\n            <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4\">\n              <div className=\"flex items-center justify-between mb-3\">\n                <span className=\"text-xs text-[var(--text-secondary)]\">Memory</span>\n                <span className=\"text-xs text-[var(--accent-warning)]\">+8%</span>\n              </div>\n              <div className=\"flex items-end justify-between\">\n                <div>\n                  <span className=\"text-2xl font-semibold text-[var(--text-primary)]\">92</span>\n                  <span className=\"text-sm text-[var(--text-muted)]\">%</span>\n                </div>\n                <MiniChart data={memoryData} color=\"var(--accent-warning)\" />\n              </div>\n            </div>\n\n            <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4\">\n              <div className=\"flex items-center justify-between mb-3\">\n                <span className=\"text-xs text-[var(--text-secondary)]\">Requests/min</span>\n                <span className=\"text-xs text-[var(--accent-success)]\">+15%</span>\n              </div>\n              <div className=\"flex items-end justify-between\">\n                <div>\n                  <span className=\"text-2xl font-semibold text-[var(--text-primary)]\">195</span>\n                  <span className=\"text-sm text-[var(--text-muted)]\">req/m</span>\n                </div>\n                <MiniChart data={requestsData} color=\"var(--accent-success)\" />\n              </div>\n            </div>\n          </div>\n        </div>\n\n        {/* Alerts */}\n        <div>\n          <div className=\"flex items-center justify-between mb-3\">\n            <h3 className=\"text-xs font-medium text-[var(--text-secondary)]\">\n              Active Alerts ({filteredAlerts.length})\n            </h3>\n            <div className=\"flex items-center gap-1\">\n              <button\n                onClick={() => setAlertFilter('all')}\n                className={`px-2 py-1 text-xs rounded ${alertFilter === 'all' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'}`}\n              >\n                All\n              </button>\n              <button\n                onClick={() => setAlertFilter('firing')}\n                className={`px-2 py-1 text-xs rounded ${alertFilter === 'firing' ? 'bg-[var(--accent-error)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'}`}\n              >\n                Firing\n              </button>\n              <button\n                onClick={() => setAlertFilter('resolved')}\n                className={`px-2 py-1 text-xs rounded ${alertFilter === 'resolved' ? 'bg-[var(--accent-success)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'}`}\n              >\n                Resolved\n              </button>\n            </div>\n          </div>\n          <DataTable\n            data={filteredAlerts}\n            columns={alertColumns}\n            keyExtractor={(a) => a.id}\n            emptyMessage=\"No alerts\"\n            compact\n          />\n        </div>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "SeverityBadge",
+      "component_type": "functional",
+      "exported": false,
+      "export_type": null,
+      "location": {
+        "start_line": 22,
+        "start_col": 0,
+        "end_line": 39,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "severity",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "span",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "Expression",
+                  "code": "`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium\n      ${variant === 'error' ? 'bg-[var(--accent-error)]/20 text-[var(--accent-error)]' : ''}\n      ${variant === 'warning' ? 'bg-[var(--accent-warning)]/20 text-[var(--accent-warning)]' : ''}\n      ${variant === 'accent' ? 'bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]' : ''}\n    `"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "icon"
+                },
+                "location": {
+                  "start_line": 35,
+                  "start_col": 6,
+                  "end_line": 35,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "severity"
+                },
+                "location": {
+                  "start_line": 36,
+                  "start_col": 6,
+                  "end_line": 36,
+                  "end_col": 16
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 30,
+            "start_col": 4,
+            "end_line": 37,
+            "end_col": 11
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/severity_badge.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "severity",
+          "field_type": "Any",
+          "from_prop": "severity"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

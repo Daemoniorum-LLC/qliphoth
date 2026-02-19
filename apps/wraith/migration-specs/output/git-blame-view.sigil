@@ -1,0 +1,214 @@
+invoke qliphoth·prelude·*;
+ᛈ GitBlameViewMsg {
+    UpdateBlameData,
+    UpdateFileContent,
+    UpdateLoading,
+    UpdateError,
+    UpdateHoveredLine,
+    UpdateTooltipPosition,
+    Refresh,
+    LineHover,
+    LineLeave,
+}
+actor GitBlameView {
+    state blameData: Vec<Any>! = [],
+    state fileContent: String! = "",
+    state loading: bool! = false,
+    state error: Option<Any>~ = None,
+    state hoveredLine: Option<Any>~ = None,
+    state tooltipPosition: Option<Any>~ = None,
+
+    rite new(file_path: Any, on_close: Any) -> This! {
+        self.file_path = file_path;
+        self.on_close = on_close;
+        This
+    }
+
+    on UpdateBlameData {
+        self.blameData = msg.0;
+    }
+
+    on UpdateFileContent {
+        self.fileContent = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateHoveredLine {
+        self.hoveredLine = msg.0;
+    }
+
+    on UpdateTooltipPosition {
+        self.tooltipPosition = msg.0;
+    }
+
+    on Refresh {
+        // TODO: implement
+    }
+
+    on LineHover {
+        self.hoveredLine = blame;
+        self.tooltipPosition = { x: event.clientX, y: event.clientY };
+    }
+
+    on LineLeave {
+        self.hoveredLine = null;
+        self.tooltipPosition = null;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("w-full h-full flex flex-col bg-[#1e1e1e]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-2")
+                    ·child(
+                    VNode·span()
+                        ·text_child(self.file_path·to_string())
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-[11px] text-[#858585]")
+                        ·text_child("Git Blame")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-2")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Refresh blame")
+                        ·child(
+                        RefreshCw·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·when(self.on_close, Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Close blame view")
+                        ·child(
+                        X·view()
+                            ·class("w-4 h-4")
+                        ))
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex flex-1 overflow-hidden")
+                ·child(
+                VNode·div()
+                    ·class("w-[280px] border-r border-[#3c3c3c] overflow-auto bg-[#252526] font-mono text-[11px]")
+                    // Map: ∀ blame ∈ blameData
+                    ·children(self.blame_data.iter().map(|blame| VNode·div()
+                            ·attr("key", self.index)
+                            ·class("flex px-2 h-[19px] items-center gap-2 border-b border-transparent hover:bg-[#2b2b2b] cursor-pointer")
+                            ·on_mouseenter(MouseEnter)
+                            ·on_mouseleave(MouseLeave)
+                            ·attr("title", ": ")
+                            ·child(
+                            VNode·span()
+                                ·class("min-w-[60px] text-[#f59e0b] font-medium")
+                                ·text_child(blame.commit.substring(0, 7)·to_string())
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("min-w-[80px] max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap text-[#4fc3f7]")
+                                ·text_child(blame.author·to_string())
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("min-w-[75px] text-[#858585]")
+                                ·text_child(format_date(blame.date)·to_string())
+                            )).collect())
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex-1 min-w-0")
+                    ·child(
+                    Editor·view()
+                        ·attr("height", "100%")
+                        ·attr("language", get_language(file_path))
+                        ·attr("value", self.file_content)
+                        ·attr("theme", "vs-dark")
+                        ·attr("options", ∅)
+                    )
+                )
+            )
+            ·when(hovered_line ∧ tooltip_position, VNode·div()
+                ·class("absolute bg-[#2b2b2b] border border-[#4fc3f7] rounded p-3 text-[#cccccc] text-xs z-[1000] max-w-[400px] shadow-lg")
+                ·style(∅)
+                ·child(
+                VNode·div()
+                    ·class("flex gap-2 mb-1.5")
+                    ·child(
+                    VNode·span()
+                        ·class("text-[#858585] min-w-[80px]")
+                        ·text_child("Commit:")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-white flex-1 break-words")
+                        ·text_child(hovered_line.commit·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-2 mb-1.5")
+                    ·child(
+                    VNode·span()
+                        ·class("text-[#858585] min-w-[80px]")
+                        ·text_child("Author:")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-white flex-1 break-words")
+                        ·text_child(hovered_line.author·to_string())
+                        ·text_child("<")
+                        ·text_child(hovered_line.author_email·to_string())
+                        ·text_child(">")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-2 mb-1.5")
+                    ·child(
+                    VNode·span()
+                        ·class("text-[#858585] min-w-[80px]")
+                        ·text_child("Date:")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-white flex-1 break-words")
+                        ·text_child(hovered_line.date·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-2")
+                    ·child(
+                    VNode·span()
+                        ·class("text-[#858585] min-w-[80px]")
+                        ·text_child("Message:")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-white flex-1 break-words")
+                        ·text_child(hovered_line.message·to_string())
+                    )
+                ))
+    }
+}

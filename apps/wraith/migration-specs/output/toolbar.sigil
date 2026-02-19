@@ -1,0 +1,108 @@
+invoke qliphoth·prelude·*;
+rite toolbar(collapsed: Any, on_toggle_collapse: Any, on_command_palette: Any, available_panels: Any, on_add_to_left: Any, on_add_to_right: Any, panel_count: Any, tab_count: Any, class_name: Any) -> VNode! {
+    VNode·div()
+        ·class("flex gap-2 px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] items-center text-xs text-[var(--text-primary)] ")
+        ·child(
+        VNode·span()
+            ·class("font-semibold text-[var(--accent-primary)]")
+            ·text_child("Wraith")
+        )
+        ·child(
+        VNode·span()
+            ·class("text-[var(--text-muted)]")
+            ·text_child("|")
+        )
+        ·child(
+        VNode·button()
+            ·on_click(Click)
+            ·class("flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors")
+            ·attr("title", "Open Command Palette")
+            ·child(
+            Command·view()
+                ·class("h-3.5 w-3.5")
+            )
+            ·child(
+            KeyboardShortcut·view()
+                ·attr("keys", ["Ctrl", "Shift", "P"])
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex-1")
+        )
+        ·when(available_panels.len() > 0, VNode·fragment()
+            ·child(
+            DropdownMenu·view()
+                ·child(
+                DropdownMenuTrigger·view()
+                    ·attr("asChild", "true")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·class("gap-1")
+                        ·attr("title", "Add panel to left sidebar")
+                        ·child(
+                        Plus·view()
+                            ·class("h-4 w-4")
+                        )
+                        ·text_child("Add to Left")
+                    )
+                )
+                ·child(
+                DropdownMenuContent·view()
+                    // Map: ∀ panel ∈ availablePanels
+                    ·children(available_panels.iter().map(|panel| DropdownMenuItem·view()
+                            ·attr("key", panel.id)
+                            ·on_click(Click)
+                            ·text_child(panel.name·to_string())).collect())
+                )
+            )
+            ·child(
+            DropdownMenu·view()
+                ·child(
+                DropdownMenuTrigger·view()
+                    ·attr("asChild", "true")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·class("gap-1")
+                        ·attr("title", "Add panel to right sidebar")
+                        ·child(
+                        Plus·view()
+                            ·class("h-4 w-4")
+                        )
+                        ·text_child("Add to Right")
+                    )
+                )
+                ·child(
+                DropdownMenuContent·view()
+                    // Map: ∀ panel ∈ availablePanels
+                    ·children(available_panels.iter().map(|panel| DropdownMenuItem·view()
+                            ·attr("key", panel.id)
+                            ·on_click(Click)
+                            ·text_child(panel.name·to_string())).collect())
+                )
+            ))
+        ·child(
+        VNode·span()
+            ·class("text-[11px] text-[var(--text-secondary)]")
+            ·text_child(panel_count·to_string())
+            ·text_child("panels |")
+            ·text_child(tab_count·to_string())
+            ·text_child("tabs")
+        )
+        ·child(
+        Button·view()
+            ·attr("variant", "ghost")
+            ·attr("size", "sm")
+            ·on_click(Click)
+            ·class("ml-2")
+            ·attr("title", "Collapse toolbar")
+            ·child(
+            ChevronUp·view()
+                ·class("h-4 w-4")
+            )
+        )
+}

@@ -1,0 +1,432 @@
+{
+  "id": "ui/components/molecules/ResizeHandle.tsx:ResizeHandle",
+  "name": "ResizeHandle",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/molecules/ResizeHandle.tsx",
+    "code": "import React, { useCallback, useEffect, useState } from 'react'\n\nexport interface ResizeHandleProps {\n  direction: 'horizontal' | 'vertical'\n  onResize: (delta: number) => void\n  onResizeStart?: () => void\n  onResizeEnd?: () => void\n  className?: string\n}\n\nexport const ResizeHandle: React.FC<ResizeHandleProps> = ({\n  direction,\n  onResize,\n  onResizeStart,\n  onResizeEnd,\n  className = '',\n}) => {\n  const [isDragging, setIsDragging] = useState(false)\n  const [startPos, setStartPos] = useState(0)\n\n  const handleMouseDown = useCallback(\n    (e: React.MouseEvent) => {\n      e.preventDefault()\n      setIsDragging(true)\n      setStartPos(direction === 'horizontal' ? e.clientX : e.clientY)\n      onResizeStart?.()\n      document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize'\n      document.body.style.userSelect = 'none'\n    },\n    [direction, onResizeStart]\n  )\n\n  useEffect(() => {\n    if (!isDragging) return\n\n    const handleMouseMove = (e: MouseEvent) => {\n      const currentPos = direction === 'horizontal' ? e.clientX : e.clientY\n      const delta = currentPos - startPos\n      setStartPos(currentPos)\n      onResize(delta)\n    }\n\n    const handleMouseUp = () => {\n      setIsDragging(false)\n      onResizeEnd?.()\n      document.body.style.cursor = ''\n      document.body.style.userSelect = ''\n    }\n\n    document.addEventListener('mousemove', handleMouseMove)\n    document.addEventListener('mouseup', handleMouseUp)\n\n    return () => {\n      document.removeEventListener('mousemove', handleMouseMove)\n      document.removeEventListener('mouseup', handleMouseUp)\n    }\n  }, [isDragging, direction, startPos, onResize, onResizeEnd])\n\n  const isHorizontal = direction === 'horizontal'\n\n  return (\n    <div\n      role=\"separator\"\n      aria-orientation={isHorizontal ? 'vertical' : 'horizontal'}\n      onMouseDown={handleMouseDown}\n      className={`\n        ${isHorizontal ? 'w-2 cursor-col-resize' : 'h-2 cursor-row-resize'}\n        bg-transparent hover:bg-[var(--accent-primary)]\n        transition-colors duration-150\n        flex-shrink-0\n        ${isDragging ? 'bg-[var(--accent-primary)]' : ''}\n        ${className}\n      `}\n    />\n  )\n}\n",
+    "extraction": {
+      "name": "ResizeHandle",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 11,
+        "start_col": 57,
+        "end_line": 76,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "direction",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onResize",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onResizeStart",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onResizeEnd",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "className",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "''",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 18,
+            "start_col": 38,
+            "end_line": 18,
+            "end_col": 53
+          },
+          "state_name": "isDragging",
+          "setter_name": "setIsDragging",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 19,
+            "start_col": 34,
+            "end_line": 19,
+            "end_col": 45
+          },
+          "state_name": "startPos",
+          "setter_name": "setStartPos",
+          "initial_value": "0",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 21,
+            "start_col": 26,
+            "end_line": 31,
+            "end_col": 3
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "direction",
+            "onResizeStart"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 33,
+            "start_col": 2,
+            "end_line": 57,
+            "end_col": 62
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "isDragging",
+            "direction",
+            "startPos",
+            "onResize",
+            "onResizeEnd"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "role",
+                "value": {
+                  "type": "String",
+                  "value": "separator"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "aria-orientation",
+                "value": {
+                  "type": "Expression",
+                  "code": "isHorizontal ? 'vertical' : 'horizontal'"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "onMouseDown",
+                "value": {
+                  "type": "Expression",
+                  "code": "handleMouseDown"
+                },
+                "is_event_handler": true
+              },
+              {
+                "name": "className",
+                "value": {
+                  "type": "Expression",
+                  "code": "`\n        ${isHorizontal ? 'w-2 cursor-col-resize' : 'h-2 cursor-row-resize'}\n        bg-transparent hover:bg-[var(--accent-primary)]\n        transition-colors duration-150\n        flex-shrink-0\n        ${isDragging ? 'bg-[var(--accent-primary)]' : ''}\n        ${className}\n      `"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": []
+          },
+          "location": {
+            "start_line": 62,
+            "start_col": 4,
+            "end_line": 74,
+            "end_col": 6
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "isDragging",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "startPos",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/resize_handle.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:isDragging",
+        "to_field": "isDragging",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'isDragging' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:startPos",
+        "to_field": "startPos",
+        "field_type": "i64",
+        "evidentiality": "!",
+        "initial_value": "0",
+        "reasoning": "useState hook 'startPos' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateIsDragging",
+        "from_handler": "setIsDragging",
+        "payload": null,
+        "state_changes": [
+          "self.isDragging = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateStartPos",
+        "from_handler": "setStartPos",
+        "payload": null,
+        "state_changes": [
+          "self.startPos = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[isDragging,direction,startPos,onResize,onResizeEnd]",
+        "strategy": "inline",
+        "reasoning": "Deps [isDragging, direction, startPos, onResize, onResizeEnd] → inline in handlers that change these",
+        "inline_in": "isDragging_direction_startPos_onResize_onResizeEnd",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "direction",
+          "field_type": "Any",
+          "from_prop": "direction"
+        },
+        {
+          "name": "on_resize",
+          "field_type": "Any",
+          "from_prop": "onResize"
+        },
+        {
+          "name": "on_resize_start",
+          "field_type": "Any",
+          "from_prop": "onResizeStart"
+        },
+        {
+          "name": "on_resize_end",
+          "field_type": "Any",
+          "from_prop": "onResizeEnd"
+        },
+        {
+          "name": "class_name",
+          "field_type": "Any",
+          "from_prop": "className"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useCallback_remove",
+      "description": "useCallback is not needed in actors",
+      "react": "const handleClick = useCallback(() => { ... }, [dep]);",
+      "sigil": "// No equivalent needed - actors don't re-render like React"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_3",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [isDragging, direction, startPos, onResize, onResizeEnd] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onResize",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onResize' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onResizeStart",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onResizeStart' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onResizeEnd",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onResizeEnd' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

@@ -1,0 +1,763 @@
+{
+  "id": "ui/components/panels/ComponentBrowserPanel.tsx:ComponentBrowserPanel",
+  "name": "ComponentBrowserPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/ComponentBrowserPanel.tsx",
+    "code": "import React from 'react'\nimport { Button, Spinner, Input } from '@persona-framework/ui'\nimport { File, Plus, Search } from 'lucide-react'\nimport { makeHttpClient } from '../../../data/https'\n\nconst http = makeHttpClient('/api')\n\ntype Component = {\n  name: string\n  domain: string\n  type: 'atom' | 'molecule' | 'organism'\n  path: string\n  project: string\n}\n\ninterface ComponentBrowserPanelProps {\n  onOpenComponent?: (componentPath: string, componentName: string) => void\n  onNewComponent?: () => void\n}\n\nexport function ComponentBrowserPanel({ onOpenComponent, onNewComponent }: ComponentBrowserPanelProps) {\n  const [components, setComponents] = React.useState<Component[]>([])\n  const [isLoading, setIsLoading] = React.useState(false)\n  const [searchFilter, setSearchFilter] = React.useState('')\n\n  const scanWorkspace = async () => {\n    setIsLoading(true)\n    try {\n      const res = await http.get('/workspace/info')\n      const projects = res?.data?.projects || []\n\n      const allComponents: Component[] = []\n      for (const project of projects) {\n        const treeRes = await http.get('/project/tree', { params: { projectPath: project.path, depth: 4 } })\n        const tree = treeRes?.data\n\n        const findComponents = (node: any, domain: string = 'shared', type: 'atom' | 'molecule' | 'organism' | null = null): void => {\n          if (!node) return\n\n          const isAtomDir = node.name === 'atoms'\n          const isMoleculeDir = node.name === 'molecules'\n          const isOrganismDir = node.name === 'organisms'\n          const isDomainDir = node.isDir && node.path?.includes('/domains/') && !isAtomDir && !isMoleculeDir && !isOrganismDir\n\n          const currentType = isAtomDir ? 'atom' : isMoleculeDir ? 'molecule' : isOrganismDir ? 'organism' : type\n          const currentDomain = isDomainDir ? node.name : domain\n\n          if (!node.isDir && (node.name.endsWith('.tsx') || node.name.endsWith('.jsx'))) {\n            if (currentType) {\n              allComponents.push({\n                name: node.name.replace(/\\.(tsx|jsx)$/, ''),\n                domain: currentDomain,\n                type: currentType,\n                path: node.path,\n                project: project.name\n              })\n            }\n          }\n\n          if (node.children) {\n            node.children.forEach((child: any) => findComponents(child, currentDomain, currentType))\n          }\n        }\n\n        findComponents(tree)\n      }\n\n      setComponents(allComponents)\n    } catch (e: any) {\n      console.error('Failed to scan workspace:', e)\n    } finally {\n      setIsLoading(false)\n    }\n  }\n\n  React.useEffect(() => {\n    scanWorkspace()\n  }, [])\n\n  const filteredComponents = components.filter(c =>\n    searchFilter ? c.name.toLowerCase().includes(searchFilter.toLowerCase()) : true\n  )\n\n  const groupedComponents = React.useMemo(() => {\n    const groups: Record<string, Record<string, Component[]>> = {}\n    filteredComponents.forEach(comp => {\n      if (!groups[comp.domain]) groups[comp.domain] = {}\n      if (!groups[comp.domain][comp.type]) groups[comp.domain][comp.type] = []\n      groups[comp.domain][comp.type].push(comp)\n    })\n    return groups\n  }, [filteredComponents])\n\n  if (isLoading) {\n    return (\n      <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n        <div className=\"px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold\">\n          Components\n        </div>\n        <div className=\"flex justify-center items-center p-4\">\n          <Spinner size=\"sm\" />\n          <span className=\"ml-2 text-xs\">Scanning workspace...</span>\n        </div>\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n      <div className=\"px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold\">\n        Components\n      </div>\n      <div className=\"flex flex-col gap-1.5 px-2 py-2 border-b border-[#3c3c3c]\">\n        <Button size=\"sm\" onClick={onNewComponent}>\n          <Plus className=\"w-3.5 h-3.5 mr-1\" />\n          New Component\n        </Button>\n        <div className=\"relative\">\n          <Search className=\"absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858585]\" />\n          <Input\n            size=\"sm\"\n            placeholder=\"Search components...\"\n            value={searchFilter}\n            onChange={(e) => setSearchFilter(e.target.value)}\n            className=\"pl-8\"\n          />\n        </div>\n        <Button size=\"sm\" variant=\"outline\" onClick={scanWorkspace}>\n          Refresh ({components.length})\n        </Button>\n      </div>\n      <div className=\"flex-1 overflow-auto px-2 py-2\">\n        {Object.keys(groupedComponents).length === 0 ? (\n          <div className=\"p-4 text-center text-[#858585] text-xs\">\n            No components found. Add a project with /atoms, /molecules, or /organisms directories.\n          </div>\n        ) : (\n          Object.keys(groupedComponents).sort().map(domain => (\n            <div key={domain} className=\"mb-3\">\n              <div className=\"text-xs font-semibold text-[#4fc3f7] mb-1\">{domain}</div>\n              {Object.keys(groupedComponents[domain]).sort().map(type => (\n                <div key={type} className=\"ml-3 mb-2\">\n                  <div className=\"text-[11px] font-semibold text-[#b0b0b0] mb-0.5\">{type}s ({groupedComponents[domain][type].length})</div>\n                  {groupedComponents[domain][type].map((comp, i) => (\n                    <div\n                      key={i}\n                      className=\"ml-3 px-2 py-1 cursor-pointer rounded text-xs hover:bg-[#2b2b2b] flex items-center gap-1.5\"\n                      onClick={() => onOpenComponent?.(comp.path, comp.name)}\n                    >\n                      <File className=\"w-3.5 h-3.5\" />\n                      {comp.name}\n                      <span className=\"text-[10px] text-[#858585] ml-auto\">\n                        ({comp.project})\n                      </span>\n                    </div>\n                  ))}\n                </div>\n              ))}\n            </div>\n          ))\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "ComponentBrowserPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 21,
+        "start_col": 7,
+        "end_line": 165,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "onOpenComponent",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onNewComponent",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 22,
+            "start_col": 38,
+            "end_line": 22,
+            "end_col": 69
+          },
+          "state_name": "components",
+          "setter_name": "setComponents",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 23,
+            "start_col": 36,
+            "end_line": 23,
+            "end_col": 57
+          },
+          "state_name": "isLoading",
+          "setter_name": "setIsLoading",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 24,
+            "start_col": 42,
+            "end_line": 24,
+            "end_col": 60
+          },
+          "state_name": "searchFilter",
+          "setter_name": "setSearchFilter",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 76,
+            "start_col": 2,
+            "end_line": 78,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 84,
+            "start_col": 28,
+            "end_line": 92,
+            "end_col": 26
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "filteredComponents"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "Components"
+                      },
+                      "location": {
+                        "start_line": 110,
+                        "start_col": 85,
+                        "end_line": 112,
+                        "end_col": 6
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 110,
+                  "start_col": 6,
+                  "end_line": 112,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex flex-col gap-1.5 px-2 py-2 border-b border-[#3c3c3c]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Button",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "size",
+                            "value": {
+                              "type": "String",
+                              "value": "sm"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "onNewComponent"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Plus",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "w-3.5 h-3.5 mr-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 115,
+                              "start_col": 10,
+                              "end_line": 115,
+                              "end_col": 47
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "New Component"
+                            },
+                            "location": {
+                              "start_line": 115,
+                              "start_col": 47,
+                              "end_line": 117,
+                              "end_col": 8
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 114,
+                        "start_col": 8,
+                        "end_line": 117,
+                        "end_col": 17
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "relative"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Search",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858585]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 119,
+                              "start_col": 10,
+                              "end_line": 119,
+                              "end_col": 100
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Input",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "placeholder",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Search components..."
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "searchFilter"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => setSearchFilter(e.target.value)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "pl-8"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 120,
+                              "start_col": 10,
+                              "end_line": 126,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 118,
+                        "start_col": 8,
+                        "end_line": 127,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Button",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "size",
+                            "value": {
+                              "type": "String",
+                              "value": "sm"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "variant",
+                            "value": {
+                              "type": "String",
+                              "value": "outline"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "scanWorkspace"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Refresh ("
+                            },
+                            "location": {
+                              "start_line": 128,
+                              "start_col": 68,
+                              "end_line": 129,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "components.length"
+                            },
+                            "location": {
+                              "start_line": 129,
+                              "start_col": 19,
+                              "end_line": 129,
+                              "end_col": 38
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": ")"
+                            },
+                            "location": {
+                              "start_line": 129,
+                              "start_col": 38,
+                              "end_line": 130,
+                              "end_col": 8
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 128,
+                        "start_col": 8,
+                        "end_line": 130,
+                        "end_col": 17
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 113,
+                  "start_col": 6,
+                  "end_line": 131,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto px-2 py-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "Object.keys(groupedComponents).length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-4 text-center text-[#858585] text-xs"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "No components found. Add a project with /atoms, /molecules, or /organisms directories."
+                                },
+                                "location": {
+                                  "start_line": 134,
+                                  "start_col": 66,
+                                  "end_line": 136,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 134,
+                            "start_col": 10,
+                            "end_line": 136,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 133,
+                        "start_col": 8,
+                        "end_line": 161,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 132,
+                  "start_col": 6,
+                  "end_line": 162,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 109,
+            "start_col": 4,
+            "end_line": 163,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "Input",
+        "Plus",
+        "Search"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "components",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "isLoading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "searchFilter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/component_browser_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:components",
+        "to_field": "components",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'components' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:isLoading",
+        "to_field": "isLoading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'isLoading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:searchFilter",
+        "to_field": "searchFilter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'searchFilter' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateComponents",
+        "from_handler": "setComponents",
+        "payload": null,
+        "state_changes": [
+          "self.components = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIsLoading",
+        "from_handler": "setIsLoading",
+        "payload": null,
+        "state_changes": [
+          "self.isLoading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSearchFilter",
+        "from_handler": "setSearchFilter",
+        "payload": null,
+        "state_changes": [
+          "self.searchFilter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps → Mount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      },
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "on_open_component",
+          "field_type": "Any",
+          "from_prop": "onOpenComponent"
+        },
+        {
+          "name": "on_new_component",
+          "field_type": "Any",
+          "from_prop": "onNewComponent"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_mount",
+      "description": "Convert mount-only useEffect to lifecycle",
+      "react": "useEffect(() => { init(); }, []);",
+      "sigil": "on Mount { self.init(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onOpenComponent",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onOpenComponent' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onNewComponent",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onNewComponent' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Input",
+      "Plus",
+      "Search"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

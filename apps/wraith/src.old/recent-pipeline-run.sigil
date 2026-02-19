@@ -1,0 +1,41 @@
+invoke sigil_web·prelude·*;
+rite recent_pipeline_run(pipeline: Any) -> VNode! {
+    VNode·div()
+        ·class("flex items-center justify-between py-2 px-3 hover:bg-[var(--bg-hover)] rounded transition-colors")
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-3")
+            ·child(
+            ProviderIcon·view()
+                ·attr("provider", pipeline.provider)
+                ·attr("size", "sm")
+            )
+            ·child(
+            VNode·div()
+                ·child(
+                VNode·div()
+                    ·class("text-sm text-[var(--text-primary)]")
+                    ·text_child(pipeline.name·to_string())
+                )
+                ·child(
+                VNode·div()
+                    ·class("text-xs text-[var(--text-muted)]")
+                    ·text_child(run.commit_message.slice(0, 50)·to_string())
+                )
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-2")
+            ·child(
+            StatusIcon·view()
+                ·class("h-4 w-4 ")
+            )
+            ·child(
+            VNode·span()
+                ·class("text-xs font-mono text-[var(--text-muted)]")
+                ·text_child("#")
+                ·text_child(run.number·to_string())
+            )
+        )
+}

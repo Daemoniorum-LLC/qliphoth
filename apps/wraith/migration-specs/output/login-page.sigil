@@ -1,0 +1,172 @@
+invoke qliphoth·prelude·*;
+ᛈ LoginPageMsg {
+    UpdateShowPasswordLogin,
+    UpdateUsername,
+    UpdatePassword,
+    UpdateIsLoading,
+    UpdateError,
+    Submit,
+}
+actor LoginPage {
+    state showPasswordLogin: bool! = false,
+    state username: String! = "",
+    state password: String! = "",
+    state isLoading: bool! = false,
+    state error: Option<Any>~ = None,
+
+    rite new(on_success: Any) -> This! {
+        self.on_success = on_success;
+        This
+    }
+
+    on UpdateShowPasswordLogin {
+        self.showPasswordLogin = msg.0;
+    }
+
+    on UpdateUsername {
+        self.username = msg.0;
+    }
+
+    on UpdatePassword {
+        self.password = msg.0;
+    }
+
+    on UpdateIsLoading {
+        self.isLoading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on Submit {
+        self.error = null;
+        self.isLoading = true;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex items-center justify-center min-h-screen bg-background")
+            ·child(
+            VNode·div()
+                ·class("bg-card rounded-xl shadow-lg p-8 max-w-[400px] w-full border")
+                ·child(
+                VNode·h1()
+                    ·class("text-3xl font-semibold text-center mb-2")
+                    ·text_child("Welcome to Wraith")
+                )
+                ·child(
+                VNode·p()
+                    ·class("text-base text-center text-muted-foreground mb-6")
+                    ·text_child("Sign in to continue")
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex flex-col gap-3 mb-6")
+                    ·child(
+                    GoogleSignInButton·view()
+                        ·when(self.is_loading, |n| n·attr("disabled", "true"))
+                    )
+                    ·child(
+                    GitHubSignInButton·view()
+                        ·when(self.is_loading, |n| n·attr("disabled", "true"))
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("border-t border-border pt-4")
+                    ·child(
+                    VNode·button()
+                        ·attr("type", "button")
+                        ·on_click(Click)
+                        ·class("flex items-center justify-center gap-2 w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2")
+                        ·when_else(self.show_password_login, VNode·fragment()
+                            ·child(
+                            ChevronUp·view()
+                                ·class("h-4 w-4")
+                            )
+                            ·text_child("Hide password login"), VNode·fragment()
+                            ·child(
+                            ChevronDown·view()
+                                ·class("h-4 w-4")
+                            )
+                            ·text_child("Sign in with password instead"))
+                    )
+                    ·when(self.show_password_login, VNode·form()
+                        ·on_submit(Submit)
+                        ·class("mt-4")
+                        ·child(
+                        VNode·div()
+                            ·class("bg-muted/50 rounded-lg p-3 mb-4 text-xs text-muted-foreground text-center")
+                            ·text_child("Password login is coming soon. Please use OAuth above.")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex flex-col gap-2 mb-4")
+                            ·child(
+                            Label·view()
+                                ·attr("htmlFor", "username")
+                                ·text_child("Username")
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("relative")
+                                ·child(
+                                User·view()
+                                    ·class("absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground")
+                                )
+                                ·child(
+                                Input·view()
+                                    ·id("username")
+                                    ·attr("type", "text")
+                                    ·attr("value", self.username)
+                                    ·on_change(Change)
+                                    ·attr("placeholder", "Enter your username")
+                                    ·class("pl-9")
+                                    ·attr("disabled", "true")
+                                )
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex flex-col gap-2 mb-4")
+                            ·child(
+                            Label·view()
+                                ·attr("htmlFor", "password")
+                                ·text_child("Password")
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("relative")
+                                ·child(
+                                Lock·view()
+                                    ·class("absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground")
+                                )
+                                ·child(
+                                Input·view()
+                                    ·id("password")
+                                    ·attr("type", "password")
+                                    ·attr("value", self.password)
+                                    ·on_change(Change)
+                                    ·attr("placeholder", "Enter your password")
+                                    ·class("pl-9")
+                                    ·attr("disabled", "true")
+                                )
+                            )
+                        )
+                        ·when(self.error, VNode·p()
+                            ·class("text-destructive text-sm text-center mt-4")
+                            ·text_child(self.error·to_string()))
+                        ·child(
+                        Button·view()
+                            ·attr("size", "lg")
+                            ·attr("type", "submit")
+                            ·when(True, |n| n·attr("disabled", "true"))
+                            ·class("mt-4 w-full")
+                            ·attr("variant", "outline")
+                            ·text_child("Coming Soon")
+                        ))
+                )
+            )
+    }
+}

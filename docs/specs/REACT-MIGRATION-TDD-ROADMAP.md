@@ -48,6 +48,13 @@ This roadmap follows Agent-TDD: tests express what we *understand* about React�
 │  ├── 5.1 Command Parsing                                        │
 │  ├── 5.2 File Discovery                                         │
 │  └── 5.3 Output Generation                                      │
+├─────────────────────────────────────────────────────────────────┤
+│  PHASE 6: Extraction Fidelity ✅ (COMPLETED 2026-02-16)         │
+│  ├── 6.1 Full Type Extraction ✅                                │
+│  ├── 6.2 Helper Function Extraction ✅                          │
+│  ├── 6.3 Handler Body Analysis ✅                               │
+│  ├── 6.4 Hook Argument Expansion ✅                             │
+│  └── 6.5 Architecture Mapping ✅                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -506,6 +513,223 @@ This roadmap follows Agent-TDD: tests express what we *understand* about React�
 
 ---
 
+## Phase 6: Extraction Fidelity ✅
+
+> **Gap Discovery:** During infernum-observer migration test (2026-02-16), we found that structured extraction is insufficient for agent-only migration. Agents must parse `source.code` to complete migrations. This phase addresses that gap.
+>
+> **Completed:** 2026-02-16. All 5 sub-phases implemented with 25 tests. Quality reviews completed.
+
+**Reference Spec:** [REACT-MIGRATION-PHASE6-ENHANCEMENTS.md](../../../sigil-lang/docs/specs/REACT-MIGRATION-PHASE6-ENHANCEMENTS.md)
+
+### 6.1 Full Type Extraction
+
+**Behavioral Contract:**
+- Extract all interface/type fields with type annotations
+- Mark optional fields correctly
+- Preserve union type variants
+- Handle extends/inheritance
+- Result is sufficient to generate Qliphoth Σ without parsing source
+
+**Property Tests:**
+
+```
+∀ interface I in source:
+    extract_type(I).fields.len() == I.field_count
+
+∀ field F in interface:
+    extract_type(I).field(F.name).type_annotation.is_some()
+    extract_type(I).field(F.name).optional == F.has_question_mark
+
+∀ extracted_type T:
+    generate_qliphoth_sigma(T).compiles() ∧ !requires_source_parsing(T)
+```
+
+**Specification Tests:**
+
+| Test | Input | Expected | Status |
+|------|-------|----------|--------|
+| `test_type_extraction_captures_all_fields` | `interface Props { a: string; b: number }` | 2 fields with types | ✅ |
+| `test_type_extraction_marks_optional_fields` | `{ name?: string }` | optional: true | ✅ |
+| `test_type_extraction_preserves_union_types` | `type Role = 'user' \| 'admin'` | variants: ["user", "admin"] | ✅ |
+| `test_type_extraction_handles_extends` | `interface B extends A` | extends: ["A"], merged fields | ✅ |
+| `test_type_extraction_resolves_type_references` | `field: OtherType` | type resolved or marked external | ✅ |
+| `test_type_extraction_handles_generics` | `interface Box<T> { value: T }` | type_params: ["T"] | 🔮 |
+| `test_type_extraction_function_types` | `onClick: (e: Event) => void` | kind: "function", params, return | 🔮 |
+| `test_type_extraction_array_types` | `items: string[]` | kind: "array", element_type: "string" | 🔮 |
+| `test_type_extraction_record_types` | `map: Record<string, number>` | kind: "record", key, value types | 🔮 |
+| `test_type_extraction_doc_comments` | `/** Description */ field: T` | doc: "Description" | 🔮 |
+
+**Quality Gate:** `ButtonProps` extraction includes all 10 fields. `generate_qliphoth_sigma(extract_type(ButtonProps))` produces valid Sigil.
+
+---
+
+### 6.2 Helper Function Extraction
+
+**Behavioral Contract:**
+- Extract module-scope functions
+- Extract component-scope helper functions
+- Capture parameters with types
+- Capture return type
+- Detect purity (no side effects)
+- Track which components reference the function
+
+**Property Tests:**
+
+```
+∀ function F referenced by component C:
+    F ∈ extraction.helper_functions
+
+∀ helper H:
+    H.parameters.all(|p| p.type_annotation.is_some() ∨ p.inferred_type.is_some())
+    H.return_type.is_some() ∨ H.inferred_return.is_some()
+
+∀ pure_function P where no_side_effects(P):
+    extract(P).is_pure == true
+```
+
+**Specification Tests:**
+
+| Test | Input | Expected | Status |
+|------|-------|----------|--------|
+| `test_helper_extraction_finds_module_scope_functions` | `function format() {...}` at top level | In helper_functions | ✅ |
+| `test_helper_extraction_finds_component_scope_functions` | `const helper = () => ...` inside component | In helper_functions | ✅ |
+| `test_helper_extraction_captures_parameters_and_return_type` | `function f(a: string, b: number): string` | params + return_type | ✅ |
+| `test_helper_extraction_detects_purity` | `add(a,b)` pure, `log(x)` impure | is_pure: true/false | ✅ |
+| `test_helper_extraction_tracks_usage_sites` | Helper used in component | Helper found with metadata | ✅ |
+| `test_helper_extraction_infers_return_type` | `function f() { return 42 }` | inferred_return: "number" | 🔮 |
+| `test_helper_extraction_arrow_functions` | `const f = (x) => x * 2` | Extracted as helper | 🔮 |
+| `test_helper_extraction_async_functions` | `async function fetch()` | is_async: true | 🔮 |
+
+**Quality Gate:** `transformToSigilEvents` from ChatPanel.tsx appears in extraction with full signature.
+
+---
+
+### 6.3 Handler Body Analysis
+
+**Behavioral Contract:**
+- Parse handler function bodies completely
+- Extract all function calls with their sources
+- Identify state mutations
+- Detect early returns and conditionals
+- Track side effects
+
+**Property Tests:**
+
+```
+∀ handler H:
+    ∀ function_call C in H.body:
+        C ∈ extraction.handlers[H].statements
+
+∀ call C to custom_hook_function F:
+    C.source == "custom_hook:{hook_name}"
+
+∀ handler H that calls setState:
+    extract(H).state_mutations.len() > 0
+```
+
+**Specification Tests:**
+
+| Test | Input | Expected | Status |
+|------|-------|----------|--------|
+| `test_handler_body_extracts_function_calls` | `handler() { foo(); bar(); }` | calls: [call(foo), call(bar)] | ✅ |
+| `test_handler_body_identifies_call_sources` | `setCount`, `fetch` | StateSetter, Global sources | ✅ |
+| `test_handler_body_detects_early_returns` | `if (!x) return;` | has_early_return: true | ✅ |
+| `test_handler_body_captures_conditionals` | `if (cond) { a() }` | has_conditionals: true | ✅ |
+| `test_handler_body_infers_state_mutations` | `setCount(c => c + 1)` | state_mutations detected | ✅ |
+| `test_handler_body_identifies_prop_sources` | `props.onComplete()` | source: "prop:onComplete" | 🔮 |
+| `test_handler_body_identifies_import_sources` | `lodash.debounce()` | source: "import:lodash" | 🔮 |
+| `test_handler_body_tracks_side_effects` | `fetch('/api')` | side_effects: [{type: "network"}] | 🔮 |
+| `test_handler_body_nested_calls` | `foo(bar(x))` | Both calls captured | 🔮 |
+| `test_handler_body_chained_calls` | `arr.filter().map()` | Chain captured | 🔮 |
+
+**Quality Gate:** `handleSend` from ChatPanel shows calls to `addMessage` (useChat) and `runAgent` (useAgent).
+
+---
+
+### 6.4 Hook Argument Expansion
+
+**Behavioral Contract:**
+- Fully expand object arguments to hooks
+- Parse arrow function arguments as handler bodies
+- Preserve array arguments (query keys, deps)
+- Handle nested objects
+
+**Property Tests:**
+
+```
+∀ hook_call H with object_arg O:
+    ∀ property P in O:
+        P ∈ extract(H).arguments[0].properties
+
+∀ callback C in hook_args:
+    C.body is analyzed per Handler Body Analysis (6.3)
+
+∀ array_arg A:
+    A.elements.all(|e| e.is_extracted())
+```
+
+**Specification Tests:**
+
+| Test | Input | Expected | Status |
+|------|-------|----------|--------|
+| `test_hook_args_expand_object_properties` | `useHook({ a: 1, b: 2 })` | args[0].properties: [a, b] | ✅ |
+| `test_hook_args_capture_arrow_functions` | `useStore((s) => s.user)` | Function with params and body | ✅ |
+| `test_hook_args_analyze_callback_bodies` | `{ onSuccess: () => updateCache() }` | Callback with calls and side_effects | ✅ |
+| `test_hook_args_preserve_array_arguments` | `useQuery({ queryKey: ['users'] })` | Array elements preserved | ✅ |
+| `test_hook_args_handle_nested_objects` | `{ options: { retry: 3 } }` | Nested structure preserved | ✅ |
+| `test_hook_args_shorthand_properties` | `{ loading, error }` | properties with shorthand: true | 🔮 |
+| `test_hook_args_spread_properties` | `{ ...defaults, custom: 1 }` | spread + explicit properties | 🔮 |
+| `test_hook_args_computed_properties` | `{ [key]: value }` | computed_key: true | 🔮 |
+| `test_hook_args_function_expression` | `{ fn: function() {} }` | type: "function_expression" | 🔮 |
+| `test_hook_args_template_literals` | `useQuery(\`/api/${id}\`)` | template with expressions | 🔮 |
+
+**Quality Gate:** `useAgent({onComplete: (answer) => addMessage(...)})` fully expanded with callback body analyzed.
+
+---
+
+### 6.5 Architecture Mapping
+
+**Behavioral Contract:**
+- Identify service actor boundaries from custom hooks
+- Map Zustand stores to Qliphoth patterns
+- Suggest message types for mutations
+- Determine state ownership
+- Recommend communication patterns
+
+**Property Tests:**
+
+```
+∀ custom_hook H with stateful_returns:
+    ∃ service_actor S ∈ architecture_mapping:
+        S.derived_from == H.name
+
+∀ zustand_store Z:
+    Z.qliphoth_equivalent ∈ {"service_actor", "context"}
+
+∀ mutation_function M from custom_hook:
+    ∃ message_type T ∈ architecture_mapping:
+        T.from_function == M.name
+```
+
+**Specification Tests:**
+
+| Test | Input | Expected | Status |
+|------|-------|----------|--------|
+| `test_architecture_identifies_service_actors` | `useChat`, `useAgent` | ChatService, AgentService recommended | ✅ |
+| `test_architecture_maps_zustand_stores` | `useAppStore(selector)` | AppActor with selectors/actions | ✅ |
+| `test_architecture_suggests_message_types` | `save, load, reset` | Save, Load, Reset messages | ✅ |
+| `test_architecture_determines_state_ownership` | Local useState + shared Zustand | Self vs Shared ownership | ✅ |
+| `test_architecture_recommends_communication_patterns` | Hook functions in handlers | DataService detected | ✅ |
+| `test_architecture_context_injection` | `useDisplaySettings()` | Context injection pattern | 🔮 |
+| `test_architecture_read_only_state` | Selector returns only values | read_only access pattern | 🔮 |
+| `test_architecture_bidirectional_state` | Hook returns getters + setters | Full actor with messages | 🔮 |
+| `test_architecture_async_patterns` | `useQuery` usage | Async message pattern | 🔮 |
+| `test_architecture_subscription_patterns` | `useMutation` with callbacks | Subscription/broadcast | 🔮 |
+
+**Quality Gate:** ChatPanel extraction recommends ChatService + AgentService actors with clear ownership.
+
+---
+
 ## Compliance Audit Checkpoints
 
 After each phase, conduct compliance audit:
@@ -515,6 +739,7 @@ After each phase, conduct compliance audit:
 3. **Phase 3 Complete:** Generated Sigil parses and type-checks
 4. **Phase 4 Complete:** MCP tools work in Claude Code
 5. **Phase 5 Complete:** CLI works end-to-end on Infernum Observer
+6. **Phase 6 Complete:** Agent can migrate ChatPanel without reading `source.code`
 
 ---
 

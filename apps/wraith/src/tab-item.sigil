@@ -1,0 +1,70 @@
+invoke qliphoth·prelude·*;
+ᛈ TabItemMsg {
+    UpdateIsHovered,
+}
+☉ actor TabItem {
+    state isHovered: bool! = false,
+
+    rite new(title: Any, icon: Any, active: Any, pinned: Any, modified: Any, on_click: Any, on_close: Any, on_pin: Any, on_context_menu: Any) -> This! {
+        self.title = title;
+        self.icon = icon;
+        self.active = active;
+        self.pinned = pinned;
+        self.modified = modified;
+        self.on_click = on_click;
+        self.on_close = on_close;
+        self.on_pin = on_pin;
+        self.on_context_menu = on_context_menu;
+        This
+    }
+
+    on UpdateIsHovered {
+        self.isHovered = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·attr("role", "tab")
+            ·attr("aria-selected", active)
+            ·attr("tabIndex", ⎇ active { 0 } ⎉ { -1 })
+            ·on_click(Click)
+            ·on_contextmenu(ContextMenu)
+            ·on_mouseenter(MouseEnter)
+            ·on_mouseleave(MouseLeave)
+            ·class("group relative flex items-center gap-2 px-3 h-[var(--tab-height)] cursor-pointer select-none border-r border-[var(--border-primary)] transition-colors " + ⎇ active { "bg-[var(--bg-primary)] text-[var(--text-primary)]" } ⎉ { "bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]" }.to_string())
+            ·when(icon, VNode·span()
+                ·class("flex-shrink-0 [&>svg]:h-4 [&>svg]:w-4")
+                ·text_child(icon·to_string()))
+            ·child(
+            VNode·span()
+                ·class("text-xs truncate max-w-[120px]")
+                ·text_child(title·to_string())
+            )
+            ·when(modified ∧ ¬self.show_actions, VNode·span()
+                ·class("w-2 h-2 rounded-full bg-[var(--text-secondary)]"))
+            ·child(
+            VNode·div()
+                ·class("flex items-center gap-0.5 ml-1 transition-opacity " + ⎇ self.show_actions { "opacity-100" } ⎉ { "opacity-0" }.to_string())
+                ·when(self.on_pin, VNode·button()
+                    ·attr("type", "button")
+                    ·on_click(Click)
+                    ·class("p-0.5 rounded hover:bg-[var(--bg-hover)] transition-colors " + ⎇ pinned { "text-[var(--accent-primary)]" } ⎉ { "text-[var(--text-secondary)]" }.to_string())
+                    ·attr("title", ⎇ pinned { "Unpin tab" } ⎉ { "Pin tab" })
+                    ·child(
+                    Pin·view()
+                        ·class("h-3 w-3")
+                    ))
+                ·when(self.on_close ∧ ¬pinned, VNode·button()
+                    ·attr("type", "button")
+                    ·on_click(Click)
+                    ·class("p-0.5 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors")
+                    ·attr("title", "Close tab")
+                    ·child(
+                    X·view()
+                        ·class("h-3 w-3")
+                    ))
+            )
+            ·when(active, VNode·div()
+                ·class("absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent-primary)]"))
+    }
+}

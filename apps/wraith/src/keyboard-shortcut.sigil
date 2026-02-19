@@ -1,0 +1,15 @@
+invoke qliphoth·prelude·*;
+rite keyboard_shortcut(keys: Any, class_name: Any) -> VNode! {
+    VNode·span()
+        ·class("inline-flex items-center gap-0.5 " + class_name.to_string())
+        // Map: ∀ key ∈ keys
+        ·children(keys.iter().map(|key| React.Fragment·view()
+                ·attr("key", index)
+                ·child(
+                Kbd·view()
+                    ·text_child(key·to_string())
+                )
+                ·when(index < keys.len() - 1, VNode·span()
+                    ·class("text-[var(--text-muted)] text-xs")
+                    ·text_child("+"))).collect())
+}

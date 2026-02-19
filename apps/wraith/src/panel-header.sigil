@@ -1,0 +1,37 @@
+invoke qliphoth·prelude·*;
+rite panel_header(title: Any, icon: Any, on_close: Any, on_collapse: Any, on_more: Any, actions: Any, class_name: Any) -> VNode! {
+    VNode·div()
+        ·class("flex items-center justify-between px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] " + class_name.to_string())
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-2 min-w-0")
+            ·when(icon, VNode·span()
+                ·class("text-[var(--text-secondary)] flex-shrink-0")
+                ·text_child(icon·to_string()))
+            ·child(
+            VNode·span()
+                ·class("text-xs font-semibold text-[var(--text-primary)] truncate")
+                ·text_child(title·to_string())
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-1")
+            ·text_child(actions·to_string())
+            ·when(on_more, IconButton·view()
+                ·attr("icon", None)
+                ·attr("size", "sm")
+                ·attr("tooltip", "More actions")
+                ·on_click(Click))
+            ·when(on_collapse, IconButton·view()
+                ·attr("icon", None)
+                ·attr("size", "sm")
+                ·attr("tooltip", "Collapse panel")
+                ·on_click(Click))
+            ·when(on_close, IconButton·view()
+                ·attr("icon", None)
+                ·attr("size", "sm")
+                ·attr("tooltip", "Close panel")
+                ·on_click(Click))
+        )
+}

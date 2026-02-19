@@ -1,0 +1,1237 @@
+invoke qliphoth·prelude·*;
+ᛈ RestClientPanelMsg {
+    UpdateRequest,
+    UpdateResponse,
+    UpdateLoading,
+    UpdateError,
+    UpdateCollections,
+    UpdateHistory,
+    UpdateEnvironments,
+    UpdateEndpoints,
+    UpdateLoadingEndpoints,
+    UpdateSideTab,
+    UpdateRequestTab,
+    UpdateResponseTab,
+    UpdateExpandedFolders,
+    UpdateShowSaveDialog,
+    UpdateShowCodeGen,
+    UpdateShowOpenApiGen,
+    UpdateShowEnvPanel,
+    UpdateCopied,
+    UpdateSaveName,
+    UpdateSelectedSnippet,
+    DiscoverEndpoints,
+}
+actor RestClientPanel {
+    state request: Any~ = createDefaultRequest,
+    state response: Option<Any>~ = None,
+    state loading: bool! = false,
+    state error: Option<Any>~ = None,
+    state collections: Any~ = None,
+    state history: Any~ = None,
+    state environments: Any~ = None,
+    state endpoints: Vec<Any>! = [],
+    state loadingEndpoints: bool! = false,
+    state sideTab: String! = "collections",
+    state requestTab: String! = "params",
+    state responseTab: String! = "body",
+    state expandedFolders: Any~ = None,
+    state showSaveDialog: bool! = false,
+    state showCodeGen: bool! = false,
+    state showOpenApiGen: bool! = false,
+    state showEnvPanel: bool! = false,
+    state copied: Option<Any>~ = None,
+    state saveName: String! = "",
+    state selectedSnippet: i64! = 0,
+    state urlInputRef: Option<Element>! = ∅,
+
+    on UpdateRequest {
+        self.request = msg.0;
+    }
+
+    on UpdateResponse {
+        self.response = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateCollections {
+        self.collections = msg.0;
+    }
+
+    on UpdateHistory {
+        self.history = msg.0;
+    }
+
+    on UpdateEnvironments {
+        self.environments = msg.0;
+    }
+
+    on UpdateEndpoints {
+        self.endpoints = msg.0;
+    }
+
+    on UpdateLoadingEndpoints {
+        self.loadingEndpoints = msg.0;
+    }
+
+    on UpdateSideTab {
+        self.sideTab = msg.0;
+    }
+
+    on UpdateRequestTab {
+        self.requestTab = msg.0;
+    }
+
+    on UpdateResponseTab {
+        self.responseTab = msg.0;
+    }
+
+    on UpdateExpandedFolders {
+        self.expandedFolders = msg.0;
+    }
+
+    on UpdateShowSaveDialog {
+        self.showSaveDialog = msg.0;
+    }
+
+    on UpdateShowCodeGen {
+        self.showCodeGen = msg.0;
+    }
+
+    on UpdateShowOpenApiGen {
+        self.showOpenApiGen = msg.0;
+    }
+
+    on UpdateShowEnvPanel {
+        self.showEnvPanel = msg.0;
+    }
+
+    on UpdateCopied {
+        self.copied = msg.0;
+    }
+
+    on UpdateSaveName {
+        self.saveName = msg.0;
+    }
+
+    on UpdateSelectedSnippet {
+        self.selectedSnippet = msg.0;
+    }
+
+    on DiscoverEndpoints {
+        self.loading = true;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("w-56 border-r border-[#3c3c3c] flex flex-col")
+                ·attr("role", "navigation")
+                ·attr("aria-label", "Request navigation")
+                ·child(
+                VNode·div()
+                    ·class("flex border-b border-[#3c3c3c]")
+                    ·attr("role", "tablist")
+                    ·attr("aria-label", "Sidebar tabs")
+                    // Map: ∀ tab ∈ [
+            { id: 'collections', icon: FolderOpen, label: 'Collections' },
+            { id: 'history', icon: Clock, label: 'History' },
+            { id: 'discover', icon: Zap, label: 'Discover' },
+          ]
+                    ·children([
+            ∅,
+            ∅,
+            ∅,
+          ].iter().map(|tab| VNode·button()
+                            ·attr("key", tab.id)
+                            ·on_click(Click)
+                            ·class("flex-1 py-2 text-xs font-medium transition-colors flex flex-col items-center gap-0.5 ")
+                            ·attr("role", "tab")
+                            ·attr("aria-selected", side_tab == tab.id)
+                            ·attr("aria-controls", "-panel")
+                            ·id("-tab")
+                            ·child(
+                            VNode·tab.icon()
+                                ·class("w-3.5 h-3.5")
+                                ·attr("aria-hidden", "true")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-[9px]")
+                                ·text_child(tab.label·to_string())
+                            )).collect())
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex-1 overflow-auto p-2")
+                    ·attr("role", "tabpanel")
+                    ·id("-panel")
+                    ·attr("aria-labelledby", "-tab")
+                    ·text_child(None·to_string())
+                    ·text_child(None·to_string())
+                    ·when(side_tab == "discover", VNode·div()
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "outline")
+                            ·on_click(Click)
+                            ·when(self.loading_endpoints, |n| n·attr("disabled", "true"))
+                            ·class("w-full mb-3")
+                            ·attr("aria-label", "Scan codebase for API endpoints")
+                            ·when_else(self.loading_endpoints, Spinner·view()
+                                ·attr("size", "sm"), RefreshCw·view()
+                                ·class("w-3.5 h-3.5 mr-1.5")
+                                ·attr("aria-hidden", "true"))
+                            ·text_child("Scan Codebase")
+                        )
+                        ·when(self.endpoints.len() > 0, VNode·div()
+                            ·class("mb-3")
+                            ·child(
+                            Button·view()
+                                ·attr("size", "sm")
+                                ·attr("variant", "ghost")
+                                ·on_click(Click)
+                                ·class("w-full text-xs")
+                                ·attr("aria-label", "Generate OpenAPI specification")
+                                ·child(
+                                FileJson·view()
+                                    ·class("w-3.5 h-3.5 mr-1.5")
+                                    ·attr("aria-hidden", "true")
+                                )
+                                ·text_child("Generate OpenAPI")
+                            ))
+                        ·when(self.endpoints.len() == 0, VNode·div()
+                            ·class("text-center text-xs text-[#808080] py-4")
+                            ·child(
+                            Zap·view()
+                                ·class("w-6 h-6 mx-auto mb-2 opacity-50")
+                                ·attr("aria-hidden", "true")
+                            )
+                            ·child(
+                            VNode·p()
+                                ·text_child("Click scan to discover endpoints")
+                            )))
+                )
+                ·child(
+                VNode·div()
+                    ·class("p-2 border-t border-[#3c3c3c]")
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("flex items-center gap-2 w-full p-2 rounded hover:bg-[#2d2d30] text-xs")
+                        ·attr("aria-label", "Manage environments")
+                        ·attr("aria-haspopup", "dialog")
+                        ·child(
+                        Globe·view()
+                            ·class("w-3.5 h-3.5 text-[#5bcefa]")
+                            ·attr("aria-hidden", "true")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("flex-1 text-left truncate")
+                            ·text_child(active_env?.name ∨ "No Environment"·to_string())
+                        )
+                        ·child(
+                        ChevronDown·view()
+                            ·class("w-3.5 h-3.5 text-[#808080]")
+                            ·attr("aria-hidden", "true")
+                        )
+                    )
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 flex flex-col overflow-hidden")
+                ·child(
+                VNode·div()
+                    ·class("p-3 border-b border-[#3c3c3c] bg-[#252526]")
+                    ·child(
+                    VNode·div()
+                        ·class("flex gap-2")
+                        ·child(
+                        VNode·label()
+                            ·attr("htmlFor", "method-select")
+                            ·class("sr-only")
+                            ·text_child("HTTP Method")
+                        )
+                        ·child(
+                        VNode·select()
+                            ·id("method-select")
+                            ·attr("value", self.request.method)
+                            ·on_change(Change)
+                            ·class("w-28 px-2 py-1.5 text-sm border border-[#3c3c3c] rounded font-bold focus:outline-none focus:border-[#5bcefa] ")
+                            ·attr("aria-label", "HTTP method")
+                            // Map: ∀ m ∈ (['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as HttpMethod[])
+                            ·children(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].iter().map(|m| VNode·option()
+                                    ·attr("key", m)
+                                    ·attr("value", m)
+                                    ·text_child(m·to_string())).collect())
+                        )
+                        ·child(
+                        VNode·label()
+                            ·attr("htmlFor", "url-input")
+                            ·class("sr-only")
+                            ·text_child("Request URL")
+                        )
+                        ·child(
+                        VNode·input()
+                            ·attr("ref", self.url_input_ref)
+                            ·id("url-input")
+                            ·attr("type", "text")
+                            ·attr("placeholder", "Enter URL (Ctrl+Enter to send)")
+                            ·attr("value", self.request.url)
+                            ·on_change(Change)
+                            ·class("flex-1 px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                            ·attr("aria-label", "Request URL")
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·on_click(Click)
+                            ·when(¬request.url.trim(), |n| n·attr("disabled", "true"))
+                            ·attr("aria-label", "Save request to collection")
+                            ·child(
+                            Save·view()
+                                ·class("w-4 h-4")
+                                ·attr("aria-hidden", "true")
+                            )
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·on_click(Click)
+                            ·attr("aria-label", "Hide code generation")
+                            ·attr("aria-pressed", self.show_code_gen)
+                            ·child(
+                            Code·view()
+                                ·class("w-4 h-4")
+                                ·attr("aria-hidden", "true")
+                            )
+                        )
+                        ·when_else(self.loading, Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·on_click(Click)
+                            ·class("px-4 text-[#f48771]")
+                            ·attr("aria-label", "Cancel request")
+                            ·child(
+                            StopCircle·view()
+                                ·class("w-4 h-4 mr-1.5")
+                                ·attr("aria-hidden", "true")
+                            )
+                            ·text_child("Cancel"), Button·view()
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·when(¬request.url.trim(), |n| n·attr("disabled", "true"))
+                            ·class("px-4")
+                            ·attr("aria-label", "Send request (Ctrl+Enter)")
+                            ·child(
+                            Send·view()
+                                ·class("w-4 h-4 mr-1.5")
+                                ·attr("aria-hidden", "true")
+                            )
+                            ·text_child("Send"))
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-3 mt-2 text-[10px] text-[#808080]")
+                        ·child(
+                        VNode·span()
+                            ·text_child("Timeout:")
+                            ·text_child((request.timeout ∨ DEFAULT_TIMEOUT) / 1000·to_string())
+                            ·text_child("s")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·text_child("•")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·text_child("Press Ctrl+Enter to send, Escape to cancel")
+                        )
+                    )
+                )
+                ·when(self.show_save_dialog, VNode·div()
+                    ·class("p-3 border-b border-[#3c3c3c] bg-[#2d2d30]")
+                    ·child(
+                    VNode·div()
+                        ·class("flex gap-2")
+                        ·child(
+                        VNode·label()
+                            ·attr("htmlFor", "save-name")
+                            ·class("sr-only")
+                            ·text_child("Request name")
+                        )
+                        ·child(
+                        VNode·input()
+                            ·id("save-name")
+                            ·attr("type", "text")
+                            ·attr("placeholder", "Request name...")
+                            ·attr("value", self.save_name)
+                            ·on_change(Change)
+                            ·on_keydown(KeyDown)
+                            ·class("flex-1 px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                            ·attr("autoFocus", "true")
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·when(¬save_name.trim(), |n| n·attr("disabled", "true"))
+                            ·text_child("Save")
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·on_click(Click)
+                            ·attr("aria-label", "Cancel save")
+                            ·child(
+                            X·view()
+                                ·class("w-4 h-4")
+                                ·attr("aria-hidden", "true")
+                            )
+                        )
+                    ))
+                ·when(self.show_code_gen, VNode·div()
+                    ·class("p-3 border-b border-[#3c3c3c] bg-[#2d2d30]")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2 mb-2")
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-[#808080]")
+                            ·text_child("Generate Code:")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex gap-1")
+                            ·attr("role", "tablist")
+                            ·attr("aria-label", "Code snippet languages")
+                            // Map: ∀ snippet ∈ codeSnippets
+                            ·children(self.code_snippets.iter().map(|snippet| VNode·button()
+                                    ·attr("key", self.i)
+                                    ·on_click(Click)
+                                    ·class("px-2 py-1 text-[10px] rounded ")
+                                    ·attr("role", "tab")
+                                    ·attr("aria-selected", selected_snippet == i)
+                                    ·attr("aria-controls", "code-snippet-panel")
+                                    ·text_child(snippet.label·to_string())).collect())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex-1")
+                        )
+                        ·child(
+                        VNode·button()
+                            ·on_click(Click)
+                            ·class("flex items-center gap-1 px-2 py-1 text-xs text-[#5bcefa] hover:bg-[#3c3c3c] rounded")
+                            ·attr("aria-label", "Copied¬")
+                            ·when_else(copied == "code", Check·view()
+                                ·class("w-3 h-3")
+                                ·attr("aria-hidden", "true"), Copy·view()
+                                ·class("w-3 h-3")
+                                ·attr("aria-hidden", "true"))
+                            ·text_child("Copied¬"·to_string())
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·on_click(Click)
+                            ·attr("aria-label", "Close code generation panel")
+                            ·child(
+                            X·view()
+                                ·class("w-4 h-4")
+                                ·attr("aria-hidden", "true")
+                            )
+                        )
+                    )
+                    ·child(
+                    VNode·pre()
+                        ·id("code-snippet-panel")
+                        ·attr("role", "tabpanel")
+                        ·class("p-2 bg-[#1e1e1e] rounded text-xs font-mono text-[#b0b0b0] max-h-32 overflow-auto")
+                        ·text_child(code_snippets.get(selected_snippet).code·to_string())
+                    ))
+                ·child(
+                VNode·div()
+                    ·class("flex border-b border-[#3c3c3c]")
+                    ·attr("role", "tablist")
+                    ·attr("aria-label", "Request configuration tabs")
+                    // Map: ∀ tab ∈ [
+            { id: 'params', label: 'Params', count: request.queryParams.filter(p => p.enabled).length + request.pathVariables.filter(p => p.enabled).length },
+            { id: 'headers', label: 'Headers', count: request.headers.filter(h => h.enabled).length },
+            { id: 'auth', label: 'Auth', active: request.auth.type !== 'none' },
+            { id: 'body', label: 'Body', active: request.body.type !== 'none' },
+          ]
+                    ·children([
+            ∅,
+            ∅,
+            ∅,
+            ∅,
+          ].iter().map(|tab| VNode·button()
+                            ·attr("key", tab.id)
+                            ·on_click(Click)
+                            ·class("px-4 py-2 text-xs font-medium transition-colors ")
+                            ·attr("role", "tab")
+                            ·attr("aria-selected", request_tab == tab.id)
+                            ·attr("aria-controls", "request--panel")
+                            ·id("request--tab")
+                            ·text_child(tab.label·to_string())
+                            ·when("count" in tab ∧ tab.count > 0, VNode·span()
+                                ·class("ml-1.5 px-1 rounded bg-[#5bcefa] text-[#1e1e1e] text-[9px]")
+                                ·text_child(tab.count·to_string()))
+                            ·when("active" in tab ∧ tab.active, VNode·span()
+                                ·class("ml-1.5 w-1.5 h-1.5 rounded-full bg-[#00ff7f] inline-block")
+                                ·attr("aria-label", "Configured"))).collect())
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex-1 flex flex-col overflow-hidden")
+                    ·child(
+                    VNode·div()
+                        ·class("flex-1 overflow-auto p-3")
+                        ·style(∅)
+                        ·attr("role", "tabpanel")
+                        ·id("request--panel")
+                        ·attr("aria-labelledby", "request--tab")
+                        ·when(request_tab == "params", VNode·div()
+                            ·class("space-y-4")
+                            ·child(
+                            VNode·div()
+                                ·child(
+                                VNode·div()
+                                    ·class("text-xs text-[#808080] mb-2")
+                                    ·text_child("Query Parameters")
+                                )
+                                // Map: ∀ param ∈ request.queryParams
+                                ·children(self.request.query_params.iter().map(|param| VNode·div()
+                                        ·attr("key", param.id)
+                                        ·class("flex items-center gap-2 mb-1")
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("type", "checkbox")
+                                            ·when(param.enabled, |n| n·attr("checked", "true"))
+                                            ·on_change(Change)
+                                            ·class("w-4 h-4")
+                                            ·attr("aria-label", "Enable parameter ")
+                                        )
+                                        ·child(
+                                        VNode·label()
+                                            ·class("sr-only")
+                                            ·text_child("Parameter key")
+                                        )
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("placeholder", "Key")
+                                            ·attr("value", param.key)
+                                            ·on_change(Change)
+                                            ·class("w-32 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                            ·attr("aria-label", "Parameter key")
+                                        )
+                                        ·child(
+                                        VNode·label()
+                                            ·class("sr-only")
+                                            ·text_child("Parameter value")
+                                        )
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("placeholder", "Value")
+                                            ·attr("value", param.value)
+                                            ·on_change(Change)
+                                            ·class("flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                            ·attr("aria-label", "Parameter value")
+                                        )
+                                        ·child(
+                                        VNode·button()
+                                            ·on_click(Click)
+                                            ·class("p-1 hover:bg-[#5a1d1d] rounded")
+                                            ·attr("aria-label", "Delete parameter ")
+                                            ·child(
+                                            Trash2·view()
+                                                ·class("w-3.5 h-3.5 text-[#f48771]")
+                                                ·attr("aria-hidden", "true")
+                                            )
+                                        )).collect())
+                                ·child(
+                                VNode·button()
+                                    ·on_click(Click)
+                                    ·class("text-xs text-[#5bcefa] hover:text-[#7dd3fc]")
+                                    ·child(
+                                    Plus·view()
+                                        ·class("w-3.5 h-3.5 inline mr-1")
+                                        ·attr("aria-hidden", "true")
+                                    )
+                                    ·text_child("Add Parameter")
+                                )
+                            )
+                            ·child(
+                            VNode·div()
+                                ·child(
+                                VNode·div()
+                                    ·class("text-xs text-[#808080] mb-2")
+                                    ·text_child("Path Variables")
+                                )
+                                // Map: ∀ param ∈ request.pathVariables
+                                ·children(self.request.path_variables.iter().map(|param| VNode·div()
+                                        ·attr("key", param.id)
+                                        ·class("flex items-center gap-2 mb-1")
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("type", "checkbox")
+                                            ·when(param.enabled, |n| n·attr("checked", "true"))
+                                            ·on_change(Change)
+                                            ·class("w-4 h-4")
+                                            ·attr("aria-label", "Enable path variable ")
+                                        )
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("placeholder", "Key")
+                                            ·attr("value", param.key)
+                                            ·on_change(Change)
+                                            ·class("w-32 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                            ·attr("aria-label", "Path variable key")
+                                        )
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("placeholder", "Value")
+                                            ·attr("value", param.value)
+                                            ·on_change(Change)
+                                            ·class("flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                            ·attr("aria-label", "Path variable value")
+                                        )
+                                        ·child(
+                                        VNode·button()
+                                            ·on_click(Click)
+                                            ·class("p-1 hover:bg-[#5a1d1d] rounded")
+                                            ·attr("aria-label", "Delete path variable ")
+                                            ·child(
+                                            Trash2·view()
+                                                ·class("w-3.5 h-3.5 text-[#f48771]")
+                                                ·attr("aria-hidden", "true")
+                                            )
+                                        )).collect())
+                                ·child(
+                                VNode·button()
+                                    ·on_click(Click)
+                                    ·class("text-xs text-[#5bcefa] hover:text-[#7dd3fc]")
+                                    ·child(
+                                    Plus·view()
+                                        ·class("w-3.5 h-3.5 inline mr-1")
+                                        ·attr("aria-hidden", "true")
+                                    )
+                                    ·text_child("Add Path Variable")
+                                )
+                            ))
+                        ·when(request_tab == "headers", VNode·div()
+                            // Map: ∀ header ∈ request.headers
+                            ·children(self.request.headers.iter().map(|header| VNode·div()
+                                    ·attr("key", header.id)
+                                    ·class("flex items-center gap-2 mb-1")
+                                    ·child(
+                                    VNode·input()
+                                        ·attr("type", "checkbox")
+                                        ·when(header.enabled, |n| n·attr("checked", "true"))
+                                        ·on_change(Change)
+                                        ·class("w-4 h-4")
+                                        ·attr("aria-label", "Enable header ")
+                                    )
+                                    ·child(
+                                    VNode·input()
+                                        ·attr("placeholder", "Header")
+                                        ·attr("value", header.key)
+                                        ·on_change(Change)
+                                        ·class("w-40 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                        ·attr("aria-label", "Header name")
+                                    )
+                                    ·child(
+                                    VNode·input()
+                                        ·attr("placeholder", "Value")
+                                        ·attr("value", header.value)
+                                        ·on_change(Change)
+                                        ·class("flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                        ·attr("aria-label", "Header value")
+                                    )
+                                    ·child(
+                                    VNode·button()
+                                        ·on_click(Click)
+                                        ·class("p-1 hover:bg-[#5a1d1d] rounded")
+                                        ·attr("aria-label", "Delete header ")
+                                        ·child(
+                                        Trash2·view()
+                                            ·class("w-3.5 h-3.5 text-[#f48771]")
+                                            ·attr("aria-hidden", "true")
+                                        )
+                                    )).collect())
+                            ·child(
+                            VNode·button()
+                                ·on_click(Click)
+                                ·class("text-xs text-[#5bcefa] hover:text-[#7dd3fc]")
+                                ·child(
+                                Plus·view()
+                                    ·class("w-3.5 h-3.5 inline mr-1")
+                                    ·attr("aria-hidden", "true")
+                                )
+                                ·text_child("Add Header")
+                            ))
+                        ·when(request_tab == "auth", VNode·div()
+                            ·child(
+                            VNode·div()
+                                ·class("flex gap-2 mb-4")
+                                ·attr("role", "radiogroup")
+                                ·attr("aria-label", "Authentication type")
+                                // Map: ∀ type ∈ (['none', 'bearer', 'basic', 'api-key'] as AuthType[])
+                                ·children(["none", "bearer", "basic", "api-key"].iter().map(|type| VNode·button()
+                                        ·attr("key", type)
+                                        ·on_click(Click)
+                                        ·class("px-3 py-1.5 text-xs rounded capitalize ")
+                                        ·attr("role", "radio")
+                                        ·attr("aria-checked", self.request.auth.type == type)
+                                        ·text_child("API Key"·to_string())).collect())
+                            )
+                            ·when(self.request.auth.type == "bearer", VNode·div()
+                                ·child(
+                                VNode·label()
+                                    ·attr("htmlFor", "bearer-token")
+                                    ·class("text-xs text-[#808080] block mb-1")
+                                    ·text_child("Token")
+                                )
+                                ·child(
+                                VNode·input()
+                                    ·id("bearer-token")
+                                    ·attr("type", "text")
+                                    ·attr("value", self.request.auth.bearer?.token ∨ "")
+                                    ·on_change(Change)
+                                    ·attr("placeholder", "Enter bearer token...")
+                                    ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                ))
+                            ·when(self.request.auth.type == "basic", VNode·div()
+                                ·class("space-y-2")
+                                ·child(
+                                VNode·div()
+                                    ·child(
+                                    VNode·label()
+                                        ·attr("htmlFor", "basic-username")
+                                        ·class("text-xs text-[#808080] block mb-1")
+                                        ·text_child("Username")
+                                    )
+                                    ·child(
+                                    VNode·input()
+                                        ·id("basic-username")
+                                        ·attr("type", "text")
+                                        ·attr("value", self.request.auth.basic?.username ∨ "")
+                                        ·on_change(Change)
+                                        ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:border-[#5bcefa] focus:outline-none")
+                                    )
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·child(
+                                    VNode·label()
+                                        ·attr("htmlFor", "basic-password")
+                                        ·class("text-xs text-[#808080] block mb-1")
+                                        ·text_child("Password")
+                                    )
+                                    ·child(
+                                    VNode·input()
+                                        ·id("basic-password")
+                                        ·attr("type", "password")
+                                        ·attr("value", self.request.auth.basic?.password ∨ "")
+                                        ·on_change(Change)
+                                        ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:border-[#5bcefa] focus:outline-none")
+                                    )
+                                ))
+                            ·when(self.request.auth.type == "api-key", VNode·div()
+                                ·class("space-y-2")
+                                ·child(
+                                VNode·div()
+                                    ·class("flex gap-2")
+                                    ·child(
+                                    VNode·div()
+                                        ·class("flex-1")
+                                        ·child(
+                                        VNode·label()
+                                            ·attr("htmlFor", "apikey-key")
+                                            ·class("text-xs text-[#808080] block mb-1")
+                                            ·text_child("Key")
+                                        )
+                                        ·child(
+                                        VNode·input()
+                                            ·id("apikey-key")
+                                            ·attr("type", "text")
+                                            ·attr("value", self.request.auth.api_key?.key ∨ "")
+                                            ·on_change(Change)
+                                            ·attr("placeholder", "X-API-Key")
+                                            ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:border-[#5bcefa] focus:outline-none")
+                                        )
+                                    )
+                                    ·child(
+                                    VNode·div()
+                                        ·class("flex-1")
+                                        ·child(
+                                        VNode·label()
+                                            ·attr("htmlFor", "apikey-value")
+                                            ·class("text-xs text-[#808080] block mb-1")
+                                            ·text_child("Value")
+                                        )
+                                        ·child(
+                                        VNode·input()
+                                            ·id("apikey-value")
+                                            ·attr("type", "text")
+                                            ·attr("value", self.request.auth.api_key?.value ∨ "")
+                                            ·on_change(Change)
+                                            ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:border-[#5bcefa] focus:outline-none")
+                                        )
+                                    )
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·child(
+                                    VNode·label()
+                                        ·attr("htmlFor", "apikey-addto")
+                                        ·class("text-xs text-[#808080] block mb-1")
+                                        ·text_child("Add to")
+                                    )
+                                    ·child(
+                                    VNode·select()
+                                        ·id("apikey-addto")
+                                        ·attr("value", self.request.auth.api_key?.add_to ∨ "header")
+                                        ·on_change(Change)
+                                        ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:border-[#5bcefa] focus:outline-none")
+                                        ·child(
+                                        VNode·option()
+                                            ·attr("value", "header")
+                                            ·text_child("Header")
+                                        )
+                                        ·child(
+                                        VNode·option()
+                                            ·attr("value", "query")
+                                            ·text_child("Query Params")
+                                        )
+                                    )
+                                )))
+                        ·when(request_tab == "body", VNode·div()
+                            ·child(
+                            VNode·div()
+                                ·class("flex gap-2 mb-4 flex-wrap")
+                                ·attr("role", "radiogroup")
+                                ·attr("aria-label", "Request body type")
+                                // Map: ∀ type ∈ (['none', 'json', 'form-data', 'x-www-form-urlencoded', 'raw', 'graphql'] as BodyType[])
+                                ·children(["none", "json", "form-data", "x-www-form-urlencoded", "raw", "graphql"].iter().map(|type| VNode·button()
+                                        ·attr("key", type)
+                                        ·on_click(Click)
+                                        ·class("px-3 py-1.5 text-xs rounded ")
+                                        ·attr("role", "radio")
+                                        ·attr("aria-checked", self.request.body.type == type)
+                                        ·text_child("URL Encoded"·to_string())).collect())
+                            )
+                            ·when(self.request.body.type == "json", JsonEditor·view()
+                                ·attr("value", self.request.body.json ∨ "")
+                                ·on_change(Change)
+                                ·attr("placeholder", "{\"key\": \"value\"}")
+                                ·attr("label", "JSON Body")
+                                ·attr("minHeight", "8rem"))
+                            ·when(self.request.body.type == "raw", VNode·div()
+                                ·child(
+                                VNode·label()
+                                    ·attr("htmlFor", "raw-body")
+                                    ·class("text-xs text-[#808080] block mb-1")
+                                    ·text_child("Raw Body")
+                                )
+                                ·child(
+                                VNode·textarea()
+                                    ·id("raw-body")
+                                    ·attr("value", self.request.body.raw ∨ "")
+                                    ·on_change(Change)
+                                    ·attr("placeholder", "Raw body content...")
+                                    ·class("w-full h-32 p-3 text-sm bg-[#2d2d30] border border-[#3c3c3c] rounded text-white font-mono resize-y focus:border-[#5bcefa] focus:outline-none")
+                                ))
+                            ·when(self.request.body.type == "graphql", VNode·div()
+                                ·class("space-y-3")
+                                ·child(
+                                VNode·div()
+                                    ·child(
+                                    VNode·label()
+                                        ·attr("htmlFor", "graphql-query")
+                                        ·class("text-xs text-[#808080] block mb-1")
+                                        ·text_child("Query")
+                                    )
+                                    ·child(
+                                    VNode·textarea()
+                                        ·id("graphql-query")
+                                        ·attr("value", self.request.body.graphql?.query ∨ "")
+                                        ·on_change(Change)
+                                        ·attr("placeholder", "query { ... }")
+                                        ·class("w-full h-24 p-3 text-sm bg-[#2d2d30] border border-[#3c3c3c] rounded text-white font-mono resize-y focus:border-[#5bcefa] focus:outline-none")
+                                    )
+                                )
+                                ·child(
+                                JsonEditor·view()
+                                    ·attr("value", self.request.body.graphql?.variables ∨ "")
+                                    ·on_change(Change)
+                                    ·attr("placeholder", "{\"variable\": \"value\"}")
+                                    ·attr("label", "Variables (JSON)")
+                                    ·attr("minHeight", "4rem")
+                                ))
+                            ·when(self.request.body.type == "form-data", FormDataEditor·view()
+                                ·attr("items", self.request.body.form_data ∨ [])
+                                ·on_change(Change))
+                            ·when(self.request.body.type == "x-www-form-urlencoded", VNode·div()
+                                ·child(
+                                VNode·div()
+                                    ·class("text-xs text-[#808080] mb-2")
+                                    ·text_child("URL Encoded Form Data")
+                                )
+                                // Map: ∀ param ∈ (request.body.urlencoded || [])
+                                ·children((request.body.urlencoded ∨ []).iter().map(|param| VNode·div()
+                                        ·attr("key", param.id)
+                                        ·class("flex items-center gap-2 mb-1")
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("type", "checkbox")
+                                            ·when(param.enabled, |n| n·attr("checked", "true"))
+                                            ·on_change(Change)
+                                            ·class("w-4 h-4")
+                                            ·attr("aria-label", "Enable field ")
+                                        )
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("placeholder", "Key")
+                                            ·attr("value", param.key)
+                                            ·on_change(Change)
+                                            ·class("w-32 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                            ·attr("aria-label", "Field key")
+                                        )
+                                        ·child(
+                                        VNode·input()
+                                            ·attr("placeholder", "Value")
+                                            ·attr("value", param.value)
+                                            ·on_change(Change)
+                                            ·class("flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                                            ·attr("aria-label", "Field value")
+                                        )
+                                        ·child(
+                                        VNode·button()
+                                            ·on_click(Click)
+                                            ·class("p-1 hover:bg-[#5a1d1d] rounded")
+                                            ·attr("aria-label", "Delete field ")
+                                            ·child(
+                                            Trash2·view()
+                                                ·class("w-3.5 h-3.5 text-[#f48771]")
+                                                ·attr("aria-hidden", "true")
+                                            )
+                                        )).collect())
+                                ·child(
+                                VNode·button()
+                                    ·on_click(Click)
+                                    ·class("text-xs text-[#5bcefa] hover:text-[#7dd3fc]")
+                                    ·child(
+                                    Plus·view()
+                                        ·class("w-3.5 h-3.5 inline mr-1")
+                                        ·attr("aria-hidden", "true")
+                                    )
+                                    ·text_child("Add Field")
+                                )))
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("border-t border-[#3c3c3c] flex-1 flex flex-col overflow-hidden")
+                        ·child(
+                        VNode·div()
+                            ·class("flex border-b border-[#3c3c3c]")
+                            ·attr("role", "tablist")
+                            ·attr("aria-label", "Response tabs")
+                            // Map: ∀ tab ∈ [
+                { id: 'body', label: 'Body' },
+                { id: 'headers', label: 'Headers', count: response ? Object.keys(response.headers).length : 0 },
+                { id: 'cookies', label: 'Cookies', count: response?.cookies.length || 0 },
+                { id: 'code', label: 'Code' },
+              ]
+                            ·children([
+                ∅,
+                ∅,
+                ∅,
+                ∅,
+              ].iter().map(|tab| VNode·button()
+                                    ·attr("key", tab.id)
+                                    ·on_click(Click)
+                                    ·class("px-4 py-2 text-xs font-medium transition-colors ")
+                                    ·attr("role", "tab")
+                                    ·attr("aria-selected", response_tab == tab.id)
+                                    ·attr("aria-controls", "response--panel")
+                                    ·id("response--tab")
+                                    ·text_child(tab.label·to_string())
+                                    ·when("count" in tab ∧ tab.count > 0, VNode·span()
+                                        ·class("ml-1.5 text-[10px] text-[#808080]")
+                                        ·text_child("(")
+                                        ·text_child(tab.count·to_string())
+                                        ·text_child(")"))).collect())
+                            ·when(self.response, VNode·div()
+                                ·class("flex items-center gap-4 ml-auto px-3")
+                                ·attr("aria-live", "polite")
+                                ·child(
+                                VNode·span()
+                                    ·class("text-sm font-bold ")
+                                    ·text_child(self.response.status·to_string())
+                                    ·text_child(self.response.status_text·to_string())
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[#808080]")
+                                    ·text_child(self.response.duration·to_string())
+                                    ·text_child("ms")
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[#808080]")
+                                    ·text_child(format_bytes(response.body_size)·to_string())
+                                ))
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex-1 overflow-auto p-3")
+                            ·attr("role", "tabpanel")
+                            ·id("response--panel")
+                            ·attr("aria-labelledby", "response--tab")
+                            ·when(self.loading, VNode·div()
+                                ·class("flex flex-col items-center justify-center h-full gap-3")
+                                ·child(
+                                Spinner·view()
+                                    ·attr("size", "lg")
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("text-sm text-[#b0b0b0]")
+                                    ·text_child("Sending request...")
+                                )
+                                ·child(
+                                VNode·button()
+                                    ·on_click(Click)
+                                    ·class("text-xs text-[#f48771] hover:text-[#ff9984] flex items-center gap-1")
+                                    ·child(
+                                    StopCircle·view()
+                                        ·class("w-3.5 h-3.5")
+                                        ·attr("aria-hidden", "true")
+                                    )
+                                    ·text_child("Cancel (Escape)")
+                                ))
+                            ·when(error ∧ ¬loading, VNode·div()
+                                ·class("p-4 bg-[rgba(244,135,113,0.1)] border border-[#f48771] rounded")
+                                ·attr("role", "alert")
+                                ·child(
+                                VNode·div()
+                                    ·class("flex items-center gap-2 text-sm text-[#f48771] font-medium")
+                                    ·child(
+                                    AlertCircle·view()
+                                        ·class("w-4 h-4")
+                                        ·attr("aria-hidden", "true")
+                                    )
+                                    ·text_child("Request Failed")
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("text-xs text-[#b0b0b0] mt-1")
+                                    ·text_child(self.error·to_string())
+                                ))
+                            ·when(¬loading ∧ ¬error ∧ response, VNode·fragment()
+                                ·when(response_tab == "body", VNode·div()
+                                    ·class("h-full flex flex-col")
+                                    ·child(
+                                    VNode·div()
+                                        ·class("flex justify-end mb-2")
+                                        ·child(
+                                        VNode·button()
+                                            ·on_click(Click)
+                                            ·class("flex items-center gap-1.5 px-2 py-1 text-xs text-[#5bcefa] hover:bg-[#2d2d30] rounded")
+                                            ·attr("aria-label", "Copied¬")
+                                            ·when_else(copied == "response", Check·view()
+                                                ·class("w-3.5 h-3.5")
+                                                ·attr("aria-hidden", "true"), Copy·view()
+                                                ·class("w-3.5 h-3.5")
+                                                ·attr("aria-hidden", "true"))
+                                            ·text_child("Copied¬"·to_string())
+                                        )
+                                    )
+                                    ·child(
+                                    VNode·pre()
+                                        ·class("flex-1 p-3 bg-[#2d2d30] rounded overflow-auto text-xs font-mono text-[#cccccc]")
+                                        ·text_child(self.response.body ∨ "(empty response)"·to_string())
+                                    ))
+                                ·when(response_tab == "headers", VNode·div()
+                                    ·class("space-y-1")
+                                    ·text_child(None·to_string()))
+                                ·when(response_tab == "cookies", VNode·div()
+                                    ·child(
+                                    VNode·div()
+                                        ·class("text-xs text-[#808080] bg-[#2d2d30] p-2 rounded mb-3")
+                                        ·child(
+                                        AlertCircle·view()
+                                            ·class("w-3.5 h-3.5 inline mr-1")
+                                            ·attr("aria-hidden", "true")
+                                        )
+                                        ·text_child("Note: Due to browser CORS restrictions, cookies from cross-origin requests cannot be read from JavaScript.\n                        Cookies are still sent/received by the browser automatically.")
+                                    )
+                                    ·when_else(self.response.cookies.len() > 0, VNode·div()
+                                        ·class("space-y-2")
+                                        // Map: ∀ cookie ∈ response.cookies
+                                        ·children(self.response.cookies.iter().map(|cookie| VNode·div()
+                                                ·attr("key", self.i)
+                                                ·class("p-2 bg-[#2d2d30] rounded")
+                                                ·child(
+                                                VNode·div()
+                                                    ·class("text-xs font-mono text-white")
+                                                    ·text_child(cookie.name·to_string())
+                                                    ·text_child("=")
+                                                    ·text_child(cookie.value·to_string())
+                                                )).collect()), VNode·div()
+                                        ·class("text-center text-xs text-[#808080] py-4")
+                                        ·text_child("No cookies available")))
+                                ·when(response_tab == "code", VNode·div()
+                                    ·child(
+                                    VNode·div()
+                                        ·class("flex gap-2 mb-3 flex-wrap")
+                                        ·attr("role", "tablist")
+                                        ·attr("aria-label", "Code snippet language")
+                                        // Map: ∀ snippet ∈ codeSnippets
+                                        ·children(self.code_snippets.iter().map(|snippet| VNode·button()
+                                                ·attr("key", self.i)
+                                                ·on_click(Click)
+                                                ·class("px-2 py-1 text-[10px] rounded ")
+                                                ·attr("role", "tab")
+                                                ·attr("aria-selected", selected_snippet == i)
+                                                ·text_child(snippet.label·to_string())).collect())
+                                    )
+                                    ·child(
+                                    VNode·div()
+                                        ·class("flex justify-end mb-2")
+                                        ·child(
+                                        VNode·button()
+                                            ·on_click(Click)
+                                            ·class("flex items-center gap-1.5 px-2 py-1 text-xs text-[#5bcefa] hover:bg-[#2d2d30] rounded")
+                                            ·attr("aria-label", "Copied¬")
+                                            ·when_else(copied == "snippet", Check·view()
+                                                ·class("w-3.5 h-3.5")
+                                                ·attr("aria-hidden", "true"), Copy·view()
+                                                ·class("w-3.5 h-3.5")
+                                                ·attr("aria-hidden", "true"))
+                                        )
+                                    )
+                                    ·child(
+                                    VNode·pre()
+                                        ·class("p-3 bg-[#2d2d30] rounded overflow-auto text-xs font-mono text-[#b0b0b0]")
+                                        ·text_child(code_snippets.get(selected_snippet).code·to_string())
+                                    )))
+                            ·when(¬loading ∧ ¬error ∧ ¬response, VNode·div()
+                                ·class("flex flex-col items-center justify-center h-full text-center")
+                                ·child(
+                                Send·view()
+                                    ·class("w-8 h-8 text-[#858585] mb-3")
+                                    ·attr("aria-hidden", "true")
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("text-sm text-[#cccccc] font-medium")
+                                    ·text_child("No response yet")
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("text-xs text-[#858585]")
+                                    ·text_child("Press Ctrl+Enter or click Send to make a request")
+                                ))
+                        )
+                    )
+                )
+            )
+            ·when(self.show_env_panel, EnvironmentPanel·view()
+                ·attr("environments", self.environments)
+                ·on_environmentschange(EnvironmentsChange)
+                ·on_close(Close))
+            ·when(self.show_open_api_gen, VNode·div()
+                ·class("fixed inset-0 bg-black/50 flex items-center justify-center z-50")
+                ·attr("role", "dialog")
+                ·attr("aria-modal", "true")
+                ·attr("aria-labelledby", "openapi-modal-title")
+                ·on_click(Click)
+                ·child(
+                VNode·div()
+                    ·class("bg-[#252526] rounded-lg w-[600px] max-h-[80vh] flex flex-col shadow-2xl")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center justify-between p-4 border-b border-[#3c3c3c]")
+                        ·child(
+                        VNode·h3()
+                            ·id("openapi-modal-title")
+                            ·class("text-white font-medium")
+                            ·text_child("Generate OpenAPI Specification")
+                        )
+                        ·child(
+                        VNode·button()
+                            ·on_click(Click)
+                            ·class("p-1 hover:bg-[#3c3c3c] rounded")
+                            ·attr("aria-label", "Close OpenAPI generation dialog")
+                            ·child(
+                            X·view()
+                                ·class("w-4 h-4")
+                                ·attr("aria-hidden", "true")
+                            )
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("p-4 flex-1 overflow-auto")
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-[#808080] mb-2")
+                            ·text_child("Generated from")
+                            ·text_child(self.endpoints.len()·to_string())
+                            ·text_child("discovered endpoints")
+                        )
+                        ·child(
+                        VNode·pre()
+                            ·class("p-3 bg-[#1e1e1e] rounded text-xs font-mono text-[#b0b0b0] max-h-96 overflow-auto")
+                            ·text_child(generate_open_api_spec()·to_string())
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex justify-end gap-2 p-4 border-t border-[#3c3c3c]")
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "outline")
+                            ·on_click(Click)
+                            ·attr("aria-label", "Copied¬")
+                            ·when_else(copied == "openapi", Check·view()
+                                ·class("w-3.5 h-3.5 mr-1.5")
+                                ·attr("aria-hidden", "true"), Copy·view()
+                                ·class("w-3.5 h-3.5 mr-1.5")
+                                ·attr("aria-hidden", "true"))
+                            ·text_child("Copy")
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·child(
+                            Download·view()
+                                ·class("w-3.5 h-3.5 mr-1.5")
+                                ·attr("aria-hidden", "true")
+                            )
+                            ·text_child("Download")
+                        )
+                    )
+                ))
+    }
+}

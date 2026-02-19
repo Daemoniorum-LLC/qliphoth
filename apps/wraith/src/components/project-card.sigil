@@ -1,0 +1,138 @@
+invoke qliphoth·prelude·*;
+ᛈ ProjectCardMsg {
+    UpdateExpanded,
+}
+actor ProjectCard {
+    state expanded: bool! = True,
+
+    rite new(project: Any) -> This! {
+        self.project = project;
+        This
+    }
+
+    on UpdateExpanded {
+        self.expanded = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--bg-hover)]")
+                ·on_click(Click)
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3")
+                    ·child(
+                    VNode·button()
+                        ·class("text-[var(--text-secondary)]")
+                        ·when_else(self.expanded, ChevronDown·view()
+                            ·class("h-4 w-4"), ChevronRight·view()
+                            ·class("h-4 w-4"))
+                    )
+                    ·child(
+                    Layers·view()
+                        ·class("h-5 w-5 text-[var(--accent-primary)]")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2")
+                            ·child(
+                            VNode·span()
+                                ·class("font-medium text-[var(--text-primary)]")
+                                ·text_child(project.name·to_string())
+                            )
+                            ·child(
+                            StatusBadge·view()
+                                ·attr("status", project.status)
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-[var(--text-muted)] flex items-center gap-2 mt-0.5")
+                            ·child(
+                            FileCode·view()
+                                ·class("h-3 w-3")
+                            )
+                            ·text_child(project.config_files.join(", ")·to_string())
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3")
+                    ·on_click(Click)
+                    ·child(
+                    VNode·span()
+                        ·class("text-xs text-[var(--text-secondary)]")
+                        ·text_child(self.running_count·to_string())
+                        ·text_child("/")
+                        ·text_child(project.services.len()·to_string())
+                        ·text_child("services")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-1")
+                        ·child(
+                        IconButton·view()
+                            ·attr("icon", None)
+                            ·attr("size", "sm")
+                            ·attr("tooltip", "Start all")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        IconButton·view()
+                            ·attr("icon", None)
+                            ·attr("size", "sm")
+                            ·attr("tooltip", "Stop all")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        IconButton·view()
+                            ·attr("icon", None)
+                            ·attr("size", "sm")
+                            ·attr("tooltip", "Restart all")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        ActionMenu·view()
+                            ·child(
+                            ActionItem·view()
+                                ·attr("icon", None)
+                                ·attr("label", "Up")
+                                ·on_click(Click)
+                            )
+                            ·child(
+                            ActionItem·view()
+                                ·attr("icon", None)
+                                ·attr("label", "Down")
+                                ·on_click(Click)
+                            )
+                            ·child(
+                            ActionItem·view()
+                                ·attr("icon", None)
+                                ·attr("label", "Rebuild")
+                                ·on_click(Click)
+                            )
+                            ·child(
+                            ActionItem·view()
+                                ·attr("icon", None)
+                                ·attr("label", "Remove")
+                                ·on_click(Click)
+                                ·attr("variant", "danger")
+                            )
+                        )
+                    )
+                )
+            )
+            ·when(self.expanded, VNode·div()
+                ·class("border-t border-[var(--border-subtle)] bg-[var(--bg-primary)]")
+                // Map: ∀ service ∈ project.services
+                ·children(project.services.iter().map(|service| ServiceRow·view()
+                        ·attr("key", service.name)
+                        ·attr("service", service)).collect()))
+    }
+}

@@ -1,0 +1,123 @@
+invoke qliphoth·prelude·*;
+ᛈ CodeEditorMsg {
+    UpdateContent,
+    UpdateLoading,
+    UpdateSaving,
+    UpdateSaveStatus,
+    UpdateError,
+    UpdateIsDirty,
+    Save,
+}
+☉ actor CodeEditor {
+    state content: String! = "",
+    state loading: bool! = false,
+    state saving: bool! = false,
+    state saveStatus: String! = "idle",
+    state error: Option<Any>~ = None,
+    state isDirty: bool! = false,
+    state editorRef: Option<Any>! = ∅,
+
+    rite new(file_path: Any, settings: Any) -> This! {
+        self.file_path = file_path;
+        self.settings = settings;
+        This
+    }
+
+    on UpdateContent {
+        self.content = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateSaving {
+        self.saving = msg.0;
+    }
+
+    on UpdateSaveStatus {
+        self.saveStatus = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateIsDirty {
+        self.isDirty = msg.0;
+    }
+
+    on Save {
+        self.saving = true;
+        self.saveStatus = "idle";
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("w-full h-full flex flex-col bg-[#1e1e1e]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs font-mono")
+                ·child(
+                VNode·span()
+                    ·text_child(self.file_path·to_string())
+                )
+                ·when(self.is_dirty, VNode·span()
+                    ·class("text-[#f59e0b] ml-2")
+                    ·attr("title", "Unsaved changes")
+                    ·text_child("●"))
+                ·child(
+                VNode·div()
+                    ·class("ml-auto flex items-center gap-2")
+                    ·when(self.save_status == "saved", VNode·span()
+                        ·class("flex items-center gap-1 text-[#4ade80] text-xs animate-in fade-in duration-200")
+                        ·child(
+                        Check·view()
+                            ·class("w-3 h-3")
+                        )
+                        ·text_child("Saved"))
+                    ·when(self.save_status == "error", VNode·span()
+                        ·class("text-[#f48771] text-xs")
+                        ·text_child("Save failed"))
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·when(¬self.is_dirty ∨ self.saving, |n| n·attr("disabled", "true"))
+                        ·attr("title", "Save (Ctrl+S)")
+                        ·when_else(self.saving, Loader2·view()
+                            ·class("w-4 h-4 animate-spin"), Save·view()
+                            ·class("w-4 h-4"))
+                    )
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 min-h-0 relative")
+                ·child(
+                Editor·view()
+                    ·attr("height", "100%")
+                    ·attr("language", self.get_language(self.file_path))
+                    ·attr("value", self.content)
+                    ·attr("theme", ⎇ settings?.theme == "light" { "vs-light" } ⎉ { ⎇ settings?.theme == "high-contrast" { "hc-black" } ⎉ { "vs-dark" } })
+                    ·on_change(Change)
+                    ·on_mount(Mount)
+                    ·attr("options", { read_only: false, minimap: { enabled: settings?.minimap ∨ true }, font_size: settings?.font_size ∨ 14, font_family: settings?.font_family ∨ "'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace", tab_size: settings?.tab_size ∨ 2, insert_spaces: settings?.insert_spaces ∨ true, multi_cursor_modifier: "alt", multi_cursor_merge_overlapping: true, multi_cursor_paste: "spread", match_brackets: "always", auto_closing_brackets: "languageDefined", auto_closing_quotes: "languageDefined", auto_surround: "languageDefined", bracket_pair_colorization: { enabled: true }, guides: { bracket_pairs: true, indentation: true }, folding: true, folding_strategy: "indentation", show_folding_controls: "mouseover", folding_highlight: true, unfold_on_click_after_end_of_line: true, find: { add_extra_space_on_top: false, auto_find_in_selection: "never", seed_search_string_from_selection: "selection", global_find_clipboard: false, should_loop: true }, word_wrap: ⎇ settings?.word_wrap { "on" } ⎉ { "off" }, line_numbers: ⎇ settings?.line_numbers ∨ true { "on" } ⎉ { "off" }, render_whitespace: ⎇ settings?.render_whitespace { "all" } ⎉ { "none" }, cursor_blinking: settings?.cursor_blinking ∨ "blink", cursor_style: settings?.cursor_style ∨ "line", scroll_beyond_last_line: false, automatic_layout: true, suggest: { show_keywords: true, show_snippets: true, show_classes: true, show_functions: true, show_variables: true, show_modules: true, show_properties: true, show_methods: true }, quick_suggestions: { other: true, comments: false, strings: false }, suggest_on_trigger_characters: true, accept_suggestion_on_commit_character: true, accept_suggestion_on_enter: "on", tab_completion: "on", word_based_suggestions: "matchingDocuments", parameter_hints: { enabled: true, cycle: true }, hover: { enabled: true, delay: 300 }, lightbulb: { enabled: "on" }, code_actions_on_save: ∅, goto_location: { multiple_definitions: "goto", multiple_type_definitions: "goto", multiple_declarations: "goto", multiple_implementations: "goto", multiple_references: "goto" }, reference_infos: true, format_on_type: true, format_on_paste: false, render_validation_decorations: "on", semantic_highlighting_enabled: true, rename: { enable_preview: true }, code_actions_on_save: { source_organize_imports: "explicit", source_fix_all: "explicit" }, format_on_save: false, format_on_type: true, format_on_paste: true })
+                )
+                ·child(
+                AICodeAssistant·view()
+                    ·attr("editor", self.editor_ref.current)
+                    ·attr("enabled", true)
+                )
+                ·child(
+                CollaborativeEditor·view()
+                    ·attr("editor", self.editor_ref.current)
+                    ·attr("filePath", self.file_path)
+                    ·attr("userId", self.local_storage·get_item("wraith_user_id") ∨ "user-" + self.date·now().to_string())
+                    ·attr("userName", self.local_storage·get_item("wraith_user_name") ∨ "Anonymous")
+                    ·attr("enabled", true)
+                )
+            )
+    }
+}

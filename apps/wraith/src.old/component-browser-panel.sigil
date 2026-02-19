@@ -1,0 +1,89 @@
+invoke sigil_web·prelude·*;
+ᛈ ComponentBrowserPanelMsg {
+    UpdateComponents,
+    UpdateIsLoading,
+    UpdateSearchFilter,
+}
+actor ComponentBrowserPanel {
+    state components: Vec<Any>! = [],
+    state isLoading: bool! = false,
+    state searchFilter: String! = "",
+
+    rite new(on_open_component: Any, on_new_component: Any) -> This! {
+        self.on_open_component = on_open_component;
+        self.on_new_component = on_new_component;
+        This
+    }
+
+    on UpdateComponents {
+        self.components = msg.0;
+    }
+
+    on UpdateIsLoading {
+        self.isLoading = msg.0;
+    }
+
+    on UpdateSearchFilter {
+        self.searchFilter = msg.0;
+    }
+
+    on Mount {
+        // Empty deps → Mount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold")
+                ·text_child("Components")
+            )
+            ·child(
+            VNode·div()
+                ·class("flex flex-col gap-1.5 px-2 py-2 border-b border-[#3c3c3c]")
+                ·child(
+                Button·view()
+                    ·attr("size", "sm")
+                    ·on_click(Click)
+                    ·child(
+                    Plus·view()
+                        ·class("w-3.5 h-3.5 mr-1")
+                    )
+                    ·text_child("New Component")
+                )
+                ·child(
+                VNode·div()
+                    ·class("relative")
+                    ·child(
+                    Search·view()
+                        ·class("absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858585]")
+                    )
+                    ·child(
+                    Input·view()
+                        ·attr("size", "sm")
+                        ·attr("placeholder", "Search components...")
+                        ·attr("value", self.search_filter)
+                        ·on_change(Change)
+                        ·class("pl-8")
+                    )
+                )
+                ·child(
+                Button·view()
+                    ·attr("size", "sm")
+                    ·attr("variant", "outline")
+                    ·on_click(Click)
+                    ·text_child("Refresh (")
+                    ·text_child(self.components.len()·to_string())
+                    ·text_child(")")
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto px-2 py-2")
+                ·when(object.keys(grouped_components).len() = 0, VNode·div()
+                    ·class("p-4 text-center text-[#858585] text-xs")
+                    ·text_child("No components found. Add a project with /atoms, /molecules, or /organisms directories."))
+            )
+    }
+}

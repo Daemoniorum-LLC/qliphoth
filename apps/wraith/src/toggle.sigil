@@ -1,0 +1,14 @@
+invoke qliphoth·prelude·*;
+rite toggle(checked: Any, on_change: Any, disabled: Any, size: Any, label: Any) -> VNode! {
+    VNode·button()
+        ·attr("type", "button")
+        ·attr("role", "switch")
+        ·attr("aria-checked", checked)
+        ·attr("aria-label", label)
+        ·when(disabled, |n| n·attr("disabled", "true"))
+        ·on_click(Click)
+        ·class("inline-flex items-center transition-colors " + ⎇ disabled { "opacity-50 cursor-not-allowed" } ⎉ { "cursor-pointer" }.to_string())
+        ·when_else(checked, ToggleRight·view()
+            ·class(icon_size.to_string() + " text-[var(--accent-primary)]"), ToggleLeft·view()
+            ·class(icon_size.to_string() + " text-[var(--text-muted)]"))
+}

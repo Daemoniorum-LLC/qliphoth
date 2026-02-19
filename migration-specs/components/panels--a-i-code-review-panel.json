@@ -1,0 +1,2359 @@
+{
+  "id": "ui/components/panels/AICodeReviewPanel.tsx:AICodeReviewPanel",
+  "name": "AICodeReviewPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/AICodeReviewPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Spinner } from '@persona-framework/ui'\nimport {\n  Sparkles, Play, AlertCircle, CheckCircle, Info, AlertTriangle,\n  ChevronDown, ChevronRight, FileCode, RefreshCw, Settings, Copy, Check\n} from 'lucide-react'\nimport { makeHttpClient } from '../../../data/https'\n\nconst http = makeHttpClient('/api')\nconst HISTORY_KEY = 'wraith_code_review_history'\n\ntype Severity = 'error' | 'warning' | 'info' | 'suggestion'\n\ninterface ReviewIssue {\n  id: string\n  severity: Severity\n  title: string\n  description: string\n  lineStart?: number\n  lineEnd?: number\n  suggestion?: string\n}\n\ninterface CodeReview {\n  id: string\n  fileName: string\n  language: string\n  code: string\n  issues: ReviewIssue[]\n  summary: string\n  score: number\n  reviewedAt: number\n}\n\ninterface ReviewConfig {\n  checkSecurity: boolean\n  checkPerformance: boolean\n  checkBestPractices: boolean\n  checkAccessibility: boolean\n  checkMaintainability: boolean\n}\n\nconst SEVERITY_CONFIG: Record<Severity, { icon: React.ReactNode; bg: string; border: string; text: string }> = {\n  error: {\n    icon: <AlertCircle className=\"w-4 h-4\" />,\n    bg: 'bg-[rgba(244,135,113,0.2)]',\n    border: 'border-[#f48771]',\n    text: 'text-[#f48771]',\n  },\n  warning: {\n    icon: <AlertTriangle className=\"w-4 h-4\" />,\n    bg: 'bg-[rgba(255,215,0,0.2)]',\n    border: 'border-[#ffd700]',\n    text: 'text-[#ffd700]',\n  },\n  info: {\n    icon: <Info className=\"w-4 h-4\" />,\n    bg: 'bg-[rgba(91,206,250,0.2)]',\n    border: 'border-[#5bcefa]',\n    text: 'text-[#5bcefa]',\n  },\n  suggestion: {\n    icon: <Sparkles className=\"w-4 h-4\" />,\n    bg: 'bg-[rgba(157,0,255,0.2)]',\n    border: 'border-[#9d00ff]',\n    text: 'text-[#9d00ff]',\n  },\n}\n\nfunction loadHistory(): CodeReview[] {\n  try {\n    const stored = localStorage.getItem(HISTORY_KEY)\n    if (stored) {\n      const parsed = JSON.parse(stored)\n      if (Array.isArray(parsed)) return parsed.slice(0, 20)\n    }\n  } catch {\n    // Invalid storage\n  }\n  return []\n}\n\nfunction saveHistory(history: CodeReview[]) {\n  try {\n    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)))\n  } catch {\n    // Storage unavailable\n  }\n}\n\ninterface AICodeReviewPanelProps {\n  onFileClick?: (filePath: string, line?: number) => void\n}\n\nexport function AICodeReviewPanel({ onFileClick }: AICodeReviewPanelProps) {\n  const [code, setCode] = useState('')\n  const [fileName, setFileName] = useState('')\n  const [language, setLanguage] = useState('typescript')\n  const [reviewing, setReviewing] = useState(false)\n  const [currentReview, setCurrentReview] = useState<CodeReview | null>(null)\n  const [history, setHistory] = useState<CodeReview[]>(() => loadHistory())\n  const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set())\n  const [showConfig, setShowConfig] = useState(false)\n  const [copied, setCopied] = useState<string | null>(null)\n  const [config, setConfig] = useState<ReviewConfig>({\n    checkSecurity: true,\n    checkPerformance: true,\n    checkBestPractices: true,\n    checkAccessibility: false,\n    checkMaintainability: true,\n  })\n\n  useEffect(() => {\n    saveHistory(history)\n  }, [history])\n\n  const reviewCode = async () => {\n    if (!code.trim()) return\n\n    setReviewing(true)\n\n    try {\n      const response = await http.post('/nexus/ai/review', {\n        code,\n        language,\n        fileName,\n        config,\n      })\n\n      if (response.ok) {\n        const data = await response.json()\n        const review: CodeReview = {\n          ...data,\n          id: crypto.randomUUID(),\n          code,\n          fileName: fileName || 'untitled',\n          language,\n          reviewedAt: Date.now(),\n        }\n        setCurrentReview(review)\n        setHistory([review, ...history].slice(0, 20))\n      } else {\n        // Demo review\n        const review = getDemoReview()\n        setCurrentReview(review)\n        setHistory([review, ...history].slice(0, 20))\n      }\n    } catch {\n      // Demo review\n      const review = getDemoReview()\n      setCurrentReview(review)\n      setHistory([review, ...history].slice(0, 20))\n    } finally {\n      setReviewing(false)\n    }\n  }\n\n  const getDemoReview = (): CodeReview => ({\n    id: crypto.randomUUID(),\n    fileName: fileName || 'untitled.ts',\n    language,\n    code,\n    summary: 'The code is generally well-structured but has a few areas for improvement. Security considerations and error handling could be enhanced.',\n    score: 72,\n    reviewedAt: Date.now(),\n    issues: [\n      {\n        id: '1',\n        severity: 'error',\n        title: 'Potential XSS vulnerability',\n        description: 'Using innerHTML with user input can lead to cross-site scripting attacks. Consider using textContent or sanitizing the input.',\n        lineStart: 15,\n        lineEnd: 15,\n        suggestion: 'element.textContent = userInput;',\n      },\n      {\n        id: '2',\n        severity: 'warning',\n        title: 'Missing error handling',\n        description: 'The async function does not have a try-catch block, which could lead to unhandled promise rejections.',\n        lineStart: 8,\n        lineEnd: 12,\n        suggestion: 'Wrap the async operation in a try-catch block and handle errors appropriately.',\n      },\n      {\n        id: '3',\n        severity: 'info',\n        title: 'Consider using const instead of let',\n        description: 'The variable is never reassigned, so using const would be more appropriate and clearer.',\n        lineStart: 3,\n        suggestion: 'const data = fetchData();',\n      },\n      {\n        id: '4',\n        severity: 'suggestion',\n        title: 'Extract magic number to named constant',\n        description: 'The value 1000 appears to be a timeout. Consider extracting it to a named constant for better readability.',\n        lineStart: 20,\n        suggestion: 'const TIMEOUT_MS = 1000;',\n      },\n    ],\n  })\n\n  const toggleIssue = (id: string) => {\n    setExpandedIssues(prev => {\n      const next = new Set(prev)\n      if (next.has(id)) {\n        next.delete(id)\n      } else {\n        next.add(id)\n      }\n      return next\n    })\n  }\n\n  const copySuggestion = (id: string, text: string) => {\n    navigator.clipboard.writeText(text)\n    setCopied(id)\n    setTimeout(() => setCopied(null), 2000)\n  }\n\n  const getScoreColor = (score: number) => {\n    if (score >= 80) return 'text-[#00ff7f]'\n    if (score >= 60) return 'text-[#ffd700]'\n    return 'text-[#f48771]'\n  }\n\n  const getScoreBg = (score: number) => {\n    if (score >= 80) return 'bg-[rgba(0,255,127,0.2)] border-[#00ff7f]'\n    if (score >= 60) return 'bg-[rgba(255,215,0,0.2)] border-[#ffd700]'\n    return 'bg-[rgba(244,135,113,0.2)] border-[#f48771]'\n  }\n\n  const issueCounts = currentReview?.issues.reduce<Record<Severity, number>>(\n    (acc, issue) => {\n      acc[issue.severity] = (acc[issue.severity] || 0) + 1\n      return acc\n    },\n    { error: 0, warning: 0, info: 0, suggestion: 0 }\n  ) || { error: 0, warning: 0, info: 0, suggestion: 0 }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n      {/* Header */}\n      <div className=\"p-3 border-b border-[#3c3c3c] bg-[#252526]\">\n        <div className=\"flex items-center justify-between mb-3\">\n          <div className=\"flex items-center gap-2\">\n            <Sparkles className=\"w-4 h-4 text-[#9d00ff]\" />\n            <span className=\"text-sm font-medium text-white\">AI Code Review</span>\n          </div>\n          <div className=\"flex items-center gap-2\">\n            <Button\n              size=\"sm\"\n              variant=\"ghost\"\n              onClick={() => setShowConfig(!showConfig)}\n              className=\"h-7 w-7 p-0\"\n              aria-label=\"Settings\"\n            >\n              <Settings className={`w-3.5 h-3.5 ${showConfig ? 'text-[#5bcefa]' : ''}`} />\n            </Button>\n            <Button\n              size=\"sm\"\n              onClick={reviewCode}\n              disabled={reviewing || !code.trim()}\n            >\n              {reviewing ? (\n                <Spinner size=\"sm\" />\n              ) : (\n                <>\n                  <Play className=\"w-3.5 h-3.5 mr-1.5\" />\n                  Review\n                </>\n              )}\n            </Button>\n          </div>\n        </div>\n\n        {showConfig && (\n          <div className=\"flex flex-wrap gap-2 mb-3 p-2 bg-[#2d2d30] rounded\">\n            {(Object.keys(config) as (keyof ReviewConfig)[]).map(key => (\n              <label key={key} className=\"flex items-center gap-1.5 text-xs cursor-pointer\">\n                <input\n                  type=\"checkbox\"\n                  checked={config[key]}\n                  onChange={(e) => setConfig({ ...config, [key]: e.target.checked })}\n                  className=\"w-3.5 h-3.5 rounded\"\n                />\n                <span className=\"text-[#b0b0b0]\">\n                  {key.replace('check', '').replace(/([A-Z])/g, ' $1').trim()}\n                </span>\n              </label>\n            ))}\n          </div>\n        )}\n\n        <div className=\"flex gap-2\">\n          <input\n            type=\"text\"\n            placeholder=\"File name (optional)\"\n            value={fileName}\n            onChange={(e) => setFileName(e.target.value)}\n            className=\"w-40 px-2 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n          />\n          <select\n            value={language}\n            onChange={(e) => setLanguage(e.target.value)}\n            className=\"px-2 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]\"\n          >\n            <option value=\"typescript\">TypeScript</option>\n            <option value=\"javascript\">JavaScript</option>\n            <option value=\"python\">Python</option>\n            <option value=\"java\">Java</option>\n            <option value=\"go\">Go</option>\n            <option value=\"rust\">Rust</option>\n            <option value=\"csharp\">C#</option>\n            <option value=\"cpp\">C++</option>\n          </select>\n        </div>\n      </div>\n\n      {/* Code Input */}\n      <div className=\"p-3 border-b border-[#3c3c3c]\">\n        <textarea\n          value={code}\n          onChange={(e) => setCode(e.target.value)}\n          placeholder=\"Paste your code here for AI review...\"\n          className=\"w-full h-32 p-3 text-sm bg-[#2d2d30] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] resize-none\"\n        />\n      </div>\n\n      {/* Review Results */}\n      <div className=\"flex-1 overflow-auto\">\n        {reviewing && (\n          <div className=\"flex flex-col items-center justify-center h-full gap-3\">\n            <Spinner size=\"lg\" />\n            <div className=\"text-sm text-[#b0b0b0]\">Analyzing code...</div>\n          </div>\n        )}\n\n        {currentReview && !reviewing && (\n          <div className=\"p-3\">\n            {/* Score */}\n            <div className={`p-4 rounded-lg border mb-4 ${getScoreBg(currentReview.score)}`}>\n              <div className=\"flex items-center justify-between mb-2\">\n                <span className=\"text-sm font-medium text-white\">Code Quality Score</span>\n                <span className={`text-3xl font-bold ${getScoreColor(currentReview.score)}`}>\n                  {currentReview.score}/100\n                </span>\n              </div>\n              <p className=\"text-xs text-[#b0b0b0]\">{currentReview.summary}</p>\n            </div>\n\n            {/* Issue Summary */}\n            <div className=\"flex gap-3 mb-4\">\n              {(Object.entries(SEVERITY_CONFIG) as [Severity, typeof SEVERITY_CONFIG.error][]).map(([sev, cfg]) => (\n                <div\n                  key={sev}\n                  className={`flex items-center gap-1.5 px-2 py-1 rounded ${cfg.bg} border ${cfg.border}`}\n                >\n                  <span className={cfg.text}>{cfg.icon}</span>\n                  <span className={`text-xs font-medium ${cfg.text}`}>\n                    {issueCounts[sev]} {sev}\n                  </span>\n                </div>\n              ))}\n            </div>\n\n            {/* Issues */}\n            <div className=\"space-y-2\">\n              {currentReview.issues.map(issue => {\n                const cfg = SEVERITY_CONFIG[issue.severity]\n                const isExpanded = expandedIssues.has(issue.id)\n\n                return (\n                  <div\n                    key={issue.id}\n                    className={`rounded border ${cfg.border} overflow-hidden`}\n                  >\n                    <div\n                      className={`flex items-center gap-2 p-3 cursor-pointer ${cfg.bg}`}\n                      onClick={() => toggleIssue(issue.id)}\n                    >\n                      {isExpanded ? (\n                        <ChevronDown className={`w-4 h-4 ${cfg.text}`} />\n                      ) : (\n                        <ChevronRight className={`w-4 h-4 ${cfg.text}`} />\n                      )}\n                      <span className={cfg.text}>{cfg.icon}</span>\n                      <span className=\"text-sm font-medium text-white flex-1\">{issue.title}</span>\n                      {issue.lineStart && (\n                        <span className=\"text-xs text-[#808080]\">\n                          Line {issue.lineStart}\n                          {issue.lineEnd && issue.lineEnd !== issue.lineStart && `-${issue.lineEnd}`}\n                        </span>\n                      )}\n                    </div>\n\n                    {isExpanded && (\n                      <div className=\"p-3 bg-[#252526] border-t border-[#3c3c3c]\">\n                        <p className=\"text-sm text-[#b0b0b0] mb-3\">{issue.description}</p>\n                        {issue.suggestion && (\n                          <div className=\"flex items-start gap-2 p-2 bg-[#2d2d30] rounded\">\n                            <div className=\"flex-1\">\n                              <div className=\"text-[10px] text-[#808080] uppercase mb-1\">Suggestion</div>\n                              <pre className=\"text-xs text-white font-mono whitespace-pre-wrap\">\n                                {issue.suggestion}\n                              </pre>\n                            </div>\n                            <button\n                              onClick={() => copySuggestion(issue.id, issue.suggestion!)}\n                              className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                              aria-label=\"Copy suggestion\"\n                            >\n                              {copied === issue.id ? (\n                                <Check className=\"w-3.5 h-3.5 text-[#00ff7f]\" />\n                              ) : (\n                                <Copy className=\"w-3.5 h-3.5 text-[#808080]\" />\n                              )}\n                            </button>\n                          </div>\n                        )}\n                      </div>\n                    )}\n                  </div>\n                )\n              })}\n            </div>\n\n            {currentReview.issues.length === 0 && (\n              <div className=\"flex flex-col items-center justify-center py-8 text-center\">\n                <CheckCircle className=\"w-8 h-8 text-[#00ff7f] mb-3\" />\n                <div className=\"text-sm text-white font-medium\">No issues found!</div>\n                <div className=\"text-xs text-[#858585]\">Your code looks great.</div>\n              </div>\n            )}\n          </div>\n        )}\n\n        {!reviewing && !currentReview && (\n          <div className=\"flex flex-col items-center justify-center h-full text-center p-6\">\n            <Sparkles className=\"w-8 h-8 text-[#858585] mb-3\" />\n            <div className=\"text-sm text-[#cccccc] font-medium\">Ready to review</div>\n            <div className=\"text-xs text-[#858585]\">Paste your code and click Review</div>\n          </div>\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "AICodeReviewPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 95,
+        "start_col": 7,
+        "end_line": 449,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "onFileClick",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 96,
+            "start_col": 26,
+            "end_line": 96,
+            "end_col": 38
+          },
+          "state_name": "code",
+          "setter_name": "setCode",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 97,
+            "start_col": 34,
+            "end_line": 97,
+            "end_col": 46
+          },
+          "state_name": "fileName",
+          "setter_name": "setFileName",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 98,
+            "start_col": 34,
+            "end_line": 98,
+            "end_col": 56
+          },
+          "state_name": "language",
+          "setter_name": "setLanguage",
+          "initial_value": "\"typescript\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 99,
+            "start_col": 36,
+            "end_line": 99,
+            "end_col": 51
+          },
+          "state_name": "reviewing",
+          "setter_name": "setReviewing",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 100,
+            "start_col": 44,
+            "end_line": 100,
+            "end_col": 77
+          },
+          "state_name": "currentReview",
+          "setter_name": "setCurrentReview",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 101,
+            "start_col": 32,
+            "end_line": 101,
+            "end_col": 75
+          },
+          "state_name": "history",
+          "setter_name": "setHistory",
+          "initial_value": "/* expr */",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 102,
+            "start_col": 46,
+            "end_line": 102,
+            "end_col": 78
+          },
+          "state_name": "expandedIssues",
+          "setter_name": "setExpandedIssues",
+          "initial_value": "/* expr */",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 103,
+            "start_col": 38,
+            "end_line": 103,
+            "end_col": 53
+          },
+          "state_name": "showConfig",
+          "setter_name": "setShowConfig",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 104,
+            "start_col": 30,
+            "end_line": 104,
+            "end_col": 59
+          },
+          "state_name": "copied",
+          "setter_name": "setCopied",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 105,
+            "start_col": 30,
+            "end_line": 111,
+            "end_col": 4
+          },
+          "state_name": "config",
+          "setter_name": "setConfig",
+          "initial_value": "{}",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 113,
+            "start_col": 2,
+            "end_line": 115,
+            "end_col": 15
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "history"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-3 border-b border-[#3c3c3c] bg-[#252526]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center justify-between mb-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center gap-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Sparkles",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4 text-[#9d00ff]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 248,
+                                    "start_col": 12,
+                                    "end_line": 248,
+                                    "end_col": 59
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-sm font-medium text-white"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "AI Code Review"
+                                        },
+                                        "location": {
+                                          "start_line": 249,
+                                          "start_col": 61,
+                                          "end_line": 249,
+                                          "end_col": 75
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 249,
+                                    "start_col": 12,
+                                    "end_line": 249,
+                                    "end_col": 82
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 247,
+                              "start_col": 10,
+                              "end_line": 250,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center gap-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Button",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "variant",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "ghost"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => setShowConfig(!showConfig)"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-7 w-7 p-0"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "aria-label",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Settings"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "Settings",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "`w-3.5 h-3.5 ${showConfig ? 'text-[#5bcefa]' : ''}`"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 259,
+                                          "start_col": 14,
+                                          "end_line": 259,
+                                          "end_col": 90
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 252,
+                                    "start_col": 12,
+                                    "end_line": 260,
+                                    "end_col": 21
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Button",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "reviewCode"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "disabled",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "reviewing || !code.trim()"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Conditional",
+                                          "condition": "reviewing",
+                                          "consequent": {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "Spinner",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "size",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "sm"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 267,
+                                              "start_col": 16,
+                                              "end_line": 267,
+                                              "end_col": 37
+                                            }
+                                          },
+                                          "alternate": {
+                                            "node_type": {
+                                              "type": "Fragment",
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "Play",
+                                                    "is_component": true,
+                                                    "attributes": [
+                                                      {
+                                                        "name": "className",
+                                                        "value": {
+                                                          "type": "String",
+                                                          "value": "w-3.5 h-3.5 mr-1.5"
+                                                        },
+                                                        "is_event_handler": false
+                                                      }
+                                                    ],
+                                                    "children": []
+                                                  },
+                                                  "location": {
+                                                    "start_line": 270,
+                                                    "start_col": 18,
+                                                    "end_line": 270,
+                                                    "end_col": 57
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "Review"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 270,
+                                                    "start_col": 57,
+                                                    "end_line": 272,
+                                                    "end_col": 16
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 269,
+                                              "start_col": 16,
+                                              "end_line": 272,
+                                              "end_col": 19
+                                            }
+                                          }
+                                        },
+                                        "location": {
+                                          "start_line": 266,
+                                          "start_col": 14,
+                                          "end_line": 273,
+                                          "end_col": 16
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 261,
+                                    "start_col": 12,
+                                    "end_line": 274,
+                                    "end_col": 21
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 251,
+                              "start_col": 10,
+                              "end_line": 275,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 246,
+                        "start_col": 8,
+                        "end_line": 276,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "showConfig",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-wrap gap-2 mb-3 p-2 bg-[#2d2d30] rounded"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Map",
+                                  "iterable": "(Object.keys(config) as (keyof ReviewConfig)[])",
+                                  "item_name": "key",
+                                  "key_expr": "key",
+                                  "body": {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "label",
+                                      "is_component": false,
+                                      "attributes": [
+                                        {
+                                          "name": "key",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "key"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "flex items-center gap-1.5 text-xs cursor-pointer"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "input",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "type",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "checkbox"
+                                                },
+                                                "is_event_handler": false
+                                              },
+                                              {
+                                                "name": "checked",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "config[key]"
+                                                },
+                                                "is_event_handler": false
+                                              },
+                                              {
+                                                "name": "onChange",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "(e) => setConfig({ ...config, [key]: e.target.checked })"
+                                                },
+                                                "is_event_handler": true
+                                              },
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "w-3.5 h-3.5 rounded"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": []
+                                          },
+                                          "location": {
+                                            "start_line": 282,
+                                            "start_col": 16,
+                                            "end_line": 287,
+                                            "end_col": 18
+                                          }
+                                        },
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "span",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "text-[#b0b0b0]"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Expression",
+                                                  "code": "key.replace('check', '').replace(/([A-Z])/g, ' $1').trim()"
+                                                },
+                                                "location": {
+                                                  "start_line": 289,
+                                                  "start_col": 18,
+                                                  "end_line": 289,
+                                                  "end_col": 78
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 288,
+                                            "start_col": 16,
+                                            "end_line": 290,
+                                            "end_col": 23
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 281,
+                                      "start_col": 14,
+                                      "end_line": 291,
+                                      "end_col": 22
+                                    }
+                                  }
+                                },
+                                "location": {
+                                  "start_line": 280,
+                                  "start_col": 12,
+                                  "end_line": 292,
+                                  "end_col": 15
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 279,
+                            "start_col": 10,
+                            "end_line": 293,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 278,
+                        "start_col": 8,
+                        "end_line": 294,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "input",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "type",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "placeholder",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "File name (optional)"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "fileName"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => setFileName(e.target.value)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "w-40 px-2 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 297,
+                              "start_col": 10,
+                              "end_line": 303,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "select",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "language"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => setLanguage(e.target.value)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "px-2 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "option",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "typescript"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "TypeScript"
+                                        },
+                                        "location": {
+                                          "start_line": 309,
+                                          "start_col": 39,
+                                          "end_line": 309,
+                                          "end_col": 49
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 309,
+                                    "start_col": 12,
+                                    "end_line": 309,
+                                    "end_col": 58
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "option",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "javascript"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "JavaScript"
+                                        },
+                                        "location": {
+                                          "start_line": 310,
+                                          "start_col": 39,
+                                          "end_line": 310,
+                                          "end_col": 49
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 310,
+                                    "start_col": 12,
+                                    "end_line": 310,
+                                    "end_col": 58
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "option",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "python"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Python"
+                                        },
+                                        "location": {
+                                          "start_line": 311,
+                                          "start_col": 35,
+                                          "end_line": 311,
+                                          "end_col": 41
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 311,
+                                    "start_col": 12,
+                                    "end_line": 311,
+                                    "end_col": 50
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "option",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "java"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Java"
+                                        },
+                                        "location": {
+                                          "start_line": 312,
+                                          "start_col": 33,
+                                          "end_line": 312,
+                                          "end_col": 37
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 312,
+                                    "start_col": 12,
+                                    "end_line": 312,
+                                    "end_col": 46
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "option",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "go"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Go"
+                                        },
+                                        "location": {
+                                          "start_line": 313,
+                                          "start_col": 31,
+                                          "end_line": 313,
+                                          "end_col": 33
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 313,
+                                    "start_col": 12,
+                                    "end_line": 313,
+                                    "end_col": 42
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "option",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "rust"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Rust"
+                                        },
+                                        "location": {
+                                          "start_line": 314,
+                                          "start_col": 33,
+                                          "end_line": 314,
+                                          "end_col": 37
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 314,
+                                    "start_col": 12,
+                                    "end_line": 314,
+                                    "end_col": 46
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "option",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "csharp"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "C#"
+                                        },
+                                        "location": {
+                                          "start_line": 315,
+                                          "start_col": 35,
+                                          "end_line": 315,
+                                          "end_col": 37
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 315,
+                                    "start_col": 12,
+                                    "end_line": 315,
+                                    "end_col": 46
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "option",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "cpp"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "C++"
+                                        },
+                                        "location": {
+                                          "start_line": 316,
+                                          "start_col": 32,
+                                          "end_line": 316,
+                                          "end_col": 35
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 316,
+                                    "start_col": 12,
+                                    "end_line": 316,
+                                    "end_col": 44
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 304,
+                              "start_col": 10,
+                              "end_line": 317,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 296,
+                        "start_col": 8,
+                        "end_line": 318,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 245,
+                  "start_col": 6,
+                  "end_line": 319,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-3 border-b border-[#3c3c3c]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "textarea",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "code"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onChange",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(e) => setCode(e.target.value)"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "placeholder",
+                            "value": {
+                              "type": "String",
+                              "value": "Paste your code here for AI review..."
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "w-full h-32 p-3 text-sm bg-[#2d2d30] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] resize-none"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 323,
+                        "start_col": 8,
+                        "end_line": 328,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 322,
+                  "start_col": 6,
+                  "end_line": 329,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "reviewing",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col items-center justify-center h-full gap-3"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Spinner",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "lg"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 335,
+                                  "start_col": 12,
+                                  "end_line": 335,
+                                  "end_col": 33
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-sm text-[#b0b0b0]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Analyzing code..."
+                                      },
+                                      "location": {
+                                        "start_line": 336,
+                                        "start_col": 52,
+                                        "end_line": 336,
+                                        "end_col": 69
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 336,
+                                  "start_col": 12,
+                                  "end_line": 336,
+                                  "end_col": 75
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 334,
+                            "start_col": 10,
+                            "end_line": 337,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 333,
+                        "start_col": 8,
+                        "end_line": 338,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "currentReview && !reviewing",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-3"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "`p-4 rounded-lg border mb-4 ${getScoreBg(currentReview.score)}`"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex items-center justify-between mb-2"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "span",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "text-sm font-medium text-white"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "Code Quality Score"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 345,
+                                                    "start_col": 65,
+                                                    "end_line": 345,
+                                                    "end_col": 83
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 345,
+                                              "start_col": 16,
+                                              "end_line": 345,
+                                              "end_col": 90
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "span",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "`text-3xl font-bold ${getScoreColor(currentReview.score)}`"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "currentReview.score"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 347,
+                                                    "start_col": 18,
+                                                    "end_line": 347,
+                                                    "end_col": 39
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "/100"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 347,
+                                                    "start_col": 39,
+                                                    "end_line": 348,
+                                                    "end_col": 16
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 346,
+                                              "start_col": 16,
+                                              "end_line": 348,
+                                              "end_col": 23
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 344,
+                                        "start_col": 14,
+                                        "end_line": 349,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "p",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-xs text-[#b0b0b0]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "currentReview.summary"
+                                            },
+                                            "location": {
+                                              "start_line": 350,
+                                              "start_col": 52,
+                                              "end_line": 350,
+                                              "end_col": 75
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 350,
+                                        "start_col": 14,
+                                        "end_line": 350,
+                                        "end_col": 79
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 343,
+                                  "start_col": 12,
+                                  "end_line": 351,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex gap-3 mb-4"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "(Object.entries(SEVERITY_CONFIG) as [Severity, typeof SEVERITY_CONFIG.error][]).map(([sev, cfg]) => (\n                <div\n                  key={sev}\n                  className={`flex items-center gap-1.5 px-2 py-1 rounded ${cfg.bg} border ${cfg.border}`}\n                >\n                  <span className={cfg.text}>{cfg.icon}</span>\n                  <span className={`text-xs font-medium ${cfg.text}`}>\n                    {issueCounts[sev]} {sev}\n                  </span>\n                </div>\n              ))"
+                                      },
+                                      "location": {
+                                        "start_line": 355,
+                                        "start_col": 14,
+                                        "end_line": 365,
+                                        "end_col": 17
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 354,
+                                  "start_col": 12,
+                                  "end_line": 366,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "space-y-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "currentReview.issues.map(issue => {\n                const cfg = SEVERITY_CONFIG[issue.severity]\n                const isExpanded = expandedIssues.has(issue.id)\n\n                return (\n                  <div\n                    key={issue.id}\n                    className={`rounded border ${cfg.border} overflow-hidden`}\n                  >\n                    <div\n                      className={`flex items-center gap-2 p-3 cursor-pointer ${cfg.bg}`}\n                      onClick={() => toggleIssue(issue.id)}\n                    >\n                      {isExpanded ? (\n                        <ChevronDown className={`w-4 h-4 ${cfg.text}`} />\n                      ) : (\n                        <ChevronRight className={`w-4 h-4 ${cfg.text}`} />\n                      )}\n                      <span className={cfg.text}>{cfg.icon}</span>\n                      <span className=\"text-sm font-medium text-white flex-1\">{issue.title}</span>\n                      {issue.lineStart && (\n                        <span className=\"text-xs text-[#808080]\">\n                          Line {issue.lineStart}\n                          {issue.lineEnd && issue.lineEnd !== issue.lineStart && `-${issue.lineEnd}`}\n                        </span>\n                      )}\n                    </div>\n\n                    {isExpanded && (\n                      <div className=\"p-3 bg-[#252526] border-t border-[#3c3c3c]\">\n                        <p className=\"text-sm text-[#b0b0b0] mb-3\">{issue.description}</p>\n                        {issue.suggestion && (\n                          <div className=\"flex items-start gap-2 p-2 bg-[#2d2d30] rounded\">\n                            <div className=\"flex-1\">\n                              <div className=\"text-[10px] text-[#808080] uppercase mb-1\">Suggestion</div>\n                              <pre className=\"text-xs text-white font-mono whitespace-pre-wrap\">\n                                {issue.suggestion}\n                              </pre>\n                            </div>\n                            <button\n                              onClick={() => copySuggestion(issue.id, issue.suggestion!)}\n                              className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                              aria-label=\"Copy suggestion\"\n                            >\n                              {copied === issue.id ? (\n                                <Check className=\"w-3.5 h-3.5 text-[#00ff7f]\" />\n                              ) : (\n                                <Copy className=\"w-3.5 h-3.5 text-[#808080]\" />\n                              )}\n                            </button>\n                          </div>\n                        )}\n                      </div>\n                    )}\n                  </div>\n                )\n              })"
+                                      },
+                                      "location": {
+                                        "start_line": 370,
+                                        "start_col": 14,
+                                        "end_line": 426,
+                                        "end_col": 17
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 369,
+                                  "start_col": 12,
+                                  "end_line": 427,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Conditional",
+                                  "condition": "currentReview.issues.length === 0",
+                                  "consequent": {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "div",
+                                      "is_component": false,
+                                      "attributes": [
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "flex flex-col items-center justify-center py-8 text-center"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "CheckCircle",
+                                            "is_component": true,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "w-8 h-8 text-[#00ff7f] mb-3"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": []
+                                          },
+                                          "location": {
+                                            "start_line": 431,
+                                            "start_col": 16,
+                                            "end_line": 431,
+                                            "end_col": 71
+                                          }
+                                        },
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "div",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "text-sm text-white font-medium"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Text",
+                                                  "value": "No issues found!"
+                                                },
+                                                "location": {
+                                                  "start_line": 432,
+                                                  "start_col": 64,
+                                                  "end_line": 432,
+                                                  "end_col": 80
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 432,
+                                            "start_col": 16,
+                                            "end_line": 432,
+                                            "end_col": 86
+                                          }
+                                        },
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "div",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "text-xs text-[#858585]"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Text",
+                                                  "value": "Your code looks great."
+                                                },
+                                                "location": {
+                                                  "start_line": 433,
+                                                  "start_col": 56,
+                                                  "end_line": 433,
+                                                  "end_col": 78
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 433,
+                                            "start_col": 16,
+                                            "end_line": 433,
+                                            "end_col": 84
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 430,
+                                      "start_col": 14,
+                                      "end_line": 434,
+                                      "end_col": 20
+                                    }
+                                  },
+                                  "alternate": null
+                                },
+                                "location": {
+                                  "start_line": 429,
+                                  "start_col": 12,
+                                  "end_line": 435,
+                                  "end_col": 14
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 341,
+                            "start_col": 10,
+                            "end_line": 436,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 340,
+                        "start_col": 8,
+                        "end_line": 437,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "!reviewing && !currentReview",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col items-center justify-center h-full text-center p-6"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Sparkles",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-8 h-8 text-[#858585] mb-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 441,
+                                  "start_col": 12,
+                                  "end_line": 441,
+                                  "end_col": 64
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-sm text-[#cccccc] font-medium"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Ready to review"
+                                      },
+                                      "location": {
+                                        "start_line": 442,
+                                        "start_col": 64,
+                                        "end_line": 442,
+                                        "end_col": 79
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 442,
+                                  "start_col": 12,
+                                  "end_line": 442,
+                                  "end_col": 85
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-xs text-[#858585]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Paste your code and click Review"
+                                      },
+                                      "location": {
+                                        "start_line": 443,
+                                        "start_col": 52,
+                                        "end_line": 443,
+                                        "end_col": 84
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 443,
+                                  "start_col": 12,
+                                  "end_line": 443,
+                                  "end_col": 90
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 440,
+                            "start_col": 10,
+                            "end_line": 444,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 439,
+                        "start_col": 8,
+                        "end_line": 445,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 332,
+                  "start_col": 6,
+                  "end_line": 446,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 243,
+            "start_col": 4,
+            "end_line": 447,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "CheckCircle",
+        "Play",
+        "Settings",
+        "Sparkles",
+        "Spinner"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "code",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "fileName",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "language",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "reviewing",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "currentReview",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "history",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "expandedIssues",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showConfig",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "copied",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "config",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/a_i_code_review_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:code",
+        "to_field": "code",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'code' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:fileName",
+        "to_field": "fileName",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'fileName' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:language",
+        "to_field": "language",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"typescript\"",
+        "reasoning": "useState hook 'language' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:reviewing",
+        "to_field": "reviewing",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'reviewing' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:currentReview",
+        "to_field": "currentReview",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'currentReview' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:history",
+        "to_field": "history",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "/* expr */",
+        "reasoning": "useState hook 'history' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:expandedIssues",
+        "to_field": "expandedIssues",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "/* expr */",
+        "reasoning": "useState hook 'expandedIssues' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showConfig",
+        "to_field": "showConfig",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showConfig' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:copied",
+        "to_field": "copied",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'copied' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:config",
+        "to_field": "config",
+        "field_type": "Map<String, Any>",
+        "evidentiality": "!",
+        "initial_value": "{}",
+        "reasoning": "useState hook 'config' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateCode",
+        "from_handler": "setCode",
+        "payload": null,
+        "state_changes": [
+          "self.code = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateFileName",
+        "from_handler": "setFileName",
+        "payload": null,
+        "state_changes": [
+          "self.fileName = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLanguage",
+        "from_handler": "setLanguage",
+        "payload": null,
+        "state_changes": [
+          "self.language = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateReviewing",
+        "from_handler": "setReviewing",
+        "payload": null,
+        "state_changes": [
+          "self.reviewing = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateCurrentReview",
+        "from_handler": "setCurrentReview",
+        "payload": null,
+        "state_changes": [
+          "self.currentReview = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateHistory",
+        "from_handler": "setHistory",
+        "payload": null,
+        "state_changes": [
+          "self.history = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateExpandedIssues",
+        "from_handler": "setExpandedIssues",
+        "payload": null,
+        "state_changes": [
+          "self.expandedIssues = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowConfig",
+        "from_handler": "setShowConfig",
+        "payload": null,
+        "state_changes": [
+          "self.showConfig = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateCopied",
+        "from_handler": "setCopied",
+        "payload": null,
+        "state_changes": [
+          "self.copied = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateConfig",
+        "from_handler": "setConfig",
+        "payload": null,
+        "state_changes": [
+          "self.config = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[history]",
+        "strategy": "inline",
+        "reasoning": "Deps [history] → inline in handlers that change these",
+        "inline_in": "history",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "on_file_click",
+          "field_type": "Any",
+          "from_prop": "onFileClick"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_10",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [history] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onFileClick",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onFileClick' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "CheckCircle",
+      "Play",
+      "Settings",
+      "Sparkles",
+      "Spinner"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "10 state variables"
+  ],
+  "status": "pending"
+}

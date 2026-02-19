@@ -1,0 +1,1732 @@
+{
+  "id": "ui/components/GitBlameView.tsx:GitBlameView",
+  "name": "GitBlameView",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/GitBlameView.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button } from '@persona-framework/ui'\nimport { X, RefreshCw, Loader2 } from 'lucide-react'\nimport Editor from '@monaco-editor/react'\n\ninterface BlameInfo {\n  line: number\n  commit: string\n  author: string\n  authorEmail: string\n  date: string\n  message: string\n  content: string\n}\n\ninterface GitBlameViewProps {\n  filePath: string | null\n  onClose?: () => void\n}\n\nexport function GitBlameView({ filePath, onClose }: GitBlameViewProps) {\n  const [blameData, setBlameData] = useState<BlameInfo[]>([])\n  const [fileContent, setFileContent] = useState<string>('')\n  const [loading, setLoading] = useState(false)\n  const [error, setError] = useState<string | null>(null)\n  const [hoveredLine, setHoveredLine] = useState<BlameInfo | null>(null)\n  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null)\n\n  const fetchGitBlame = async (path: string) => {\n    setLoading(true)\n    setError(null)\n\n    try {\n      const blameResponse = await fetch(`/api/git/blame?path=${encodeURIComponent(path)}`)\n      if (!blameResponse.ok) {\n        throw new Error(`Failed to fetch git blame: ${blameResponse.statusText}`)\n      }\n      const blameJson = await blameResponse.json()\n      setBlameData(blameJson.lines || [])\n\n      const absolutePath = path.startsWith('/') ? path : `/workspace/persona-framework/${path}`\n      const contentResponse = await fetch(`/api/project/read?path=${encodeURIComponent(absolutePath)}`)\n      if (contentResponse.ok) {\n        const contentJson = await contentResponse.json()\n        setFileContent(contentJson.content || '')\n      }\n\n      setLoading(false)\n    } catch (err: any) {\n      setError(err.message || 'Failed to load git blame')\n      setLoading(false)\n    }\n  }\n\n  useEffect(() => {\n    if (filePath) {\n      fetchGitBlame(filePath)\n    }\n  }, [filePath])\n\n  const handleRefresh = () => {\n    if (filePath) {\n      fetchGitBlame(filePath)\n    }\n  }\n\n  const handleLineHover = (blame: BlameInfo, event: React.MouseEvent) => {\n    setHoveredLine(blame)\n    setTooltipPosition({ x: event.clientX, y: event.clientY })\n  }\n\n  const handleLineLeave = () => {\n    setHoveredLine(null)\n    setTooltipPosition(null)\n  }\n\n  const formatDate = (dateStr: string): string => {\n    try {\n      const date = new Date(dateStr)\n      const now = new Date()\n      const diffMs = now.getTime() - date.getTime()\n      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))\n\n      if (diffDays === 0) return 'Today'\n      if (diffDays === 1) return 'Yesterday'\n      if (diffDays < 7) return `${diffDays}d ago`\n      if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`\n      if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`\n      return `${Math.floor(diffDays / 365)}y ago`\n    } catch {\n      return dateStr\n    }\n  }\n\n  const getLanguage = (path: string | null): string => {\n    if (!path) return 'plaintext'\n\n    const ext = path.split('.').pop()?.toLowerCase()\n    const languageMap: Record<string, string> = {\n      ts: 'typescript',\n      tsx: 'typescript',\n      js: 'javascript',\n      jsx: 'javascript',\n      json: 'json',\n      md: 'markdown',\n      java: 'java',\n      kt: 'kotlin',\n      py: 'python',\n      css: 'css',\n      html: 'html',\n      xml: 'xml',\n      yaml: 'yaml',\n      yml: 'yaml',\n      sh: 'shell',\n      sql: 'sql',\n    }\n    return languageMap[ext || ''] || 'plaintext'\n  }\n\n  if (!filePath) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"p-10 text-center text-[#858585]\">\n          Select a file to view git blame\n        </div>\n      </div>\n    )\n  }\n\n  if (loading) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">\n          <span>{filePath}</span>\n        </div>\n        <div className=\"flex flex-col items-center justify-center gap-3 p-10\">\n          <Loader2 className=\"w-6 h-6 animate-spin\" />\n          <span className=\"text-sm\">Loading git blame...</span>\n        </div>\n      </div>\n    )\n  }\n\n  if (error) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">\n          <span>{filePath}</span>\n          {onClose && (\n            <Button\n              variant=\"ghost\"\n              size=\"sm\"\n              onClick={onClose}\n              className=\"ml-auto\"\n            >\n              <X className=\"w-4 h-4\" />\n            </Button>\n          )}\n        </div>\n        <div className=\"p-5 text-[#f48771]\">{error}</div>\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n      <div className=\"flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">\n        <div className=\"flex items-center gap-2\">\n          <span>{filePath}</span>\n          <span className=\"text-[11px] text-[#858585]\">Git Blame</span>\n        </div>\n        <div className=\"flex items-center gap-2\">\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={handleRefresh}\n            title=\"Refresh blame\"\n          >\n            <RefreshCw className=\"w-4 h-4\" />\n          </Button>\n          {onClose && (\n            <Button\n              variant=\"ghost\"\n              size=\"sm\"\n              onClick={onClose}\n              title=\"Close blame view\"\n            >\n              <X className=\"w-4 h-4\" />\n            </Button>\n          )}\n        </div>\n      </div>\n\n      <div className=\"flex flex-1 overflow-hidden\">\n        <div className=\"w-[280px] border-r border-[#3c3c3c] overflow-auto bg-[#252526] font-mono text-[11px]\">\n          {blameData.map((blame, index) => (\n            <div\n              key={index}\n              className=\"flex px-2 h-[19px] items-center gap-2 border-b border-transparent hover:bg-[#2b2b2b] cursor-pointer\"\n              onMouseEnter={(e) => handleLineHover(blame, e)}\n              onMouseLeave={handleLineLeave}\n              title={`${blame.author}: ${blame.message}`}\n            >\n              <span className=\"min-w-[60px] text-[#f59e0b] font-medium\">\n                {blame.commit.substring(0, 7)}\n              </span>\n              <span className=\"min-w-[80px] max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap text-[#4fc3f7]\">\n                {blame.author}\n              </span>\n              <span className=\"min-w-[75px] text-[#858585]\">\n                {formatDate(blame.date)}\n              </span>\n            </div>\n          ))}\n        </div>\n\n        <div className=\"flex-1 min-w-0\">\n          <Editor\n            height=\"100%\"\n            language={getLanguage(filePath)}\n            value={fileContent}\n            theme=\"vs-dark\"\n            options={{\n              readOnly: true,\n              minimap: { enabled: false },\n              fontSize: 13,\n              lineNumbers: 'on',\n              scrollBeyondLastLine: false,\n              automaticLayout: true,\n              scrollbar: {\n                vertical: 'visible',\n                horizontal: 'visible',\n              },\n            }}\n          />\n        </div>\n      </div>\n\n      {hoveredLine && tooltipPosition && (\n        <div\n          className=\"absolute bg-[#2b2b2b] border border-[#4fc3f7] rounded p-3 text-[#cccccc] text-xs z-[1000] max-w-[400px] shadow-lg\"\n          style={{\n            top: tooltipPosition.y + 10,\n            left: tooltipPosition.x + 10,\n          }}\n        >\n          <div className=\"flex gap-2 mb-1.5\">\n            <span className=\"text-[#858585] min-w-[80px]\">Commit:</span>\n            <span className=\"text-white flex-1 break-words\">{hoveredLine.commit}</span>\n          </div>\n          <div className=\"flex gap-2 mb-1.5\">\n            <span className=\"text-[#858585] min-w-[80px]\">Author:</span>\n            <span className=\"text-white flex-1 break-words\">\n              {hoveredLine.author} &lt;{hoveredLine.authorEmail}&gt;\n            </span>\n          </div>\n          <div className=\"flex gap-2 mb-1.5\">\n            <span className=\"text-[#858585] min-w-[80px]\">Date:</span>\n            <span className=\"text-white flex-1 break-words\">{hoveredLine.date}</span>\n          </div>\n          <div className=\"flex gap-2\">\n            <span className=\"text-[#858585] min-w-[80px]\">Message:</span>\n            <span className=\"text-white flex-1 break-words\">{hoveredLine.message}</span>\n          </div>\n        </div>\n      )}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "GitBlameView",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 21,
+        "start_col": 7,
+        "end_line": 269,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "filePath",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onClose",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 22,
+            "start_col": 36,
+            "end_line": 22,
+            "end_col": 61
+          },
+          "state_name": "blameData",
+          "setter_name": "setBlameData",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 23,
+            "start_col": 40,
+            "end_line": 23,
+            "end_col": 60
+          },
+          "state_name": "fileContent",
+          "setter_name": "setFileContent",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 24,
+            "start_col": 32,
+            "end_line": 24,
+            "end_col": 47
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 25,
+            "start_col": 28,
+            "end_line": 25,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 26,
+            "start_col": 40,
+            "end_line": 26,
+            "end_col": 72
+          },
+          "state_name": "hoveredLine",
+          "setter_name": "setHoveredLine",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 27,
+            "start_col": 48,
+            "end_line": 27,
+            "end_col": 95
+          },
+          "state_name": "tooltipPosition",
+          "setter_name": "setTooltipPosition",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 55,
+            "start_col": 2,
+            "end_line": 59,
+            "end_col": 16
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "filePath"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "w-full h-full flex flex-col bg-[#1e1e1e]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "span",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "filePath"
+                                  },
+                                  "location": {
+                                    "start_line": 169,
+                                    "start_col": 16,
+                                    "end_line": 169,
+                                    "end_col": 26
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 169,
+                              "start_col": 10,
+                              "end_line": 169,
+                              "end_col": 33
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "span",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-[11px] text-[#858585]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Git Blame"
+                                  },
+                                  "location": {
+                                    "start_line": 170,
+                                    "start_col": 55,
+                                    "end_line": 170,
+                                    "end_col": 64
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 170,
+                              "start_col": 10,
+                              "end_line": 170,
+                              "end_col": 71
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 168,
+                        "start_col": 8,
+                        "end_line": 171,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "handleRefresh"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Refresh blame"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "RefreshCw",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 179,
+                                    "start_col": 12,
+                                    "end_line": 179,
+                                    "end_col": 45
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 173,
+                              "start_col": 10,
+                              "end_line": 180,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "onClose",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "variant",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "ghost"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "onClose"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "title",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Close blame view"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "X",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 188,
+                                        "start_col": 14,
+                                        "end_line": 188,
+                                        "end_col": 39
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 182,
+                                  "start_col": 12,
+                                  "end_line": 189,
+                                  "end_col": 21
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 181,
+                              "start_col": 10,
+                              "end_line": 190,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 172,
+                        "start_col": 8,
+                        "end_line": 191,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 167,
+                  "start_col": 6,
+                  "end_line": 192,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex flex-1 overflow-hidden"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "w-[280px] border-r border-[#3c3c3c] overflow-auto bg-[#252526] font-mono text-[11px]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Map",
+                              "iterable": "blameData",
+                              "item_name": "blame",
+                              "key_expr": "index",
+                              "body": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "key",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "index"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex px-2 h-[19px] items-center gap-2 border-b border-transparent hover:bg-[#2b2b2b] cursor-pointer"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onMouseEnter",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "(e) => handleLineHover(blame, e)"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "onMouseLeave",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "handleLineLeave"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "title",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "`${blame.author}: ${blame.message}`"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "span",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "min-w-[60px] text-[#f59e0b] font-medium"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "blame.commit.substring(0, 7)"
+                                            },
+                                            "location": {
+                                              "start_line": 205,
+                                              "start_col": 16,
+                                              "end_line": 205,
+                                              "end_col": 46
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 204,
+                                        "start_col": 14,
+                                        "end_line": 206,
+                                        "end_col": 21
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "span",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "min-w-[80px] max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap text-[#4fc3f7]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "blame.author"
+                                            },
+                                            "location": {
+                                              "start_line": 208,
+                                              "start_col": 16,
+                                              "end_line": 208,
+                                              "end_col": 30
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 207,
+                                        "start_col": 14,
+                                        "end_line": 209,
+                                        "end_col": 21
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "span",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "min-w-[75px] text-[#858585]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "formatDate(blame.date)"
+                                            },
+                                            "location": {
+                                              "start_line": 211,
+                                              "start_col": 16,
+                                              "end_line": 211,
+                                              "end_col": 40
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 210,
+                                        "start_col": 14,
+                                        "end_line": 212,
+                                        "end_col": 21
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 197,
+                                  "start_col": 12,
+                                  "end_line": 213,
+                                  "end_col": 18
+                                }
+                              }
+                            },
+                            "location": {
+                              "start_line": 196,
+                              "start_col": 10,
+                              "end_line": 214,
+                              "end_col": 13
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 195,
+                        "start_col": 8,
+                        "end_line": 215,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex-1 min-w-0"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Editor",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "height",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "100%"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "language",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "getLanguage(filePath)"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "fileContent"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "theme",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "vs-dark"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "options",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "{\n              readOnly: true,\n              minimap: { enabled: false },\n              fontSize: 13,\n              lineNumbers: 'on',\n              scrollBeyondLastLine: false,\n              automaticLayout: true,\n              scrollbar: {\n                vertical: 'visible',\n                horizontal: 'visible',\n              },\n            }"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 218,
+                              "start_col": 10,
+                              "end_line": 235,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 217,
+                        "start_col": 8,
+                        "end_line": 236,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 194,
+                  "start_col": 6,
+                  "end_line": 237,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "hoveredLine && tooltipPosition",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "absolute bg-[#2b2b2b] border border-[#4fc3f7] rounded p-3 text-[#cccccc] text-xs z-[1000] max-w-[400px] shadow-lg"
+                          },
+                          "is_event_handler": false
+                        },
+                        {
+                          "name": "style",
+                          "value": {
+                            "type": "Expression",
+                            "code": "{\n            top: tooltipPosition.y + 10,\n            left: tooltipPosition.x + 10,\n          }"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex gap-2 mb-1.5"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[#858585] min-w-[80px]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Commit:"
+                                      },
+                                      "location": {
+                                        "start_line": 248,
+                                        "start_col": 58,
+                                        "end_line": 248,
+                                        "end_col": 65
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 248,
+                                  "start_col": 12,
+                                  "end_line": 248,
+                                  "end_col": 72
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-white flex-1 break-words"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "hoveredLine.commit"
+                                      },
+                                      "location": {
+                                        "start_line": 249,
+                                        "start_col": 60,
+                                        "end_line": 249,
+                                        "end_col": 80
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 249,
+                                  "start_col": 12,
+                                  "end_line": 249,
+                                  "end_col": 87
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 247,
+                            "start_col": 10,
+                            "end_line": 250,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex gap-2 mb-1.5"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[#858585] min-w-[80px]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Author:"
+                                      },
+                                      "location": {
+                                        "start_line": 252,
+                                        "start_col": 58,
+                                        "end_line": 252,
+                                        "end_col": 65
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 252,
+                                  "start_col": 12,
+                                  "end_line": 252,
+                                  "end_col": 72
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-white flex-1 break-words"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "hoveredLine.author"
+                                      },
+                                      "location": {
+                                        "start_line": 254,
+                                        "start_col": 14,
+                                        "end_line": 254,
+                                        "end_col": 34
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "<"
+                                      },
+                                      "location": {
+                                        "start_line": 254,
+                                        "start_col": 34,
+                                        "end_line": 254,
+                                        "end_col": 39
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "hoveredLine.authorEmail"
+                                      },
+                                      "location": {
+                                        "start_line": 254,
+                                        "start_col": 39,
+                                        "end_line": 254,
+                                        "end_col": 64
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": ">"
+                                      },
+                                      "location": {
+                                        "start_line": 254,
+                                        "start_col": 64,
+                                        "end_line": 255,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 253,
+                                  "start_col": 12,
+                                  "end_line": 255,
+                                  "end_col": 19
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 251,
+                            "start_col": 10,
+                            "end_line": 256,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex gap-2 mb-1.5"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[#858585] min-w-[80px]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Date:"
+                                      },
+                                      "location": {
+                                        "start_line": 258,
+                                        "start_col": 58,
+                                        "end_line": 258,
+                                        "end_col": 63
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 258,
+                                  "start_col": 12,
+                                  "end_line": 258,
+                                  "end_col": 70
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-white flex-1 break-words"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "hoveredLine.date"
+                                      },
+                                      "location": {
+                                        "start_line": 259,
+                                        "start_col": 60,
+                                        "end_line": 259,
+                                        "end_col": 78
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 259,
+                                  "start_col": 12,
+                                  "end_line": 259,
+                                  "end_col": 85
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 257,
+                            "start_col": 10,
+                            "end_line": 260,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex gap-2"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[#858585] min-w-[80px]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Message:"
+                                      },
+                                      "location": {
+                                        "start_line": 262,
+                                        "start_col": 58,
+                                        "end_line": 262,
+                                        "end_col": 66
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 262,
+                                  "start_col": 12,
+                                  "end_line": 262,
+                                  "end_col": 73
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-white flex-1 break-words"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "hoveredLine.message"
+                                      },
+                                      "location": {
+                                        "start_line": 263,
+                                        "start_col": 60,
+                                        "end_line": 263,
+                                        "end_col": 81
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 263,
+                                  "start_col": 12,
+                                  "end_line": 263,
+                                  "end_col": 88
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 261,
+                            "start_col": 10,
+                            "end_line": 264,
+                            "end_col": 16
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 240,
+                      "start_col": 8,
+                      "end_line": 265,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 239,
+                  "start_col": 6,
+                  "end_line": 266,
+                  "end_col": 8
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 166,
+            "start_col": 4,
+            "end_line": 267,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleRefresh",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    if (filePath) {\n      fetchGitBlame(filePath)\n    }\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "fetchGitBlame",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "filePath"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [],
+          "parameters": [],
+          "has_conditionals": true,
+          "has_early_return": false
+        },
+        {
+          "name": "handleLineHover",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(blame: BlameInfo, event: React.MouseEvent) => {\n    setHoveredLine(blame)\n    setTooltipPosition({ x: event.clientX, y: event.clientY })\n  }",
+          "state_mutations": [
+            "setHoveredLine(blame)",
+            "setTooltipPosition({ x: event.clientX, y: event.clientY })"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setHoveredLine",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "hoveredLine"
+              },
+              "arguments": [
+                "blame"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setTooltipPosition",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "tooltipPosition"
+              },
+              "arguments": [
+                "{ x: event.clientX, y: event.clientY }"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setHoveredLine"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setTooltipPosition"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "blame",
+              "type_annotation": ": BlameInfo"
+            },
+            {
+              "name": "event",
+              "type_annotation": ": React.MouseEvent"
+            }
+          ],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handleLineLeave",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    setHoveredLine(null)\n    setTooltipPosition(null)\n  }",
+          "state_mutations": [
+            "setHoveredLine(null)",
+            "setTooltipPosition(null)"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setHoveredLine",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "hoveredLine"
+              },
+              "arguments": [
+                "null"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setTooltipPosition",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "tooltipPosition"
+              },
+              "arguments": [
+                "null"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setHoveredLine"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setTooltipPosition"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Button",
+        "Editor",
+        "RefreshCw",
+        "X"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "blameData",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "fileContent",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "hoveredLine",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "tooltipPosition",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/git_blame_view.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:blameData",
+        "to_field": "blameData",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'blameData' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:fileContent",
+        "to_field": "fileContent",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'fileContent' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:hoveredLine",
+        "to_field": "hoveredLine",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'hoveredLine' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:tooltipPosition",
+        "to_field": "tooltipPosition",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'tooltipPosition' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateBlameData",
+        "from_handler": "setBlameData",
+        "payload": null,
+        "state_changes": [
+          "self.blameData = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateFileContent",
+        "from_handler": "setFileContent",
+        "payload": null,
+        "state_changes": [
+          "self.fileContent = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateHoveredLine",
+        "from_handler": "setHoveredLine",
+        "payload": null,
+        "state_changes": [
+          "self.hoveredLine = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateTooltipPosition",
+        "from_handler": "setTooltipPosition",
+        "payload": null,
+        "state_changes": [
+          "self.tooltipPosition = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Refresh",
+        "from_handler": "handleRefresh",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "LineHover",
+        "from_handler": "handleLineHover",
+        "payload": null,
+        "state_changes": [
+          "self.hoveredLine = blame",
+          "self.tooltipPosition = { x: event.clientX, y: event.clientY }"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "LineLeave",
+        "from_handler": "handleLineLeave",
+        "payload": null,
+        "state_changes": [
+          "self.hoveredLine = null",
+          "self.tooltipPosition = null"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[filePath]",
+        "strategy": "inline",
+        "reasoning": "Deps [filePath] → inline in handlers that change these",
+        "inline_in": "filePath",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "file_path",
+          "field_type": "Any",
+          "from_prop": "filePath"
+        },
+        {
+          "name": "on_close",
+          "field_type": "Any",
+          "from_prop": "onClose"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_6",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [filePath] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onClose",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onClose' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Editor",
+      "RefreshCw",
+      "X"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "6 state variables"
+  ],
+  "status": "pending"
+}

@@ -1,0 +1,356 @@
+{
+  "id": "contexts/ThemeContext.tsx:ThemeProvider",
+  "name": "ThemeProvider",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/contexts/ThemeContext.tsx",
+    "code": "import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react'\nimport { ThemeProvider as UIThemeProvider } from '@persona-framework/ui'\n\ntype ThemeMode = 'light' | 'dark' | 'system'\n\ninterface ThemeContextValue {\n  mode: ThemeMode\n  resolvedMode: 'dark' | 'light'\n  toggleTheme: () => void\n  setTheme: (mode: ThemeMode) => void\n}\n\nconst ThemeContext = createContext<ThemeContextValue | undefined>(undefined)\nconst STORAGE_KEY = 'wraith-theme'\nconst getSystemPref = () => window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'\n\nexport function ThemeProvider({ children }: { children: ReactNode }) {\n  const [mode, setMode] = useState<ThemeMode>(() => {\n    const s = localStorage.getItem(STORAGE_KEY)\n    return (s === 'dark' || s === 'light' || s === 'system') ? s : 'dark'\n  })\n\n  const resolvedMode = useMemo(() => mode === 'system' ? getSystemPref() : mode, [mode])\n  const setTheme = useCallback((m: ThemeMode) => { setMode(m); localStorage.setItem(STORAGE_KEY, m) }, [])\n  const toggleTheme = useCallback(() => setTheme(resolvedMode === 'light' ? 'dark' : 'light'), [resolvedMode, setTheme])\n\n  useEffect(() => { document.documentElement.setAttribute('data-persona-theme', resolvedMode) }, [resolvedMode])\n\n  return (\n    <ThemeContext.Provider value={{ mode, resolvedMode, toggleTheme, setTheme }}>\n      <UIThemeProvider defaultTheme={resolvedMode} storageKey={STORAGE_KEY}>\n        {children}\n      </UIThemeProvider>\n    </ThemeContext.Provider>\n  )\n}\n\nexport const useTheme = () => {\n  const ctx = useContext(ThemeContext)\n  if (!ctx) throw new Error('useTheme must be used within ThemeProvider')\n  return ctx\n}\n",
+    "extraction": {
+      "name": "ThemeProvider",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 17,
+        "start_col": 7,
+        "end_line": 36,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "children",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": true
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 18,
+            "start_col": 26,
+            "end_line": 21,
+            "end_col": 4
+          },
+          "state_name": "mode",
+          "setter_name": "setMode",
+          "initial_value": "/* expr */",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 23,
+            "start_col": 23,
+            "end_line": 23,
+            "end_col": 88
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "mode"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 24,
+            "start_col": 19,
+            "end_line": 24,
+            "end_col": 106
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 25,
+            "start_col": 22,
+            "end_line": 25,
+            "end_col": 120
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "resolvedMode",
+            "setTheme"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 27,
+            "start_col": 2,
+            "end_line": 27,
+            "end_col": 112
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "resolvedMode"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "ThemeContext.Provider",
+            "is_component": true,
+            "attributes": [
+              {
+                "name": "value",
+                "value": {
+                  "type": "Expression",
+                  "code": "{ mode, resolvedMode, toggleTheme, setTheme }"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "UIThemeProvider",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "defaultTheme",
+                      "value": {
+                        "type": "Expression",
+                        "code": "resolvedMode"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "storageKey",
+                      "value": {
+                        "type": "Expression",
+                        "code": "STORAGE_KEY"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "children"
+                      },
+                      "location": {
+                        "start_line": 32,
+                        "start_col": 8,
+                        "end_line": 32,
+                        "end_col": 18
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 31,
+                  "start_col": 6,
+                  "end_line": 33,
+                  "end_col": 24
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 30,
+            "start_col": 4,
+            "end_line": 34,
+            "end_col": 28
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "ThemeContext",
+        "UIThemeProvider"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "mode",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/theme_provider.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:mode",
+        "to_field": "mode",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "/* expr */",
+        "reasoning": "useState hook 'mode' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateMode",
+        "from_handler": "setMode",
+        "payload": null,
+        "state_changes": [
+          "self.mode = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[resolvedMode]",
+        "strategy": "inline",
+        "reasoning": "Deps [resolvedMode] → inline in handlers that change these",
+        "inline_in": "resolvedMode",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "children",
+          "field_type": "Any",
+          "from_prop": "children"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useCallback_remove",
+      "description": "useCallback is not needed in actors",
+      "react": "const handleClick = useCallback(() => { ... }, [dep]);",
+      "sigil": "// No equivalent needed - actors don't re-render like React"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_4",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [resolvedMode] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "ThemeContext",
+      "UIThemeProvider"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

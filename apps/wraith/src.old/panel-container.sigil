@@ -1,0 +1,46 @@
+invoke sigil_web·prelude·*;
+ᛈ PanelContainerMsg {
+    Resize,
+}
+rite panel_container(title: Any, icon: Any, children: Any, side: Any, width: Any, min_width: Any, max_width: Any, is_narrow: Any, loading: Any, on_close: Any, on_collapse: Any, on_resize: Any, class_name: Any) -> VNode! {
+    VNode·div()
+        ·class("flex flex-col overflow-hidden transition-[width,opacity] duration-300  ")
+        ·style(/* style object */)
+        ·when(¬is_narrow, ResizeHandle·view()
+            ·attr("direction", "horizontal")
+            ·on_resize(Resize)
+            ·class("absolute top-0 bottom-0 "))
+        ·child(
+        VNode·div()
+            ·class("flex flex-col flex-1 overflow-hidden")
+            ·child(
+            PanelHeader·view()
+                ·attr("title", title)
+                ·attr("icon", icon)
+                ·on_close(Close)
+                ·on_collapse(Collapse)
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto bg-[var(--bg-primary)]")
+                ·when(loading, VNode·div()
+                    ·class("p-4")
+                    ·child(
+                    Skeleton·view()
+                        ·attr("variant", "text")
+                        ·class("mb-2")
+                    )
+                    ·child(
+                    Skeleton·view()
+                        ·attr("variant", "text")
+                        ·class("mb-2")
+                        ·attr("width", "80%")
+                    )
+                    ·child(
+                    Skeleton·view()
+                        ·attr("variant", "text")
+                        ·attr("width", "60%")
+                    ))
+            )
+        )
+}

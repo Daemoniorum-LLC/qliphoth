@@ -1,0 +1,242 @@
+{
+  "id": "auth/OAuthCallbackPage.tsx:OAuthCallbackPage",
+  "name": "OAuthCallbackPage",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/auth/OAuthCallbackPage.tsx",
+    "code": "import React, { useEffect, useState } from 'react'\nimport { Spinner } from '@persona-framework/ui'\n\nconst STORAGE_KEYS = {\n  ACCESS_TOKEN: 'wraith_access_token',\n  REFRESH_TOKEN: 'wraith_refresh_token',\n  TOKEN_TYPE: 'wraith_token_type',\n}\n\n/**\n * Parse OAuth callback parameters from URL\n */\nfunction parseOAuthCallback(url: string) {\n  const urlObj = new URL(url)\n  const params = new URLSearchParams(urlObj.search)\n\n  return {\n    accessToken: params.get('access_token'),\n    refreshToken: params.get('refresh_token'),\n    tokenType: params.get('token_type'),\n    error: params.get('error'),\n    errorMessage: params.get('error_description') || params.get('error_message'),\n  }\n}\n\nexport function OAuthCallbackPage() {\n  const [error, setError] = useState<string | null>(null)\n\n  useEffect(() => {\n    const handleCallback = async () => {\n      try {\n        const fullUrl = window.location.href\n        const params = parseOAuthCallback(fullUrl)\n\n        if (params.error) {\n          const errorMsg = params.errorMessage || 'OAuth authentication failed'\n          setError(errorMsg)\n          if (window.opener) {\n            setTimeout(() => window.close(), 3000)\n          }\n          return\n        }\n\n        if (!params.accessToken || !params.refreshToken) {\n          setError('Missing authentication tokens')\n          return\n        }\n\n        localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, params.accessToken)\n        localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, params.refreshToken)\n        localStorage.setItem(STORAGE_KEYS.TOKEN_TYPE, params.tokenType || 'Bearer')\n\n        if (window.opener) {\n          window.opener.postMessage({ type: 'OAUTH_SUCCESS' }, window.location.origin)\n          window.close()\n        } else {\n          window.location.href = '/'\n        }\n      } catch (err: any) {\n        setError(err.message || 'Failed to complete OAuth login')\n      }\n    }\n\n    handleCallback()\n  }, [])\n\n  if (error) {\n    return (\n      <div className=\"flex flex-col items-center justify-center h-screen gap-6\">\n        <p className=\"text-base text-destructive text-center max-w-[500px]\">{error}</p>\n        {window.opener && (\n          <p className=\"text-base text-muted-foreground\">This window will close automatically...</p>\n        )}\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"flex flex-col items-center justify-center h-screen gap-6\">\n      <Spinner size=\"lg\" />\n      <p className=\"text-base text-muted-foreground\">Please wait while we complete your authentication</p>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "OAuthCallbackPage",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 26,
+        "start_col": 7,
+        "end_line": 84,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 27,
+            "start_col": 28,
+            "end_line": 27,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 29,
+            "start_col": 2,
+            "end_line": 65,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col items-center justify-center h-screen gap-6"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Spinner",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "size",
+                      "value": {
+                        "type": "String",
+                        "value": "lg"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 80,
+                  "start_col": 6,
+                  "end_line": 80,
+                  "end_col": 27
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "p",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "text-base text-muted-foreground"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "Please wait while we complete your authentication"
+                      },
+                      "location": {
+                        "start_line": 81,
+                        "start_col": 53,
+                        "end_line": 81,
+                        "end_col": 102
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 81,
+                  "start_col": 6,
+                  "end_line": 81,
+                  "end_col": 106
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 79,
+            "start_col": 4,
+            "end_line": 82,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Spinner"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/o_auth_callback_page.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps → Mount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_mount",
+      "description": "Convert mount-only useEffect to lifecycle",
+      "react": "useEffect(() => { init(); }, []);",
+      "sigil": "on Mount { self.init(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "Spinner"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

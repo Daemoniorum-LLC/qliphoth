@@ -1,0 +1,46 @@
+invoke qliphoth·prelude·*;
+ᛈ AnnouncerProviderMsg {
+    UpdatePoliteMessage,
+    UpdateAssertiveMessage,
+}
+actor AnnouncerProvider {
+    state politeMessage: String! = "",
+    state assertiveMessage: String! = "",
+
+    rite new(children: Any) -> This! {
+        self.children = children;
+        This
+    }
+
+    on UpdatePoliteMessage {
+        self.politeMessage = msg.0;
+    }
+
+    on UpdateAssertiveMessage {
+        self.assertiveMessage = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        AnnouncerContext.Provider·view()
+            ·attr("value", ∅)
+            ·text_child(self.children·to_string())
+            ·child(
+            VNode·div()
+                ·attr("role", "status")
+                ·attr("aria-live", "polite")
+                ·attr("aria-atomic", "true")
+                ·class("sr-only")
+                ·style(∅)
+                ·text_child(self.polite_message·to_string())
+            )
+            ·child(
+            VNode·div()
+                ·attr("role", "alert")
+                ·attr("aria-live", "assertive")
+                ·attr("aria-atomic", "true")
+                ·class("sr-only")
+                ·style(∅)
+                ·text_child(self.assertive_message·to_string())
+            )
+    }
+}

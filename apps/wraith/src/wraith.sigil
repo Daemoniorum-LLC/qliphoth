@@ -1,0 +1,178 @@
+invoke qliphoth·prelude·*;
+ᛈ WraithMsg {
+    UpdateConversationId,
+    UpdateIsGenerating,
+    UpdateIsNarrow,
+    UpdateCommandPaletteOpen,
+    UpdateRecentFilesOpen,
+    UpdateGoToLineOpen,
+    UpdateSymbolsDialogOpen,
+}
+☉ actor Wraith {
+    state conversationId: Option<Any>~ = None,
+    state isGenerating: bool! = false,
+    state isNarrow: Any~ = None,
+    state commandPaletteOpen: bool! = false,
+    state recentFilesOpen: bool! = false,
+    state goToLineOpen: bool! = false,
+    state symbolsDialogOpen: bool! = false,
+
+    on UpdateConversationId {
+        self.conversationId = msg.0;
+    }
+
+    on UpdateIsGenerating {
+        self.isGenerating = msg.0;
+    }
+
+    on UpdateIsNarrow {
+        self.isNarrow = msg.0;
+    }
+
+    on UpdateCommandPaletteOpen {
+        self.commandPaletteOpen = msg.0;
+    }
+
+    on UpdateRecentFilesOpen {
+        self.recentFilesOpen = msg.0;
+    }
+
+    on UpdateGoToLineOpen {
+        self.goToLineOpen = msg.0;
+    }
+
+    on UpdateSymbolsDialogOpen {
+        self.symbolsDialogOpen = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full w-full max-w-[100vw] bg-[var(--bg-primary)] overflow-hidden")
+            ·child(
+            Toolbar·view()
+                ·attr("collapsed", self.preferences.toolbar_collapsed)
+                ·on_togglecollapse(ToggleCollapse)
+                ·on_commandpalette(CommandPalette)
+                ·attr("availablePanels", self.available_to_add·map(|p| ({ id: self.p, name: self.available_panels[self.p]?.name ∨ self.p })))
+                ·on_addtoleft(AddToLeft)
+                ·on_addtoright(AddToRight)
+                ·attr("panelCount", self.used_panels.len())
+                ·attr("tabCount", self.preferences.open_tabs.len())
+            )
+            ·child(
+            VNode·div()
+                ·class("flex flex-1 min-h-0 w-full max-w-[100vw] overflow-hidden " + ⎇ self.is_narrow { "flex-col" } ⎉ { "" }.to_string())
+                ·when(self.preferences.left_panels.len() > 0, IconTray·view()
+                    ·attr("panels", self.left_panel_configs)
+                    ·attr("activePanel", self.preferences.active_left_panel)
+                    ·attr("side", "left")
+                    ·attr("isNarrow", self.is_narrow)
+                    ·on_panelclick(PanelClick))
+                ·when(self.preferences.left_expanded ∧ self.preferences.active_left_panel ∧ self.available_panels[self.preferences.active_left_panel], PanelContainer·view()
+                    ·attr("title", self.available_panels[self.preferences.active_left_panel]?.name ∨ "")
+                    ·attr("icon", self.available_panels[self.preferences.active_left_panel]?.icon)
+                    ·attr("side", "left")
+                    ·attr("width", self.preferences.left_width)
+                    ·attr("isNarrow", self.is_narrow)
+                    ·on_close(Close)
+                    ·on_collapse(Collapse)
+                    ·on_resize(Resize)
+                    ·text_child(self.available_panels[self.preferences.active_left_panel]?.component·to_string()))
+                ·child(
+                VNode·div()
+                    ·class("flex flex-col flex-1 min-w-0")
+                    ·when(self.preferences.open_tabs.len() > 0, TabBar·view()
+                        ·attr("tabs", self.tabs_for_bar)
+                        ·attr("activeTabId", self.preferences.active_tab_id)
+                        ·on_tabclick(TabClick)
+                        ·on_tabclose(TabClose)
+                        ·on_tabpin(TabPin))
+                    ·text_child(None·to_string())
+                    ·when_else(self.preferences.split_mode == "none", VNode·div()
+                        ·class("flex-1 overflow-auto bg-[var(--bg-primary)] transition-opacity duration-200")
+                        ·text_child(None·to_string()), VNode·div()
+                        ·class("flex flex-1 overflow-hidden " + ⎇ self.preferences.split_mode == "vertical" { "flex-row" } ⎉ { "flex-col" }.to_string())
+                        ·child(
+                        VNode·div()
+                            ·class("flex flex-col flex-1 min-w-0 min-h-0")
+                            ·when(self.preferences.split_tabs.len() > 0, TabBar·view()
+                                ·attr("tabs", self.preferences.split_tabs·map(|t| ({ id: self.t.id, title: self.t.title, pinned: false })))
+                                ·attr("activeTabId", self.preferences.active_split_tab_id)
+                                ·on_tabclick(TabClick)
+                                ·on_tabclose(TabClose)
+                                ·on_tabpin(TabPin))
+                            ·child(
+                            VNode·div()
+                                ·class("flex-1 overflow-auto bg-[var(--bg-primary)]")
+                                ·text_child(self.preferences.active_split_tab_id ∧ self.get_tab_content(self.preferences.split_tabs·find(|t| self.t.id == self.preferences.active_split_tab_id))·to_string())
+                            )
+                        )
+                        ·child(
+                        ResizeHandle·view()
+                            ·attr("direction", ⎇ self.preferences.split_mode == "vertical" { "horizontal" } ⎉ { "vertical" })
+                            ·on_resize(Resize)
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex flex-col flex-1 min-w-0 min-h-0")
+                            ·when(self.preferences.open_tabs.len() > 0, TabBar·view()
+                                ·attr("tabs", self.tabs_for_bar)
+                                ·attr("activeTabId", self.preferences.active_tab_id)
+                                ·on_tabclick(TabClick)
+                                ·on_tabclose(TabClose)
+                                ·on_tabpin(TabPin))
+                            ·child(
+                            VNode·div()
+                                ·class("flex-1 overflow-auto bg-[var(--bg-primary)]")
+                                ·text_child(None·to_string())
+                            )
+                        ))
+                )
+                ·when(self.preferences.right_expanded ∧ self.preferences.active_right_panel ∧ self.available_panels[self.preferences.active_right_panel], PanelContainer·view()
+                    ·attr("title", self.available_panels[self.preferences.active_right_panel]?.name ∨ "")
+                    ·attr("icon", self.available_panels[self.preferences.active_right_panel]?.icon)
+                    ·attr("side", "right")
+                    ·attr("width", self.preferences.right_width)
+                    ·attr("isNarrow", self.is_narrow)
+                    ·on_close(Close)
+                    ·on_collapse(Collapse)
+                    ·on_resize(Resize)
+                    ·text_child(self.available_panels[self.preferences.active_right_panel]?.component·to_string()))
+                ·when(self.preferences.right_panels.len() > 0, IconTray·view()
+                    ·attr("panels", self.right_panel_configs)
+                    ·attr("activePanel", self.preferences.active_right_panel)
+                    ·attr("side", "right")
+                    ·attr("isNarrow", self.is_narrow)
+                    ·on_panelclick(PanelClick))
+            )
+            ·child(
+            StatusBar·view()
+                ·attr("leftItems", None)
+                ·attr("rightItems", [{ id: "indentation", label: ⎇ self.preferences.editor_settings.insert_spaces { "Spaces" } ⎉ { "Tabs" }.to_string() + ": " + self.preferences.editor_settings.tab_size.to_string() }, { id: "encoding", label: "UTF-8" }])
+            )
+            ·child(
+            CommandPalette·view()
+                ·attr("open", self.command_palette_open)
+                ·on_close(Close)
+                ·attr("commands", self.commands)
+            )
+            ·child(
+            CommandPalette·view()
+                ·attr("open", self.recent_files_open)
+                ·on_close(Close)
+                ·attr("commands", self.recent_files_commands)
+            )
+            ·child(
+            GoToLineDialog·view()
+                ·attr("open", self.go_to_line_open)
+                ·on_close(Close)
+                ·on_gotoline(GoToLine)
+            )
+            ·child(
+            WorkspaceSymbolsDialog·view()
+                ·attr("open", self.symbols_dialog_open)
+                ·on_close(Close)
+                ·on_navigate(Navigate)
+            )
+    }
+}

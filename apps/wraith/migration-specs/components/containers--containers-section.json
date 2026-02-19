@@ -1,0 +1,504 @@
+{
+  "id": "domains/devops/components/containers/ContainersSection.tsx:ContainersSection",
+  "name": "ContainersSection",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/containers/ContainersSection.tsx",
+    "code": "import { useState } from 'react'\nimport {\n  Box, Play, Square, RotateCcw, Pause, Trash2, Terminal,\n  FileText, Activity, Search, Filter\n} from 'lucide-react'\nimport { IconButton } from '@ui/components/atoms'\nimport { StatusBadge, DataTable, SectionHeader, ResourceCard, ActionMenu, ActionItem } from '../shared'\nimport { mockContainers } from '../../mock-data'\nimport type { Container } from '../../types'\n\ntype ViewMode = 'table' | 'cards'\n\nfunction formatRelativeTime(dateStr: string): string {\n  const diff = Date.now() - new Date(dateStr).getTime()\n  const hours = Math.floor(diff / 3600000)\n  const days = Math.floor(diff / 86400000)\n  if (days > 0) return `${days}d ago`\n  if (hours > 0) return `${hours}h ago`\n  return 'Just now'\n}\n\nfunction ContainerActions({ container, compact = false }: { container: Container; compact?: boolean }) {\n  const isRunning = container.state === 'running'\n  const isPaused = container.state === 'paused'\n\n  if (compact) {\n    return (\n      <ActionMenu>\n        {!isRunning && <ActionItem icon={<Play className=\"h-3 w-3\" />} label=\"Start\" onClick={() => {}} />}\n        {isRunning && <ActionItem icon={<Square className=\"h-3 w-3\" />} label=\"Stop\" onClick={() => {}} />}\n        {isRunning && !isPaused && <ActionItem icon={<Pause className=\"h-3 w-3\" />} label=\"Pause\" onClick={() => {}} />}\n        {isPaused && <ActionItem icon={<Play className=\"h-3 w-3\" />} label=\"Unpause\" onClick={() => {}} />}\n        <ActionItem icon={<RotateCcw className=\"h-3 w-3\" />} label=\"Restart\" onClick={() => {}} />\n        <ActionItem icon={<Terminal className=\"h-3 w-3\" />} label=\"Exec\" onClick={() => {}} />\n        <ActionItem icon={<FileText className=\"h-3 w-3\" />} label=\"Logs\" onClick={() => {}} />\n        <ActionItem icon={<Activity className=\"h-3 w-3\" />} label=\"Stats\" onClick={() => {}} />\n        <ActionItem icon={<Trash2 className=\"h-3 w-3\" />} label=\"Remove\" onClick={() => {}} variant=\"danger\" />\n      </ActionMenu>\n    )\n  }\n\n  return (\n    <div className=\"flex items-center gap-1\">\n      {!isRunning && (\n        <IconButton icon={<Play className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Start\" onClick={() => {}} />\n      )}\n      {isRunning && (\n        <IconButton icon={<Square className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Stop\" onClick={() => {}} />\n      )}\n      <IconButton icon={<RotateCcw className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Restart\" onClick={() => {}} />\n      <IconButton icon={<Terminal className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Exec\" onClick={() => {}} />\n      <IconButton icon={<FileText className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Logs\" onClick={() => {}} />\n    </div>\n  )\n}\n\nexport function ContainersSection() {\n  const [viewMode, setViewMode] = useState<ViewMode>('table')\n  const [filter, setFilter] = useState('')\n  const [showAll, setShowAll] = useState(false)\n\n  const containers = showAll\n    ? mockContainers\n    : mockContainers.filter((c) => c.state === 'running')\n\n  const filteredContainers = filter\n    ? containers.filter((c) =>\n        c.names[0].toLowerCase().includes(filter.toLowerCase()) ||\n        c.image.toLowerCase().includes(filter.toLowerCase())\n      )\n    : containers\n\n  const columns = [\n    {\n      key: 'name',\n      header: 'Container',\n      render: (c: Container) => (\n        <div className=\"flex items-center gap-2\">\n          <Box className=\"h-4 w-4 text-[var(--accent-primary)]\" />\n          <div>\n            <div className=\"font-medium\">{c.names[0].replace('/', '')}</div>\n            <div className=\"text-xs text-[var(--text-muted)]\">{c.id.slice(0, 12)}</div>\n          </div>\n        </div>\n      ),\n    },\n    {\n      key: 'image',\n      header: 'Image',\n      render: (c: Container) => (\n        <span className=\"text-[var(--text-secondary)]\">{c.image}</span>\n      ),\n    },\n    {\n      key: 'state',\n      header: 'Status',\n      width: '100px',\n      render: (c: Container) => <StatusBadge status={c.state} />,\n    },\n    {\n      key: 'ports',\n      header: 'Ports',\n      render: (c: Container) =>\n        c.ports.length > 0 ? (\n          <span className=\"text-xs font-mono\">\n            {c.ports.map((p) => `${p.publicPort || p.privatePort}:${p.privatePort}`).join(', ')}\n          </span>\n        ) : (\n          <span className=\"text-[var(--text-muted)]\">-</span>\n        ),\n    },\n    {\n      key: 'created',\n      header: 'Created',\n      width: '100px',\n      render: (c: Container) => (\n        <span className=\"text-[var(--text-secondary)]\">{formatRelativeTime(c.created)}</span>\n      ),\n    },\n    {\n      key: 'actions',\n      header: '',\n      width: '140px',\n      render: (c: Container) => <ContainerActions container={c} />,\n    },\n  ]\n\n  return (\n    <div className=\"h-full flex flex-col\">\n      <SectionHeader\n        title=\"Containers\"\n        subtitle={`${filteredContainers.length} container${filteredContainers.length !== 1 ? 's' : ''}`}\n        icon={<Box className=\"h-5 w-5\" />}\n        onRefresh={() => {}}\n        actions={\n          <div className=\"flex items-center gap-2\">\n            <div className=\"relative\">\n              <Search className=\"h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]\" />\n              <input\n                type=\"text\"\n                placeholder=\"Filter...\"\n                value={filter}\n                onChange={(e) => setFilter(e.target.value)}\n                className=\"pl-7 pr-3 py-1 text-xs bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded w-40 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]\"\n              />\n            </div>\n            <IconButton\n              icon={<Filter className=\"h-3.5 w-3.5\" />}\n              size=\"sm\"\n              tooltip={showAll ? 'Show running only' : 'Show all'}\n              active={showAll}\n              onClick={() => setShowAll(!showAll)}\n            />\n          </div>\n        }\n      />\n\n      <div className=\"flex-1 overflow-auto\">\n        {viewMode === 'table' ? (\n          <DataTable\n            data={filteredContainers}\n            columns={columns}\n            keyExtractor={(c) => c.id}\n            emptyMessage=\"No containers found\"\n            compact\n          />\n        ) : (\n          <div className=\"grid grid-cols-1 lg:grid-cols-2 gap-3 p-1\">\n            {filteredContainers.map((container) => (\n              <ResourceCard\n                key={container.id}\n                title={container.names[0].replace('/', '')}\n                subtitle={container.image}\n                icon={<Box className=\"h-5 w-5\" />}\n                status={<StatusBadge status={container.state} />}\n                stats={[\n                  { label: 'Ports', value: container.ports.length > 0 ? container.ports.map(p => p.publicPort || p.privatePort).join(', ') : '-' },\n                  { label: 'Created', value: formatRelativeTime(container.created) },\n                ]}\n                actions={<ContainerActions container={container} compact />}\n              />\n            ))}\n          </div>\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "ContainersSection",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 57,
+        "start_col": 7,
+        "end_line": 188,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 58,
+            "start_col": 34,
+            "end_line": 58,
+            "end_col": 61
+          },
+          "state_name": "viewMode",
+          "setter_name": "setViewMode",
+          "initial_value": "\"table\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 59,
+            "start_col": 30,
+            "end_line": 59,
+            "end_col": 42
+          },
+          "state_name": "filter",
+          "setter_name": "setFilter",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 60,
+            "start_col": 32,
+            "end_line": 60,
+            "end_col": 47
+          },
+          "state_name": "showAll",
+          "setter_name": "setShowAll",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "h-full flex flex-col"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "SectionHeader",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "title",
+                      "value": {
+                        "type": "String",
+                        "value": "Containers"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "subtitle",
+                      "value": {
+                        "type": "Expression",
+                        "code": "`${filteredContainers.length} container${filteredContainers.length !== 1 ? 's' : ''}`"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "icon",
+                      "value": {
+                        "type": "Expression",
+                        "code": "<Box className=\"h-5 w-5\" />"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onRefresh",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => {}"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "actions",
+                      "value": {
+                        "type": "Expression",
+                        "code": "<div className=\"flex items-center gap-2\">\n            <div className=\"relative\">\n              <Search className=\"h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]\" />\n              <input\n                type=\"text\"\n                placeholder=\"Filter...\"\n                value={filter}\n                onChange={(e) => setFilter(e.target.value)}\n                className=\"pl-7 pr-3 py-1 text-xs bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded w-40 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]\"\n              />\n            </div>\n            <IconButton\n              icon={<Filter className=\"h-3.5 w-3.5\" />}\n              size=\"sm\"\n              tooltip={showAll ? 'Show running only' : 'Show all'}\n              active={showAll}\n              onClick={() => setShowAll(!showAll)}\n            />\n          </div>"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 130,
+                  "start_col": 6,
+                  "end_line": 156,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "viewMode === 'table'",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "DataTable",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "data",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "filteredContainers"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "columns",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "columns"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "keyExtractor",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "(c) => c.id"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "emptyMessage",
+                                "value": {
+                                  "type": "String",
+                                  "value": "No containers found"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "compact",
+                                "value": {
+                                  "type": "True"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 160,
+                            "start_col": 10,
+                            "end_line": 166,
+                            "end_col": 12
+                          }
+                        },
+                        "alternate": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "grid grid-cols-1 lg:grid-cols-2 gap-3 p-1"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Map",
+                                  "iterable": "filteredContainers",
+                                  "item_name": "container",
+                                  "key_expr": "container.id",
+                                  "body": {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "ResourceCard",
+                                      "is_component": true,
+                                      "attributes": [
+                                        {
+                                          "name": "key",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "container.id"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "title",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "container.names[0].replace('/', '')"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "subtitle",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "container.image"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "icon",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "<Box className=\"h-5 w-5\" />"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "status",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "<StatusBadge status={container.state} />"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "stats",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "[\n                  { label: 'Ports', value: container.ports.length > 0 ? container.ports.map(p => p.publicPort || p.privatePort).join(', ') : '-' },\n                  { label: 'Created', value: formatRelativeTime(container.created) },\n                ]"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "actions",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "<ContainerActions container={container} compact />"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": []
+                                    },
+                                    "location": {
+                                      "start_line": 170,
+                                      "start_col": 14,
+                                      "end_line": 181,
+                                      "end_col": 16
+                                    }
+                                  }
+                                },
+                                "location": {
+                                  "start_line": 169,
+                                  "start_col": 12,
+                                  "end_line": 182,
+                                  "end_col": 15
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 168,
+                            "start_col": 10,
+                            "end_line": 183,
+                            "end_col": 16
+                          }
+                        }
+                      },
+                      "location": {
+                        "start_line": 159,
+                        "start_col": 8,
+                        "end_line": 184,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 158,
+                  "start_col": 6,
+                  "end_line": 185,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 129,
+            "start_col": 4,
+            "end_line": 186,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "DataTable",
+        "ResourceCard",
+        "SectionHeader"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "viewMode",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "filter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showAll",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/containers_section.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:viewMode",
+        "to_field": "viewMode",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"table\"",
+        "reasoning": "useState hook 'viewMode' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:filter",
+        "to_field": "filter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'filter' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showAll",
+        "to_field": "showAll",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showAll' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateViewMode",
+        "from_handler": "setViewMode",
+        "payload": null,
+        "state_changes": [
+          "self.viewMode = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateFilter",
+        "from_handler": "setFilter",
+        "payload": null,
+        "state_changes": [
+          "self.filter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowAll",
+        "from_handler": "setShowAll",
+        "payload": null,
+        "state_changes": [
+          "self.showAll = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "DataTable",
+      "ResourceCard",
+      "SectionHeader"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

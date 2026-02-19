@@ -1,0 +1,1500 @@
+{
+  "id": "domains/prompts/components/PromptDesigner/PromptDesigner.tsx:PromptDesigner",
+  "name": "PromptDesigner",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/prompts/components/PromptDesigner/PromptDesigner.tsx",
+    "code": "import { useState, useEffect } from \"react\"\nimport { Button, Tabs, TabsList, TabsTrigger, TabsContent } from \"@persona-framework/ui\"\nimport { Save, Check } from \"lucide-react\"\nimport type { FewShotExample, PromptConfig, PromptVariable, PromptVersion } from \"../../types\"\nimport { FewShotExampleBuilder } from \"./FewShotExampleBuilder\"\nimport { ModelConfigPanel } from \"./ModelConfigPanel\"\nimport { PromptEditor } from \"./PromptEditor\"\nimport { PromptMetrics } from \"./PromptMetrics\"\nimport { PromptTestPanel } from \"./PromptTestPanel\"\nimport { PromptVersionHistory } from \"./PromptVersionHistory\"\nimport { VariablesEditor } from \"./VariablesEditor\"\n\nconst STORAGE_KEY = 'wraith_prompt_designer_versions'\n\nfunction loadVersionsFromStorage(): PromptVersion[] {\n  try {\n    const stored = localStorage.getItem(STORAGE_KEY)\n    if (stored) {\n      const parsed = JSON.parse(stored)\n      // Validate structure\n      if (Array.isArray(parsed)) {\n        return parsed\n      }\n    }\n  } catch {\n    // Invalid storage data\n  }\n  return []\n}\n\nfunction saveVersionsToStorage(versions: PromptVersion[]) {\n  try {\n    // Only keep last 50 versions to prevent localStorage bloat\n    const toSave = versions.slice(0, 50)\n    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))\n  } catch {\n    // Storage full or unavailable\n  }\n}\n\nexport function PromptDesigner() {\n  const [promptContent, setPromptContent] = useState(\"\")\n  const [variables, setVariables] = useState<PromptVariable[]>([])\n  const [examples, setExamples] = useState<FewShotExample[]>([])\n  const [config, setConfig] = useState<PromptConfig>({\n    maxTokens: 2000,\n    stopSequences: [],\n    temperature: 0.7,\n    topP: 1.0,\n  })\n  const [versions, setVersions] = useState<PromptVersion[]>(() => loadVersionsFromStorage())\n  const [rightPanelTab, setRightPanelTab] = useState<\"variables\" | \"config\" | \"examples\" | \"history\">(\"variables\")\n  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle')\n\n  // Persist versions to localStorage whenever they change\n  useEffect(() => {\n    saveVersionsToStorage(versions)\n  }, [versions])\n\n  const saveVersion = () => {\n    const newVersion: PromptVersion = {\n      config,\n      content: promptContent,\n      examples,\n      id: crypto.randomUUID(),\n      timestamp: Date.now(),\n      variables,\n    }\n    setVersions([newVersion, ...versions])\n    setSaveStatus('saved')\n    setTimeout(() => setSaveStatus('idle'), 2000)\n  }\n\n  const restoreVersion = (version: PromptVersion) => {\n    setPromptContent(version.content)\n    setVariables(version.variables)\n    setExamples(version.examples)\n    setConfig(version.config)\n  }\n\n  const variablesMap = variables.reduce<Record<string, string>>((acc, v) => {\n    acc[v.name] = v.value\n    return acc\n  }, {})\n\n  return (\n    <div className=\"flex flex-col gap-4 h-full\">\n      <div className=\"flex items-center justify-between gap-3\">\n        <h2 className=\"text-2xl font-semibold m-0\">Prompt Designer</h2>\n        <Button onClick={saveVersion}>\n          {saveStatus === 'saved' ? (\n            <>\n              <Check className=\"mr-2 h-4 w-4 text-green-400\" />\n              Saved!\n            </>\n          ) : (\n            <>\n              <Save className=\"mr-2 h-4 w-4\" />\n              Save Version\n            </>\n          )}\n        </Button>\n      </div>\n\n      <div className=\"grid grid-cols-3 gap-4 flex-1 min-h-0\">\n        <div className=\"bg-secondary rounded-lg h-full overflow-hidden\">\n          <div className=\"flex flex-col gap-3 min-h-0 overflow-auto p-4\">\n            <h3 className=\"text-lg font-semibold m-0\">Prompt Editor</h3>\n            <PromptEditor onChange={setPromptContent} value={promptContent} />\n          </div>\n        </div>\n\n        <div className=\"bg-secondary rounded-lg h-full overflow-hidden\">\n          <div className=\"flex flex-col gap-3 min-h-0 overflow-auto p-4\">\n            <h3 className=\"text-lg font-semibold m-0\">Live Test</h3>\n            <PromptTestPanel promptContent={promptContent} variables={variablesMap} />\n          </div>\n        </div>\n\n        <div className=\"bg-secondary rounded-lg h-full overflow-hidden\">\n          <div className=\"flex flex-col gap-3 min-h-0 overflow-auto p-4\">\n            <Tabs value={rightPanelTab} onValueChange={(value) => setRightPanelTab(value as any)}>\n              <TabsList className=\"grid w-full grid-cols-4\">\n                <TabsTrigger value=\"variables\">Variables</TabsTrigger>\n                <TabsTrigger value=\"config\">Config</TabsTrigger>\n                <TabsTrigger value=\"examples\">Examples</TabsTrigger>\n                <TabsTrigger value=\"history\">History</TabsTrigger>\n              </TabsList>\n\n              <TabsContent value=\"variables\" className=\"mt-4 space-y-4\">\n                <VariablesEditor onChange={setVariables} variables={variables} />\n                <PromptMetrics content={promptContent} />\n              </TabsContent>\n\n              <TabsContent value=\"config\" className=\"mt-4\">\n                <ModelConfigPanel config={config} onChange={setConfig} />\n              </TabsContent>\n\n              <TabsContent value=\"examples\" className=\"mt-4\">\n                <FewShotExampleBuilder examples={examples} onChange={setExamples} />\n              </TabsContent>\n\n              <TabsContent value=\"history\" className=\"mt-4\">\n                <PromptVersionHistory onRestore={restoreVersion} versions={versions} />\n              </TabsContent>\n            </Tabs>\n          </div>\n        </div>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "PromptDesigner",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 41,
+        "start_col": 7,
+        "end_line": 152,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 42,
+            "start_col": 44,
+            "end_line": 42,
+            "end_col": 56
+          },
+          "state_name": "promptContent",
+          "setter_name": "setPromptContent",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 43,
+            "start_col": 36,
+            "end_line": 43,
+            "end_col": 66
+          },
+          "state_name": "variables",
+          "setter_name": "setVariables",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 44,
+            "start_col": 34,
+            "end_line": 44,
+            "end_col": 64
+          },
+          "state_name": "examples",
+          "setter_name": "setExamples",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 45,
+            "start_col": 30,
+            "end_line": 50,
+            "end_col": 4
+          },
+          "state_name": "config",
+          "setter_name": "setConfig",
+          "initial_value": "∅",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 51,
+            "start_col": 34,
+            "end_line": 51,
+            "end_col": 92
+          },
+          "state_name": "versions",
+          "setter_name": "setVersions",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 52,
+            "start_col": 44,
+            "end_line": 52,
+            "end_col": 114
+          },
+          "state_name": "rightPanelTab",
+          "setter_name": "setRightPanelTab",
+          "initial_value": "\"variables\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 53,
+            "start_col": 38,
+            "end_line": 53,
+            "end_col": 72
+          },
+          "state_name": "saveStatus",
+          "setter_name": "setSaveStatus",
+          "initial_value": "\"idle\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 56,
+            "start_col": 2,
+            "end_line": 58,
+            "end_col": 16
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "versions"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col gap-4 h-full"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between gap-3"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "h2",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-2xl font-semibold m-0"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Prompt Designer"
+                            },
+                            "location": {
+                              "start_line": 89,
+                              "start_col": 51,
+                              "end_line": 89,
+                              "end_col": 66
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 89,
+                        "start_col": 8,
+                        "end_line": 89,
+                        "end_col": 71
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Button",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "saveVersion"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "saveStatus === 'saved'",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Fragment",
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Check",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "mr-2 h-4 w-4 text-green-400"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 93,
+                                        "start_col": 14,
+                                        "end_line": 93,
+                                        "end_col": 63
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Saved!"
+                                      },
+                                      "location": {
+                                        "start_line": 93,
+                                        "start_col": 63,
+                                        "end_line": 95,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 92,
+                                  "start_col": 12,
+                                  "end_line": 95,
+                                  "end_col": 15
+                                }
+                              },
+                              "alternate": {
+                                "node_type": {
+                                  "type": "Fragment",
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Save",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "mr-2 h-4 w-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 98,
+                                        "start_col": 14,
+                                        "end_line": 98,
+                                        "end_col": 47
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Save Version"
+                                      },
+                                      "location": {
+                                        "start_line": 98,
+                                        "start_col": 47,
+                                        "end_line": 100,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 97,
+                                  "start_col": 12,
+                                  "end_line": 100,
+                                  "end_col": 15
+                                }
+                              }
+                            },
+                            "location": {
+                              "start_line": 91,
+                              "start_col": 10,
+                              "end_line": 101,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 90,
+                        "start_col": 8,
+                        "end_line": 102,
+                        "end_col": 17
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 88,
+                  "start_col": 6,
+                  "end_line": 103,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "grid grid-cols-3 gap-4 flex-1 min-h-0"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "bg-secondary rounded-lg h-full overflow-hidden"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex flex-col gap-3 min-h-0 overflow-auto p-4"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "h3",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-lg font-semibold m-0"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Prompt Editor"
+                                        },
+                                        "location": {
+                                          "start_line": 108,
+                                          "start_col": 54,
+                                          "end_line": 108,
+                                          "end_col": 67
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 108,
+                                    "start_col": 12,
+                                    "end_line": 108,
+                                    "end_col": 72
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "PromptEditor",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "onChange",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "setPromptContent"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "promptContent"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 109,
+                                    "start_col": 12,
+                                    "end_line": 109,
+                                    "end_col": 78
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 107,
+                              "start_col": 10,
+                              "end_line": 110,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 106,
+                        "start_col": 8,
+                        "end_line": 111,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "bg-secondary rounded-lg h-full overflow-hidden"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex flex-col gap-3 min-h-0 overflow-auto p-4"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "h3",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-lg font-semibold m-0"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Live Test"
+                                        },
+                                        "location": {
+                                          "start_line": 115,
+                                          "start_col": 54,
+                                          "end_line": 115,
+                                          "end_col": 63
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 115,
+                                    "start_col": 12,
+                                    "end_line": 115,
+                                    "end_col": 68
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "PromptTestPanel",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "promptContent",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "promptContent"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "variables",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "variablesMap"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 116,
+                                    "start_col": 12,
+                                    "end_line": 116,
+                                    "end_col": 86
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 114,
+                              "start_col": 10,
+                              "end_line": 117,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 113,
+                        "start_col": 8,
+                        "end_line": 118,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "bg-secondary rounded-lg h-full overflow-hidden"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex flex-col gap-3 min-h-0 overflow-auto p-4"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Tabs",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "rightPanelTab"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onValueChange",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "(value) => setRightPanelTab(value as any)"
+                                        },
+                                        "is_event_handler": true
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "TabsList",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "grid w-full grid-cols-4"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "TabsTrigger",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "value",
+                                                    "value": {
+                                                      "type": "String",
+                                                      "value": "variables"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": [
+                                                  {
+                                                    "node_type": {
+                                                      "type": "Text",
+                                                      "value": "Variables"
+                                                    },
+                                                    "location": {
+                                                      "start_line": 124,
+                                                      "start_col": 47,
+                                                      "end_line": 124,
+                                                      "end_col": 56
+                                                    }
+                                                  }
+                                                ]
+                                              },
+                                              "location": {
+                                                "start_line": 124,
+                                                "start_col": 16,
+                                                "end_line": 124,
+                                                "end_col": 70
+                                              }
+                                            },
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "TabsTrigger",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "value",
+                                                    "value": {
+                                                      "type": "String",
+                                                      "value": "config"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": [
+                                                  {
+                                                    "node_type": {
+                                                      "type": "Text",
+                                                      "value": "Config"
+                                                    },
+                                                    "location": {
+                                                      "start_line": 125,
+                                                      "start_col": 44,
+                                                      "end_line": 125,
+                                                      "end_col": 50
+                                                    }
+                                                  }
+                                                ]
+                                              },
+                                              "location": {
+                                                "start_line": 125,
+                                                "start_col": 16,
+                                                "end_line": 125,
+                                                "end_col": 64
+                                              }
+                                            },
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "TabsTrigger",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "value",
+                                                    "value": {
+                                                      "type": "String",
+                                                      "value": "examples"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": [
+                                                  {
+                                                    "node_type": {
+                                                      "type": "Text",
+                                                      "value": "Examples"
+                                                    },
+                                                    "location": {
+                                                      "start_line": 126,
+                                                      "start_col": 46,
+                                                      "end_line": 126,
+                                                      "end_col": 54
+                                                    }
+                                                  }
+                                                ]
+                                              },
+                                              "location": {
+                                                "start_line": 126,
+                                                "start_col": 16,
+                                                "end_line": 126,
+                                                "end_col": 68
+                                              }
+                                            },
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "TabsTrigger",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "value",
+                                                    "value": {
+                                                      "type": "String",
+                                                      "value": "history"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": [
+                                                  {
+                                                    "node_type": {
+                                                      "type": "Text",
+                                                      "value": "History"
+                                                    },
+                                                    "location": {
+                                                      "start_line": 127,
+                                                      "start_col": 45,
+                                                      "end_line": 127,
+                                                      "end_col": 52
+                                                    }
+                                                  }
+                                                ]
+                                              },
+                                              "location": {
+                                                "start_line": 127,
+                                                "start_col": 16,
+                                                "end_line": 127,
+                                                "end_col": 66
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 123,
+                                          "start_col": 14,
+                                          "end_line": 128,
+                                          "end_col": 25
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "TabsContent",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "variables"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "mt-4 space-y-4"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "VariablesEditor",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "onChange",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "setVariables"
+                                                    },
+                                                    "is_event_handler": true
+                                                  },
+                                                  {
+                                                    "name": "variables",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "variables"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": []
+                                              },
+                                              "location": {
+                                                "start_line": 131,
+                                                "start_col": 16,
+                                                "end_line": 131,
+                                                "end_col": 81
+                                              }
+                                            },
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "PromptMetrics",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "content",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "promptContent"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": []
+                                              },
+                                              "location": {
+                                                "start_line": 132,
+                                                "start_col": 16,
+                                                "end_line": 132,
+                                                "end_col": 57
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 130,
+                                          "start_col": 14,
+                                          "end_line": 133,
+                                          "end_col": 28
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "TabsContent",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "config"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "mt-4"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "ModelConfigPanel",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "config",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "config"
+                                                    },
+                                                    "is_event_handler": false
+                                                  },
+                                                  {
+                                                    "name": "onChange",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "setConfig"
+                                                    },
+                                                    "is_event_handler": true
+                                                  }
+                                                ],
+                                                "children": []
+                                              },
+                                              "location": {
+                                                "start_line": 136,
+                                                "start_col": 16,
+                                                "end_line": 136,
+                                                "end_col": 73
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 135,
+                                          "start_col": 14,
+                                          "end_line": 137,
+                                          "end_col": 28
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "TabsContent",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "examples"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "mt-4"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "FewShotExampleBuilder",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "examples",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "examples"
+                                                    },
+                                                    "is_event_handler": false
+                                                  },
+                                                  {
+                                                    "name": "onChange",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "setExamples"
+                                                    },
+                                                    "is_event_handler": true
+                                                  }
+                                                ],
+                                                "children": []
+                                              },
+                                              "location": {
+                                                "start_line": 140,
+                                                "start_col": 16,
+                                                "end_line": 140,
+                                                "end_col": 84
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 139,
+                                          "start_col": 14,
+                                          "end_line": 141,
+                                          "end_col": 28
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "TabsContent",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "history"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "mt-4"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "PromptVersionHistory",
+                                                "is_component": true,
+                                                "attributes": [
+                                                  {
+                                                    "name": "onRestore",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "restoreVersion"
+                                                    },
+                                                    "is_event_handler": true
+                                                  },
+                                                  {
+                                                    "name": "versions",
+                                                    "value": {
+                                                      "type": "Expression",
+                                                      "code": "versions"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": []
+                                              },
+                                              "location": {
+                                                "start_line": 144,
+                                                "start_col": 16,
+                                                "end_line": 144,
+                                                "end_col": 87
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 143,
+                                          "start_col": 14,
+                                          "end_line": 145,
+                                          "end_col": 28
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 122,
+                                    "start_col": 12,
+                                    "end_line": 146,
+                                    "end_col": 19
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 121,
+                              "start_col": 10,
+                              "end_line": 147,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 120,
+                        "start_col": 8,
+                        "end_line": 148,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 105,
+                  "start_col": 6,
+                  "end_line": 149,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 87,
+            "start_col": 4,
+            "end_line": 150,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "Check",
+        "FewShotExampleBuilder",
+        "ModelConfigPanel",
+        "PromptEditor",
+        "PromptMetrics",
+        "PromptTestPanel",
+        "PromptVersionHistory",
+        "Save",
+        "Tabs",
+        "TabsContent",
+        "TabsList",
+        "TabsTrigger",
+        "VariablesEditor"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "promptContent",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "variables",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "examples",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "config",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "versions",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "rightPanelTab",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "saveStatus",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/prompt_designer.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:promptContent",
+        "to_field": "promptContent",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'promptContent' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:variables",
+        "to_field": "variables",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'variables' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:examples",
+        "to_field": "examples",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'examples' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:config",
+        "to_field": "config",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "∅",
+        "reasoning": "useState hook 'config' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:versions",
+        "to_field": "versions",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'versions' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:rightPanelTab",
+        "to_field": "rightPanelTab",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"variables\"",
+        "reasoning": "useState hook 'rightPanelTab' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:saveStatus",
+        "to_field": "saveStatus",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"idle\"",
+        "reasoning": "useState hook 'saveStatus' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdatePromptContent",
+        "from_handler": "setPromptContent",
+        "payload": null,
+        "state_changes": [
+          "self.promptContent = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateVariables",
+        "from_handler": "setVariables",
+        "payload": null,
+        "state_changes": [
+          "self.variables = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateExamples",
+        "from_handler": "setExamples",
+        "payload": null,
+        "state_changes": [
+          "self.examples = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateConfig",
+        "from_handler": "setConfig",
+        "payload": null,
+        "state_changes": [
+          "self.config = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateVersions",
+        "from_handler": "setVersions",
+        "payload": null,
+        "state_changes": [
+          "self.versions = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateRightPanelTab",
+        "from_handler": "setRightPanelTab",
+        "payload": null,
+        "state_changes": [
+          "self.rightPanelTab = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSaveStatus",
+        "from_handler": "setSaveStatus",
+        "payload": null,
+        "state_changes": [
+          "self.saveStatus = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[versions]",
+        "strategy": "inline",
+        "reasoning": "Deps [versions] → inline in handlers that change these",
+        "inline_in": "versions",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_7",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [versions] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Check",
+      "FewShotExampleBuilder",
+      "ModelConfigPanel",
+      "PromptEditor",
+      "PromptMetrics",
+      "PromptTestPanel",
+      "PromptVersionHistory",
+      "Save",
+      "Tabs",
+      "TabsContent",
+      "TabsList",
+      "TabsTrigger",
+      "VariablesEditor"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "7 state variables"
+  ],
+  "status": "pending"
+}

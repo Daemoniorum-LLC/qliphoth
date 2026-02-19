@@ -1,0 +1,46 @@
+invoke qliphoth·prelude·*;
+ᛈ AppMsg {
+    UpdateIsAuthenticated,
+    UpdateShowHomepage,
+    UpdateCurrentPath,
+    LoginSuccess,
+    GetStarted,
+}
+☉ actor App {
+    state isAuthenticated: Any~ = None,
+    state showHomepage: Any~ = None,
+    state currentPath: Any~ = None,
+
+    on UpdateIsAuthenticated {
+        self.isAuthenticated = msg.0;
+    }
+
+    on UpdateShowHomepage {
+        self.showHomepage = msg.0;
+    }
+
+    on UpdateCurrentPath {
+        self.currentPath = msg.0;
+    }
+
+    on LoginSuccess {
+        self.isAuthenticated = true;
+    }
+
+    on GetStarted {
+        self.showHomepage = false;
+        // TODO: Storage ! Save { key: "wraith_homepage_dismissed", value: "true" };
+    }
+
+    on Mount {
+        // Empty deps with cleanup → Mount/Unmount lifecycle
+    }
+
+    on Mount {
+        // Empty deps with cleanup → Mount/Unmount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        Wraith·view()
+    }
+}

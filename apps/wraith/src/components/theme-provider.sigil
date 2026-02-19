@@ -1,0 +1,27 @@
+invoke qliphoth·prelude·*;
+ᛈ ThemeProviderMsg {
+    UpdateMode,
+}
+actor ThemeProvider {
+    state mode: Any~ = None,
+
+    rite new(children: Any) -> This! {
+        self.children = children;
+        This
+    }
+
+    on UpdateMode {
+        self.mode = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        ThemeContext.Provider·view()
+            ·attr("value", ∅)
+            ·child(
+            UIThemeProvider·view()
+                ·attr("defaultTheme", self.resolved_mode)
+                ·attr("storageKey", self.s_t_o_r_a_g_e__k_e_y)
+                ·text_child(self.children·to_string())
+            )
+    }
+}

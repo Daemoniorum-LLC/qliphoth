@@ -33,6 +33,106 @@
 #[cfg(all(target_os = "linux", feature = "x11-backend"))]
 mod clipboard_x11;
 
+#[cfg(all(target_os = "linux", feature = "wayland-backend"))]
+mod clipboard_wayland;
+
+// =============================================================================
+// Platform Detection (Phase 6D)
+// =============================================================================
+
+/// Linux display server type for clipboard backend selection
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinuxDisplayServer {
+    /// Wayland compositor (WAYLAND_DISPLAY set)
+    Wayland,
+    /// X11 server (DISPLAY set, no Wayland)
+    X11,
+    /// XWayland (both set, prefer Wayland)
+    XWayland,
+    /// Unknown/headless (neither set)
+    Unknown,
+}
+
+/// Detect the current Linux display server based on environment variables
+#[cfg(target_os = "linux")]
+pub fn detect_display_server() -> LinuxDisplayServer {
+    let wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+    let x11 = std::env::var("DISPLAY").is_ok();
+
+    match (wayland, x11) {
+        (true, true) => LinuxDisplayServer::XWayland,  // XWayland: prefer Wayland backend
+        (true, false) => LinuxDisplayServer::Wayland,
+        (false, true) => LinuxDisplayServer::X11,
+        (false, false) => LinuxDisplayServer::Unknown,
+    }
+}
+
+/// Get a human-readable description of the active clipboard backend
+#[cfg(target_os = "linux")]
+pub fn clipboard_backend_description() -> &'static str {
+    let display_server = detect_display_server();
+
+    #[cfg(all(feature = "wayland-backend", feature = "x11-backend"))]
+    {
+        match display_server {
+            LinuxDisplayServer::Wayland | LinuxDisplayServer::XWayland => {
+                "Wayland (smithay-clipboard) with X11 fallback"
+            }
+            LinuxDisplayServer::X11 => "X11 (x11rb) with arboard fallback",
+            LinuxDisplayServer::Unknown => "arboard (headless)",
+        }
+    }
+
+    #[cfg(all(feature = "wayland-backend", not(feature = "x11-backend")))]
+    {
+        match display_server {
+            LinuxDisplayServer::Wayland | LinuxDisplayServer::XWayland => {
+                "Wayland (smithay-clipboard)"
+            }
+            _ => "arboard (fallback)",
+        }
+    }
+
+    #[cfg(all(feature = "x11-backend", not(feature = "wayland-backend")))]
+    {
+        match display_server {
+            LinuxDisplayServer::X11 | LinuxDisplayServer::XWayland => "X11 (x11rb)",
+            _ => "arboard (fallback)",
+        }
+    }
+
+    #[cfg(not(any(feature = "wayland-backend", feature = "x11-backend")))]
+    {
+        let _ = display_server; // Suppress unused warning
+        "arboard (no native backends enabled)"
+    }
+}
+
+/// Check if native clipboard backends are available for the current display server
+#[cfg(target_os = "linux")]
+pub fn native_clipboard_available() -> bool {
+    let display_server = detect_display_server();
+
+    #[cfg(feature = "wayland-backend")]
+    if matches!(
+        display_server,
+        LinuxDisplayServer::Wayland | LinuxDisplayServer::XWayland
+    ) {
+        return true;
+    }
+
+    #[cfg(feature = "x11-backend")]
+    if matches!(
+        display_server,
+        LinuxDisplayServer::X11 | LinuxDisplayServer::XWayland
+    ) {
+        return true;
+    }
+
+    false
+}
+
 // =============================================================================
 // Imports
 // =============================================================================
@@ -893,10 +993,25 @@ struct ClipboardState {
     /// Native X11 clipboard backend (Linux only, when DISPLAY is set)
     #[cfg(all(target_os = "linux", feature = "x11-backend"))]
     x11_backend: Option<clipboard_x11::X11ClipboardBackend>,
+    /// Native Wayland clipboard backend (Linux only, when WAYLAND_DISPLAY is set)
+    /// Lazily initialized on first clipboard operation when window is available
+    #[cfg(all(target_os = "linux", feature = "wayland-backend"))]
+    wayland_backend: Option<clipboard_wayland::WaylandClipboardBackend>,
 }
 
 impl Default for ClipboardState {
     fn default() -> Self {
+        // Log platform detection results (Phase 6D)
+        #[cfg(target_os = "linux")]
+        {
+            let display_server = detect_display_server();
+            log::info!(
+                "Linux display server detected: {:?}, clipboard backend: {}",
+                display_server,
+                clipboard_backend_description()
+            );
+        }
+
         // Try to initialize X11 backend if available
         #[cfg(all(target_os = "linux", feature = "x11-backend"))]
         let x11_backend = if clipboard_x11::X11ClipboardBackend::is_available() {
@@ -927,6 +1042,10 @@ impl Default for ClipboardState {
             pending_ops: HashMap::new(),
             #[cfg(all(target_os = "linux", feature = "x11-backend"))]
             x11_backend,
+            // Wayland backend is lazily initialized when clipboard operation occurs
+            // (requires wl_display pointer from window)
+            #[cfg(all(target_os = "linux", feature = "wayland-backend"))]
+            wayland_backend: None,
         }
     }
 }
@@ -1094,6 +1213,12 @@ pub const CLIPBOARD_DATA_LIFETIME_SECONDS: u64 = 30;
 pub const CLIPBOARD_WRITE_HANDLE_TIMEOUT_SECONDS: u64 = 60;
 /// Timeout for pending async clipboard operations (milliseconds)
 pub const CLIPBOARD_PENDING_OP_TIMEOUT_MS: u64 = 30_000;
+
+// Clipboard security limits (per spec §10.4)
+/// Maximum size per format in bytes (100MB)
+pub const CLIPBOARD_MAX_FORMAT_SIZE: usize = 100 * 1024 * 1024;
+/// Maximum number of formats per write operation
+pub const CLIPBOARD_MAX_FORMATS: usize = 32;
 
 // -----------------------------------------------------------------------------
 // Image encoding/decoding helpers for clipboard
@@ -1319,6 +1444,38 @@ fn c_str_to_string(ptr: *const c_char) -> String {
 /// 1. Convert to lowercase
 /// 2. Strip whitespace around semicolons (parameters)
 /// Example: "TEXT/PLAIN; charset=utf-8" → "text/plain;charset=utf-8"
+/// Validate MIME type string (per spec §10.4).
+///
+/// Returns true if the MIME type contains only valid characters:
+/// - ASCII alphanumeric (a-z, A-Z, 0-9)
+/// - Special characters: - _ / . ; = + * and space (space is stripped during normalization)
+///
+/// Empty strings and strings containing control characters or non-ASCII
+/// are rejected.
+fn is_valid_mime_type(mime: &str) -> bool {
+    if mime.is_empty() || mime.len() > 256 {
+        return false;
+    }
+
+    // Must contain at least one '/' (type/subtype)
+    if !mime.contains('/') {
+        return false;
+    }
+
+    mime.bytes().all(|b| {
+        b.is_ascii_alphanumeric()
+            || b == b'-'
+            || b == b'_'
+            || b == b'/'
+            || b == b'.'
+            || b == b';'
+            || b == b'='
+            || b == b'+'
+            || b == b'*'
+            || b == b' '  // Allowed; will be stripped during normalization
+    })
+}
+
 fn normalize_mime_type(mime: &str) -> String {
     mime.to_lowercase()
         .split(';')
@@ -3222,11 +3379,58 @@ pub extern "C" fn native_clipboard_get_formats(target: i32, callback_id: u64) ->
         return 0;
     }
 
-    // Try X11 backend first (Linux only, async operation)
+    // Try Wayland backend first (Linux only, synchronous via smithay-clipboard)
+    #[cfg(all(target_os = "linux", feature = "wayland-backend", not(test)))]
+    {
+        // Lazy init Wayland backend if needed
+        // First try to get a window handle for initialization
+        let window_opt = state.windows.values()
+            .find_map(|w| w.winit_window.clone());
+
+        if state.clipboard.wayland_backend.is_none() {
+            if let Some(ref window) = window_opt {
+                if clipboard_wayland::WaylandClipboardBackend::is_available() {
+                    state.clipboard.wayland_backend =
+                        clipboard_wayland::WaylandClipboardBackend::try_new_from_window(window);
+                }
+            }
+        }
+
+        // Take backend out to avoid borrow conflicts
+        if let Some(mut wayland) = state.clipboard.wayland_backend.take() {
+            let mut events = Vec::new();
+            let mut completed = HashMap::new();
+
+            let result = wayland.get_formats(
+                target_enum,
+                callback_id,
+                &mut events,
+                &mut completed,
+            );
+
+            // Merge results back
+            state.event_queue.extend(events);
+            state.clipboard.completed.extend(completed);
+            state.clipboard.wayland_backend = Some(wayland);
+
+            match result {
+                Ok(()) => {
+                    return 1;
+                }
+                Err(e) => {
+                    log::warn!("Wayland get_formats failed with {}, falling back", e);
+                    // Fall through to X11 or arboard
+                }
+            }
+        }
+    }
+
+    // Try X11 backend (Linux only, async operation)
+    // X11 supports both CLIPBOARD and PRIMARY selections
     #[cfg(all(target_os = "linux", feature = "x11-backend"))]
-    if target_enum == ClipboardTarget::Clipboard {
+    {
         if let Some(ref mut x11) = state.clipboard.x11_backend {
-            match x11.get_formats(callback_id) {
+            match x11.get_formats(target_enum, callback_id) {
                 Ok(()) => {
                     // Track as pending - X11 backend will fire event when complete
                     let pending_op = PendingOperation::new(
@@ -3421,7 +3625,57 @@ pub extern "C" fn native_clipboard_read_format(
         return 0;
     }
 
-    // Try X11 backend first (Linux only, async operation)
+    // Try Wayland backend first (Linux only, synchronous via smithay-clipboard)
+    #[cfg(all(target_os = "linux", feature = "wayland-backend", not(test)))]
+    {
+        // Lazy init Wayland backend if needed
+        let window_opt = state.windows.values()
+            .find_map(|w| w.winit_window.clone());
+
+        if state.clipboard.wayland_backend.is_none() {
+            if let Some(ref window) = window_opt {
+                if clipboard_wayland::WaylandClipboardBackend::is_available() {
+                    state.clipboard.wayland_backend =
+                        clipboard_wayland::WaylandClipboardBackend::try_new_from_window(window);
+                }
+            }
+        }
+
+        // Take backend out to avoid borrow conflicts
+        if let Some(mut wayland) = state.clipboard.wayland_backend.take() {
+            let mut events = Vec::new();
+            let mut completed = HashMap::new();
+
+            let result = wayland.read_format(
+                target_enum,
+                &mime,
+                callback_id,
+                &mut events,
+                &mut completed,
+            );
+
+            // Merge results back
+            state.event_queue.extend(events);
+            state.clipboard.completed.extend(completed);
+            state.clipboard.wayland_backend = Some(wayland);
+
+            match result {
+                Ok(()) => {
+                    return 1;
+                }
+                Err(e) => {
+                    // CLIPBOARD_ERR_FORMAT_NOT_FOUND means Wayland doesn't support this format
+                    // Fall back to arboard for images and other non-text formats
+                    if e != CLIPBOARD_ERR_FORMAT_NOT_FOUND {
+                        log::warn!("Wayland read_format failed with {}, falling back", e);
+                    }
+                    // Fall through to X11 or arboard
+                }
+            }
+        }
+    }
+
+    // Try X11 backend (Linux only, async operation)
     #[cfg(all(target_os = "linux", feature = "x11-backend"))]
     if target_enum == ClipboardTarget::Clipboard {
         if let Some(ref mut x11) = state.clipboard.x11_backend {
@@ -3737,6 +3991,69 @@ pub extern "C" fn native_clipboard_release(callback_id: u64) {
     state.clipboard.completed.remove(&callback_id);
 }
 
+// =============================================================================
+// Platform Detection FFI (Phase 6D)
+// =============================================================================
+
+/// Display server type constants for FFI
+pub const DISPLAY_SERVER_UNKNOWN: i32 = 0;
+pub const DISPLAY_SERVER_X11: i32 = 1;
+pub const DISPLAY_SERVER_WAYLAND: i32 = 2;
+pub const DISPLAY_SERVER_XWAYLAND: i32 = 3;
+pub const DISPLAY_SERVER_WINDOWS: i32 = 10;
+pub const DISPLAY_SERVER_MACOS: i32 = 11;
+
+/// Get the detected display server type.
+/// Returns one of DISPLAY_SERVER_* constants.
+/// On non-Linux platforms, returns the platform-specific constant.
+#[no_mangle]
+pub extern "C" fn native_get_display_server() -> i32 {
+    #[cfg(target_os = "linux")]
+    {
+        match detect_display_server() {
+            LinuxDisplayServer::X11 => DISPLAY_SERVER_X11,
+            LinuxDisplayServer::Wayland => DISPLAY_SERVER_WAYLAND,
+            LinuxDisplayServer::XWayland => DISPLAY_SERVER_XWAYLAND,
+            LinuxDisplayServer::Unknown => DISPLAY_SERVER_UNKNOWN,
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        DISPLAY_SERVER_WINDOWS
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        DISPLAY_SERVER_MACOS
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        DISPLAY_SERVER_UNKNOWN
+    }
+}
+
+/// Check if native clipboard backends are available.
+/// Returns 1 if a native backend (Wayland or X11) can be used, 0 otherwise.
+#[no_mangle]
+pub extern "C" fn native_clipboard_has_native_backend() -> i32 {
+    #[cfg(target_os = "linux")]
+    {
+        if native_clipboard_available() { 1 } else { 0 }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Windows/macOS use arboard which has good native support
+        1
+    }
+}
+
+// =============================================================================
+// Clipboard Write Operations
+// =============================================================================
+
 /// Begin a clipboard write operation.
 /// Returns: Write handle (non-zero on success, 0 on failure)
 #[no_mangle]
@@ -3764,7 +4081,8 @@ pub extern "C" fn native_clipboard_write_begin(target: i32) -> u64 {
 
 /// Add a format to the pending clipboard write.
 /// Data is copied; caller may free after this returns.
-/// Returns: 1 on success, 0 on failure (invalid handle, null pointer)
+/// Returns: 1 on success, 0 on failure (invalid handle, null pointer, invalid MIME,
+///          data too large, or too many formats)
 #[no_mangle]
 pub extern "C" fn native_clipboard_write_add_format(
     write_handle: u64,
@@ -3773,16 +4091,44 @@ pub extern "C" fn native_clipboard_write_add_format(
     data_len: usize,
 ) -> i32 {
     if mime_type.is_null() || (data.is_null() && data_len > 0) {
-        return 0; // Failure
+        return 0; // Failure - null pointer
     }
 
-    let mime = normalize_mime_type(&c_str_to_string(mime_type as *const c_char));
+    // Security: Enforce data size limit (spec §10.4)
+    if data_len > CLIPBOARD_MAX_FORMAT_SIZE {
+        log::warn!(
+            "Clipboard write rejected: data size {} exceeds max {}",
+            data_len,
+            CLIPBOARD_MAX_FORMAT_SIZE
+        );
+        return 0; // Failure - data too large
+    }
+
+    let mime_str = c_str_to_string(mime_type as *const c_char);
+
+    // Security: Validate MIME type (spec §10.4)
+    if !is_valid_mime_type(&mime_str) {
+        log::warn!("Clipboard write rejected: invalid MIME type '{}'", mime_str);
+        return 0; // Failure - invalid MIME type
+    }
+
+    let mime = normalize_mime_type(&mime_str);
     let mut state = STATE.lock();
 
     let builder = match state.clipboard.write_handles.get_mut(&write_handle) {
         Some(b) => b,
         None => return 0, // Failure - invalid handle
     };
+
+    // Security: Enforce format count limit (spec §10.4)
+    if builder.formats.len() >= CLIPBOARD_MAX_FORMATS {
+        log::warn!(
+            "Clipboard write rejected: format count {} exceeds max {}",
+            builder.formats.len(),
+            CLIPBOARD_MAX_FORMATS
+        );
+        return 0; // Failure - too many formats
+    }
 
     // Copy data
     let data_vec = if data_len > 0 && !data.is_null() {
@@ -3802,7 +4148,8 @@ pub extern "C" fn native_clipboard_write_add_format(
 /// On Linux, uses arboard's exclude_from_history() to prevent clipboard managers
 /// from recording this data. On other platforms, the sensitive flag is stored
 /// but has no effect (check CLIPBOARD_CAP_SENSITIVE capability).
-/// Returns: 1 on success, 0 on failure (invalid handle, null pointer)
+/// Returns: 1 on success, 0 on failure (invalid handle, null pointer, invalid MIME,
+///          data too large, or too many formats)
 #[no_mangle]
 pub extern "C" fn native_clipboard_write_add_sensitive(
     write_handle: u64,
@@ -3811,16 +4158,44 @@ pub extern "C" fn native_clipboard_write_add_sensitive(
     data_len: usize,
 ) -> i32 {
     if mime_type.is_null() || (data.is_null() && data_len > 0) {
-        return 0; // Failure
+        return 0; // Failure - null pointer
     }
 
-    let mime = normalize_mime_type(&c_str_to_string(mime_type as *const c_char));
+    // Security: Enforce data size limit (spec §10.4)
+    if data_len > CLIPBOARD_MAX_FORMAT_SIZE {
+        log::warn!(
+            "Clipboard write rejected: data size {} exceeds max {}",
+            data_len,
+            CLIPBOARD_MAX_FORMAT_SIZE
+        );
+        return 0; // Failure - data too large
+    }
+
+    let mime_str = c_str_to_string(mime_type as *const c_char);
+
+    // Security: Validate MIME type (spec §10.4)
+    if !is_valid_mime_type(&mime_str) {
+        log::warn!("Clipboard write rejected: invalid MIME type '{}'", mime_str);
+        return 0; // Failure - invalid MIME type
+    }
+
+    let mime = normalize_mime_type(&mime_str);
     let mut state = STATE.lock();
 
     let builder = match state.clipboard.write_handles.get_mut(&write_handle) {
         Some(b) => b,
         None => return 0, // Failure - invalid handle
     };
+
+    // Security: Enforce format count limit (spec §10.4)
+    if builder.formats.len() >= CLIPBOARD_MAX_FORMATS {
+        log::warn!(
+            "Clipboard write rejected: format count {} exceeds max {}",
+            builder.formats.len(),
+            CLIPBOARD_MAX_FORMATS
+        );
+        return 0; // Failure - too many formats
+    }
 
     // Copy data
     let data_vec = if data_len > 0 && !data.is_null() {
@@ -3831,7 +4206,7 @@ pub extern "C" fn native_clipboard_write_add_sensitive(
         Vec::new()
     };
 
-    // Mark as sensitive (Phase 1: stored but not used)
+    // Mark as sensitive
     builder.formats.push((mime, data_vec, true));
 
     1 // Success
@@ -3871,7 +4246,80 @@ pub extern "C" fn native_clipboard_write_commit(
 
     let target = builder.target;
 
-    // Try X11 backend first (Linux only)
+    // Try Wayland backend first (Linux only, synchronous via smithay-clipboard)
+    #[cfg(all(target_os = "linux", feature = "wayland-backend", not(test)))]
+    {
+        // Lazy init Wayland backend if needed
+        let window_opt = state.windows.values()
+            .find_map(|w| w.winit_window.clone());
+
+        if state.clipboard.wayland_backend.is_none() {
+            if let Some(ref window) = window_opt {
+                if clipboard_wayland::WaylandClipboardBackend::is_available() {
+                    state.clipboard.wayland_backend =
+                        clipboard_wayland::WaylandClipboardBackend::try_new_from_window(window);
+                }
+            }
+        }
+
+        // Take backend out to avoid borrow conflicts
+        if let Some(mut wayland) = state.clipboard.wayland_backend.take() {
+            let mut wayland_success = true;
+
+            // Log if sensitive data flag is set (Wayland doesn't support it natively either)
+            let has_sensitive = builder.formats.iter().any(|(_, _, is_sensitive)| *is_sensitive);
+            if has_sensitive {
+                log::debug!("Wayland clipboard: sensitive data flag ignored (not supported on Wayland)");
+            }
+
+            // Write text formats to Wayland backend (images fall back to arboard)
+            let mut has_non_text = false;
+            for (mime, data, _is_sensitive) in &builder.formats {
+                let result = match mime.as_str() {
+                    "text/plain" | "text/plain;charset=utf-8" => {
+                        if let Ok(text) = std::str::from_utf8(data) {
+                            wayland.write_text(target, text.to_string());
+                            Ok(())
+                        } else {
+                            Err(CLIPBOARD_ERR_INTERNAL)
+                        }
+                    }
+                    "text/html" => {
+                        if let Ok(html) = std::str::from_utf8(data) {
+                            wayland.write_html(target, html.to_string());
+                            Ok(())
+                        } else {
+                            Err(CLIPBOARD_ERR_INTERNAL)
+                        }
+                    }
+                    _ => {
+                        // Non-text format - need to fall back to arboard
+                        has_non_text = true;
+                        Ok(())
+                    }
+                };
+                if result.is_err() {
+                    wayland_success = false;
+                    break;
+                }
+            }
+
+            // If we only have text formats and Wayland succeeded, commit via Wayland
+            if wayland_success && !has_non_text {
+                let mut events = Vec::new();
+                if wayland.write_commit(callback_id, &mut events).is_ok() {
+                    state.event_queue.extend(events);
+                    state.clipboard.wayland_backend = Some(wayland);
+                    return 1;
+                }
+            }
+            // Otherwise fall through to arboard for image support
+            wayland.write_cancel();
+            state.clipboard.wayland_backend = Some(wayland);
+        }
+    }
+
+    // Try X11 backend (Linux only)
     #[cfg(all(target_os = "linux", feature = "x11-backend"))]
     if target == ClipboardTarget::Clipboard {
         if let Some(ref mut x11) = state.clipboard.x11_backend {
@@ -7065,6 +7513,108 @@ mod tests {
         assert_eq!(result, 1, "Empty data should succeed");
     }
 
+    // =========================================================================
+    // Security Validation Tests (Spec §10.4)
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_write_add_format_invalid_mime_no_slash() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        let mime = cstr("invalid_mime_type"); // No slash
+        let data = b"test";
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            data.as_ptr(),
+            data.len()
+        );
+        assert_eq!(result, 0, "MIME type without slash should be rejected");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_add_format_invalid_mime_special_chars() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        // Test with newline (which is an invalid control character)
+        let mime = b"text/plain\n\0"; // Contains newline
+        let data = b"test";
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr(),
+            data.as_ptr(),
+            data.len()
+        );
+        assert_eq!(result, 0, "MIME with newline should be rejected");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_add_format_valid_mime_with_params() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+        let mime = cstr("text/plain;charset=utf-8");
+        let data = b"test";
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            data.as_ptr(),
+            data.len()
+        );
+        assert_eq!(result, 1, "MIME with parameters should succeed");
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_add_format_max_formats_limit() {
+        reset_state();
+        let handle = native_clipboard_write_begin(ClipboardTarget::Clipboard as i32);
+
+        // Add CLIPBOARD_MAX_FORMATS formats
+        for i in 0..CLIPBOARD_MAX_FORMATS {
+            let mime = format!("application/x-test-{}\0", i);
+            let data = b"test";
+            let result = native_clipboard_write_add_format(
+                handle,
+                mime.as_ptr() as *const u8,
+                data.as_ptr(),
+                data.len()
+            );
+            assert_eq!(result, 1, "Format {} should succeed", i);
+        }
+
+        // The next format should be rejected
+        let mime = cstr("application/x-one-too-many");
+        let data = b"test";
+        let result = native_clipboard_write_add_format(
+            handle,
+            mime.as_ptr() as *const u8,
+            data.as_ptr(),
+            data.len()
+        );
+        assert_eq!(result, 0, "Format count exceeding limit should be rejected");
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_valid_mime_type_function() {
+        // Valid MIME types
+        assert!(is_valid_mime_type("text/plain"));
+        assert!(is_valid_mime_type("text/plain;charset=utf-8"));
+        assert!(is_valid_mime_type("application/json"));
+        assert!(is_valid_mime_type("image/png"));
+        assert!(is_valid_mime_type("application/x-custom+json"));
+        assert!(is_valid_mime_type("text/plain; charset=utf-8")); // Space allowed
+
+        // Invalid MIME types
+        assert!(!is_valid_mime_type("")); // Empty
+        assert!(!is_valid_mime_type("invalid")); // No slash
+        assert!(!is_valid_mime_type("text/plain\n")); // Newline
+        assert!(!is_valid_mime_type("text/plain<script>")); // Invalid chars
+    }
+
     #[test]
     #[serial]
     fn test_write_multiple_formats() {
@@ -8441,5 +8991,162 @@ mod tests {
                 "X11 backend should be None when DISPLAY is not set"
             );
         }
+    }
+
+    /// Test Wayland backend state when wayland-backend feature is enabled
+    #[cfg(all(target_os = "linux", feature = "wayland-backend"))]
+    #[test]
+    fn test_wayland_backend_initialization_state() {
+        reset_state();
+
+        // Wayland backend starts as None and is lazily initialized
+        let state = STATE.lock();
+
+        // Initial state should be None (lazy init)
+        assert!(
+            state.clipboard.wayland_backend.is_none(),
+            "Wayland backend should be None at startup (lazy init)"
+        );
+
+        // Check if Wayland is available
+        let wayland_available = std::env::var("WAYLAND_DISPLAY").is_ok();
+        eprintln!("WAYLAND_DISPLAY available: {}", wayland_available);
+
+        // Note: Actual initialization requires a winit window,
+        // which we don't have in tests. The backend will be initialized
+        // on first clipboard operation when running in a real Wayland session.
+    }
+
+    /// Test that both X11 and Wayland features can be enabled simultaneously
+    #[cfg(all(target_os = "linux", feature = "x11-backend", feature = "wayland-backend"))]
+    #[test]
+    fn test_both_backends_can_be_enabled() {
+        reset_state();
+
+        let state = STATE.lock();
+
+        // Both fields should exist in the struct
+        let _x11_ref = &state.clipboard.x11_backend;
+        let _wayland_ref = &state.clipboard.wayland_backend;
+
+        // This test just verifies both features can compile together
+    }
+
+    // =========================================================================
+    // Platform Detection Tests (Phase 6D)
+    // =========================================================================
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_detect_display_server_returns_valid_enum() {
+        // Just verifies the function runs without panicking
+        let display_server = detect_display_server();
+        eprintln!("Detected display server: {:?}", display_server);
+
+        // Should be one of the known variants
+        match display_server {
+            LinuxDisplayServer::Wayland => eprintln!("  -> Wayland session"),
+            LinuxDisplayServer::X11 => eprintln!("  -> X11 session"),
+            LinuxDisplayServer::XWayland => eprintln!("  -> XWayland session"),
+            LinuxDisplayServer::Unknown => eprintln!("  -> Headless/unknown"),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_clipboard_backend_description_returns_string() {
+        let desc = clipboard_backend_description();
+        eprintln!("Clipboard backend: {}", desc);
+
+        // Should contain useful info
+        assert!(
+            !desc.is_empty(),
+            "Backend description should not be empty"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_native_clipboard_available_returns_bool() {
+        let available = native_clipboard_available();
+        eprintln!("Native clipboard available: {}", available);
+
+        // If Wayland or X11 feature is enabled AND the corresponding env var is set,
+        // this should return true
+        let wayland_set = std::env::var("WAYLAND_DISPLAY").is_ok();
+        let x11_set = std::env::var("DISPLAY").is_ok();
+
+        #[cfg(feature = "wayland-backend")]
+        if wayland_set {
+            assert!(available, "Should be available when WAYLAND_DISPLAY is set and wayland-backend enabled");
+        }
+
+        #[cfg(feature = "x11-backend")]
+        if x11_set && !wayland_set {
+            assert!(available, "Should be available when DISPLAY is set and x11-backend enabled");
+        }
+    }
+
+    #[test]
+    fn test_native_get_display_server_ffi() {
+        let result = native_get_display_server();
+
+        #[cfg(target_os = "linux")]
+        {
+            // Should return one of the valid Linux constants
+            assert!(
+                result == DISPLAY_SERVER_X11
+                    || result == DISPLAY_SERVER_WAYLAND
+                    || result == DISPLAY_SERVER_XWAYLAND
+                    || result == DISPLAY_SERVER_UNKNOWN,
+                "Should return valid Linux display server constant, got {}",
+                result
+            );
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(result, DISPLAY_SERVER_WINDOWS, "Windows should return DISPLAY_SERVER_WINDOWS");
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(result, DISPLAY_SERVER_MACOS, "macOS should return DISPLAY_SERVER_MACOS");
+        }
+    }
+
+    #[test]
+    fn test_native_clipboard_has_native_backend_ffi() {
+        let result = native_clipboard_has_native_backend();
+
+        // Should return 0 or 1
+        assert!(
+            result == 0 || result == 1,
+            "Should return 0 or 1, got {}",
+            result
+        );
+
+        eprintln!("Native backend available (FFI): {}", result == 1);
+    }
+
+    #[cfg(all(target_os = "linux", feature = "native-clipboard"))]
+    #[test]
+    fn test_native_clipboard_feature_enables_both_backends() {
+        // When native-clipboard feature is enabled, both x11-backend and wayland-backend
+        // should be available (this test only compiles if both are enabled)
+
+        // Verify the detection functions work
+        let display_server = detect_display_server();
+        let desc = clipboard_backend_description();
+
+        eprintln!("native-clipboard feature test:");
+        eprintln!("  Display server: {:?}", display_server);
+        eprintln!("  Backend description: {}", desc);
+
+        // With both backends enabled, description should mention fallback
+        assert!(
+            desc.contains("fallback") || desc.contains("arboard"),
+            "With both backends, should mention fallback capability"
+        );
     }
 }

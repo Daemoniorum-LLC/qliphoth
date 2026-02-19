@@ -1,0 +1,116 @@
+invoke qliphoth·prelude·*;
+ᛈ WorkspaceSymbolsDialogMsg {
+    UpdateSearchQuery,
+    UpdateSymbols,
+    UpdateFilteredSymbols,
+    UpdateSelectedIndex,
+    UpdateLoading,
+    KeyDown,
+    Select,
+}
+☉ actor WorkspaceSymbolsDialog {
+    state searchQuery: String! = "",
+    state symbols: Vec<Any>! = [],
+    state filteredSymbols: Vec<Any>! = [],
+    state selectedIndex: i64! = 0,
+    state loading: bool! = false,
+    state inputRef: Option<Element>! = ∅,
+    state selectedItemRef: Option<HTMLDivElement>! = ∅,
+
+    rite new(open: Any, on_close: Any, on_navigate: Any) -> This! {
+        self.open = open;
+        self.on_close = on_close;
+        self.on_navigate = on_navigate;
+        This
+    }
+
+    on UpdateSearchQuery {
+        self.searchQuery = msg.0;
+    }
+
+    on UpdateSymbols {
+        self.symbols = msg.0;
+    }
+
+    on UpdateFilteredSymbols {
+        self.filteredSymbols = msg.0;
+    }
+
+    on UpdateSelectedIndex {
+        self.selectedIndex = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on KeyDown {
+        // TODO: implement
+    }
+
+    on Select {
+        // Effect: Deps [selectedIndex] → inline in handlers that change these
+    }
+
+    rite view(self) -> VNode! {
+        Dialog·view()
+            ·attr("open", open)
+            ·on_openchange(OpenChange)
+            ·child(
+            DialogContent·view()
+                ·class("max-w-[600px] w-[90vw] max-h-[70vh] p-0")
+                ·child(
+                VNode·div()
+                    ·class("flex flex-col h-[60vh] bg-[#1e1e1e]")
+                    ·on_keydown(KeyDown)
+                    ·child(
+                    VNode·div()
+                        ·class("p-3 border-b border-[#3c3c3c]")
+                        ·child(
+                        VNode·div()
+                            ·class("relative")
+                            ·child(
+                            Search·view()
+                                ·class("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858585]")
+                            )
+                            ·child(
+                            Input·view()
+                                ·attr("ref", self.input_ref)
+                                ·attr("placeholder", "Search symbols (functions, classes, variables...)")
+                                ·attr("value", self.search_query)
+                                ·on_change(Change)
+                                ·class("w-full pl-10 pr-10")
+                            )
+                            ·when(self.search_query, XCircle·view()
+                                ·class("absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858585] cursor-pointer")
+                                ·on_click(Click))
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex-1 overflow-y-auto p-0")
+                        ·when(self.loading, VNode·div()
+                            ·class("flex flex-col items-center justify-center gap-3 p-10")
+                            ·child(
+                            Loader2·view()
+                                ·class("w-5 h-5 animate-spin")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-xs text-[#858585]")
+                                ·text_child("Searching workspace...")
+                            ))
+                        ·when(¬self.loading ∧ self.search_query ∧ self.filtered_symbols.len() == 0, VNode·div()
+                            ·class("p-10 text-center text-[#858585]")
+                            ·text_child("No symbols found for \"")
+                            ·text_child(self.search_query·to_string())
+                            ·text_child("\""))
+                        ·when(¬self.loading ∧ ¬self.search_query, VNode·div()
+                            ·class("p-10 text-center text-[#858585]")
+                            ·text_child("Type to search for functions, classes, variables, and more"))
+                        ·text_child(None·to_string())
+                    )
+                )
+            )
+    }
+}

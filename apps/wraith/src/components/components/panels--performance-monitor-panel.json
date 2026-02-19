@@ -1,0 +1,2359 @@
+{
+  "id": "ui/components/panels/PerformanceMonitorPanel.tsx:PerformanceMonitorPanel",
+  "name": "PerformanceMonitorPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/PerformanceMonitorPanel.tsx",
+    "code": "import React, { useState, useEffect, useRef } from 'react'\nimport { Button, Badge, Spinner, Progress } from '@persona-framework/ui'\nimport {\n  Play,\n  Square,\n  Download,\n} from 'lucide-react'\n\ninterface PerformanceMetrics {\n  cpu: number\n  memory: number\n  fps: number\n  networkRequests: number\n}\n\ninterface HotSpot {\n  name: string\n  time: number\n  percentage: number\n  file: string\n  line: number\n}\n\nexport function PerformanceMonitorPanel() {\n  const [profiling, setProfiling] = useState(false)\n  const [metrics, setMetrics] = useState<PerformanceMetrics>({\n    cpu: 0,\n    memory: 0,\n    fps: 0,\n    networkRequests: 0,\n  })\n  const [cpuHistory, setCpuHistory] = useState<number[]>([])\n  const [memoryHistory, setMemoryHistory] = useState<number[]>([])\n  const [hotspots, setHotspots] = useState<HotSpot[]>([])\n  const canvasRef = useRef<HTMLCanvasElement>(null)\n\n  useEffect(() => {\n    if (!profiling) return\n\n    const interval = setInterval(() => {\n      const newCpu = Math.random() * 100\n      const newMemory = 40 + Math.random() * 40\n      const newFps = 55 + Math.random() * 10\n\n      setMetrics({\n        cpu: Math.round(newCpu),\n        memory: Math.round(newMemory),\n        fps: Math.round(newFps),\n        networkRequests: Math.floor(Math.random() * 20),\n      })\n\n      setCpuHistory(prev => [...prev.slice(-50), newCpu])\n      setMemoryHistory(prev => [...prev.slice(-50), newMemory])\n    }, 1000)\n\n    return () => clearInterval(interval)\n  }, [profiling])\n\n  useEffect(() => {\n    if (!canvasRef.current || cpuHistory.length === 0) return\n\n    const canvas = canvasRef.current\n    const ctx = canvas.getContext('2d')\n    if (!ctx) return\n\n    canvas.width = canvas.offsetWidth\n    canvas.height = canvas.offsetHeight\n\n    ctx.clearRect(0, 0, canvas.width, canvas.height)\n\n    ctx.strokeStyle = '#3c3c3c'\n    ctx.lineWidth = 1\n    for (let i = 0; i <= 4; i++) {\n      const y = (canvas.height / 4) * i\n      ctx.beginPath()\n      ctx.moveTo(0, y)\n      ctx.lineTo(canvas.width, y)\n      ctx.stroke()\n    }\n\n    ctx.strokeStyle = '#4fc3f7'\n    ctx.lineWidth = 2\n    ctx.beginPath()\n\n    const pointWidth = canvas.width / (cpuHistory.length - 1 || 1)\n    cpuHistory.forEach((value, index) => {\n      const x = index * pointWidth\n      const y = canvas.height - (value / 100) * canvas.height\n\n      if (index === 0) {\n        ctx.moveTo(x, y)\n      } else {\n        ctx.lineTo(x, y)\n      }\n    })\n\n    ctx.stroke()\n\n    ctx.lineTo(canvas.width, canvas.height)\n    ctx.lineTo(0, canvas.height)\n    ctx.closePath()\n    ctx.fillStyle = 'rgba(79, 195, 247, 0.1)'\n    ctx.fill()\n  }, [cpuHistory])\n\n  const startProfiling = async () => {\n    setProfiling(true)\n\n    try {\n      const response = await fetch('/api/performance/start', {\n        method: 'POST',\n      })\n\n      if (response.ok) {\n        setHotspots([\n          { name: 'renderComponent', time: 245.3, percentage: 42.1, file: 'App.tsx', line: 156 },\n          { name: 'fetchData', time: 123.8, percentage: 21.3, file: 'api.ts', line: 45 },\n          { name: 'processResults', time: 89.2, percentage: 15.3, file: 'utils.ts', line: 78 },\n          { name: 'updateDOM', time: 67.5, percentage: 11.6, file: 'render.ts', line: 234 },\n          { name: 'validateInput', time: 45.1, percentage: 7.7, file: 'validator.ts', line: 12 },\n        ])\n      }\n    } catch (error) {\n      console.error('Failed to start profiling:', error)\n    }\n  }\n\n  const stopProfiling = async () => {\n    setProfiling(false)\n\n    try {\n      await fetch('/api/performance/stop', {\n        method: 'POST',\n      })\n    } catch (error) {\n      console.error('Failed to stop profiling:', error)\n    }\n  }\n\n  const exportProfile = () => {\n    const data = {\n      metrics,\n      cpuHistory,\n      memoryHistory,\n      hotspots,\n      timestamp: new Date().toISOString(),\n    }\n\n    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })\n    const url = URL.createObjectURL(blob)\n    const a = document.createElement('a')\n    a.href = url\n    a.download = `profile-${Date.now()}.json`\n    a.click()\n    URL.revokeObjectURL(url)\n  }\n\n  const getCpuColor = (cpu: number) => {\n    if (cpu < 50) return 'default'\n    if (cpu < 80) return 'default'\n    return 'destructive'\n  }\n\n  const getMemoryColor = (memory: number) => {\n    if (memory < 60) return 'default'\n    if (memory < 85) return 'default'\n    return 'destructive'\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n      <div className=\"flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c] bg-[#2b2b2b]\">\n        <div className=\"text-[13px] font-semibold text-white\">Performance Monitor</div>\n\n        <div className=\"flex gap-1\">\n          {!profiling ? (\n            <Button\n              size=\"sm\"\n              onClick={startProfiling}\n            >\n              <Play className=\"w-3.5 h-3.5 mr-1\" />\n              Start Profiling\n            </Button>\n          ) : (\n            <Button\n              size=\"sm\"\n              onClick={stopProfiling}\n            >\n              <Square className=\"w-3.5 h-3.5 mr-1\" />\n              Stop Profiling\n            </Button>\n          )}\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={exportProfile}\n            disabled={!profiling && cpuHistory.length === 0}\n            title=\"Export Profile\"\n          >\n            <Download className=\"w-3.5 h-3.5\" />\n          </Button>\n        </div>\n      </div>\n\n      {profiling && (\n        <div className=\"grid grid-cols-2 gap-3 p-3 border-b border-[#3c3c3c]\">\n          <div className=\"p-3 bg-[#252526] border border-[#3c3c3c] rounded\">\n            <div className=\"text-[10px] text-[#858585] uppercase mb-1.5\">CPU Usage</div>\n            <div className=\"text-2xl font-bold text-white mb-1\">{metrics.cpu}%</div>\n            <div className=\"mb-2\">\n              <Badge variant={getCpuColor(metrics.cpu)} className=\"text-[10px]\">\n                {metrics.cpu < 50 ? 'Normal' : metrics.cpu < 80 ? 'High' : 'Critical'}\n              </Badge>\n            </div>\n            <Progress value={metrics.cpu} className=\"h-1.5\" />\n          </div>\n\n          <div className=\"p-3 bg-[#252526] border border-[#3c3c3c] rounded\">\n            <div className=\"text-[10px] text-[#858585] uppercase mb-1.5\">Memory</div>\n            <div className=\"text-2xl font-bold text-white mb-1\">{metrics.memory}%</div>\n            <div className=\"mb-2\">\n              <Badge variant={getMemoryColor(metrics.memory)} className=\"text-[10px]\">\n                {metrics.memory < 60 ? 'Normal' : metrics.memory < 85 ? 'High' : 'Critical'}\n              </Badge>\n            </div>\n            <Progress value={metrics.memory} className=\"h-1.5\" />\n          </div>\n\n          <div className=\"p-3 bg-[#252526] border border-[#3c3c3c] rounded\">\n            <div className=\"text-[10px] text-[#858585] uppercase mb-1.5\">Frame Rate</div>\n            <div className=\"text-2xl font-bold text-white\">{metrics.fps} FPS</div>\n            <div className=\"text-[10px] text-[#b0b0b0] mt-1\">\n              {metrics.fps >= 55 ? '✓ Smooth' : '⚠ Lagging'}\n            </div>\n          </div>\n\n          <div className=\"p-3 bg-[#252526] border border-[#3c3c3c] rounded\">\n            <div className=\"text-[10px] text-[#858585] uppercase mb-1.5\">Network</div>\n            <div className=\"text-2xl font-bold text-white\">{metrics.networkRequests}</div>\n            <div className=\"text-[10px] text-[#b0b0b0] mt-1\">Active requests</div>\n          </div>\n        </div>\n      )}\n\n      <div className=\"flex-1 overflow-auto p-3\">\n        {!profiling && cpuHistory.length === 0 && (\n          <div className=\"flex flex-col items-center justify-center h-full text-center text-[#858585] text-xs\">\n            <div className=\"text-5xl mb-3\">📊</div>\n            <div>Click \"Start Profiling\" to begin monitoring performance</div>\n          </div>\n        )}\n\n        {profiling && (\n          <>\n            <div className=\"mb-5\">\n              <div className=\"text-[11px] font-semibold text-[#858585] uppercase mb-2\">CPU Usage Over Time</div>\n              <div className=\"h-[120px] bg-[#252526] border border-[#3c3c3c] rounded p-2 relative\">\n                <canvas ref={canvasRef} className=\"w-full h-full\" />\n              </div>\n            </div>\n\n            <div className=\"mb-5\">\n              <div className=\"text-[11px] font-semibold text-[#858585] uppercase mb-2\">Performance Hotspots</div>\n              <div className=\"flex flex-col gap-1\">\n                {hotspots.map((hotspot, index) => (\n                  <div key={index} className=\"flex items-center justify-between px-3 py-2 bg-[#252526] border border-[#3c3c3c] rounded text-[11px]\">\n                    <div className=\"flex-1\">\n                      <div className=\"text-[#dcdcaa] font-medium\">{hotspot.name}</div>\n                      <div className=\"text-[#858585] text-[10px]\">\n                        {hotspot.file}:{hotspot.line}\n                      </div>\n                    </div>\n                    <div className=\"text-[#f48771] font-semibold ml-3\">{hotspot.time.toFixed(1)}ms</div>\n                    <div className=\"text-[#858585] text-[10px] ml-2\">{hotspot.percentage.toFixed(1)}%</div>\n                  </div>\n                ))}\n              </div>\n            </div>\n\n            <div className=\"mb-5\">\n              <div className=\"text-[11px] font-semibold text-[#858585] uppercase mb-2\">Call Stack Flame Graph</div>\n              <div className=\"bg-[#252526] border border-[#3c3c3c] rounded p-3 min-h-[200px]\">\n                {hotspots.map((hotspot, index) => (\n                  <div\n                    key={index}\n                    className=\"h-5 mb-0.5 flex items-center pl-2 text-[10px] text-white cursor-pointer rounded hover:opacity-80\"\n                    style={{\n                      width: `${hotspot.percentage}%`,\n                      backgroundColor: `hsl(${200 - index * 30}, 70%, 50%)`,\n                      marginLeft: `${index * 20}px`,\n                    }}\n                  >\n                    {hotspot.name} ({hotspot.time.toFixed(1)}ms)\n                  </div>\n                ))}\n              </div>\n            </div>\n          </>\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "PerformanceMonitorPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 24,
+        "start_col": 7,
+        "end_line": 303,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 25,
+            "start_col": 36,
+            "end_line": 25,
+            "end_col": 51
+          },
+          "state_name": "profiling",
+          "setter_name": "setProfiling",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 26,
+            "start_col": 32,
+            "end_line": 31,
+            "end_col": 4
+          },
+          "state_name": "metrics",
+          "setter_name": "setMetrics",
+          "initial_value": "∅",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 32,
+            "start_col": 38,
+            "end_line": 32,
+            "end_col": 60
+          },
+          "state_name": "cpuHistory",
+          "setter_name": "setCpuHistory",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 33,
+            "start_col": 44,
+            "end_line": 33,
+            "end_col": 66
+          },
+          "state_name": "memoryHistory",
+          "setter_name": "setMemoryHistory",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 34,
+            "start_col": 34,
+            "end_line": 34,
+            "end_col": 57
+          },
+          "state_name": "hotspots",
+          "setter_name": "setHotspots",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 35,
+            "start_col": 20,
+            "end_line": 35,
+            "end_col": 51
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "canvasRef",
+          "ref_type": "HTMLCanvasElement",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 37,
+            "start_col": 2,
+            "end_line": 57,
+            "end_col": 17
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "profiling"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 59,
+            "start_col": 2,
+            "end_line": 104,
+            "end_col": 18
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "cpuHistory"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c] bg-[#2b2b2b]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-[13px] font-semibold text-white"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Performance Monitor"
+                            },
+                            "location": {
+                              "start_line": 173,
+                              "start_col": 62,
+                              "end_line": 173,
+                              "end_col": 81
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 173,
+                        "start_col": 8,
+                        "end_line": 173,
+                        "end_col": 87
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-1"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "!profiling",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "startProfiling"
+                                      },
+                                      "is_event_handler": true
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Play",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-3.5 h-3.5 mr-1"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 181,
+                                        "start_col": 14,
+                                        "end_line": 181,
+                                        "end_col": 51
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Start Profiling"
+                                      },
+                                      "location": {
+                                        "start_line": 181,
+                                        "start_col": 51,
+                                        "end_line": 183,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 177,
+                                  "start_col": 12,
+                                  "end_line": 183,
+                                  "end_col": 21
+                                }
+                              },
+                              "alternate": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "stopProfiling"
+                                      },
+                                      "is_event_handler": true
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Square",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-3.5 h-3.5 mr-1"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 189,
+                                        "start_col": 14,
+                                        "end_line": 189,
+                                        "end_col": 53
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Stop Profiling"
+                                      },
+                                      "location": {
+                                        "start_line": 189,
+                                        "start_col": 53,
+                                        "end_line": 191,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 185,
+                                  "start_col": 12,
+                                  "end_line": 191,
+                                  "end_col": 21
+                                }
+                              }
+                            },
+                            "location": {
+                              "start_line": 176,
+                              "start_col": 10,
+                              "end_line": 192,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "exportProfile"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "disabled",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "!profiling && cpuHistory.length === 0"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Export Profile"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Download",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-3.5 h-3.5"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 200,
+                                    "start_col": 12,
+                                    "end_line": 200,
+                                    "end_col": 48
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 193,
+                              "start_col": 10,
+                              "end_line": 201,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 175,
+                        "start_col": 8,
+                        "end_line": 202,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 172,
+                  "start_col": 6,
+                  "end_line": 203,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "profiling",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "grid grid-cols-2 gap-3 p-3 border-b border-[#3c3c3c]"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-3 bg-[#252526] border border-[#3c3c3c] rounded"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[10px] text-[#858585] uppercase mb-1.5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "CPU Usage"
+                                      },
+                                      "location": {
+                                        "start_line": 208,
+                                        "start_col": 73,
+                                        "end_line": 208,
+                                        "end_col": 82
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 208,
+                                  "start_col": 12,
+                                  "end_line": 208,
+                                  "end_col": 88
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-2xl font-bold text-white mb-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "metrics.cpu"
+                                      },
+                                      "location": {
+                                        "start_line": 209,
+                                        "start_col": 64,
+                                        "end_line": 209,
+                                        "end_col": 77
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "%"
+                                      },
+                                      "location": {
+                                        "start_line": 209,
+                                        "start_col": 77,
+                                        "end_line": 209,
+                                        "end_col": 78
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 209,
+                                  "start_col": 12,
+                                  "end_line": 209,
+                                  "end_col": 84
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "mb-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Badge",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "getCpuColor(metrics.cpu)"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-[10px]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "metrics.cpu < 50 ? 'Normal' : metrics.cpu < 80 ? 'High' : 'Critical'"
+                                            },
+                                            "location": {
+                                              "start_line": 212,
+                                              "start_col": 16,
+                                              "end_line": 212,
+                                              "end_col": 86
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 211,
+                                        "start_col": 14,
+                                        "end_line": 213,
+                                        "end_col": 22
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 210,
+                                  "start_col": 12,
+                                  "end_line": 214,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Progress",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "value",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "metrics.cpu"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "h-1.5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 215,
+                                  "start_col": 12,
+                                  "end_line": 215,
+                                  "end_col": 62
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 207,
+                            "start_col": 10,
+                            "end_line": 216,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-3 bg-[#252526] border border-[#3c3c3c] rounded"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[10px] text-[#858585] uppercase mb-1.5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Memory"
+                                      },
+                                      "location": {
+                                        "start_line": 219,
+                                        "start_col": 73,
+                                        "end_line": 219,
+                                        "end_col": 79
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 219,
+                                  "start_col": 12,
+                                  "end_line": 219,
+                                  "end_col": 85
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-2xl font-bold text-white mb-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "metrics.memory"
+                                      },
+                                      "location": {
+                                        "start_line": 220,
+                                        "start_col": 64,
+                                        "end_line": 220,
+                                        "end_col": 80
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "%"
+                                      },
+                                      "location": {
+                                        "start_line": 220,
+                                        "start_col": 80,
+                                        "end_line": 220,
+                                        "end_col": 81
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 220,
+                                  "start_col": 12,
+                                  "end_line": 220,
+                                  "end_col": 87
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "mb-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Badge",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "getMemoryColor(metrics.memory)"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-[10px]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "metrics.memory < 60 ? 'Normal' : metrics.memory < 85 ? 'High' : 'Critical'"
+                                            },
+                                            "location": {
+                                              "start_line": 223,
+                                              "start_col": 16,
+                                              "end_line": 223,
+                                              "end_col": 92
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 222,
+                                        "start_col": 14,
+                                        "end_line": 224,
+                                        "end_col": 22
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 221,
+                                  "start_col": 12,
+                                  "end_line": 225,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Progress",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "value",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "metrics.memory"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "h-1.5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 226,
+                                  "start_col": 12,
+                                  "end_line": 226,
+                                  "end_col": 65
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 218,
+                            "start_col": 10,
+                            "end_line": 227,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-3 bg-[#252526] border border-[#3c3c3c] rounded"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[10px] text-[#858585] uppercase mb-1.5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Frame Rate"
+                                      },
+                                      "location": {
+                                        "start_line": 230,
+                                        "start_col": 73,
+                                        "end_line": 230,
+                                        "end_col": 83
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 230,
+                                  "start_col": 12,
+                                  "end_line": 230,
+                                  "end_col": 89
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-2xl font-bold text-white"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "metrics.fps"
+                                      },
+                                      "location": {
+                                        "start_line": 231,
+                                        "start_col": 59,
+                                        "end_line": 231,
+                                        "end_col": 72
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "FPS"
+                                      },
+                                      "location": {
+                                        "start_line": 231,
+                                        "start_col": 72,
+                                        "end_line": 231,
+                                        "end_col": 76
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 231,
+                                  "start_col": 12,
+                                  "end_line": 231,
+                                  "end_col": 82
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[10px] text-[#b0b0b0] mt-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "metrics.fps >= 55 ? '✓ Smooth' : '⚠ Lagging'"
+                                      },
+                                      "location": {
+                                        "start_line": 233,
+                                        "start_col": 14,
+                                        "end_line": 233,
+                                        "end_col": 60
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 232,
+                                  "start_col": 12,
+                                  "end_line": 234,
+                                  "end_col": 18
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 229,
+                            "start_col": 10,
+                            "end_line": 235,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-3 bg-[#252526] border border-[#3c3c3c] rounded"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[10px] text-[#858585] uppercase mb-1.5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Network"
+                                      },
+                                      "location": {
+                                        "start_line": 238,
+                                        "start_col": 73,
+                                        "end_line": 238,
+                                        "end_col": 80
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 238,
+                                  "start_col": 12,
+                                  "end_line": 238,
+                                  "end_col": 86
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-2xl font-bold text-white"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "metrics.networkRequests"
+                                      },
+                                      "location": {
+                                        "start_line": 239,
+                                        "start_col": 59,
+                                        "end_line": 239,
+                                        "end_col": 84
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 239,
+                                  "start_col": 12,
+                                  "end_line": 239,
+                                  "end_col": 90
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[10px] text-[#b0b0b0] mt-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Active requests"
+                                      },
+                                      "location": {
+                                        "start_line": 240,
+                                        "start_col": 61,
+                                        "end_line": 240,
+                                        "end_col": 76
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 240,
+                                  "start_col": 12,
+                                  "end_line": 240,
+                                  "end_col": 82
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 237,
+                            "start_col": 10,
+                            "end_line": 241,
+                            "end_col": 16
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 206,
+                      "start_col": 8,
+                      "end_line": 242,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 205,
+                  "start_col": 6,
+                  "end_line": 243,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto p-3"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "!profiling && cpuHistory.length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col items-center justify-center h-full text-center text-[#858585] text-xs"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-5xl mb-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "📊"
+                                      },
+                                      "location": {
+                                        "start_line": 248,
+                                        "start_col": 43,
+                                        "end_line": 248,
+                                        "end_col": 46
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 248,
+                                  "start_col": 12,
+                                  "end_line": 248,
+                                  "end_col": 52
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Click \"Start Profiling\" to begin monitoring performance"
+                                      },
+                                      "location": {
+                                        "start_line": 249,
+                                        "start_col": 17,
+                                        "end_line": 249,
+                                        "end_col": 72
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 249,
+                                  "start_col": 12,
+                                  "end_line": 249,
+                                  "end_col": 78
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 247,
+                            "start_col": 10,
+                            "end_line": 250,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 246,
+                        "start_col": 8,
+                        "end_line": 251,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "profiling",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Fragment",
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "mb-5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-[11px] font-semibold text-[#858585] uppercase mb-2"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "CPU Usage Over Time"
+                                            },
+                                            "location": {
+                                              "start_line": 256,
+                                              "start_col": 87,
+                                              "end_line": 256,
+                                              "end_col": 106
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 256,
+                                        "start_col": 14,
+                                        "end_line": 256,
+                                        "end_col": 112
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "h-[120px] bg-[#252526] border border-[#3c3c3c] rounded p-2 relative"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "canvas",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "ref",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "canvasRef"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "w-full h-full"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 258,
+                                              "start_col": 16,
+                                              "end_line": 258,
+                                              "end_col": 68
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 257,
+                                        "start_col": 14,
+                                        "end_line": 259,
+                                        "end_col": 20
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 255,
+                                  "start_col": 12,
+                                  "end_line": 260,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "mb-5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-[11px] font-semibold text-[#858585] uppercase mb-2"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Performance Hotspots"
+                                            },
+                                            "location": {
+                                              "start_line": 263,
+                                              "start_col": 87,
+                                              "end_line": 263,
+                                              "end_col": 107
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 263,
+                                        "start_col": 14,
+                                        "end_line": 263,
+                                        "end_col": 113
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex flex-col gap-1"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Map",
+                                              "iterable": "hotspots",
+                                              "item_name": "hotspot",
+                                              "key_expr": "index",
+                                              "body": {
+                                                "node_type": {
+                                                  "type": "Element",
+                                                  "tag": "div",
+                                                  "is_component": false,
+                                                  "attributes": [
+                                                    {
+                                                      "name": "key",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "index"
+                                                      },
+                                                      "is_event_handler": false
+                                                    },
+                                                    {
+                                                      "name": "className",
+                                                      "value": {
+                                                        "type": "String",
+                                                        "value": "flex items-center justify-between px-3 py-2 bg-[#252526] border border-[#3c3c3c] rounded text-[11px]"
+                                                      },
+                                                      "is_event_handler": false
+                                                    }
+                                                  ],
+                                                  "children": [
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Element",
+                                                        "tag": "div",
+                                                        "is_component": false,
+                                                        "attributes": [
+                                                          {
+                                                            "name": "className",
+                                                            "value": {
+                                                              "type": "String",
+                                                              "value": "flex-1"
+                                                            },
+                                                            "is_event_handler": false
+                                                          }
+                                                        ],
+                                                        "children": [
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Element",
+                                                              "tag": "div",
+                                                              "is_component": false,
+                                                              "attributes": [
+                                                                {
+                                                                  "name": "className",
+                                                                  "value": {
+                                                                    "type": "String",
+                                                                    "value": "text-[#dcdcaa] font-medium"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                }
+                                                              ],
+                                                              "children": [
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Expression",
+                                                                    "code": "hotspot.name"
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 268,
+                                                                    "start_col": 66,
+                                                                    "end_line": 268,
+                                                                    "end_col": 80
+                                                                  }
+                                                                }
+                                                              ]
+                                                            },
+                                                            "location": {
+                                                              "start_line": 268,
+                                                              "start_col": 22,
+                                                              "end_line": 268,
+                                                              "end_col": 86
+                                                            }
+                                                          },
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Element",
+                                                              "tag": "div",
+                                                              "is_component": false,
+                                                              "attributes": [
+                                                                {
+                                                                  "name": "className",
+                                                                  "value": {
+                                                                    "type": "String",
+                                                                    "value": "text-[#858585] text-[10px]"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                }
+                                                              ],
+                                                              "children": [
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Expression",
+                                                                    "code": "hotspot.file"
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 270,
+                                                                    "start_col": 24,
+                                                                    "end_line": 270,
+                                                                    "end_col": 38
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Text",
+                                                                    "value": ":"
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 270,
+                                                                    "start_col": 38,
+                                                                    "end_line": 270,
+                                                                    "end_col": 39
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Expression",
+                                                                    "code": "hotspot.line"
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 270,
+                                                                    "start_col": 39,
+                                                                    "end_line": 270,
+                                                                    "end_col": 53
+                                                                  }
+                                                                }
+                                                              ]
+                                                            },
+                                                            "location": {
+                                                              "start_line": 269,
+                                                              "start_col": 22,
+                                                              "end_line": 271,
+                                                              "end_col": 28
+                                                            }
+                                                          }
+                                                        ]
+                                                      },
+                                                      "location": {
+                                                        "start_line": 267,
+                                                        "start_col": 20,
+                                                        "end_line": 272,
+                                                        "end_col": 26
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Element",
+                                                        "tag": "div",
+                                                        "is_component": false,
+                                                        "attributes": [
+                                                          {
+                                                            "name": "className",
+                                                            "value": {
+                                                              "type": "String",
+                                                              "value": "text-[#f48771] font-semibold ml-3"
+                                                            },
+                                                            "is_event_handler": false
+                                                          }
+                                                        ],
+                                                        "children": [
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Expression",
+                                                              "code": "hotspot.time.toFixed(1)"
+                                                            },
+                                                            "location": {
+                                                              "start_line": 273,
+                                                              "start_col": 71,
+                                                              "end_line": 273,
+                                                              "end_col": 96
+                                                            }
+                                                          },
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Text",
+                                                              "value": "ms"
+                                                            },
+                                                            "location": {
+                                                              "start_line": 273,
+                                                              "start_col": 96,
+                                                              "end_line": 273,
+                                                              "end_col": 98
+                                                            }
+                                                          }
+                                                        ]
+                                                      },
+                                                      "location": {
+                                                        "start_line": 273,
+                                                        "start_col": 20,
+                                                        "end_line": 273,
+                                                        "end_col": 104
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Element",
+                                                        "tag": "div",
+                                                        "is_component": false,
+                                                        "attributes": [
+                                                          {
+                                                            "name": "className",
+                                                            "value": {
+                                                              "type": "String",
+                                                              "value": "text-[#858585] text-[10px] ml-2"
+                                                            },
+                                                            "is_event_handler": false
+                                                          }
+                                                        ],
+                                                        "children": [
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Expression",
+                                                              "code": "hotspot.percentage.toFixed(1)"
+                                                            },
+                                                            "location": {
+                                                              "start_line": 274,
+                                                              "start_col": 69,
+                                                              "end_line": 274,
+                                                              "end_col": 100
+                                                            }
+                                                          },
+                                                          {
+                                                            "node_type": {
+                                                              "type": "Text",
+                                                              "value": "%"
+                                                            },
+                                                            "location": {
+                                                              "start_line": 274,
+                                                              "start_col": 100,
+                                                              "end_line": 274,
+                                                              "end_col": 101
+                                                            }
+                                                          }
+                                                        ]
+                                                      },
+                                                      "location": {
+                                                        "start_line": 274,
+                                                        "start_col": 20,
+                                                        "end_line": 274,
+                                                        "end_col": 107
+                                                      }
+                                                    }
+                                                  ]
+                                                },
+                                                "location": {
+                                                  "start_line": 266,
+                                                  "start_col": 18,
+                                                  "end_line": 275,
+                                                  "end_col": 24
+                                                }
+                                              }
+                                            },
+                                            "location": {
+                                              "start_line": 265,
+                                              "start_col": 16,
+                                              "end_line": 276,
+                                              "end_col": 19
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 264,
+                                        "start_col": 14,
+                                        "end_line": 277,
+                                        "end_col": 20
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 262,
+                                  "start_col": 12,
+                                  "end_line": 278,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "mb-5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-[11px] font-semibold text-[#858585] uppercase mb-2"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Call Stack Flame Graph"
+                                            },
+                                            "location": {
+                                              "start_line": 281,
+                                              "start_col": 87,
+                                              "end_line": 281,
+                                              "end_col": 109
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 281,
+                                        "start_col": 14,
+                                        "end_line": 281,
+                                        "end_col": 115
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "bg-[#252526] border border-[#3c3c3c] rounded p-3 min-h-[200px]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Map",
+                                              "iterable": "hotspots",
+                                              "item_name": "hotspot",
+                                              "key_expr": "index",
+                                              "body": {
+                                                "node_type": {
+                                                  "type": "Element",
+                                                  "tag": "div",
+                                                  "is_component": false,
+                                                  "attributes": [
+                                                    {
+                                                      "name": "key",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "index"
+                                                      },
+                                                      "is_event_handler": false
+                                                    },
+                                                    {
+                                                      "name": "className",
+                                                      "value": {
+                                                        "type": "String",
+                                                        "value": "h-5 mb-0.5 flex items-center pl-2 text-[10px] text-white cursor-pointer rounded hover:opacity-80"
+                                                      },
+                                                      "is_event_handler": false
+                                                    },
+                                                    {
+                                                      "name": "style",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "{\n                      width: `${hotspot.percentage}%`,\n                      backgroundColor: `hsl(${200 - index * 30}, 70%, 50%)`,\n                      marginLeft: `${index * 20}px`,\n                    }"
+                                                      },
+                                                      "is_event_handler": false
+                                                    }
+                                                  ],
+                                                  "children": [
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Expression",
+                                                        "code": "hotspot.name"
+                                                      },
+                                                      "location": {
+                                                        "start_line": 293,
+                                                        "start_col": 20,
+                                                        "end_line": 293,
+                                                        "end_col": 34
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Text",
+                                                        "value": "("
+                                                      },
+                                                      "location": {
+                                                        "start_line": 293,
+                                                        "start_col": 34,
+                                                        "end_line": 293,
+                                                        "end_col": 36
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Expression",
+                                                        "code": "hotspot.time.toFixed(1)"
+                                                      },
+                                                      "location": {
+                                                        "start_line": 293,
+                                                        "start_col": 36,
+                                                        "end_line": 293,
+                                                        "end_col": 61
+                                                      }
+                                                    },
+                                                    {
+                                                      "node_type": {
+                                                        "type": "Text",
+                                                        "value": "ms)"
+                                                      },
+                                                      "location": {
+                                                        "start_line": 293,
+                                                        "start_col": 61,
+                                                        "end_line": 294,
+                                                        "end_col": 18
+                                                      }
+                                                    }
+                                                  ]
+                                                },
+                                                "location": {
+                                                  "start_line": 284,
+                                                  "start_col": 18,
+                                                  "end_line": 294,
+                                                  "end_col": 24
+                                                }
+                                              }
+                                            },
+                                            "location": {
+                                              "start_line": 283,
+                                              "start_col": 16,
+                                              "end_line": 295,
+                                              "end_col": 19
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 282,
+                                        "start_col": 14,
+                                        "end_line": 296,
+                                        "end_col": 20
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 280,
+                                  "start_col": 12,
+                                  "end_line": 297,
+                                  "end_col": 18
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 254,
+                            "start_col": 10,
+                            "end_line": 298,
+                            "end_col": 13
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 253,
+                        "start_col": 8,
+                        "end_line": 299,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 245,
+                  "start_col": 6,
+                  "end_line": 300,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 171,
+            "start_col": 4,
+            "end_line": 301,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Badge",
+        "Button",
+        "Download",
+        "Play",
+        "Progress",
+        "Square"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "profiling",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "metrics",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "cpuHistory",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "memoryHistory",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "hotspots",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/performance_monitor_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:profiling",
+        "to_field": "profiling",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'profiling' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:metrics",
+        "to_field": "metrics",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "∅",
+        "reasoning": "useState hook 'metrics' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:cpuHistory",
+        "to_field": "cpuHistory",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'cpuHistory' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:memoryHistory",
+        "to_field": "memoryHistory",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'memoryHistory' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:hotspots",
+        "to_field": "hotspots",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'hotspots' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:canvasRef",
+        "to_field": "canvasRef",
+        "field_type": "Option<HTMLCanvasElement>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'canvasRef' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateProfiling",
+        "from_handler": "setProfiling",
+        "payload": null,
+        "state_changes": [
+          "self.profiling = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateMetrics",
+        "from_handler": "setMetrics",
+        "payload": null,
+        "state_changes": [
+          "self.metrics = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateCpuHistory",
+        "from_handler": "setCpuHistory",
+        "payload": null,
+        "state_changes": [
+          "self.cpuHistory = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateMemoryHistory",
+        "from_handler": "setMemoryHistory",
+        "payload": null,
+        "state_changes": [
+          "self.memoryHistory = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateHotspots",
+        "from_handler": "setHotspots",
+        "payload": null,
+        "state_changes": [
+          "self.hotspots = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[profiling]",
+        "strategy": "inline",
+        "reasoning": "Deps [profiling] → inline in handlers that change these",
+        "inline_in": "profiling",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[cpuHistory]",
+        "strategy": "inline",
+        "reasoning": "Deps [cpuHistory] → inline in handlers that change these",
+        "inline_in": "cpuHistory",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_6",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [profiling] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_7",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [cpuHistory] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Badge",
+      "Button",
+      "Download",
+      "Play",
+      "Progress",
+      "Square"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}
