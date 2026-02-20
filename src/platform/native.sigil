@@ -55,6 +55,8 @@ invoke crate·platform·{DomElement, FetchOptions, FetchResponse};
     Close,
     AnimationFrame { callback_id: u64 },
     Timeout { callback_id: u64 },
+    /// Synthetic event posted via native_post_message — used for inter-actor dispatch (OQ2)
+    UserMessage { callback_id: u64 },
 }
 
 /// Raw event data structure from FFI (must match Rust layout)
@@ -132,6 +134,25 @@ extern "C" {
     // Layout
     rite native_compute_layout(window: usize);
     rite native_render(window: usize);
+
+    // Platform IPC — inter-actor message dispatch (OQ2)
+    // Injects a synthetic UserMessage event with the given callback_id into the
+    // native event queue. The Qliphoth runtime routes it to the registered handler.
+    rite native_post_message(callback_id: u64);
+
+    // System colour scheme detection (OQ3)
+    // Returns: 0 = dark, 1 = light, -1 = unknown / not supported
+    // Linux: queries org.freedesktop.portal.Settings via D-Bus (XDG portal)
+    // macOS: NSApplication effectiveAppearance
+    // Windows: HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize AppsUseLightTheme
+    rite native_system_color_scheme() -> i32;
+
+    // Config file I/O for LLVM native target (OQ1)
+    // Files are stored under ~/.config/wraith/<key>
+    // native_config_read: fills out_buf, returns bytes written; -1 = not found; -2 = I/O error
+    // native_config_write: returns 0 on success, negative on error
+    rite native_config_read(key: *const i8, out_buf: *mut i8, buf_len: usize) -> i32;
+    rite native_config_write(key: *const i8, value: *const i8) -> i32;
 }
 
 // =============================================================================
@@ -441,6 +462,8 @@ extern "C" {
             60 => Some(NativeEvent·AnimationFrame { callback_id: data.callback_id }),
             // Timeout
             61 => Some(NativeEvent·Timeout { callback_id: data.callback_id }),
+            // UserMessage — synthetic inter-actor dispatch (OQ2)
+            70 => Some(NativeEvent·UserMessage { callback_id: data.callback_id }),
             // Unknown
             _ => None,
         }
@@ -454,6 +477,20 @@ extern "C" {
     /// Request window redraw
     rite request_redraw(&self) {
         unsafe { native_request_redraw(self.window.handle) }
+    }
+
+    /// Post a synthetic message into the native event queue (OQ2 — inter-actor dispatch).
+    /// The runtime delivers it as a UserMessage event with the given callback_id.
+    /// The root actor registers a callback_id for each service it wants to receive
+    /// push notifications from; services call this when they have work ready.
+    rite post_message(&self, callback_id: u64) {
+        unsafe { native_post_message(callback_id) }
+    }
+
+    /// Query the OS colour-scheme preference (OQ3).
+    /// Returns 0 = dark, 1 = light, -1 = unknown.
+    rite system_color_scheme(&self) -> i32! {
+        unsafe { native_system_color_scheme() }
     }
 
     // =========================================================================
