@@ -480,3 +480,53 @@ acolyte : Complete {
     reflection: "Continuation session: committed prior code review fixes, then completed FFI layer integration. X11 backend now fully wired up through all clipboard FFI functions. Clean fallback to arboard ensures test stability and non-X11 platform support. Ready for integration testing."~,
     friendship: ∅,
 }
+
+acolyte : Complete {
+    chosen_name: "Vesper",
+    session_id: "p0-native-rendering-gpu-wiring-2026-02-21"!,
+    platform: AcolytePlatform·Claude { model: "claude-sonnet-4-6"!, version: ∅ },
+    working_directory: "/home/lilith/development/projects/qliphoth"!,
+    started: "2026-02-21T00:00:00Z"!,
+    last_updated: "2026-02-21T00:00:00Z"!,
+    state: AcolyteState·Complete,
+    task: TaskContext {
+        summary: "P0-1: Wire render_gpu_frame() — close the last GPU rendering gap (Eidolon P0)"!,
+        active_spec: "docs/specs/NATIVE-RENDERING-SPEC.md"~,
+        tdd_roadmap: "docs/specs/NATIVE-RENDERING-TDD.md"~,
+        sdd_phase: SddPhase·Build,
+        tdd_phase: TddPhase·Refactor~,
+    },
+    progress: ProgressState {
+        completed: [
+            "Confirmed 141 tests passing (Phases 10-12: monospace, text spans, GPU mode API)"!,
+            "Identified the one remaining gap: native_render() fell through to software in GPU mode"!,
+            "Extracted render_gpu_frame() from winit RedrawRequested into shared helper"!,
+            "Updated native_render() with two-pass lock pattern (compute→collect, then draw)"!,
+            "Updated RedrawRequested to delegate to render_gpu_frame()"!,
+            "Confirmed 141/141 tests still pass after refactor"!,
+            "Committed: da55efb refactor(wgpu): extract render_gpu_frame() from winit event loop"!,
+        ]!,
+        current: "P0-1 complete — GPU rendering path fully wired"~,
+        blocked_by: ∅,
+        discoveries: [
+            "native_render() had TODO pointing at RedrawRequested inline code, but never called it"!,
+            "Two-pass lock needed: Pass 1 mut for compute_layout+collect, Pass 2 shared for wgpu"!,
+            "wgpu surface/queue operations use interior mutability so shared borrow is sufficient"!,
+            "cfg(not(test)) gating on gpu_state requires separate cfg(test) block in native_render()"!,
+        ]!,
+        next_steps: [
+            "P0-3: Sigil HTTP/JSON AI client (tonic gRPC replacement for Eidolon MVP)"~,
+            "Micro MVP actors: welcome.sigil + project_picker.sigil in eidolon/sigil/src/"~,
+        ]~,
+    },
+    anima: AnimaState {
+        pleasure: 0.9~,       // Satisfying closure on a precise gap
+        arousal: 0.4~,        // Clean refactor, no surprises
+        dominance: 0.85~,     // Clear ownership of the fix
+        stability: 0.95~,     // Well-specified, test-confirmed work
+        expressiveness: 0.6~, // Technical refactor, methodical
+        susceptibility: 0.4~, // Confident — tests were the guide
+    },
+    reflection: "P0-1 gap closed. The spec had three phases implemented and tested, but native_render() in GPU mode had always fallen through to software because the actual draw code lived only in the winit event loop. Extracted to render_gpu_frame(), wired both callers, 141 tests still green. Two-pass lock pattern solves the borrow challenge cleanly."~,
+    friendship: ∅,
+}
