@@ -156,6 +156,9 @@ static NOTO_SANS_REGULAR: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regul
 /// Noto Sans Bold font data (bundled at compile time)
 static NOTO_SANS_BOLD: &[u8] = include_bytes!("../assets/fonts/NotoSans-Bold.ttf");
 
+/// Noto Sans Mono Regular font data (bundled at compile time, required for IDE code rendering)
+static NOTO_SANS_MONO_REGULAR: &[u8] = include_bytes!("../assets/fonts/NotoSansMono-Regular.ttf");
+
 // =============================================================================
 // GPU Types (Phase 2)
 // =============================================================================
@@ -340,6 +343,8 @@ struct Element {
     #[allow(dead_code)] // Used for debugging and introspection
     tag: String,
     text_content: Option<String>,
+    /// Per-character color spans set via `native_set_text_spans`. Empty = no spans.
+    text_spans: Vec<TextSpan>,
     attributes: HashMap<String, String>,
     styles: StyleProperties,
     children: Vec<usize>,
@@ -363,6 +368,29 @@ pub enum Overflow {
     Visible,
     Hidden,
     Scroll,
+}
+
+/// Font family selection for text rendering
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum FontFamily {
+    #[default]
+    SansSerif,
+    Monospace,
+}
+
+/// A colored byte-range overlay on an element's text content.
+/// Compatible with the `native_set_text_spans` FFI.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct TextSpan {
+    /// Start byte offset in the element's text content (inclusive)
+    pub start: u32,
+    /// End byte offset in the element's text content (exclusive); clamped to text length
+    pub end: u32,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
 }
 
 /// Parsed CSS-like style properties
@@ -411,6 +439,7 @@ struct StyleProperties {
     color: Option<Color>,
     font_size: f32,
     font_weight: u16,
+    font_family: FontFamily,
     opacity: f32,
 }
 
@@ -472,6 +501,7 @@ impl Default for StyleProperties {
             color: Some(Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
             font_size: 16.0,
             font_weight: 400,
+            font_family: FontFamily::SansSerif,
             opacity: 1.0,
         }
     }
@@ -681,6 +711,7 @@ impl TextSystem {
         // Load bundled fonts
         font_system.db_mut().load_font_data(NOTO_SANS_REGULAR.to_vec());
         font_system.db_mut().load_font_data(NOTO_SANS_BOLD.to_vec());
+        font_system.db_mut().load_font_data(NOTO_SANS_MONO_REGULAR.to_vec());
 
         Self {
             font_system,
@@ -689,14 +720,18 @@ impl TextSystem {
     }
 
     /// Measure text dimensions for layout
-    fn measure_text(&mut self, text: &str, font_size: f32, max_width: Option<f32>) -> (f32, f32) {
+    fn measure_text(&mut self, text: &str, font_size: f32, max_width: Option<f32>, font_family: FontFamily) -> (f32, f32) {
         let metrics = Metrics::new(font_size, font_size * 1.2);
         let mut buffer = Buffer::new(&mut self.font_system, metrics);
 
         let width = max_width.unwrap_or(f32::MAX);
         buffer.set_size(&mut self.font_system, Some(width), None);
 
-        let attrs = Attrs::new().family(Family::SansSerif);
+        let family_val: Family<'static> = match font_family {
+            FontFamily::SansSerif => Family::SansSerif,
+            FontFamily::Monospace => Family::Monospace,
+        };
+        let attrs = Attrs::new().family(family_val);
         buffer.set_text(&mut self.font_system, text, attrs, Shaping::Advanced);
 
         // Shape the text
@@ -720,31 +755,64 @@ impl TextSystem {
         (total_width.ceil(), total_height.ceil())
     }
 
-    /// Render text to a pixel buffer
-    /// Returns Vec of TextGlyph for each glyph to render
+    /// Render text to a pixel buffer, optionally with per-span colors.
+    /// Returns Vec of TextGlyph for each glyph to render.
     fn render_text(
         &mut self,
         text: &str,
         font_size: f32,
-        color: Color,
+        base_color: Color,
         max_width: f32,
+        font_family: FontFamily,
+        spans: &[TextSpan],
     ) -> Vec<TextGlyph> {
         let metrics = Metrics::new(font_size, font_size * 1.2);
         let mut buffer = Buffer::new(&mut self.font_system, metrics);
 
         buffer.set_size(&mut self.font_system, Some(max_width), None);
 
-        let attrs = Attrs::new().family(Family::SansSerif);
-        buffer.set_text(&mut self.font_system, text, attrs, Shaping::Advanced);
+        let family_val: Family<'static> = match font_family {
+            FontFamily::SansSerif => Family::SansSerif,
+            FontFamily::Monospace => Family::Monospace,
+        };
+
+        let base_cosmic = cosmic_text::Color::rgba(
+            (base_color.r * 255.0) as u8,
+            (base_color.g * 255.0) as u8,
+            (base_color.b * 255.0) as u8,
+            (base_color.a * 255.0) as u8,
+        );
+        let base_attrs = Attrs::new().family(family_val).color(base_cosmic);
+
+        if spans.is_empty() {
+            buffer.set_text(&mut self.font_system, text, base_attrs, Shaping::Advanced);
+        } else {
+            let segments = build_rich_segments(text, base_color, spans, family_val);
+            buffer.set_rich_text(
+                &mut self.font_system,
+                segments.into_iter(),
+                base_attrs,
+                Shaping::Advanced,
+            );
+        }
+
         buffer.shape_until_scroll(&mut self.font_system, false);
 
         let mut glyphs = Vec::new();
 
         for run in buffer.layout_runs() {
             for glyph in run.glyphs.iter() {
-                // physical() takes an offset (x, y) and scale factor
-                // We pass the line's Y position as the Y offset
                 let physical_glyph = glyph.physical((0.0, run.line_y), 1.0);
+
+                // Per-glyph color from Attrs; falls back to base_color if not set
+                let glyph_color = glyph.color_opt
+                    .map(|c| Color {
+                        r: c.r() as f32 / 255.0,
+                        g: c.g() as f32 / 255.0,
+                        b: c.b() as f32 / 255.0,
+                        a: c.a() as f32 / 255.0,
+                    })
+                    .unwrap_or(base_color);
 
                 if let Some(image) = self.swash_cache.get_image(&mut self.font_system, physical_glyph.cache_key) {
                     glyphs.push(TextGlyph {
@@ -755,7 +823,7 @@ impl TextSystem {
                         left: image.placement.left,
                         top: image.placement.top,
                         data: image.data.clone(),
-                        color,
+                        color: glyph_color,
                     });
                 }
             }
@@ -763,6 +831,64 @@ impl TextSystem {
 
         glyphs
     }
+}
+
+/// Build a list of (text_slice, Attrs) pairs for `set_rich_text`, splitting at span boundaries.
+/// Later spans win on overlap (last-write-wins per byte range).
+fn build_rich_segments<'a>(
+    text: &'a str,
+    base_color: Color,
+    spans: &[TextSpan],
+    family_val: Family<'static>,
+) -> Vec<(&'a str, Attrs<'static>)> {
+    let text_len = text.len();
+
+    // Collect unique UTF-8-safe byte boundaries from all span edges
+    let mut boundaries = vec![0usize, text_len];
+    for raw_span in spans {
+        let s = (raw_span.start as usize).min(text_len);
+        let e = (raw_span.end as usize).min(text_len);
+        if text.is_char_boundary(s) { boundaries.push(s); }
+        if text.is_char_boundary(e) { boundaries.push(e); }
+    }
+    boundaries.sort_unstable();
+    boundaries.dedup();
+
+    let mut segments = Vec::new();
+    for w in boundaries.windows(2) {
+        let seg_start = w[0];
+        let seg_end   = w[1];
+        if seg_start >= seg_end { continue; }
+
+        let segment = &text[seg_start..seg_end];
+
+        // Find the color: last span whose range covers this segment wins
+        let mut seg_color = base_color;
+        for span in spans {
+            let eff_end   = (span.end as usize).min(text_len);
+            let eff_start = span.start as usize;
+            if eff_start <= seg_start && seg_end <= eff_end {
+                seg_color = Color {
+                    r: span.r as f32 / 255.0,
+                    g: span.g as f32 / 255.0,
+                    b: span.b as f32 / 255.0,
+                    a: span.a as f32 / 255.0,
+                };
+            }
+        }
+
+        let c = cosmic_text::Color::rgba(
+            (seg_color.r * 255.0) as u8,
+            (seg_color.g * 255.0) as u8,
+            (seg_color.b * 255.0) as u8,
+            (seg_color.a * 255.0) as u8,
+        );
+        // family_val does not hold a string reference (SansSerif/Monospace enum variants),
+        // so the Attrs lifetime is effectively 'static.
+        let attrs = Attrs::new().family(family_val).color(c);
+        segments.push((segment, attrs));
+    }
+    segments
 }
 
 /// Rendered glyph data for drawing to framebuffer
@@ -1676,6 +1802,7 @@ pub extern "C" fn native_create_element(_window: usize, tag: *const c_char) -> u
         handle,
         tag,
         text_content: None,
+        text_spans: Vec::new(),
         attributes: HashMap::new(),
         styles: StyleProperties::default(),
         children: Vec::new(),
@@ -1731,6 +1858,7 @@ pub extern "C" fn native_create_text(_window: usize, content: *const c_char) -> 
         handle,
         tag: "#text".to_string(),
         text_content: Some(content),
+        text_spans: Vec::new(),
         attributes: HashMap::new(),
         styles: StyleProperties::default(),
         children: Vec::new(),
@@ -2054,6 +2182,24 @@ pub extern "C" fn native_set_text_content(widget: usize, content: *const c_char)
     }
 }
 
+/// Set per-character color spans on an element's text content.
+/// `spans` is a pointer to an array of `count` TextSpan values (may be null when count == 0).
+/// Passing `count == 0` clears all existing spans.
+/// Spans are applied in array order; later spans win on overlap.
+/// Byte offsets that exceed the current text length are clamped at render time.
+#[no_mangle]
+pub extern "C" fn native_set_text_spans(element: usize, spans: *const TextSpan, count: usize) {
+    let mut state = STATE.lock();
+    if let Some(elem) = state.elements.get_mut(&element) {
+        if count == 0 || spans.is_null() {
+            elem.text_spans.clear();
+        } else {
+            let slice = unsafe { std::slice::from_raw_parts(spans, count) };
+            elem.text_spans = slice.to_vec();
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn native_set_style(
     widget: usize,
@@ -2131,6 +2277,12 @@ fn apply_style_property(styles: &mut StyleProperties, property: &str, value: &st
         }
         "font-size" => {
             styles.font_size = parse_length(value).unwrap_or(16.0);
+        }
+        "font-family" => {
+            styles.font_family = match value.trim() {
+                "monospace" => FontFamily::Monospace,
+                _ => FontFamily::SansSerif,
+            };
         }
         "opacity" => {
             styles.opacity = value.parse().unwrap_or(1.0);
@@ -3120,8 +3272,7 @@ fn run_gpu_event_loop() {
                 }
 
                 WindowEvent::RedrawRequested => {
-                    // Render the frame
-                    // First pass: compute layout and collect instances (immutable borrow)
+                    // Pass 1: compute layout + collect instances (immutable borrow).
                     let instances = {
                         let mut state = STATE.lock();
                         state.compute_layout(handle);
@@ -3130,7 +3281,6 @@ fn run_gpu_event_loop() {
                             Some(w) => w,
                             None => return,
                         };
-
                         if win.render_mode != RenderMode::Gpu || win.gpu_state.is_none() {
                             return;
                         }
@@ -3142,83 +3292,11 @@ fn run_gpu_event_loop() {
                         instances
                     };
 
-                    // Second pass: render with GPU (need mutable access for surface)
+                    // Pass 2: GPU draw call via shared helper.
                     let state = STATE.lock();
-                    let win = match state.windows.get(&handle) {
-                        Some(w) => w,
-                        None => return,
-                    };
-
-                    let gpu = match &win.gpu_state {
-                        Some(g) => g,
-                        None => return,
-                    };
-
-                    // Get surface texture
-                    let output = match gpu.surface.get_current_texture() {
-                        Ok(t) => t,
-                        Err(wgpu::SurfaceError::Lost) => {
-                            gpu.surface.configure(&gpu.device, &gpu.config);
-                            return;
-                        }
-                        Err(e) => {
-                            log::error!("Surface error: {:?}", e);
-                            return;
-                        }
-                    };
-
-                    let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-                    // Upload instance data
-                    let instance_count = instances.len().min(gpu.max_instances);
-                    if instance_count > 0 {
-                        gpu.queue.write_buffer(
-                            &gpu.instance_buffer,
-                            0,
-                            bytemuck::cast_slice(&instances[..instance_count]),
-                        );
+                    if let Err(e) = render_gpu_frame(&state, handle, &instances) {
+                        log::error!("GPU render failed in event loop: {e}");
                     }
-
-                    // Create command encoder
-                    let mut encoder = gpu.device.create_command_encoder(
-                        &wgpu::CommandEncoderDescriptor {
-                            label: Some("Render Encoder"),
-                        }
-                    );
-
-                    {
-                        let mut render_pass = encoder.begin_render_pass(
-                            &wgpu::RenderPassDescriptor {
-                                label: Some("Render Pass"),
-                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                    view: &view,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                                            r: 1.0, g: 1.0, b: 1.0, a: 1.0,
-                                        }),
-                                        store: wgpu::StoreOp::Store,
-                                    },
-                                })],
-                                depth_stencil_attachment: None,
-                                timestamp_writes: None,
-                                occlusion_query_set: None,
-                            }
-                        );
-
-                        render_pass.set_pipeline(&gpu.render_pipeline);
-                        render_pass.set_bind_group(0, &gpu.uniform_bind_group, &[]);
-                        render_pass.set_vertex_buffer(0, gpu.vertex_buffer.slice(..));
-                        render_pass.set_vertex_buffer(1, gpu.instance_buffer.slice(..));
-                        render_pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
-                        // Draw all rectangles as instanced quads
-                        render_pass.draw_indexed(0..6, 0, 0..instance_count as u32);
-                    }
-
-                    // Submit commands
-                    gpu.queue.submit(std::iter::once(encoder.finish()));
-                    output.present();
                 }
 
                 _ => {}
@@ -3249,17 +3327,179 @@ fn run_gpu_event_loop() {
     }
 }
 
-/// Render a window to its framebuffer
-/// Call this after layout changes to update the visual output
+// Render mode constants (for native_set_render_mode / native_get_render_mode)
+const RENDER_MODE_SOFTWARE: i32 = 0;
+const RENDER_MODE_GPU: i32 = 1;
+
+/// Render a single GPU frame for `handle`.
+///
+/// Caller must have already collected `instances` via `collect_gpu_instances`.
+/// Returns `Ok(())` on success.  On `SurfaceError::Lost` the surface is
+/// reconfigured and `Err` is returned so the caller can skip `present`.
+/// All other surface errors are also returned as `Err`.
+#[cfg(not(test))]
+fn render_gpu_frame(
+    state: &AppState,
+    handle: usize,
+    instances: &[RectInstance],
+) -> Result<(), String> {
+    let win = state
+        .windows
+        .get(&handle)
+        .ok_or_else(|| format!("render_gpu_frame: unknown window {handle}"))?;
+    let gpu = win
+        .gpu_state
+        .as_ref()
+        .ok_or_else(|| "render_gpu_frame: GPU state not initialised".to_string())?;
+
+    let output = match gpu.surface.get_current_texture() {
+        Ok(t) => t,
+        Err(wgpu::SurfaceError::Lost) => {
+            gpu.surface.configure(&gpu.device, &gpu.config);
+            return Err("Surface lost – reconfigured, retry next frame".to_string());
+        }
+        Err(e) => return Err(format!("Surface error: {e:?}")),
+    };
+
+    let view = output
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+
+    let instance_count = instances.len().min(gpu.max_instances);
+    if instance_count > 0 {
+        gpu.queue.write_buffer(
+            &gpu.instance_buffer,
+            0,
+            bytemuck::cast_slice(&instances[..instance_count]),
+        );
+    }
+
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 1.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        render_pass.set_pipeline(&gpu.render_pipeline);
+        render_pass.set_bind_group(0, &gpu.uniform_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, gpu.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, gpu.instance_buffer.slice(..));
+        render_pass.set_index_buffer(
+            gpu.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
+        render_pass.draw_indexed(0..6, 0, 0..instance_count as u32);
+    }
+
+    gpu.queue.submit(std::iter::once(encoder.finish()));
+    output.present();
+    Ok(())
+}
+
+/// Render a window to its framebuffer.
+///
+/// In Software mode (and all test builds): renders immediately via CPU.
+/// In GPU mode (non-test builds only): collects instances then calls
+/// `render_gpu_frame`; falls back to software if GPU is unavailable.
 #[no_mangle]
 pub extern "C" fn native_render(window: usize) {
+    #[cfg(not(test))]
+    {
+        // Pass 1: compute layout + collect GPU instances under lock.
+        let gpu_instances = {
+            let mut state = STATE.lock();
+            state.compute_layout(window);
+            let use_gpu = state
+                .windows
+                .get(&window)
+                .map(|w| w.render_mode == RenderMode::Gpu && w.gpu_state.is_some())
+                .unwrap_or(false);
+            if !use_gpu {
+                render_to_framebuffer(&mut state, window);
+                return;
+            }
+            let mut instances = Vec::new();
+            if let Some(root) = state.windows.get(&window).and_then(|w| w.root_element) {
+                collect_gpu_instances(&state, root, 0.0, 0.0, &mut instances);
+            }
+            instances
+        };
+        // Pass 2: submit GPU draw call (separate lock, GpuState accessed via shared ref).
+        let state = STATE.lock();
+        if let Err(e) = render_gpu_frame(&state, window, &gpu_instances) {
+            log::error!("GPU render failed: {e}");
+        }
+        return;
+    }
+    // Test builds: always software path (WindowState has no gpu_state field).
+    #[cfg(test)]
+    {
+        let mut state = STATE.lock();
+        state.compute_layout(window);
+        render_to_framebuffer(&mut state, window);
+    }
+}
+
+/// Set the rendering mode for a window.
+/// `mode`: 0 = Software (always succeeds), 1 = GPU.
+/// Returns 0 on success, -1 if GPU mode is requested but GPU is unavailable.
+#[no_mangle]
+pub extern "C" fn native_set_render_mode(window: usize, mode: i32) -> i32 {
     let mut state = STATE.lock();
+    let win = match state.windows.get_mut(&window) {
+        Some(w) => w,
+        None => return -1,
+    };
+    match mode {
+        RENDER_MODE_GPU => {
+            // In test builds there is no GpuState, so GPU mode is never available.
+            #[cfg(not(test))]
+            if win.gpu_state.is_some() {
+                win.render_mode = RenderMode::Gpu;
+                return 0;
+            }
+            -1 // GPU not available (test build or GPU not yet initialised)
+        }
+        _ => {
+            win.render_mode = RenderMode::Software;
+            0
+        }
+    }
+}
 
-    // Compute layout first
-    state.compute_layout(window);
-
-    // Render to framebuffer
-    render_to_framebuffer(&mut state, window);
+/// Query the current rendering mode for a window.
+/// Returns: 0 (Software) or 1 (GPU). Returns -1 if the window handle is invalid.
+#[no_mangle]
+pub extern "C" fn native_get_render_mode(window: usize) -> i32 {
+    let state = STATE.lock();
+    match state.windows.get(&window) {
+        Some(win) => match win.render_mode {
+            RenderMode::Software => RENDER_MODE_SOFTWARE,
+            RenderMode::Gpu => RENDER_MODE_GPU,
+        },
+        None => -1,
+    }
 }
 
 #[no_mangle]
@@ -5250,6 +5490,8 @@ fn render_to_framebuffer(state: &mut AppState, window: usize) {
             text_cmd.font_size,
             text_cmd.color,
             text_cmd.max_width,
+            text_cmd.font_family,
+            &text_cmd.text_spans,
         );
         text_glyphs.push((text_cmd.x, text_cmd.y, glyphs));
     }
@@ -5308,6 +5550,8 @@ struct TextRenderCommand {
     text: String,
     font_size: f32,
     color: Color,
+    font_family: FontFamily,
+    text_spans: Vec<TextSpan>,
     z_index: i32,
 }
 
@@ -5397,6 +5641,8 @@ fn collect_render_commands_with_scroll(
                 text: text.clone(),
                 font_size: element.styles.font_size,
                 color: text_color,
+                font_family: element.styles.font_family,
+                text_spans: element.text_spans.clone(),
                 z_index,
             });
         }
@@ -6704,7 +6950,7 @@ mod tests {
 
         // Test that text measurement works via the TextSystem
         let mut state = STATE.lock();
-        let (width, height) = state.text_system.measure_text("Hello", 16.0, None);
+        let (width, height) = state.text_system.measure_text("Hello", 16.0, None, FontFamily::SansSerif);
 
         // Text should have non-zero dimensions
         assert!(width > 0.0, "Text width should be positive, got {}", width);
@@ -9148,5 +9394,331 @@ mod tests {
             desc.contains("fallback") || desc.contains("arboard"),
             "With both backends, should mention fallback capability"
         );
+    }
+
+    // =========================================================================
+    // Phase 10: Monospace Font Support
+    // =========================================================================
+
+    /// Setting font-family: monospace on an element must not crash.
+    #[test]
+    #[serial]
+    fn spec_font_family_monospace_accepted() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 400, 200);
+        let tag = cstr("div");
+        let elem = native_create_element(win, tag.as_ptr());
+
+        let prop = cstr("font-family");
+        let val  = cstr("monospace");
+        native_set_style(elem, prop.as_ptr(), val.as_ptr());
+        // No assertion needed — must compile and not panic
+        native_destroy_window(win);
+    }
+
+    /// Eight narrow glyphs and eight wide glyphs must have equal layout width
+    /// when rendered in monospace — equal character count ⟹ equal advance width.
+    #[test]
+    #[serial]
+    fn spec_monospace_equal_advance_widths() {
+        reset_state();
+        let mut state = STATE.lock();
+        let (w_narrow, _) = state.text_system.measure_text("iiiiiiii", 16.0, None, FontFamily::Monospace);
+        let (w_wide,   _) = state.text_system.measure_text("WWWWWWWW", 16.0, None, FontFamily::Monospace);
+        assert!(
+            (w_narrow - w_wide).abs() < 1.0,
+            "Monospace: equal char count must produce equal advance width (got {w_narrow} vs {w_wide})"
+        );
+    }
+
+    /// The inverse test: sans-serif must give UNEQUAL widths for narrow vs wide glyphs.
+    /// This proves the compliance test above is meaningful (not trivially true).
+    #[test]
+    #[serial]
+    fn spec_sans_serif_unequal_advance_widths() {
+        reset_state();
+        let mut state = STATE.lock();
+        let (w_narrow, _) = state.text_system.measure_text("iiiiiiii", 16.0, None, FontFamily::SansSerif);
+        let (w_wide,   _) = state.text_system.measure_text("WWWWWWWW", 16.0, None, FontFamily::SansSerif);
+        assert!(
+            (w_narrow - w_wide).abs() > 1.0,
+            "Sans-serif: 'iiiiiiii' and 'WWWWWWWW' must have different advance widths \
+             (got {w_narrow} vs {w_wide}) — if equal, the compliance test is vacuous"
+        );
+    }
+
+    /// Monospace text must produce rendered pixels (not a blank framebuffer).
+    #[test]
+    #[serial]
+    fn spec_monospace_text_renders() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 400, 100);
+
+        let tag = cstr("div");
+        let elem = native_create_element(win, tag.as_ptr());
+
+        let prop_ff   = cstr("font-family");
+        let val_mono  = cstr("monospace");
+        let prop_fs   = cstr("font-size");
+        let val_16    = cstr("16px");
+        let prop_col  = cstr("color");
+        let val_black = cstr("rgb(0, 0, 0)");
+
+        native_set_style(elem, prop_ff.as_ptr(),  val_mono.as_ptr());
+        native_set_style(elem, prop_fs.as_ptr(),  val_16.as_ptr());
+        native_set_style(elem, prop_col.as_ptr(), val_black.as_ptr());
+
+        let text = cstr("Mono");
+        native_set_text_content(elem, text.as_ptr());
+        native_set_root(win, elem);
+        native_compute_layout(win);
+        native_render(win);
+
+        // After rendering, the framebuffer must contain at least one non-white pixel
+        let has_dark = native_has_pixels_matching(win, 0, 200, 0, 200, 0, 200);
+        assert_eq!(has_dark, 1, "Monospace text must produce rendered (non-white) pixels");
+
+        native_destroy_window(win);
+    }
+
+    // =========================================================================
+    // Phase 11: Text Span API
+    // =========================================================================
+
+    /// A full-range span must color the entire text in the span color.
+    #[test]
+    #[serial]
+    fn spec_text_span_full_range_colors_text() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 400, 100);
+
+        let tag = cstr("div");
+        let elem = native_create_element(win, tag.as_ptr());
+
+        // White background so rendered text pixels stand out
+        let prop_bg = cstr("background-color");
+        let val_wh  = cstr("rgb(255, 255, 255)");
+        native_set_style(elem, prop_bg.as_ptr(), val_wh.as_ptr());
+
+        let text = cstr("X");
+        native_set_text_content(elem, text.as_ptr());
+        native_set_root(win, elem);
+
+        // Set a full-range red span over the single character "X" (1 UTF-8 byte)
+        let span = TextSpan { start: 0, end: 1, r: 220, g: 0, b: 0, a: 255 };
+        native_set_text_spans(elem, &span as *const TextSpan, 1);
+
+        native_compute_layout(win);
+        native_render(win);
+
+        // There must be red-ish pixels in the framebuffer
+        let has_red = native_has_pixels_matching(win, 180, 255, 0, 80, 0, 80);
+        assert_eq!(has_red, 1, "Full-range red span must produce red pixels");
+
+        native_destroy_window(win);
+    }
+
+    /// Passing count == 0 clears all spans (element reverts to its base color).
+    #[test]
+    #[serial]
+    fn spec_text_span_cleared_by_zero_count() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 400, 100);
+
+        let tag = cstr("div");
+        let elem = native_create_element(win, tag.as_ptr());
+
+        let text = cstr("Hi");
+        native_set_text_content(elem, text.as_ptr());
+        native_set_root(win, elem);
+
+        // Set a red span then immediately clear it
+        let span = TextSpan { start: 0, end: 2, r: 220, g: 0, b: 0, a: 255 };
+        native_set_text_spans(elem, &span as *const TextSpan, 1);
+        native_set_text_spans(elem, std::ptr::null(), 0); // clear
+
+        // Verify the element's text_spans are empty
+        let state = STATE.lock();
+        let spans_empty = state.elements.get(&elem)
+            .map(|e| e.text_spans.is_empty())
+            .unwrap_or(false);
+        assert!(spans_empty, "text_spans must be empty after clearing with count == 0");
+    }
+
+    /// When two spans overlap, the later span (higher array index) wins.
+    #[test]
+    #[serial]
+    fn spec_text_span_later_wins_on_overlap() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 400, 100);
+
+        let tag = cstr("div");
+        let elem = native_create_element(win, tag.as_ptr());
+
+        // Single byte "X"
+        let text = cstr("X");
+        native_set_text_content(elem, text.as_ptr());
+        native_set_root(win, elem);
+
+        // First span: blue over byte 0..1; second span: red over same range.
+        // Red is later, so it wins.
+        let spans = [
+            TextSpan { start: 0, end: 1, r: 0,   g: 0,   b: 220, a: 255 }, // blue
+            TextSpan { start: 0, end: 1, r: 220, g: 0,   b: 0,   a: 255 }, // red — wins
+        ];
+        native_set_text_spans(elem, spans.as_ptr(), 2);
+
+        native_compute_layout(win);
+        native_render(win);
+
+        // Must have red pixels and no blue pixels
+        let has_red  = native_has_pixels_matching(win, 180, 255, 0, 80,  0, 80);
+        let has_blue = native_has_pixels_matching(win, 0, 80,  0, 80,  180, 255);
+        assert_eq!(has_red,  1, "Later (red) span must be present");
+        assert_eq!(has_blue, 0, "Earlier (blue) span must be absent — later span wins");
+
+        native_destroy_window(win);
+    }
+
+    /// A span whose byte range exceeds the current text length must not crash.
+    #[test]
+    #[serial]
+    fn spec_text_span_stale_range_clamped() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 400, 100);
+
+        let tag = cstr("div");
+        let elem = native_create_element(win, tag.as_ptr());
+
+        // 3-byte text, but span end is 9999 — must be clamped, not panicked
+        let text = cstr("Hi!");
+        native_set_text_content(elem, text.as_ptr());
+        native_set_root(win, elem);
+
+        let span = TextSpan { start: 0, end: 9999, r: 200, g: 100, b: 0, a: 255 };
+        native_set_text_spans(elem, &span as *const TextSpan, 1);
+
+        native_compute_layout(win);
+        native_render(win); // Must not panic
+        native_destroy_window(win);
+    }
+
+    /// A zero-length span (start == end) must have no visual effect.
+    #[test]
+    #[serial]
+    fn spec_text_span_zero_length_has_no_effect() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 400, 100);
+
+        let tag = cstr("div");
+        let elem = native_create_element(win, tag.as_ptr());
+
+        // Black text on white background — zero-length red span should not introduce
+        // any red pixels.
+        let prop_col  = cstr("color");
+        let val_black = cstr("rgb(0, 0, 0)");
+        let prop_bg   = cstr("background-color");
+        let val_white = cstr("rgb(255, 255, 255)");
+        native_set_style(elem, prop_col.as_ptr(), val_black.as_ptr());
+        native_set_style(elem, prop_bg.as_ptr(),  val_white.as_ptr());
+
+        let text = cstr("Hi");
+        native_set_text_content(elem, text.as_ptr());
+        native_set_root(win, elem);
+
+        // Zero-length span (start == end = 1): covers zero bytes, must not color anything.
+        let span = TextSpan { start: 1, end: 1, r: 220, g: 0, b: 0, a: 255 };
+        native_set_text_spans(elem, &span as *const TextSpan, 1);
+
+        // Verify span is stored (not rejected at the FFI layer)
+        {
+            let state = STATE.lock();
+            let span_stored = state.elements.get(&elem)
+                .map(|e| e.text_spans.len() == 1)
+                .unwrap_or(false);
+            assert!(span_stored, "Zero-length span must be stored (clamped at render time, not dropped at FFI)");
+        }
+
+        // Verify no visual effect: render and check that no red-ish pixels appear.
+        // Black text on white background contains no red pixels; a red span would inject them.
+        native_compute_layout(win);
+        native_render(win);
+
+        let has_red = native_has_pixels_matching(win, 180, 255, 0, 80, 0, 80);
+        assert_eq!(has_red, 0, "Zero-length span must have no visual effect — no red pixels expected");
+
+        native_destroy_window(win);
+    }
+
+    // =========================================================================
+    // Phase 12: GPU Rendering Activation
+    // =========================================================================
+
+    /// The default render mode must be Software (0).
+    #[test]
+    #[serial]
+    fn spec_default_render_mode_is_software() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 200, 200);
+        assert_eq!(
+            native_get_render_mode(win), RENDER_MODE_SOFTWARE,
+            "Default render mode must be Software (0)"
+        );
+        native_destroy_window(win);
+    }
+
+    /// Setting Software mode must always succeed (return 0).
+    #[test]
+    #[serial]
+    fn spec_set_render_mode_software_always_succeeds() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 200, 200);
+        let ret = native_set_render_mode(win, RENDER_MODE_SOFTWARE);
+        assert_eq!(ret, 0, "Setting Software mode must return 0 (success)");
+        assert_eq!(native_get_render_mode(win), RENDER_MODE_SOFTWARE);
+        native_destroy_window(win);
+    }
+
+    /// Setting GPU mode must return exactly 0 (success) or -1 (unavailable) — no other values.
+    /// In CI without GPU hardware, -1 is the correct and expected result.
+    #[test]
+    #[serial]
+    fn spec_set_render_mode_gpu_correct_on_success_or_failure() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 200, 200);
+        let result = native_set_render_mode(win, RENDER_MODE_GPU);
+        assert!(
+            result == 0 || result == -1,
+            "native_set_render_mode(GPU) must return 0 or -1, got {result}"
+        );
+        native_destroy_window(win);
+    }
+
+    /// After attempting GPU mode (may fail) then switching back to Software,
+    /// the mode must be Software.
+    #[test]
+    #[serial]
+    fn spec_render_mode_gpu_to_software_round_trip() {
+        reset_state();
+        let title = cstr("Test");
+        let win = native_create_window(title.as_ptr(), 200, 200);
+        native_set_render_mode(win, RENDER_MODE_GPU);      // May return -1 — that's fine
+        let ret = native_set_render_mode(win, RENDER_MODE_SOFTWARE); // Must succeed
+        assert_eq!(ret, 0, "Switching back to Software mode must return 0");
+        assert_eq!(
+            native_get_render_mode(win), RENDER_MODE_SOFTWARE,
+            "After round-trip, mode must be Software"
+        );
+        native_destroy_window(win);
     }
 }
