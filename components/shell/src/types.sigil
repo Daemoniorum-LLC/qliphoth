@@ -1,0 +1,160 @@
+// qliphoth-shell — Shared Types
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Canonical data types shared across all qliphoth-shell components.
+// Application-agnostic: no editor, tab, or file-system concepts here.
+
+invoke qliphoth·prelude·*;
+
+// =============================================================================
+// Panel types
+// =============================================================================
+
+/// Which region of the layout a panel occupies.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ ᛈ PanelLocation {
+    Left,
+    Right,
+    Bottom,
+    Center,
+}
+
+⊢ PanelLocation {
+    ☉ rite as_str(self: &Self!) -> &str! {
+        ⌥ self {
+            PanelLocation·Left   => "left",
+            PanelLocation·Right  => "right",
+            PanelLocation·Bottom => "bottom",
+            PanelLocation·Center => "center",
+        }
+    }
+}
+
+/// Runtime state for a single registered panel slot.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ PanelState {
+    id: String!
+    visible: bool!
+    location: PanelLocation!
+    /// Panel width in CSS pixels. Minimum 200px.
+    width: f32!
+    /// Display order within its location column.
+    order: usize!
+}
+
+⊢ PanelState {
+    ☉ rite new(id: String, location: PanelLocation) -> Self! {
+        PanelState {
+            id,
+            visible: false,
+            location,
+            width: 300.0,
+            order: 0,
+        }
+    }
+}
+
+/// Serialisable panel state for persistence. Flat, no enum location.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ SavedPanelState {
+    id: String!
+    visible: bool!
+    /// Stringified PanelLocation: "left" | "right" | "bottom" | "center".
+    location: String!
+    width: f32!
+}
+
+/// A registered icon-tray entry.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ PanelIcon {
+    /// Matches the PanelState id this icon toggles.
+    id: String!
+    /// Unicode glyph shown in the tray.
+    icon: String!
+    /// Tooltip shown on hover.
+    tooltip: String!
+}
+
+// =============================================================================
+// Status bar types
+// =============================================================================
+
+/// Connection health for a background service indicator.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ ᛈ ConnectionStatus {
+    Connected,
+    Disconnected,
+    Connecting,
+    Error,
+}
+
+⊢ ConnectionStatus {
+    /// CSS color string for this status.
+    ☉ rite color_str(self: &Self!) -> &str! {
+        ⌥ self {
+            ConnectionStatus·Connected    => "rgb(0,255,127)",
+            ConnectionStatus·Disconnected => "rgb(220,20,60)",
+            ConnectionStatus·Connecting   => "rgb(255,215,0)",
+            ConnectionStatus·Error        => "rgb(255,100,100)",
+        }
+    }
+
+    /// Single-character status glyph.
+    ☉ rite icon(self: &Self!) -> &str! {
+        ⌥ self {
+            ConnectionStatus·Connected    => "●",
+            ConnectionStatus·Disconnected => "○",
+            ConnectionStatus·Connecting   => "◐",
+            ConnectionStatus·Error        => "✗",
+        }
+    }
+
+    /// Human-readable label for tooltips.
+    ☉ rite label(self: &Self!) -> &str! {
+        ⌥ self {
+            ConnectionStatus·Connected    => "Connected",
+            ConnectionStatus·Disconnected => "Disconnected",
+            ConnectionStatus·Connecting   => "Connecting...",
+            ConnectionStatus·Error        => "Error",
+        }
+    }
+}
+
+/// A named background task with a progress indicator.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ BackgroundTask {
+    name: String!
+    /// Progress fraction, clamped 0.0–1.0.
+    progress: f32!
+    /// Human-readable status line shown in tooltip.
+    status: String!
+}
+
+// =============================================================================
+// Command palette types
+// =============================================================================
+
+/// A single registered command entry.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ Command {
+    /// Dotted-namespace id, e.g. "file.open".
+    id: String!
+    /// Display label; the fuzzy search target.
+    label: String!
+    /// Secondary description shown below the label.
+    description: String!
+    /// Category string controlling badge colour: File / View / Git / …
+    category: String!
+    /// Keyboard shortcut string, e.g. "Ctrl+S". None if unbound.
+    keybinding: Option<String>?
+}
+
+/// Result from a fuzzy match operation.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ FuzzyMatch {
+    /// Higher is better.
+    score: i32!
+    /// Positions of matched characters in the target string.
+    matched_indices: Vec<usize>!
+}
