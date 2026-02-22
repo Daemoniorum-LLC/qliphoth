@@ -57,35 +57,35 @@ invoke super·types·{Command};
 
     rite view(self) -> VNode! {
         ⎇ ¬self.show {
-            return VNode·Empty;
+            VNode·Empty
+        } ⎉ {
+            ≔ backdrop_style = "position:fixed;inset:0;\
+                                 background:rgba(0,0,0,0.7);\
+                                 z-index:400;\
+                                 display:flex;justify-content:center;";
+            ≔ dialog_style   = "position:absolute;top:80px;\
+                                 width:700px;\
+                                 background:var(--bg-overlay,rgb(15,15,15));\
+                                 border:1.5px solid rgba(26,123,93,0.39);\
+                                 border-radius:8px;\
+                                 overflow:hidden;\
+                                 display:flex;flex-direction:column;\
+                                 padding:20px;";
+
+            VNode·div()
+                ·class("command-palette-backdrop")
+                ·attr("style", backdrop_style)
+                ·on_click(CommandPaletteMsg·Dismiss)
+                ·child(
+                    VNode·div()
+                        ·class("command-palette-dialog")
+                        ·attr("style", dialog_style)
+                        ·child(self·render_header())
+                        ·child(self·render_search_frame())
+                        ·child(self·render_recent_label())
+                        ·child(self·render_command_list())
+                )
         }
-
-        ≔ backdrop_style = "position:fixed;inset:0;\
-                             background:rgba(0,0,0,0.7);\
-                             z-index:400;\
-                             display:flex;justify-content:center;";
-        ≔ dialog_style   = "position:absolute;top:80px;\
-                             width:700px;\
-                             background:var(--bg-overlay,rgb(15,15,15));\
-                             border:1.5px solid rgba(26,123,93,0.39);\
-                             border-radius:8px;\
-                             overflow:hidden;\
-                             display:flex;flex-direction:column;\
-                             padding:20px;";
-
-        VNode·div()
-            ·class("command-palette-backdrop")
-            ·attr("style", backdrop_style)
-            ·on_click(CommandPaletteMsg·Dismiss)
-            ·child(
-                VNode·div()
-                    ·class("command-palette-dialog")
-                    ·attr("style", dialog_style)
-                    ·child(self·render_header())
-                    ·child(self·render_search_frame())
-                    ·child(self·render_recent_label())
-                    ·child(self·render_command_list())
-            )
     }
 }
 
@@ -371,12 +371,13 @@ invoke super·types·{Command};
 
     rite render_recent_label(self: &Self!) -> VNode! {
         ⎇ ¬self.search_query.is_empty() ∨ self.recent_commands.is_empty() {
-            return VNode·Empty;
+            VNode·Empty
+        } ⎉ {
+            VNode·span()
+                ·attr("style", "font-size:0.8125rem;color:rgb(200,200,200);\
+                                 display:block;margin-bottom:8px;")
+                ·text_child("⏱️  Recent Commands")
         }
-        VNode·span()
-            ·attr("style", "font-size:0.8125rem;color:rgb(200,200,200);\
-                             display:block;margin-bottom:8px;")
-            ·text_child("⏱️  Recent Commands")
     }
 
     rite render_command_list(self: &Self!) -> VNode! {

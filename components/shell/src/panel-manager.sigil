@@ -130,20 +130,21 @@ invoke super·types·{PanelLocation, PanelState, SavedPanelState};
     /// Visible panel ids for a given location column.
     ☉ rite visible_panels(self: &Self!, location: PanelLocation) -> Vec<String>! {
         ⎇ ⌥ location { PanelLocation·Center => true, _ => false } {
-            return vec![];
-        }
-        ≔ list = ⌥ location {
-            PanelLocation·Left   => &self.left_panels,
-            PanelLocation·Right  => &self.right_panels,
-            _                    => &self.bottom_panels,
-        };
-        ≔ Δ result: Vec<String> = vec![];
-        ∀ id ∈ list {
-            ⎇ self.is_visible(id) {
-                result.push(id.clone());
+            vec![]
+        } ⎉ {
+            ≔ list = ⌥ location {
+                PanelLocation·Left   => &self.left_panels,
+                PanelLocation·Right  => &self.right_panels,
+                _                    => &self.bottom_panels,
+            };
+            ≔ Δ result: Vec<String> = vec![];
+            ∀ id ∈ list {
+                ⎇ self.is_visible(id) {
+                    result.push(id.clone());
+                }
             }
+            result
         }
-        result
     }
 
     ☉ rite all_panels(self: &Self!, location: PanelLocation) -> Vec<String>! {
