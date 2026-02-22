@@ -178,7 +178,13 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
     }
 
     ☉ rite remove_task(self: &Δ Self!, name: &str) {
-        self.tasks.retain(|t| t.name != name);
+        ≔ Δ remaining: Vec<BackgroundTask> = vec![];
+        ∀ t ∈ &self.tasks {
+            ⎇ t.name != name {
+                remaining.push(t.clone());
+            }
+        }
+        self.tasks = remaining;
     }
 
     ☉ rite update_task_progress(self: &Δ Self!, name: &str, progress: f32) {
@@ -324,28 +330,30 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
             ·child(lang_node)
             ·child(enc_node)
             ·child(bell_node)
-            ·child(self·render_status_chip("AI",     &self.ai_status,     StatusBarMsg·AiStatusClick))
-            ·child(self·render_status_chip("Docker", &self.docker_status, StatusBarMsg·DockerStatusClick))
-            ·child(self·render_status_chip("Git",    &self.git_status,    StatusBarMsg·GitStatusClick))
+            ·child(
+                VNode·span()
+                    ·class("sb-status-chip")
+                    ·attr("style", &format!("color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;", self.ai_status.color_str()))
+                    ·attr("title", self.ai_status.label())
+                    ·on_click(StatusBarMsg·AiStatusClick)
+                    ·text_child(&format!("{} AI", self.ai_status.icon()))
+            )
+            ·child(
+                VNode·span()
+                    ·class("sb-status-chip")
+                    ·attr("style", &format!("color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;", self.docker_status.color_str()))
+                    ·attr("title", self.docker_status.label())
+                    ·on_click(StatusBarMsg·DockerStatusClick)
+                    ·text_child(&format!("{} Docker", self.docker_status.icon()))
+            )
+            ·child(
+                VNode·span()
+                    ·class("sb-status-chip")
+                    ·attr("style", &format!("color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;", self.git_status.color_str()))
+                    ·attr("title", self.git_status.label())
+                    ·on_click(StatusBarMsg·GitStatusClick)
+                    ·text_child(&format!("{} Git", self.git_status.icon()))
+            )
     }
 
-    rite render_status_chip(
-        self:   &Self!,
-        label:  &str,
-        status: &ConnectionStatus,
-        msg:    StatusBarMsg,
-    ) -> VNode! {
-        ≔ text  = format!("{} {}", status.icon(), label);
-        ≔ style = format!(
-            "color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;",
-            status.color_str()
-        );
-
-        VNode·span()
-            ·class("sb-status-chip")
-            ·attr("style", &style)
-            ·attr("title", status.label())
-            ·on_click(msg)
-            ·text_child(&text)
-    }
 }

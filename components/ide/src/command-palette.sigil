@@ -16,7 +16,7 @@
 // crate is available. Replace fuzzy_match() call when ready.
 
 invoke qliphoth·prelude·*;
-invoke super·types·{Command, FuzzyMatch};
+invoke super·types·{Command};
 
 // =============================================================================
 // Messages
@@ -42,7 +42,7 @@ invoke super·types·{Command, FuzzyMatch};
     state show:               bool!                       = false,
     state search_query:       String!                     = String·new(),
     state commands:           Vec<Command>!               = vec![],
-    state filtered_commands:  Vec<(Command, FuzzyMatch)>! = vec![],
+    state filtered_commands:  Vec<Command>!               = vec![],
     state selected_index:     usize!                      = 0,
     state executed_command:   Option<String>?             = None,
     state recent_commands:    Vec<String>!                = vec![],
@@ -115,7 +115,7 @@ invoke super·types·{Command, FuzzyMatch};
     ☉ rite toggle(self: &Δ Self!) {
         self.show = ¬self.show;
         ⎇ self.show {
-            self.search_query.clear();
+            self.search_query = String·new();
             self·update_filtered_commands();
             self.selected_index = 0;
         }
@@ -123,7 +123,7 @@ invoke super·types·{Command, FuzzyMatch};
 
     ☉ rite open(self: &Δ Self!) {
         self.show = true;
-        self.search_query.clear();
+        self.search_query = String·new();
         self·update_filtered_commands();
         self.selected_index = 0;
     }
@@ -160,9 +160,11 @@ invoke super·types·{Command, FuzzyMatch};
 
     rite update_filtered_commands(self: &Δ Self!) {
         ⎇ self.search_query.is_empty() {
-            self.filtered_commands = self.commands.iter()
-                .map(|cmd| (cmd.clone(), FuzzyMatch { score: 0, matched_indices: vec![] }))
-                .collect();
+            ≔ Δ all: Vec<Command> = vec![];
+            ∀ cmd ∈ &self.commands {
+                all.push(cmd.clone());
+            }
+            self.filtered_commands = all;
         } ⎉ {
             self.filtered_commands = self·filter_commands(&self.search_query.clone());
         }
@@ -172,12 +174,12 @@ invoke super·types·{Command, FuzzyMatch};
     }
 
     /// Simple substring filter. Replace with fuzzy_match() when crate is available.
-    rite filter_commands(self: &Self!, query: &str) -> Vec<(Command, FuzzyMatch)>! {
+    rite filter_commands(self: &Self!, query: &str) -> Vec<Command>! {
         ≔ q = query.to_lowercase();
-        ≔ Δ results: Vec<(Command, FuzzyMatch)> = vec![];
+        ≔ Δ results: Vec<Command> = vec![];
         ∀ cmd ∈ &self.commands {
             ⎇ cmd.label.to_lowercase().contains(&q) ∨ cmd.description.to_lowercase().contains(&q) {
-                results.push((cmd.clone(), FuzzyMatch { score: 0, matched_indices: vec![] }));
+                results.push(cmd.clone());
             }
         }
         results
@@ -204,8 +206,9 @@ invoke super·types·{Command, FuzzyMatch};
     }
 
     ☉ rite confirm_selection(self: &Δ Self!) {
-        ⎇ ≔ Some((cmd, _)) = self.filtered_commands.get(self.selected_index).cloned() {
-            self·execute_command(cmd.id);
+        ⎇ self.selected_index < self.filtered_commands.len() {
+            ≔ cmd_id = self.filtered_commands[self.selected_index].id.clone();
+            self·execute_command(cmd_id);
         }
     }
 
@@ -214,11 +217,14 @@ invoke super·types·{Command, FuzzyMatch};
     // -------------------------------------------------------------------------
 
     ☉ rite execute_command(self: &Δ Self!, id: String) {
-        self.recent_commands.retain(|r| r != &id);
-        self.recent_commands.insert(0, id.clone());
-        ⎇ self.recent_commands.len() > 10 {
-            self.recent_commands.truncate(10);
+        ≔ Δ new_recent: Vec<String> = vec![];
+        new_recent.push(id.clone());
+        ∀ r ∈ &self.recent_commands {
+            ⎇ r != &id ∧ new_recent.len() < 10 {
+                new_recent.push(r.clone());
+            }
         }
+        self.recent_commands = new_recent;
         self.executed_command = Some(id);
         self.show = false;
     }
@@ -393,7 +399,8 @@ invoke super·types·{Command, FuzzyMatch};
                 ·class("cp-list")
                 ·attr("style", list_style);
 
-            ∀ (i, (cmd, _)) ∈ self.filtered_commands.iter().enumerate() {
+            ≔ Δ i: usize = 0;
+            ∀ cmd ∈ &self.filtered_commands {
                 ≔ is_selected = i == self.selected_index;
                 ≔ is_recent   = self.recent_commands.iter().any(|r| r == &cmd.id);
 
@@ -442,6 +449,7 @@ invoke super·types·{Command, FuzzyMatch};
                 }
 
                 list = list·child(row);
+                i = i + 1;
             }
 
             list

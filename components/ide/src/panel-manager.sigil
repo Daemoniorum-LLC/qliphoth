@@ -105,11 +105,19 @@ invoke super·types·{PanelLocation, PanelState, SavedPanelState};
     }
 
     ☉ rite is_visible(self: &Self!, id: &str) -> bool! {
-        self.states.iter().find(|s| s.id == id).map_or(false, |s| s.visible)
+        ⎇ ≔ Some(s) = self.states.iter().find(|s| s.id == id) {
+            s.visible
+        } ⎉ {
+            false
+        }
     }
 
     ☉ rite get_width(self: &Self!, id: &str) -> f32! {
-        self.states.iter().find(|s| s.id == id).map_or(300.0, |s| s.width)
+        ⎇ ≔ Some(s) = self.states.iter().find(|s| s.id == id) {
+            s.width
+        } ⎉ {
+            300.0
+        }
     }
 
     /// Enforce 200px minimum.
@@ -129,7 +137,13 @@ invoke super·types·{PanelLocation, PanelState, SavedPanelState};
             PanelLocation·Right  => &self.right_panels,
             _                    => &self.bottom_panels,
         };
-        list.iter().filter(|id| self.is_visible(id)).cloned().collect()
+        ≔ Δ result: Vec<String> = vec![];
+        ∀ id ∈ list {
+            ⎇ self.is_visible(id) {
+                result.push(id.clone());
+            }
+        }
+        result
     }
 
     ☉ rite all_panels(self: &Self!, location: PanelLocation) -> Vec<String>! {
@@ -146,9 +160,15 @@ invoke super·types·{PanelLocation, PanelState, SavedPanelState};
     }
 
     ☉ rite move_panel(self: &Δ Self!, id: &str, location: PanelLocation) {
-        self.left_panels.retain(|p|   p != id);
-        self.right_panels.retain(|p|  p != id);
-        self.bottom_panels.retain(|p| p != id);
+        ≔ Δ new_left: Vec<String> = vec![];
+        ∀ p ∈ &self.left_panels   { ⎇ p != id { new_left.push(p.clone()); } }
+        self.left_panels = new_left;
+        ≔ Δ new_right: Vec<String> = vec![];
+        ∀ p ∈ &self.right_panels  { ⎇ p != id { new_right.push(p.clone()); } }
+        self.right_panels = new_right;
+        ≔ Δ new_bottom: Vec<String> = vec![];
+        ∀ p ∈ &self.bottom_panels { ⎇ p != id { new_bottom.push(p.clone()); } }
+        self.bottom_panels = new_bottom;
         ⌥ location {
             PanelLocation·Left   => self.left_panels.push(id.to_string()),
             PanelLocation·Right  => self.right_panels.push(id.to_string()),
@@ -165,12 +185,16 @@ invoke super·types·{PanelLocation, PanelState, SavedPanelState};
     // -------------------------------------------------------------------------
 
     ☉ rite export_states(self: &Self!) -> Vec<SavedPanelState>! {
-        self.states.iter().map(|s| SavedPanelState {
-            id:       s.id.clone(),
-            visible:  s.visible,
-            location: s.location.as_str().to_string(),
-            width:    s.width,
-        }).collect()
+        ≔ Δ result: Vec<SavedPanelState> = vec![];
+        ∀ s ∈ &self.states {
+            result.push(SavedPanelState {
+                id:       s.id.clone(),
+                visible:  s.visible,
+                location: s.location.as_str().to_string(),
+                width:    s.width,
+            });
+        }
+        result
     }
 
     ☉ rite import_states(self: &Δ Self!, saved: Vec<SavedPanelState>) {
@@ -184,9 +208,15 @@ invoke super·types·{PanelLocation, PanelState, SavedPanelState};
                         _       => PanelLocation·Bottom,
                     };
                     ⎇ panel.location.as_str() != loc {
-                        self.left_panels.retain(|id|   id != &s.id);
-                        self.right_panels.retain(|id|  id != &s.id);
-                        self.bottom_panels.retain(|id| id != &s.id);
+                        ≔ Δ nl: Vec<String> = vec![];
+                        ∀ id ∈ &self.left_panels   { ⎇ id != &s.id { nl.push(id.clone()); } }
+                        self.left_panels = nl;
+                        ≔ Δ nr: Vec<String> = vec![];
+                        ∀ id ∈ &self.right_panels  { ⎇ id != &s.id { nr.push(id.clone()); } }
+                        self.right_panels = nr;
+                        ≔ Δ nb: Vec<String> = vec![];
+                        ∀ id ∈ &self.bottom_panels { ⎇ id != &s.id { nb.push(id.clone()); } }
+                        self.bottom_panels = nb;
                         ⌥ new_loc {
                             PanelLocation·Left   => self.left_panels.push(s.id.clone()),
                             PanelLocation·Right  => self.right_panels.push(s.id.clone()),
@@ -200,9 +230,14 @@ invoke super·types·{PanelLocation, PanelState, SavedPanelState};
                 }
             }
         }
-        self.selected_panel = self.states.iter()
-            .find(|s| s.visible)
-            .map(|s| s.id.clone());
+        ≔ Δ found_sel: bool = false;
+        self.selected_panel = None;
+        ∀ s ∈ &self.states {
+            ⎇ s.visible ∧ ¬found_sel {
+                self.selected_panel = Some(s.id.clone());
+                found_sel = true;
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

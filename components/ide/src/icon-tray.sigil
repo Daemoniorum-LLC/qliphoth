@@ -96,7 +96,13 @@ invoke super·types·{PanelIcon};
                 self.visible_panels.push(id);
             }
         } ⎉ {
-            self.visible_panels.retain(|p| p != &id);
+            ≔ Δ remaining: Vec<String> = vec![];
+            ∀ p ∈ &self.visible_panels {
+                ⎇ p != &id {
+                    remaining.push(p.clone());
+                }
+            }
+            self.visible_panels = remaining;
         }
     }
 
