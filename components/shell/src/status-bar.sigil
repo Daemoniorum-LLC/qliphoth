@@ -2,17 +2,21 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2025 Daemoniorum, LLC
 //
-// IDE status bar: cursor position, language, encoding, git branch, service
-// connection indicators (AI, Docker, Git), background task progress, and
-// notification badge.
+// Generic application status bar: cursor position, language, encoding, VCS
+// branch, configurable service connection indicators, background task progress,
+// and notification badge.
+//
+// Service indicators are fully app-defined — no IDE-specific slots are hardcoded.
+// Consuming apps register them via set_service("Git", status), set_service("AI", status), etc.
 //
 // Integration:
-//   • Shell calls set_file / clear_file, set_cursor, set_git_branch, etc.
+//   • Shell calls set_file / clear_file, set_cursor, set_branch, etc.
+//   • Shell calls set_service(name, status) to maintain service indicator slots.
 //   • Shell drains take_action() each frame to handle click-through events.
 //   • Background tasks: add_task / update_task_progress / remove_task.
 
 invoke qliphoth·prelude·*;
-invoke super·types·{ConnectionStatus, BackgroundTask};
+invoke super·types·{ConnectionStatus, BackgroundTask, ServiceIndicator};
 
 // =============================================================================
 // Actions
@@ -24,9 +28,10 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
     GoToLine,
     ChangeLanguage,
     ChangeEncoding,
-    OpenGitPanel,
-    OpenAiPanel,
-    OpenDockerPanel,
+    /// Clicking the VCS branch chip. Shell decides which panel to open.
+    OpenBranchPanel,
+    /// Clicking a named service chip. Shell routes by name to the right panel.
+    OpenServicePanel(String),
     OpenNotificationHistory,
     /// Request cancellation of the named background task.
     CancelTask(String),
@@ -40,10 +45,8 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
     CursorClick,
     LanguageClick,
     EncodingClick,
-    GitBranchClick,
-    AiStatusClick,
-    DockerStatusClick,
-    GitStatusClick,
+    BranchClick,
+    ServiceClick(String),
     NotificationClick,
 }
 
@@ -53,38 +56,34 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
 
 ☉ actor StatusBar {
     // --- File info ---
-    state current_file:       Option<String>?       = None,
-    state cursor_line:        usize!                = 0,
-    state cursor_column:      usize!                = 0,
-    state language:           Option<String>?       = None,
-    state encoding:           String!               = "UTF-8".to_string(),
+    state current_file:       Option<String>?          = None,
+    state cursor_line:        usize!                   = 0,
+    state cursor_column:      usize!                   = 0,
+    state language:           Option<String>?          = None,
+    state encoding:           String!                  = "UTF-8".to_string(),
 
-    // --- Git info ---
-    state git_branch:         Option<String>?       = None,
-    state git_changes:        usize!                = 0,
+    // --- VCS branch (app-agnostic: git, hg, jj, etc.) ---
+    state branch_label:       Option<String>?          = None,
+    state branch_changes:     usize!                   = 0,
 
-    // --- Service connection indicators ---
-    state ai_status:          ConnectionStatus!     = ConnectionStatus·Disconnected,
-    state docker_status:      ConnectionStatus!     = ConnectionStatus·Disconnected,
-    state git_status:         ConnectionStatus!     = ConnectionStatus·Disconnected,
+    // --- Configurable service indicators (app-defined, order preserved) ---
+    state services:           Vec<ServiceIndicator>!   = vec![],
 
     // --- Background tasks ---
-    state tasks:              Vec<BackgroundTask>!  = vec![],
+    state tasks:              Vec<BackgroundTask>!     = vec![],
 
     // --- Notification badge ---
-    state notification_count: usize!               = 0,
+    state notification_count: usize!                   = 0,
 
     // --- Pending shell action ---
     state pending_action:     Option<StatusBarAction>? = None,
 
-    on CursorClick       { self.pending_action = Some(StatusBarAction·GoToLine); }
-    on LanguageClick     { self.pending_action = Some(StatusBarAction·ChangeLanguage); }
-    on EncodingClick     { self.pending_action = Some(StatusBarAction·ChangeEncoding); }
-    on GitBranchClick    { self.pending_action = Some(StatusBarAction·OpenGitPanel); }
-    on AiStatusClick     { self.pending_action = Some(StatusBarAction·OpenAiPanel); }
-    on DockerStatusClick { self.pending_action = Some(StatusBarAction·OpenDockerPanel); }
-    on GitStatusClick    { self.pending_action = Some(StatusBarAction·OpenGitPanel); }
-    on NotificationClick { self.pending_action = Some(StatusBarAction·OpenNotificationHistory); }
+    on CursorClick        { self.pending_action = Some(StatusBarAction·GoToLine); }
+    on LanguageClick      { self.pending_action = Some(StatusBarAction·ChangeLanguage); }
+    on EncodingClick      { self.pending_action = Some(StatusBarAction·ChangeEncoding); }
+    on BranchClick        { self.pending_action = Some(StatusBarAction·OpenBranchPanel); }
+    on ServiceClick(name) { self.pending_action = Some(StatusBarAction·OpenServicePanel(name)); }
+    on NotificationClick  { self.pending_action = Some(StatusBarAction·OpenNotificationHistory); }
 
     rite view(self) -> VNode! {
         ≔ bar_style = "display:flex;align-items:center;\
@@ -116,11 +115,9 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
             cursor_column:      0,
             language:           None,
             encoding:           "UTF-8".to_string(),
-            git_branch:         None,
-            git_changes:        0,
-            ai_status:          ConnectionStatus·Disconnected,
-            docker_status:      ConnectionStatus·Disconnected,
-            git_status:         ConnectionStatus·Disconnected,
+            branch_label:       None,
+            branch_changes:     0,
+            services:           vec![],
             tasks:              vec![],
             notification_count: 0,
             pending_action:     None,
@@ -151,26 +148,27 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
         self.encoding = encoding;
     }
 
-    ☉ rite set_git_branch(self: &Δ Self!, branch: String, changes: usize) {
-        self.git_branch  = Some(branch);
-        self.git_changes = changes;
+    ☉ rite set_branch(self: &Δ Self!, label: String, changes: usize) {
+        self.branch_label   = Some(label);
+        self.branch_changes = changes;
     }
 
-    ☉ rite clear_git_branch(self: &Δ Self!) {
-        self.git_branch  = None;
-        self.git_changes = 0;
+    ☉ rite clear_branch(self: &Δ Self!) {
+        self.branch_label   = None;
+        self.branch_changes = 0;
     }
 
-    ☉ rite set_ai_status(self: &Δ Self!, status: ConnectionStatus) {
-        self.ai_status = status;
+    /// Upsert a named service indicator. Adds if new, updates status if already present.
+    ☉ rite set_service(self: &Δ Self!, name: String, status: ConnectionStatus) {
+        ⎇ ≔ Some(s) = self.services.iter_mut().find(|s| s.name == name) {
+            s.status = status;
+        } ⎉ {
+            self.services.push(ServiceIndicator { name, status });
+        }
     }
 
-    ☉ rite set_docker_status(self: &Δ Self!, status: ConnectionStatus) {
-        self.docker_status = status;
-    }
-
-    ☉ rite set_git_status(self: &Δ Self!, status: ConnectionStatus) {
-        self.git_status = status;
+    ☉ rite clear_services(self: &Δ Self!) {
+        self.services = vec![];
     }
 
     ☉ rite add_task(self: &Δ Self!, task: BackgroundTask) {
@@ -213,19 +211,19 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
             ·class("sb-left")
             ·attr("style", left_style);
 
-        // Git branch
-        ⎇ ≔ Some(ref branch) = self.git_branch {
-            ≔ label = ⎇ self.git_changes > 0 {
-                format!("⎇ {} +{}", branch, self.git_changes)
+        // VCS branch
+        ⎇ ≔ Some(ref label) = self.branch_label {
+            ≔ text = ⎇ self.branch_changes > 0 {
+                format!("⎇ {} +{}", label, self.branch_changes)
             } ⎉ {
-                format!("⎇ {}", branch)
+                format!("⎇ {}", label)
             };
             left = left·child(
                 VNode·span()
-                    ·class("sb-git-branch")
+                    ·class("sb-branch")
                     ·attr("style", "color:var(--text-secondary,#969696);cursor:pointer;white-space:nowrap;")
-                    ·on_click(StatusBarMsg·GitBranchClick)
-                    ·text_child(&label)
+                    ·on_click(StatusBarMsg·BranchClick)
+                    ·text_child(&text)
             );
         }
 
@@ -323,37 +321,27 @@ invoke super·types·{ConnectionStatus, BackgroundTask};
             ·on_click(StatusBarMsg·NotificationClick)
             ·text_child(&bell_label);
 
-        VNode·div()
+        ≔ Δ right = VNode·div()
             ·class("sb-right")
             ·attr("style", right_style)
             ·child(cursor_node)
             ·child(lang_node)
             ·child(enc_node)
-            ·child(bell_node)
-            ·child(
-                VNode·span()
-                    ·class("sb-status-chip")
-                    ·attr("style", &format!("color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;", self.ai_status.color_str()))
-                    ·attr("title", self.ai_status.label())
-                    ·on_click(StatusBarMsg·AiStatusClick)
-                    ·text_child(&format!("{} AI", self.ai_status.icon()))
-            )
-            ·child(
-                VNode·span()
-                    ·class("sb-status-chip")
-                    ·attr("style", &format!("color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;", self.docker_status.color_str()))
-                    ·attr("title", self.docker_status.label())
-                    ·on_click(StatusBarMsg·DockerStatusClick)
-                    ·text_child(&format!("{} Docker", self.docker_status.icon()))
-            )
-            ·child(
-                VNode·span()
-                    ·class("sb-status-chip")
-                    ·attr("style", &format!("color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;", self.git_status.color_str()))
-                    ·attr("title", self.git_status.label())
-                    ·on_click(StatusBarMsg·GitStatusClick)
-                    ·text_child(&format!("{} Git", self.git_status.icon()))
-            )
-    }
+            ·child(bell_node);
 
+        // App-defined service indicator chips (order preserved from set_service() calls)
+        ∀ s ∈ &self.services {
+            ≔ label = format!("{} {}", s.status.icon(), s.name);
+            right = right·child(
+                VNode·span()
+                    ·class("sb-status-chip")
+                    ·attr("style", &format!("color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;", s.status.color_str()))
+                    ·attr("title", s.status.label())
+                    ·on_click(StatusBarMsg·ServiceClick(s.name.clone()))
+                    ·text_child(&label)
+            );
+        }
+
+        right
+    }
 }

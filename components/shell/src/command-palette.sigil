@@ -7,7 +7,7 @@
 //
 // Integration:
 //   • Shell calls open() / toggle() to show the palette.
-//   • Shell calls add_command() for app-specific commands beyond the defaults.
+//   • Shell calls add_command() / register_default_commands() to populate the registry.
 //   • Shell drains take_executed_command() each frame to act on selections.
 //   • Keyboard nav (ArrowUp / ArrowDown / Enter / Escape) must be wired by
 //     the shell via select_prev / select_next / confirm_selection / dismiss.
@@ -95,7 +95,7 @@ invoke super·types·{Command};
 
 ⊢ CommandPalette {
     ☉ rite new() -> Self! {
-        ≔ Δ cp = CommandPalette {
+        CommandPalette {
             show:              false,
             search_query:      String·new(),
             commands:          vec![],
@@ -103,9 +103,7 @@ invoke super·types·{Command};
             selected_index:    0,
             executed_command:  None,
             recent_commands:   vec![],
-        };
-        cp.register_default_commands();
-        cp
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -238,7 +236,9 @@ invoke super·types·{Command};
     // Default command registry
     // -------------------------------------------------------------------------
 
-    rite register_default_commands(self: &Δ Self!) {
+    /// Register a standard set of commands for IDE-like applications.
+    /// Call this from the consuming app's init, not from CommandPalette·new().
+    ☉ rite register_default_commands(self: &Δ Self!) {
         // --- File ---
         self.add_command(Command { id: "file.open".into(),     label: "File: Open File".into(),   description: "Open a file from disk".into(),    category: "File".into(), keybinding: Some("Ctrl+O".into()) });
         self.add_command(Command { id: "file.save".into(),     label: "File: Save".into(),         description: "Save the current file".into(),    category: "File".into(), keybinding: Some("Ctrl+S".into()) });
