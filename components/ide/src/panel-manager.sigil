@@ -1,0 +1,278 @@
+// qliphoth-ide — PanelManager
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Manages the visibility, location, and width of registered IDE panel slots.
+// Pure state actor — its view() is empty. The shell calls render_location() per
+// column slot to get the chrome VNode for each visible panel group.
+//
+// Integration:
+//   • Shell calls register_panel() for each panel on startup.
+//   • Shell calls show_panel / hide_panel / toggle_panel in response to
+//     IconTray actions.
+//   • Shell calls import_states() on startup after loading persisted SavedPanelState.
+//   • Shell calls export_states() before shutdown to persist panel layout.
+
+invoke qliphoth·prelude·*;
+invoke super·types·{PanelLocation, PanelState, SavedPanelState};
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+☉ ᛈ PanelManagerMsg {
+    HidePanel(String),
+    ShowPanel(String),
+    TogglePanel(String),
+}
+
+// =============================================================================
+// Actor
+// =============================================================================
+
+☉ actor PanelManager {
+    state states:         Vec<PanelState>! = vec![],
+    state selected_panel: Option<String>?  = None,
+    state left_panels:    Vec<String>!     = vec![],
+    state right_panels:   Vec<String>!     = vec![],
+    state bottom_panels:  Vec<String>!     = vec![],
+
+    on HidePanel(id)   { self·hide_panel(&id); }
+    on ShowPanel(id)   { self·show_panel(&id); }
+    on TogglePanel(id) { self·toggle_panel(&id); }
+
+    rite view(self) -> VNode! {
+        // PanelManager is a pure state actor; visual output is composed by the shell.
+        VNode·Empty
+    }
+}
+
+// =============================================================================
+// Implementation
+// =============================================================================
+
+⊢ PanelManager {
+    ☉ rite new() -> Self! {
+        PanelManager {
+            states:         vec![],
+            selected_panel: None,
+            left_panels:    vec![],
+            right_panels:   vec![],
+            bottom_panels:  vec![],
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Panel lifecycle
+    // -------------------------------------------------------------------------
+
+    /// Register a panel. No-op if the id is already registered.
+    ☉ rite register_panel(self: &Δ Self!, id: String, location: PanelLocation) {
+        ⎇ ¬self.states.iter().any(|s| s.id == id) {
+            ⌥ location {
+                PanelLocation·Left   => self.left_panels.push(id.clone()),
+                PanelLocation·Right  => self.right_panels.push(id.clone()),
+                PanelLocation·Bottom => self.bottom_panels.push(id.clone()),
+                PanelLocation·Center => {}
+            }
+            self.states.push(PanelState·new(id, location));
+        }
+    }
+
+    ☉ rite toggle_panel(self: &Δ Self!, id: &str) {
+        ⎇ ≔ Some(state) = self.states.iter_mut().find(|s| s.id == id) {
+            state.visible = ¬state.visible;
+            ⎇ state.visible {
+                self.selected_panel = Some(id.to_string());
+            }
+        }
+    }
+
+    ☉ rite show_panel(self: &Δ Self!, id: &str) {
+        ⎇ ≔ Some(state) = self.states.iter_mut().find(|s| s.id == id) {
+            state.visible = true;
+            self.selected_panel = Some(id.to_string());
+        }
+    }
+
+    ☉ rite hide_panel(self: &Δ Self!, id: &str) {
+        ⎇ ≔ Some(state) = self.states.iter_mut().find(|s| s.id == id) {
+            state.visible = false;
+            ⎇ self.selected_panel.as_deref() == Some(id) {
+                self.selected_panel = None;
+            }
+        }
+    }
+
+    ☉ rite is_visible(self: &Self!, id: &str) -> bool! {
+        self.states.iter().find(|s| s.id == id).map_or(false, |s| s.visible)
+    }
+
+    ☉ rite get_width(self: &Self!, id: &str) -> f32! {
+        self.states.iter().find(|s| s.id == id).map_or(300.0, |s| s.width)
+    }
+
+    /// Enforce 200px minimum.
+    ☉ rite set_width(self: &Δ Self!, id: &str, width: f32) {
+        ⎇ ≔ Some(state) = self.states.iter_mut().find(|s| s.id == id) {
+            state.width = width.max(200.0);
+        }
+    }
+
+    /// Visible panel ids for a given location column.
+    ☉ rite visible_panels(self: &Self!, location: PanelLocation) -> Vec<String>! {
+        ⎇ ⌥ location { PanelLocation·Center => true, _ => false } {
+            return vec![];
+        }
+        ≔ list = ⌥ location {
+            PanelLocation·Left   => &self.left_panels,
+            PanelLocation·Right  => &self.right_panels,
+            _                    => &self.bottom_panels,
+        };
+        list.iter().filter(|id| self.is_visible(id)).cloned().collect()
+    }
+
+    ☉ rite all_panels(self: &Self!, location: PanelLocation) -> Vec<String>! {
+        ⌥ location {
+            PanelLocation·Left   => self.left_panels.clone(),
+            PanelLocation·Right  => self.right_panels.clone(),
+            PanelLocation·Bottom => self.bottom_panels.clone(),
+            PanelLocation·Center => vec![],
+        }
+    }
+
+    ☉ rite selected_panel(self: &Self!) -> Option<&String>! {
+        self.selected_panel.as_ref()
+    }
+
+    ☉ rite move_panel(self: &Δ Self!, id: &str, location: PanelLocation) {
+        self.left_panels.retain(|p|   p != id);
+        self.right_panels.retain(|p|  p != id);
+        self.bottom_panels.retain(|p| p != id);
+        ⌥ location {
+            PanelLocation·Left   => self.left_panels.push(id.to_string()),
+            PanelLocation·Right  => self.right_panels.push(id.to_string()),
+            PanelLocation·Bottom => self.bottom_panels.push(id.to_string()),
+            PanelLocation·Center => {}
+        }
+        ⎇ ≔ Some(state) = self.states.iter_mut().find(|s| s.id == id) {
+            state.location = location;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Persistence bridge
+    // -------------------------------------------------------------------------
+
+    ☉ rite export_states(self: &Self!) -> Vec<SavedPanelState>! {
+        self.states.iter().map(|s| SavedPanelState {
+            id:       s.id.clone(),
+            visible:  s.visible,
+            location: s.location.as_str().to_string(),
+            width:    s.width,
+        }).collect()
+    }
+
+    ☉ rite import_states(self: &Δ Self!, saved: Vec<SavedPanelState>) {
+        ∀ s ∈ &saved {
+            ⎇ ≔ Some(panel) = self.states.iter_mut().find(|p| p.id == s.id) {
+                ≔ loc = s.location.as_str();
+                ⎇ loc == "left" || loc == "right" || loc == "bottom" {
+                    ≔ new_loc = ⌥ loc {
+                        "left"  => PanelLocation·Left,
+                        "right" => PanelLocation·Right,
+                        _       => PanelLocation·Bottom,
+                    };
+                    ⎇ panel.location.as_str() != loc {
+                        self.left_panels.retain(|id|   id != &s.id);
+                        self.right_panels.retain(|id|  id != &s.id);
+                        self.bottom_panels.retain(|id| id != &s.id);
+                        ⌥ new_loc {
+                            PanelLocation·Left   => self.left_panels.push(s.id.clone()),
+                            PanelLocation·Right  => self.right_panels.push(s.id.clone()),
+                            PanelLocation·Bottom => self.bottom_panels.push(s.id.clone()),
+                            PanelLocation·Center => {}
+                        }
+                        panel.location = new_loc;
+                    }
+                    panel.visible = s.visible;
+                    panel.width   = s.width;
+                }
+            }
+        }
+        self.selected_panel = self.states.iter()
+            .find(|s| s.visible)
+            .map(|s| s.id.clone());
+    }
+
+    // -------------------------------------------------------------------------
+    // View helpers (called by shell per column slot)
+    // -------------------------------------------------------------------------
+
+    /// Render all visible panels for one location column.
+    /// Returns an empty VNode when no panels are visible in that slot.
+    /// Panel body content is NOT rendered here — only the chrome frame.
+    ☉ rite render_location(self: &Self!, location: PanelLocation) -> VNode! {
+        ≔ ids = self.visible_panels(location);
+
+        ⎇ ids.is_empty() {
+            VNode·Empty
+        } ⎉ {
+            ≔ col_style = "display:flex;flex-direction:column;height:100%;overflow:hidden;";
+
+            ≔ Δ col = VNode·div()
+                ·class("panel-column")
+                ·attr("style", col_style);
+
+            ∀ id ∈ &ids {
+                ⎇ ≔ Some(state) = self.states.iter().find(|s| &s.id == id) {
+                    col = col·child(self·render_panel_chrome(state));
+                }
+            }
+
+            col
+        }
+    }
+
+    /// Render chrome (header + close button) for one panel.
+    /// Shell injects panel body content after this frame.
+    rite render_panel_chrome(self: &Self!, state: &PanelState) -> VNode! {
+        ≔ panel_style = format!(
+            "width:{}px;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;",
+            state.width as u32
+        );
+        ≔ header_style = "display:flex;align-items:center;justify-content:space-between;\
+                           padding:4px 10px;\
+                           background:var(--bg-panel-header,rgb(18,18,18));\
+                           border-bottom:1px solid var(--border-primary,rgba(108,108,118,0.2));\
+                           font-size:0.6875rem;font-weight:600;\
+                           text-transform:uppercase;letter-spacing:0.08em;\
+                           color:var(--text-primary,rgb(255,255,255));\
+                           user-select:none;flex-shrink:0;";
+
+        VNode·div()
+            ·class("panel-card")
+            ·attr("style", &panel_style)
+            ·child(
+                VNode·div()
+                    ·class("panel-header")
+                    ·attr("style", header_style)
+                    ·child(
+                        VNode·span()
+                            // ??PROTOCOL?? — replace with Panel::title() when protocol system exists
+                            ·text_child(&state.id)
+                    )
+                    ·child(
+                        VNode·button()
+                            ·class("panel-close")
+                            ·attr("style", "background:none;border:none;\
+                                            color:var(--text-secondary,#6c6c76);\
+                                            cursor:pointer;padding:0 4px;\
+                                            font-size:1rem;line-height:1;")
+                            ·attr("aria-label", "Close panel")
+                            ·on_click(PanelManagerMsg·HidePanel(state.id.clone()))
+                            ·text_child("×")
+                    )
+            )
+    }
+}

@@ -1,0 +1,351 @@
+// qliphoth-ide — StatusBar
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// IDE status bar: cursor position, language, encoding, git branch, service
+// connection indicators (AI, Docker, Git), background task progress, and
+// notification badge.
+//
+// Integration:
+//   • Shell calls set_file / clear_file, set_cursor, set_git_branch, etc.
+//   • Shell drains take_action() each frame to handle click-through events.
+//   • Background tasks: add_task / update_task_progress / remove_task.
+
+invoke qliphoth·prelude·*;
+invoke super·types·{ConnectionStatus, BackgroundTask};
+
+// =============================================================================
+// Actions
+// =============================================================================
+
+/// Actions the status bar can request the shell to perform.
+/// Drained via take_action() each frame.
+☉ ᛈ StatusBarAction {
+    GoToLine,
+    ChangeLanguage,
+    ChangeEncoding,
+    OpenGitPanel,
+    OpenAiPanel,
+    OpenDockerPanel,
+    OpenNotificationHistory,
+    /// Request cancellation of the named background task.
+    CancelTask(String),
+}
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+☉ ᛈ StatusBarMsg {
+    CursorClick,
+    LanguageClick,
+    EncodingClick,
+    GitBranchClick,
+    AiStatusClick,
+    DockerStatusClick,
+    GitStatusClick,
+    NotificationClick,
+}
+
+// =============================================================================
+// Actor
+// =============================================================================
+
+☉ actor StatusBar {
+    // --- File info ---
+    state current_file:       Option<String>?       = None,
+    state cursor_line:        usize!                = 0,
+    state cursor_column:      usize!                = 0,
+    state language:           Option<String>?       = None,
+    state encoding:           String!               = "UTF-8".to_string(),
+
+    // --- Git info ---
+    state git_branch:         Option<String>?       = None,
+    state git_changes:        usize!                = 0,
+
+    // --- Service connection indicators ---
+    state ai_status:          ConnectionStatus!     = ConnectionStatus·Disconnected,
+    state docker_status:      ConnectionStatus!     = ConnectionStatus·Disconnected,
+    state git_status:         ConnectionStatus!     = ConnectionStatus·Disconnected,
+
+    // --- Background tasks ---
+    state tasks:              Vec<BackgroundTask>!  = vec![],
+
+    // --- Notification badge ---
+    state notification_count: usize!               = 0,
+
+    // --- Pending shell action ---
+    state pending_action:     Option<StatusBarAction>? = None,
+
+    on CursorClick       { self.pending_action = Some(StatusBarAction·GoToLine); }
+    on LanguageClick     { self.pending_action = Some(StatusBarAction·ChangeLanguage); }
+    on EncodingClick     { self.pending_action = Some(StatusBarAction·ChangeEncoding); }
+    on GitBranchClick    { self.pending_action = Some(StatusBarAction·OpenGitPanel); }
+    on AiStatusClick     { self.pending_action = Some(StatusBarAction·OpenAiPanel); }
+    on DockerStatusClick { self.pending_action = Some(StatusBarAction·OpenDockerPanel); }
+    on GitStatusClick    { self.pending_action = Some(StatusBarAction·OpenGitPanel); }
+    on NotificationClick { self.pending_action = Some(StatusBarAction·OpenNotificationHistory); }
+
+    rite view(self) -> VNode! {
+        ≔ bar_style = "display:flex;align-items:center;\
+                        height:22px;flex-shrink:0;\
+                        background:var(--bg-statusbar,rgb(15,15,15));\
+                        padding:0 12px;\
+                        font-size:0.6875rem;\
+                        user-select:none;\
+                        overflow:hidden;";
+
+        VNode·div()
+            ·class("status-bar")
+            ·attr("style", bar_style)
+            ·child(self·render_left())
+            ·child(self·render_center())
+            ·child(self·render_right())
+    }
+}
+
+// =============================================================================
+// Implementation
+// =============================================================================
+
+⊢ StatusBar {
+    ☉ rite new() -> Self! {
+        StatusBar {
+            current_file:       None,
+            cursor_line:        0,
+            cursor_column:      0,
+            language:           None,
+            encoding:           "UTF-8".to_string(),
+            git_branch:         None,
+            git_changes:        0,
+            ai_status:          ConnectionStatus·Disconnected,
+            docker_status:      ConnectionStatus·Disconnected,
+            git_status:         ConnectionStatus·Disconnected,
+            tasks:              vec![],
+            notification_count: 0,
+            pending_action:     None,
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Mutations (called by shell)
+    // -------------------------------------------------------------------------
+
+    ☉ rite set_file(self: &Δ Self!, path: String, language: Option<String>) {
+        self.current_file = Some(path);
+        self.language = language;
+    }
+
+    ☉ rite clear_file(self: &Δ Self!) {
+        self.current_file = None;
+        self.language = None;
+    }
+
+    /// Both indices are 0-based; display adds 1.
+    ☉ rite set_cursor(self: &Δ Self!, line: usize, column: usize) {
+        self.cursor_line   = line;
+        self.cursor_column = column;
+    }
+
+    ☉ rite set_encoding(self: &Δ Self!, encoding: String) {
+        self.encoding = encoding;
+    }
+
+    ☉ rite set_git_branch(self: &Δ Self!, branch: String, changes: usize) {
+        self.git_branch  = Some(branch);
+        self.git_changes = changes;
+    }
+
+    ☉ rite clear_git_branch(self: &Δ Self!) {
+        self.git_branch  = None;
+        self.git_changes = 0;
+    }
+
+    ☉ rite set_ai_status(self: &Δ Self!, status: ConnectionStatus) {
+        self.ai_status = status;
+    }
+
+    ☉ rite set_docker_status(self: &Δ Self!, status: ConnectionStatus) {
+        self.docker_status = status;
+    }
+
+    ☉ rite set_git_status(self: &Δ Self!, status: ConnectionStatus) {
+        self.git_status = status;
+    }
+
+    ☉ rite add_task(self: &Δ Self!, task: BackgroundTask) {
+        self.tasks.push(task);
+    }
+
+    ☉ rite remove_task(self: &Δ Self!, name: &str) {
+        self.tasks.retain(|t| t.name != name);
+    }
+
+    ☉ rite update_task_progress(self: &Δ Self!, name: &str, progress: f32) {
+        ⎇ ≔ Some(task) = self.tasks.iter_mut().find(|t| t.name == name) {
+            task.progress = progress.max(0.0).min(1.0);
+        }
+    }
+
+    ☉ rite set_notification_count(self: &Δ Self!, count: usize) {
+        self.notification_count = count;
+    }
+
+    /// Drain the pending action. Shell calls this each frame.
+    ☉ rite take_action(self: &Δ Self!) -> Option<StatusBarAction>! {
+        self.pending_action.take()
+    }
+
+    // -------------------------------------------------------------------------
+    // View helpers
+    // -------------------------------------------------------------------------
+
+    rite render_left(self: &Self!) -> VNode! {
+        ≔ left_style = "display:flex;align-items:center;gap:6px;flex:1;overflow:hidden;";
+
+        ≔ Δ left = VNode·div()
+            ·class("sb-left")
+            ·attr("style", left_style);
+
+        // Git branch
+        ⎇ ≔ Some(ref branch) = self.git_branch {
+            ≔ label = ⎇ self.git_changes > 0 {
+                format!("⎇ {} +{}", branch, self.git_changes)
+            } ⎉ {
+                format!("⎇ {}", branch)
+            };
+            left = left·child(
+                VNode·span()
+                    ·class("sb-git-branch")
+                    ·attr("style", "color:var(--text-secondary,#969696);cursor:pointer;white-space:nowrap;")
+                    ·on_click(StatusBarMsg·GitBranchClick)
+                    ·text_child(&label)
+            );
+        }
+
+        // Active file path (truncated)
+        ⎇ ≔ Some(ref path) = self.current_file {
+            ≔ name = path.rsplit('/').next().unwrap_or(path);
+            left = left·child(
+                VNode·span()
+                    ·class("sb-file")
+                    ·attr("style", "color:var(--text-secondary,#969696);overflow:hidden;\
+                                    text-overflow:ellipsis;white-space:nowrap;")
+                    ·text_child(name)
+            );
+        } ⎉ {
+            left = left·child(
+                VNode·span()
+                    ·attr("style", "color:var(--text-muted,#555);")
+                    ·text_child("No file open")
+            );
+        }
+
+        left
+    }
+
+    rite render_center(self: &Self!) -> VNode! {
+        ≔ center_style = "display:flex;align-items:center;gap:8px;justify-content:center;";
+
+        ≔ Δ center = VNode·div()
+            ·class("sb-center")
+            ·attr("style", center_style);
+
+        // Background task spinners
+        ∀ task ∈ &self.tasks {
+            ≔ pct   = (task.progress * 100.0) as u32;
+            ≔ label = format!("{} {}%", task.name, pct);
+            center = center·child(
+                VNode·span()
+                    ·class("sb-task")
+                    ·attr("style", "color:var(--text-secondary,#969696);white-space:nowrap;")
+                    ·attr("title", &task.status)
+                    ·text_child(&label)
+            );
+        }
+
+        center
+    }
+
+    rite render_right(self: &Self!) -> VNode! {
+        ≔ right_style = "display:flex;align-items:center;gap:8px;\
+                          margin-left:auto;flex-shrink:0;";
+        ≔ chip_style  = "cursor:pointer;white-space:nowrap;font-size:0.6875rem;";
+
+        // Cursor position — shown only when a file is open
+        ≔ cursor_node = ⎇ self.current_file.is_some() {
+            ≔ label = format!("Ln {}, Col {}",
+                self.cursor_line + 1,
+                self.cursor_column + 1);
+            VNode·span()
+                ·class("sb-cursor")
+                ·attr("style", &format!("color:var(--text-secondary,#969696);{}", chip_style))
+                ·on_click(StatusBarMsg·CursorClick)
+                ·text_child(&label)
+        } ⎉ { VNode·Empty };
+
+        // Language
+        ≔ lang_node = ⎇ ≔ Some(ref lang) = self.language {
+            VNode·span()
+                ·class("sb-language")
+                ·attr("style", &format!("color:var(--text-secondary,#969696);{}", chip_style))
+                ·on_click(StatusBarMsg·LanguageClick)
+                ·text_child(lang)
+        } ⎉ { VNode·Empty };
+
+        // Encoding
+        ≔ enc_node = VNode·span()
+            ·class("sb-encoding")
+            ·attr("style", &format!("color:var(--text-secondary,#969696);{}", chip_style))
+            ·on_click(StatusBarMsg·EncodingClick)
+            ·text_child(&self.encoding);
+
+        // Notification bell
+        ≔ bell_color = ⎇ self.notification_count > 0 {
+            "color:var(--accent-primary,rgb(44,170,131));"
+        } ⎉ {
+            "color:var(--text-muted,rgb(90,90,100));"
+        };
+        ≔ bell_label = ⎇ self.notification_count > 0 {
+            format!("🔔 {}", self.notification_count)
+        } ⎉ {
+            "🔔".to_string()
+        };
+        ≔ bell_node = VNode·span()
+            ·class("sb-notifications")
+            ·attr("style", &format!("cursor:pointer;{}", bell_color))
+            ·on_click(StatusBarMsg·NotificationClick)
+            ·text_child(&bell_label);
+
+        VNode·div()
+            ·class("sb-right")
+            ·attr("style", right_style)
+            ·child(cursor_node)
+            ·child(lang_node)
+            ·child(enc_node)
+            ·child(bell_node)
+            ·child(self·render_status_chip("AI",     &self.ai_status,     StatusBarMsg·AiStatusClick))
+            ·child(self·render_status_chip("Docker", &self.docker_status, StatusBarMsg·DockerStatusClick))
+            ·child(self·render_status_chip("Git",    &self.git_status,    StatusBarMsg·GitStatusClick))
+    }
+
+    rite render_status_chip(
+        self:   &Self!,
+        label:  &str,
+        status: &ConnectionStatus,
+        msg:    StatusBarMsg,
+    ) -> VNode! {
+        ≔ text  = format!("{} {}", status.icon(), label);
+        ≔ style = format!(
+            "color:{};cursor:pointer;white-space:nowrap;font-size:0.6875rem;",
+            status.color_str()
+        );
+
+        VNode·span()
+            ·class("sb-status-chip")
+            ·attr("style", &style)
+            ·attr("title", status.label())
+            ·on_click(msg)
+            ·text_child(&text)
+    }
+}

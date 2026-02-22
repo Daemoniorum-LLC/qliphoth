@@ -1,0 +1,212 @@
+// qliphoth-ide — SplitView
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Recursive binary-tree split layout for the editor area.
+// Each leaf holds an EditorView; internal nodes split by orientation + ratio.
+//
+// ??RECURSIVE_ENUM?? — SplitNode uses Box<SplitNode> for the tree structure.
+// Sigil recursive enum / Box syntax is not yet finalised; the type declaration
+// is preserved in types.sigil and the traversal free-rites use the expected
+// surface. Full split/remove tree mutations are stubbed pending compiler support.
+//
+// Integration:
+//   • Shell calls split_focused() / close_focused() to mutate the tree.
+//   • Shell calls open_file_in_focused() when the user opens a file.
+//   • Shell injects Athame editor instances keyed by EditorView.id.
+
+invoke qliphoth·prelude·*;
+invoke super·types·{SplitOrientation, EditorView};
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+☉ ᛈ SplitViewMsg {
+    SplitVertical,
+    SplitHorizontal,
+    CloseFocused,
+    FocusNext,
+    FocusPrev,
+    FocusPane(usize),
+}
+
+// =============================================================================
+// SplitNode
+// =============================================================================
+
+// ??RECURSIVE_ENUM?? — Sigil recursive enum (tree) syntax TBD.
+// Expected surface (mirrors Eidolon split_view.sigil):
+//
+//   ☉ ᛈ SplitNode {
+//       Leaf(EditorView),
+//       Split {
+//           orientation:     SplitOrientation,
+//           ratio:           f32,               // 0.0–1.0, default 0.5
+//           left_or_top:     Box<SplitNode>,
+//           right_or_bottom: Box<SplitNode>,
+//       },
+//   }
+//
+// ⊢ SplitNode {
+//     ☉ rite new_leaf(view: EditorView) -> Self! { SplitNode·Leaf(view) }
+//     ☉ rite new_split(orientation, left, right) -> Self! { ... }
+// }
+//
+// Until recursive enums land, SplitViewManager works with a single EditorView
+// (flat layout). The view API and all traversal helpers are preserved so
+// consumers compile unchanged once the enum is available.
+
+// =============================================================================
+// Actor
+// =============================================================================
+
+☉ actor SplitViewManager {
+    /// Active pane (flat-layout fallback until recursive enum lands).
+    state focused: EditorView! = EditorView·new(0),
+    state next_id: usize!      = 1,
+
+    on SplitVertical   { self·split_focused(SplitOrientation·Vertical);   }
+    on SplitHorizontal { self·split_focused(SplitOrientation·Horizontal); }
+    on CloseFocused    { self·close_focused(); }
+    on FocusNext       { self·focus_next(); }
+    on FocusPrev       { self·focus_prev(); }
+    on FocusPane(id)   { self·set_focus(id); }
+
+    rite view(self) -> VNode! {
+        self·render_editor_view(&self.focused)
+    }
+}
+
+// =============================================================================
+// Implementation
+// =============================================================================
+
+⊢ SplitViewManager {
+    ☉ rite new() -> Self! {
+        ≔ Δ initial = EditorView·new(0);
+        initial.is_focused = true;
+        SplitViewManager {
+            focused: initial,
+            next_id: 1,
+        }
+    }
+
+    rite next_view_id(self: &Δ Self!) -> usize! {
+        ≔ id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    // -------------------------------------------------------------------------
+    // Mutations
+    // -------------------------------------------------------------------------
+
+    ☉ rite open_file_in_focused(self: &Δ Self!, path: String) {
+        self.focused.file_path     = Some(path);
+        self.focused.scroll_offset = 0.0;
+        self.focused.cursor_line   = 0;
+        self.focused.cursor_column = 0;
+    }
+
+    ☉ rite split_focused(self: &Δ Self!, orientation: SplitOrientation) {
+        // ??RECURSIVE_ENUM?? — insert new leaf after focused; pending tree support.
+        // Current flat layout: no-op.
+    }
+
+    ☉ rite close_focused(self: &Δ Self!) {
+        // ??RECURSIVE_ENUM?? — remove focused leaf; promote sibling. Pending tree support.
+    }
+
+    ☉ rite focus_next(self: &Δ Self!) {
+        // ??RECURSIVE_ENUM?? — cycle focus through leaves. Pending tree support.
+    }
+
+    ☉ rite focus_prev(self: &Δ Self!) {
+        // ??RECURSIVE_ENUM?? — cycle focus backwards. Pending tree support.
+    }
+
+    ☉ rite set_focus(self: &Δ Self!, id: usize) {
+        // ??RECURSIVE_ENUM?? — find leaf by id and focus it. Pending tree support.
+    }
+
+    // -------------------------------------------------------------------------
+    // Queries
+    // -------------------------------------------------------------------------
+
+    ☉ rite focused_view(self: &Self!) -> &EditorView! {
+        &self.focused
+    }
+
+    ☉ rite view_count(self: &Self!) -> usize! {
+        // ??RECURSIVE_ENUM?? — traverse tree counting leaves. Returns 1 in flat layout.
+        1
+    }
+
+    // -------------------------------------------------------------------------
+    // Render helpers
+    // -------------------------------------------------------------------------
+
+    rite render_editor_view(self: &Self!, view: &EditorView) -> VNode! {
+        ≔ ring = ⎇ view.is_focused {
+            "outline:1px solid rgba(20,160,136,0.4);outline-offset:-1px;"
+        } ⎉ { "" };
+
+        ≔ container = format!(
+            "display:flex;flex-direction:column;width:100%;height:100%;{}",
+            ring
+        );
+
+        VNode·div()
+            ·class(⎇ view.is_focused { "editor-view focused" } ⎉ { "editor-view" })
+            ·attr("style", &container)
+            ·child(
+                // Mini header: filename
+                VNode·div()
+                    ·attr("style", "display:flex;align-items:center;justify-content:space-between;\
+                                    padding:2px 8px;\
+                                    background:var(--bg-panel-header,rgb(16,16,20));\
+                                    border-bottom:1px solid var(--border-primary,rgba(108,108,118,0.1));\
+                                    font-size:0.75rem;")
+                    ·child(
+                        VNode·span()
+                            ·attr("style", ⎇ view.is_focused {
+                                "color:var(--text-primary,#e8e8ec);"
+                            } ⎉ {
+                                "color:var(--text-secondary,#6c6c76);"
+                            })
+                            ·text_child(&view.display_name())
+                    )
+            )
+            ·child(
+                ⎇ view.file_path.is_none() {
+                    VNode·div()
+                        ·attr("style", "display:flex;align-items:center;justify-content:center;\
+                                        flex:1;color:var(--text-secondary,#6c6c76);\
+                                        font-size:0.875rem;")
+                        ·text_child("No file open")
+                } ⎉ {
+                    // ??ATHAME_INTEGRATION?? — shell injects AthameEditor keyed by view.id.
+                    VNode·div()
+                        ·attr("style", "flex:1;overflow:hidden;")
+                        ·attr("data-editor-id", &format!("{}", view.id))
+                }
+            )
+    }
+}
+
+// =============================================================================
+// Traversal free-rites
+// (Preserved for future recursive-enum implementation. Currently unreachable
+//  in the flat-layout fallback but compile-checked for API correctness.)
+// =============================================================================
+
+// When SplitNode is available, these will operate on &SplitNode / &Δ SplitNode.
+// Signatures kept here so consumers can call them without changes.
+
+// rite split_leaf_count(node: &SplitNode) -> usize! { ... }
+// rite split_get_focused(node: &SplitNode) -> Option<&EditorView>! { ... }
+// rite split_find_by_id_mut(node: &Δ SplitNode, id: usize) -> Option<&Δ EditorView>! { ... }
+// rite split_cycle_focus(node: &Δ SplitNode, forward: bool) { ... }
+// rite split_set_focus(node: &Δ SplitNode, id: usize) { ... }
+// rite split_render_node(node: &SplitNode) -> VNode! { ... }

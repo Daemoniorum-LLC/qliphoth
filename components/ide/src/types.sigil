@@ -1,0 +1,273 @@
+// qliphoth-ide — Shared Types
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Canonical data types shared across all qliphoth-ide components.
+// Apps (Wraith, Eidolon) may extend these but should not duplicate them.
+
+invoke qliphoth·prelude·*;
+
+// =============================================================================
+// Tab types
+// =============================================================================
+
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ ᛈ TabKind {
+    File,
+    GitDiff,
+    GitBlame,
+}
+
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ Tab {
+    /// Stable unique ID (e.g. "tab-0", "tab-1").
+    id: String!
+    kind: TabKind!
+    title: String!
+    /// Absolute file path. None for virtual tabs (settings, welcome, etc).
+    file_path: Option<String>?
+    modified: bool!
+    pinned: bool!
+}
+
+⊢ Tab {
+    ☉ rite new(id: String, kind: TabKind, title: String) -> Self! {
+        Tab {
+            id,
+            kind,
+            title,
+            file_path: None,
+            modified: false,
+            pinned: false,
+        }
+    }
+
+    ☉ rite file(id: String, path: String) -> Self! {
+        ≔ title! = path.rsplit('/').next().unwrap_or(&path).to_string()
+        Tab {
+            id,
+            kind: TabKind·File,
+            title,
+            file_path: Some(path),
+            modified: false,
+            pinned: false,
+        }
+    }
+}
+
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ RecentFile {
+    path: String!
+    name: String!
+    /// Monotonic counter; zero until stdlib time is available.
+    timestamp: u64!
+}
+
+// =============================================================================
+// Panel types
+// =============================================================================
+
+/// Which region of the IDE layout a panel occupies.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ ᛈ PanelLocation {
+    Left,
+    Right,
+    Bottom,
+    Center,
+}
+
+⊢ PanelLocation {
+    ☉ rite as_str(self: &Self!) -> &str! {
+        ⌥ self {
+            PanelLocation·Left   => "left",
+            PanelLocation·Right  => "right",
+            PanelLocation·Bottom => "bottom",
+            PanelLocation·Center => "center",
+        }
+    }
+}
+
+/// Runtime state for a single registered panel slot.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ PanelState {
+    id: String!
+    visible: bool!
+    location: PanelLocation!
+    /// Panel width in CSS pixels. Minimum 200px.
+    width: f32!
+    /// Display order within its location column.
+    order: usize!
+}
+
+⊢ PanelState {
+    ☉ rite new(id: String, location: PanelLocation) -> Self! {
+        PanelState {
+            id,
+            visible: false,
+            location,
+            width: 300.0,
+            order: 0,
+        }
+    }
+}
+
+/// Serialisable panel state for persistence. Flat, no enum location.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ SavedPanelState {
+    id: String!
+    visible: bool!
+    /// Stringified PanelLocation: "left" | "right" | "bottom" | "center".
+    location: String!
+    width: f32!
+}
+
+/// A registered icon-tray entry.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ PanelIcon {
+    /// Matches the PanelState id this icon toggles.
+    id: String!
+    /// Unicode glyph shown in the tray.
+    icon: String!
+    /// Tooltip shown on hover.
+    tooltip: String!
+}
+
+// =============================================================================
+// Split view types
+// =============================================================================
+
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ ᛈ SplitOrientation {
+    Horizontal,
+    Vertical,
+}
+
+/// A single editor pane in the split layout.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ EditorView {
+    id: usize!
+    file_path: Option<String>?
+    scroll_offset: f32!
+    cursor_line: usize!
+    cursor_column: usize!
+    is_focused: bool!
+}
+
+⊢ EditorView {
+    ☉ rite new(id: usize) -> Self! {
+        EditorView {
+            id,
+            file_path: None,
+            scroll_offset: 0.0,
+            cursor_line: 0,
+            cursor_column: 0,
+            is_focused: false,
+        }
+    }
+
+    ☉ rite with_file(id: usize, path: String) -> Self! {
+        EditorView {
+            id,
+            file_path: Some(path),
+            scroll_offset: 0.0,
+            cursor_line: 0,
+            cursor_column: 0,
+            is_focused: false,
+        }
+    }
+
+    ☉ rite display_name(self: &Self!) -> String! {
+        ⌥ &self.file_path {
+            Some(p) => p.split('/').last().unwrap_or(p).to_string(),
+            None    => "Untitled".to_string(),
+        }
+    }
+}
+
+// ??RECURSIVE_ENUM?? — SplitNode is a binary tree. Sigil recursive enum/Box syntax TBD.
+//   Leaf(EditorView)
+//   Split { orientation, ratio: f32, left_or_top: Box<SplitNode>, right_or_bottom: Box<SplitNode> }
+// Implementation lives in split-view.sigil pending compiler support.
+
+// =============================================================================
+// Status bar types
+// =============================================================================
+
+/// Connection health for a background service indicator.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ ᛈ ConnectionStatus {
+    Connected,
+    Disconnected,
+    Connecting,
+    Error,
+}
+
+⊢ ConnectionStatus {
+    /// CSS color string for this status.
+    ☉ rite color_str(self: &Self!) -> &str! {
+        ⌥ self {
+            ConnectionStatus·Connected    => "rgb(0,255,127)",
+            ConnectionStatus·Disconnected => "rgb(220,20,60)",
+            ConnectionStatus·Connecting   => "rgb(255,215,0)",
+            ConnectionStatus·Error        => "rgb(255,100,100)",
+        }
+    }
+
+    /// Single-character status glyph.
+    ☉ rite icon(self: &Self!) -> &str! {
+        ⌥ self {
+            ConnectionStatus·Connected    => "●",
+            ConnectionStatus·Disconnected => "○",
+            ConnectionStatus·Connecting   => "◐",
+            ConnectionStatus·Error        => "✗",
+        }
+    }
+
+    /// Human-readable label for tooltips.
+    ☉ rite label(self: &Self!) -> &str! {
+        ⌥ self {
+            ConnectionStatus·Connected    => "Connected",
+            ConnectionStatus·Disconnected => "Disconnected",
+            ConnectionStatus·Connecting   => "Connecting...",
+            ConnectionStatus·Error        => "Error",
+        }
+    }
+}
+
+/// A named background task with a progress indicator.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ BackgroundTask {
+    name: String!
+    /// Progress fraction, clamped 0.0–1.0.
+    progress: f32!
+    /// Human-readable status line shown in tooltip.
+    status: String!
+}
+
+// =============================================================================
+// Command palette types
+// =============================================================================
+
+/// A single registered command entry.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ Command {
+    /// Dotted-namespace id, e.g. "file.open".
+    id: String!
+    /// Display label; the fuzzy search target.
+    label: String!
+    /// Secondary description shown below the label.
+    description: String!
+    /// Category string controlling badge colour: File / View / Git / …
+    category: String!
+    /// Keyboard shortcut string, e.g. "Ctrl+S". None if unbound.
+    keybinding: Option<String>?
+}
+
+/// Result from a fuzzy match operation.
+//@ rune: derive(Clone, PartialEq, Debug)
+☉ Σ FuzzyMatch {
+    /// Higher is better.
+    score: i32!
+    /// Positions of matched characters in the target string.
+    matched_indices: Vec<usize>!
+}

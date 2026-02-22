@@ -1,0 +1,216 @@
+// qliphoth-ide — TabBar + TabItem
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// TabItem: actor for a single editor tab (title, icon, modified indicator,
+//          pin and close actions).
+// TabBar:  free rite that renders a row of TabItems from a slice of Tab data.
+//
+// Integration: parent shell calls render_tab_bar(tabs, active_id) and wires
+// TabItemMsg discriminants into its own message routing.
+
+invoke qliphoth·prelude·*;
+invoke super·types·{Tab};
+
+// =============================================================================
+// TabItem
+// =============================================================================
+
+/// Messages the TabItem actor can receive.
+/// Parent shell must route these discriminants to the appropriate mutation.
+☉ ᛈ TabItemMsg {
+    HoverStart,
+    HoverEnd,
+    Click,
+    ContextMenu,
+    Pin,
+    Close,
+}
+
+☉ actor TabItem {
+    state title:    String! = "".to_string(),
+    state icon:     String! = "".to_string(),
+    state active:   bool!   = false,
+    state pinned:   bool!   = false,
+    state modified: bool!   = false,
+    state hovered:  bool!   = false,
+
+    on HoverStart  { self.hovered = true;  }
+    on HoverEnd    { self.hovered = false; }
+    on Click       {}
+    on ContextMenu {}
+    on Pin         {}
+    on Close       {}
+
+    rite view(self) -> VNode! {
+        // Phase 4: on_mouseenter / on_mouseleave will drive hovered via HoverStart/HoverEnd.
+        // Until then show_actions falls back to active so buttons remain reachable.
+        ≔ show_actions = self.hovered ∨ self.active;
+
+        ≔ tab_class = &format!(
+            "group relative flex items-center gap-2 px-3 h-[var(--tab-height)] cursor-pointer \
+             select-none border-r border-[var(--border-primary)] transition-colors {}",
+            ⎇ self.active {
+                "bg-[var(--bg-primary)] text-[var(--text-primary)]"
+            } ⎉ {
+                "bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }
+        );
+
+        VNode·div()
+            ·attr("role", "tab")
+            ·attr("aria-selected", ⎇ self.active { "true" }  ⎉ { "false" })
+            ·attr("tabindex",      ⎇ self.active { "0" }     ⎉ { "-1" })
+            ·class(tab_class)
+            ·on_click(TabItemMsg·Click)
+            ·child(
+                ⎇ ¬self.icon.is_empty() {
+                    VNode·span()
+                        ·class("flex-shrink-0 text-[12px] leading-none")
+                        ·attr("aria-hidden", "true")
+                        ·text_child(&self.icon)
+                } ⎉ { VNode·Empty }
+            )
+            ·child(
+                VNode·span()
+                    ·class("text-xs truncate max-w-[120px]")
+                    ·text_child(&self.title)
+            )
+            // Modified dot: shown when modified and actions are hidden
+            ·child(
+                ⎇ self.modified ∧ ¬show_actions {
+                    VNode·span()
+                        ·class("w-2 h-2 rounded-full bg-[var(--text-secondary)]")
+                        ·attr("aria-label", "unsaved changes")
+                } ⎉ { VNode·Empty }
+            )
+            // Pin + Close buttons: fade in on hover/active
+            ·child(
+                VNode·div()
+                    ·class(&format!(
+                        "flex items-center gap-0.5 ml-1 transition-opacity {}",
+                        ⎇ show_actions { "opacity-100" } ⎉ { "opacity-0" }
+                    ))
+                    ·child(
+                        VNode·button()
+                            ·attr("type", "button")
+                            ·class(&format!(
+                                "p-0.5 rounded hover:bg-[var(--bg-hover)] transition-colors {}",
+                                ⎇ self.pinned {
+                                    "text-[var(--accent-primary)]"
+                                } ⎉ {
+                                    "text-[var(--text-secondary)]"
+                                }
+                            ))
+                            ·attr("title",      ⎇ self.pinned { "Unpin tab" } ⎉ { "Pin tab" })
+                            ·attr("aria-label", ⎇ self.pinned { "Unpin tab" } ⎉ { "Pin tab" })
+                            ·on_click(TabItemMsg·Pin)
+                            ·text_child("📌")
+                    )
+                    ·child(
+                        ⎇ ¬self.pinned {
+                            VNode·button()
+                                ·attr("type", "button")
+                                ·class("p-0.5 rounded text-[var(--text-secondary)] \
+                                        hover:text-[var(--text-primary)] \
+                                        hover:bg-[var(--bg-hover)] transition-colors")
+                                ·attr("title",      "Close tab")
+                                ·attr("aria-label", "Close tab")
+                                ·on_click(TabItemMsg·Close)
+                                ·text_child("×")
+                        } ⎉ { VNode·Empty }
+                    )
+            )
+            // Active tab accent underline
+            ·child(
+                ⎇ self.active {
+                    VNode·div()
+                        ·class("absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent-primary)]")
+                } ⎉ { VNode·Empty }
+            )
+    }
+}
+
+// =============================================================================
+// TabBar free rite
+// =============================================================================
+
+/// Render a full tab bar from a slice of Tab data plus the active tab id.
+/// Pure view — no actor state required. Parent passes current Tab slice each frame.
+///
+/// CSS variables consumed:
+///   --tab-height       height of the tab bar row
+///   --bg-primary       active tab background
+///   --bg-secondary     inactive tab background
+///   --bg-hover         hover background
+///   --text-primary     active text colour
+///   --text-secondary   muted text / icon colour
+///   --border-primary   tab separator colour
+///   --accent-primary   active tab underline / pinned icon colour
+☉ rite render_tab_bar(tabs: &Vec<Tab>, active_id: &str) -> VNode! {
+    ≔ bar_class = "flex items-center h-[var(--tab-height)] overflow-x-auto \
+                   bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] \
+                   flex-shrink-0 scrollbar-none";
+
+    ≔ Δ bar = VNode·div()
+        ·attr("role", "tablist")
+        ·attr("aria-label", "Editor tabs")
+        ·class(bar_class);
+
+    ∀ tab ∈ tabs {
+        ≔ is_active = tab.id == active_id;
+
+        ≔ tab_class = &format!(
+            "group relative flex items-center gap-2 px-3 h-full cursor-pointer \
+             select-none border-r border-[var(--border-primary)] transition-colors \
+             whitespace-nowrap {}",
+            ⎇ is_active {
+                "bg-[var(--bg-primary)] text-[var(--text-primary)]"
+            } ⎉ {
+                "bg-[var(--bg-secondary)] text-[var(--text-secondary)] \
+                 hover:text-[var(--text-primary)]"
+            }
+        );
+
+        ≔ Δ item = VNode·div()
+            ·attr("role", "tab")
+            ·attr("aria-selected", ⎇ is_active { "true" } ⎉ { "false" })
+            ·class(tab_class)
+            ·child(
+                VNode·span()
+                    ·class("text-xs truncate max-w-[120px]")
+                    ·text_child(&tab.title)
+            )
+            ·child(
+                ⎇ tab.modified {
+                    VNode·span()
+                        ·class("w-2 h-2 rounded-full bg-[var(--text-secondary)] ml-1")
+                        ·attr("aria-label", "unsaved")
+                } ⎉ { VNode·Empty }
+            )
+            // Active underline
+            ·child(
+                ⎇ is_active {
+                    VNode·div()
+                        ·class("absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent-primary)]")
+                } ⎉ { VNode·Empty }
+            );
+
+        // Close button (not shown for pinned tabs)
+        ⎇ ¬tab.pinned {
+            item = item·child(
+                VNode·button()
+                    ·attr("type", "button")
+                    ·class("ml-1 p-0.5 rounded opacity-0 group-hover:opacity-100 \
+                            text-[var(--text-secondary)] hover:text-[var(--text-primary)] \
+                            hover:bg-[var(--bg-hover)] transition-all")
+                    ·attr("aria-label", "Close tab")
+                    ·text_child("×")
+            );
+        }
+
+        bar = bar·child(item);
+    }
+
+    bar
+}

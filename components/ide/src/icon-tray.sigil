@@ -1,0 +1,233 @@
+// qliphoth-ide — IconTray
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Vertical icon strip on the IDE left (or right) edge. Each icon toggles a
+// registered panel. Selected panel is highlighted; open-but-not-selected
+// panels show a small indicator dot.
+//
+// Integration:
+//   • Shell calls register_icon() on startup for each panel.
+//   • Shell calls set_selected_panel() and set_panel_visible() as panels open/close.
+//   • Shell drains take_action() each frame to learn which panel was clicked.
+//   • Shell drains take_settings_clicked() / take_profile_clicked() for those buttons.
+
+invoke qliphoth·prelude·*;
+invoke super·types·{PanelIcon};
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+☉ ᛈ IconTrayMsg {
+    PanelClicked(String),
+    SettingsClicked,
+    ProfileClicked,
+}
+
+// =============================================================================
+// Actor
+// =============================================================================
+
+☉ actor IconTray {
+    state width_px:        f32!            = 50.0,
+    state panel_icons:     Vec<PanelIcon>! = vec![],
+    state selected_panel:  Option<String>? = None,
+    state visible_panels:  Vec<String>!    = vec![],
+    state pending_action:  Option<String>? = None,
+    state settings_clicked: bool!          = false,
+    state profile_clicked:  bool!          = false,
+
+    on PanelClicked(id)    { self.pending_action = Some(id); }
+    on SettingsClicked     { self.settings_clicked = true; }
+    on ProfileClicked      { self.profile_clicked  = true; }
+
+    rite view(self) -> VNode! {
+        ≔ tray_style = format!(
+            "display:flex;flex-direction:column;\
+             width:{}px;flex-shrink:0;\
+             background:var(--bg-tray,rgb(14,14,18));\
+             border-right:1px solid var(--border-primary,rgba(108,108,118,0.15));\
+             overflow:hidden;",
+            self.width_px as u32
+        );
+
+        VNode·div()
+            ·class("icon-tray")
+            ·attr("style", &tray_style)
+            ·child(self·render_logo())
+            ·child(self·render_panel_icons())
+            ·child(self·render_bottom_actions())
+    }
+}
+
+// =============================================================================
+// Implementation
+// =============================================================================
+
+⊢ IconTray {
+    ☉ rite new() -> Self! {
+        IconTray {
+            width_px:        50.0,
+            panel_icons:     vec![],
+            selected_panel:  None,
+            visible_panels:  vec![],
+            pending_action:  None,
+            settings_clicked: false,
+            profile_clicked:  false,
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Registration & state sync (called by shell)
+    // -------------------------------------------------------------------------
+
+    ☉ rite register_icon(self: &Δ Self!, id: String, icon: String, tooltip: String) {
+        self.panel_icons.push(PanelIcon { id, icon, tooltip });
+    }
+
+    ☉ rite set_selected_panel(self: &Δ Self!, id: Option<String>) {
+        self.selected_panel = id;
+    }
+
+    ☉ rite set_panel_visible(self: &Δ Self!, id: String, visible: bool) {
+        ⎇ visible {
+            ⎇ ¬self.visible_panels.iter().any(|p| p == &id) {
+                self.visible_panels.push(id);
+            }
+        } ⎉ {
+            self.visible_panels.retain(|p| p != &id);
+        }
+    }
+
+    ☉ rite is_panel_visible(self: &Self!, id: &str) -> bool! {
+        self.visible_panels.iter().any(|p| p == id)
+    }
+
+    ☉ rite width(self: &Self!) -> f32! {
+        self.width_px
+    }
+
+    // -------------------------------------------------------------------------
+    // Drain (called by shell each frame)
+    // -------------------------------------------------------------------------
+
+    ☉ rite take_action(self: &Δ Self!) -> Option<String>! {
+        self.pending_action.take()
+    }
+
+    ☉ rite take_settings_clicked(self: &Δ Self!) -> bool! {
+        ≔ v = self.settings_clicked;
+        self.settings_clicked = false;
+        v
+    }
+
+    ☉ rite take_profile_clicked(self: &Δ Self!) -> bool! {
+        ≔ v = self.profile_clicked;
+        self.profile_clicked = false;
+        v
+    }
+
+    // -------------------------------------------------------------------------
+    // View helpers
+    // -------------------------------------------------------------------------
+
+    rite render_logo(self: &Self!) -> VNode! {
+        ≔ logo_style = "display:flex;flex-direction:column;align-items:center;\
+                         padding:10px 0 8px;\
+                         border-bottom:1px solid var(--border-primary,rgba(108,108,118,0.1));";
+
+        VNode·div()
+            ·class("tray-logo")
+            ·attr("style", logo_style)
+            // Consumers override this slot by rendering their own logo above IconTray.
+            // Default: neutral dot so the tray is not empty.
+            ·child(
+                VNode·span()
+                    ·attr("style", "font-size:1.25rem;opacity:0.4;")
+                    ·text_child("◈")
+            )
+    }
+
+    rite render_panel_icons(self: &Self!) -> VNode! {
+        ≔ icons_style = "display:flex;flex-direction:column;align-items:center;\
+                          padding:8px 0;flex:1;gap:4px;";
+
+        ≔ Δ icons = VNode·div()
+            ·class("tray-icons")
+            ·attr("style", icons_style);
+
+        ∀ icon_def ∈ &self.panel_icons {
+            ≔ is_selected = self.selected_panel.as_deref() == Some(&icon_def.id);
+            ≔ is_visible  = self.is_panel_visible(&icon_def.id);
+
+            ≔ btn_style = ⎇ is_selected {
+                "width:40px;height:40px;\
+                 display:flex;align-items:center;justify-content:center;\
+                 font-size:1.5rem;cursor:pointer;border-radius:6px;\
+                 background:rgba(20,160,136,0.18);\
+                 border:1px solid rgba(20,160,136,0.4);\
+                 position:relative;"
+            } ⎉ {
+                "width:40px;height:40px;\
+                 display:flex;align-items:center;justify-content:center;\
+                 font-size:1.5rem;cursor:pointer;border-radius:6px;\
+                 border:1px solid transparent;\
+                 position:relative;"
+            };
+
+            ≔ Δ btn = VNode·div()
+                ·class(⎇ is_selected { "tray-icon selected" } ⎉ { "tray-icon" })
+                ·attr("style", btn_style)
+                ·attr("title", &icon_def.tooltip)
+                ·on_click(IconTrayMsg·PanelClicked(icon_def.id.clone()))
+                ·text_child(&icon_def.icon);
+
+            // Open-but-not-selected indicator dot
+            ⎇ is_visible ∧ ¬is_selected {
+                ≔ dot_style = "position:absolute;bottom:3px;right:3px;\
+                                width:5px;height:5px;border-radius:50%;\
+                                background:rgba(20,160,136,0.6);";
+                btn = btn·child(
+                    VNode·div()
+                        ·class("tray-dot")
+                        ·attr("style", dot_style)
+                );
+            }
+
+            icons = icons·child(btn);
+        }
+
+        icons
+    }
+
+    rite render_bottom_actions(self: &Self!) -> VNode! {
+        ≔ bottom_style = "display:flex;flex-direction:column;align-items:center;\
+                           padding:8px 0;gap:4px;\
+                           border-top:1px solid var(--border-primary,rgba(108,108,118,0.1));";
+        ≔ btn_style    = "width:40px;height:40px;\
+                           display:flex;align-items:center;justify-content:center;\
+                           font-size:1.25rem;cursor:pointer;border-radius:6px;\
+                           border:1px solid transparent;";
+
+        VNode·div()
+            ·class("tray-bottom")
+            ·attr("style", bottom_style)
+            ·child(
+                VNode·div()
+                    ·class("tray-settings")
+                    ·attr("style", btn_style)
+                    ·attr("title", "Settings")
+                    ·on_click(IconTrayMsg·SettingsClicked)
+                    ·text_child("⚙️")
+            )
+            ·child(
+                VNode·div()
+                    ·class("tray-profile")
+                    ·attr("style", btn_style)
+                    ·attr("title", "Profile")
+                    ·on_click(IconTrayMsg·ProfileClicked)
+                    ·text_child("👤")
+            )
+    }
+}

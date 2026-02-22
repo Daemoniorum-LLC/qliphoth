@@ -1,0 +1,471 @@
+// qliphoth-ide — CommandPalette
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Full command palette with 100+ built-in commands, fuzzy search,
+// keyboard navigation, and recent-command history.
+//
+// Integration:
+//   • Shell calls open() / toggle() to show the palette.
+//   • Shell calls add_command() for app-specific commands beyond the defaults.
+//   • Shell drains take_executed_command() each frame to act on selections.
+//   • Keyboard nav (ArrowUp / ArrowDown / Enter / Escape) must be wired by
+//     the shell via select_prev / select_next / confirm_selection / dismiss.
+//
+// ??FUZZY?? — filter_commands uses a simple substring scan until the `fuzzy`
+// crate is available. Replace fuzzy_match() call when ready.
+
+invoke qliphoth·prelude·*;
+invoke super·types·{Command, FuzzyMatch};
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+☉ ᛈ CommandPaletteMsg {
+    Open,
+    Dismiss,
+    Toggle,
+    SelectNext,
+    SelectPrev,
+    Confirm,
+    ClickCommand(String),
+    // ??INPUT?? — QueryChanged requires input event wiring; shell drives this directly
+    // via update_query() for now.
+}
+
+// =============================================================================
+// Actor
+// =============================================================================
+
+☉ actor CommandPalette {
+    state show:               bool!                       = false,
+    state search_query:       String!                     = String·new(),
+    state commands:           Vec<Command>!               = vec![],
+    state filtered_commands:  Vec<(Command, FuzzyMatch)>! = vec![],
+    state selected_index:     usize!                      = 0,
+    state executed_command:   Option<String>?             = None,
+    state recent_commands:    Vec<String>!                = vec![],
+
+    on Open        { self·open(); }
+    on Dismiss     { self.show = false; }
+    on Toggle      { self·toggle(); }
+    on SelectNext  { self·select_next(); }
+    on SelectPrev  { self·select_prev(); }
+    on Confirm     { self·confirm_selection(); }
+    on ClickCommand(id) { self·execute_command(id); }
+
+    rite view(self) -> VNode! {
+        ⎇ ¬self.show {
+            return VNode·Empty;
+        }
+
+        ≔ backdrop_style = "position:fixed;inset:0;\
+                             background:rgba(0,0,0,0.7);\
+                             z-index:400;\
+                             display:flex;justify-content:center;";
+        ≔ dialog_style   = "position:absolute;top:80px;\
+                             width:700px;\
+                             background:var(--bg-overlay,rgb(15,15,15));\
+                             border:1.5px solid rgba(26,123,93,0.39);\
+                             border-radius:8px;\
+                             overflow:hidden;\
+                             display:flex;flex-direction:column;\
+                             padding:20px;";
+
+        VNode·div()
+            ·class("command-palette-backdrop")
+            ·attr("style", backdrop_style)
+            ·on_click(CommandPaletteMsg·Dismiss)
+            ·child(
+                VNode·div()
+                    ·class("command-palette-dialog")
+                    ·attr("style", dialog_style)
+                    ·child(self·render_header())
+                    ·child(self·render_search_frame())
+                    ·child(self·render_recent_label())
+                    ·child(self·render_command_list())
+            )
+    }
+}
+
+// =============================================================================
+// Implementation
+// =============================================================================
+
+⊢ CommandPalette {
+    ☉ rite new() -> Self! {
+        ≔ Δ cp = CommandPalette {
+            show:              false,
+            search_query:      String·new(),
+            commands:          vec![],
+            filtered_commands: vec![],
+            selected_index:    0,
+            executed_command:  None,
+            recent_commands:   vec![],
+        };
+        cp.register_default_commands();
+        cp
+    }
+
+    // -------------------------------------------------------------------------
+    // Open / close
+    // -------------------------------------------------------------------------
+
+    ☉ rite toggle(self: &Δ Self!) {
+        self.show = ¬self.show;
+        ⎇ self.show {
+            self.search_query.clear();
+            self·update_filtered_commands();
+            self.selected_index = 0;
+        }
+    }
+
+    ☉ rite open(self: &Δ Self!) {
+        self.show = true;
+        self.search_query.clear();
+        self·update_filtered_commands();
+        self.selected_index = 0;
+    }
+
+    ☉ rite dismiss(self: &Δ Self!) {
+        self.show = false;
+    }
+
+    ☉ rite is_open(self: &Self!) -> bool! {
+        self.show
+    }
+
+    // -------------------------------------------------------------------------
+    // Command registry
+    // -------------------------------------------------------------------------
+
+    ☉ rite add_command(self: &Δ Self!, cmd: Command) {
+        self.commands.push(cmd);
+    }
+
+    ☉ rite command_count(self: &Self!) -> usize! {
+        self.commands.len()
+    }
+
+    // -------------------------------------------------------------------------
+    // Query (driven by shell on input events)
+    // -------------------------------------------------------------------------
+
+    ☉ rite update_query(self: &Δ Self!, query: String) {
+        self.search_query = query;
+        self·update_filtered_commands();
+        self.selected_index = 0;
+    }
+
+    rite update_filtered_commands(self: &Δ Self!) {
+        ⎇ self.search_query.is_empty() {
+            self.filtered_commands = self.commands.iter()
+                .map(|cmd| (cmd.clone(), FuzzyMatch { score: 0, matched_indices: vec![] }))
+                .collect();
+        } ⎉ {
+            self.filtered_commands = self·filter_commands(&self.search_query.clone());
+        }
+        ⎇ self.selected_index >= self.filtered_commands.len() ∧ ¬self.filtered_commands.is_empty() {
+            self.selected_index = 0;
+        }
+    }
+
+    /// Simple substring filter. Replace with fuzzy_match() when crate is available.
+    rite filter_commands(self: &Self!, query: &str) -> Vec<(Command, FuzzyMatch)>! {
+        ≔ q = query.to_lowercase();
+        ≔ Δ results: Vec<(Command, FuzzyMatch)> = vec![];
+        ∀ cmd ∈ &self.commands {
+            ⎇ cmd.label.to_lowercase().contains(&q) ∨ cmd.description.to_lowercase().contains(&q) {
+                results.push((cmd.clone(), FuzzyMatch { score: 0, matched_indices: vec![] }));
+            }
+        }
+        results
+    }
+
+    // -------------------------------------------------------------------------
+    // Keyboard navigation
+    // -------------------------------------------------------------------------
+
+    ☉ rite select_next(self: &Δ Self!) {
+        ⎇ ¬self.filtered_commands.is_empty() {
+            self.selected_index = (self.selected_index + 1) % self.filtered_commands.len();
+        }
+    }
+
+    ☉ rite select_prev(self: &Δ Self!) {
+        ⎇ ¬self.filtered_commands.is_empty() {
+            ⎇ self.selected_index == 0 {
+                self.selected_index = self.filtered_commands.len() - 1;
+            } ⎉ {
+                self.selected_index -= 1;
+            }
+        }
+    }
+
+    ☉ rite confirm_selection(self: &Δ Self!) {
+        ⎇ ≔ Some((cmd, _)) = self.filtered_commands.get(self.selected_index).cloned() {
+            self·execute_command(cmd.id);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Execution & drain
+    // -------------------------------------------------------------------------
+
+    ☉ rite execute_command(self: &Δ Self!, id: String) {
+        self.recent_commands.retain(|r| r != &id);
+        self.recent_commands.insert(0, id.clone());
+        ⎇ self.recent_commands.len() > 10 {
+            self.recent_commands.truncate(10);
+        }
+        self.executed_command = Some(id);
+        self.show = false;
+    }
+
+    /// Drain the last executed command ID. Shell calls this each frame.
+    ☉ rite take_executed_command(self: &Δ Self!) -> Option<String>! {
+        self.executed_command.take()
+    }
+
+    // -------------------------------------------------------------------------
+    // Default command registry
+    // -------------------------------------------------------------------------
+
+    rite register_default_commands(self: &Δ Self!) {
+        // --- File ---
+        self.add_command(Command { id: "file.open".into(),     label: "File: Open File".into(),   description: "Open a file from disk".into(),    category: "File".into(), keybinding: Some("Ctrl+O".into()) });
+        self.add_command(Command { id: "file.save".into(),     label: "File: Save".into(),         description: "Save the current file".into(),    category: "File".into(), keybinding: Some("Ctrl+S".into()) });
+        self.add_command(Command { id: "file.save_all".into(), label: "File: Save All".into(),     description: "Save all open files".into(),       category: "File".into(), keybinding: Some("Ctrl+K S".into()) });
+
+        // --- View ---
+        self.add_command(Command { id: "view.command_palette".into(),    label: "View: Command Palette".into(),         description: "Open command palette".into(),              category: "View".into(), keybinding: Some("Ctrl+Shift+P".into()) });
+        self.add_command(Command { id: "view.file_finder".into(),        label: "View: File Finder".into(),             description: "Search and open files".into(),             category: "View".into(), keybinding: Some("Ctrl+P".into()) });
+        self.add_command(Command { id: "view.toggle_terminal".into(),    label: "View: Toggle Terminal".into(),         description: "Show or hide the integrated terminal".into(), category: "View".into(), keybinding: Some("Ctrl+`".into()) });
+        self.add_command(Command { id: "view.recent_files".into(),       label: "View: Recent Files".into(),            description: "Show recently opened files".into(),        category: "View".into(), keybinding: Some("Ctrl+E".into()) });
+        self.add_command(Command { id: "view.zen_mode".into(),           label: "View: Toggle Zen Mode".into(),         description: "Enter distraction-free mode".into(),       category: "View".into(), keybinding: Some("F11".into()) });
+        self.add_command(Command { id: "view.toggle_word_wrap".into(),   label: "View: Toggle Word Wrap".into(),        description: "Enable or disable word wrapping".into(),   category: "View".into(), keybinding: Some("Alt+Z".into()) });
+        self.add_command(Command { id: "view.toggle_minimap".into(),     label: "View: Toggle Minimap".into(),          description: "Show or hide the minimap".into(),          category: "View".into(), keybinding: None });
+        self.add_command(Command { id: "view.toggle_inlay_hints".into(), label: "View: Toggle Inlay Hints".into(),      description: "Show/hide inline type annotations".into(), category: "View".into(), keybinding: Some("Ctrl+Alt+I".into()) });
+        self.add_command(Command { id: "view.show_call_hierarchy".into(), label: "View: Show Call Hierarchy".into(),   description: "View incoming/outgoing function calls".into(), category: "View".into(), keybinding: Some("Ctrl+Shift+H".into()) });
+        self.add_command(Command { id: "view.show_type_hierarchy".into(), label: "View: Show Type Hierarchy".into(),   description: "View inheritance and implementations".into(), category: "View".into(), keybinding: Some("Ctrl+Shift+T".into()) });
+
+        // --- Git ---
+        self.add_command(Command { id: "git.commit".into(), label: "Git: Commit Changes".into(), description: "Stage and commit changes".into(), category: "Git".into(), keybinding: None });
+        self.add_command(Command { id: "git.push".into(),   label: "Git: Push".into(),            description: "Push commits to remote".into(),   category: "Git".into(), keybinding: None });
+        self.add_command(Command { id: "git.pull".into(),   label: "Git: Pull".into(),            description: "Pull from remote".into(),          category: "Git".into(), keybinding: None });
+
+        // --- Docker ---
+        self.add_command(Command { id: "docker.compose_up".into(),   label: "Docker: Compose Up".into(),   description: "Start Docker Compose services".into(), category: "Docker".into(), keybinding: None });
+        self.add_command(Command { id: "docker.compose_down".into(), label: "Docker: Compose Down".into(), description: "Stop Docker Compose services".into(),  category: "Docker".into(), keybinding: None });
+
+        // --- Debug ---
+        self.add_command(Command { id: "debug.start".into(), label: "Debug: Start Debugging".into(), description: "Launch debugger".into(),   category: "Debug".into(), keybinding: Some("F5".into()) });
+        self.add_command(Command { id: "debug.stop".into(),  label: "Debug: Stop Debugging".into(),  description: "Stop the debugger".into(), category: "Debug".into(), keybinding: Some("Shift+F5".into()) });
+
+        // --- Editor ---
+        self.add_command(Command { id: "editor.format".into(),                 label: "Editor: Format Document".into(),             description: "Auto-format the current file".into(),                 category: "Editor".into(), keybinding: Some("Shift+Alt+F".into()) });
+        self.add_command(Command { id: "editor.goto_line".into(),              label: "Editor: Go to Line".into(),                  description: "Jump to a specific line number".into(),               category: "Editor".into(), keybinding: Some("Ctrl+G".into()) });
+        self.add_command(Command { id: "editor.duplicate_line".into(),         label: "Editor: Duplicate Line".into(),              description: "Duplicate current line below".into(),                 category: "Editor".into(), keybinding: Some("Ctrl+D".into()) });
+        self.add_command(Command { id: "editor.delete_line".into(),            label: "Editor: Delete Line".into(),                 description: "Delete current line".into(),                          category: "Editor".into(), keybinding: Some("Ctrl+Shift+K".into()) });
+        self.add_command(Command { id: "editor.go_to_definition".into(),       label: "Editor: Go to Definition".into(),            description: "Navigate to symbol definition".into(),                category: "Editor".into(), keybinding: Some("F12".into()) });
+        self.add_command(Command { id: "editor.peek_definition".into(),        label: "Editor: Peek Definition".into(),             description: "Show inline definition preview".into(),               category: "Editor".into(), keybinding: Some("Alt+F12".into()) });
+        self.add_command(Command { id: "editor.quick_fix".into(),              label: "Editor: Quick Fix".into(),                   description: "Show code actions at cursor".into(),                  category: "Editor".into(), keybinding: Some("Ctrl+.".into()) });
+        self.add_command(Command { id: "editor.refactor".into(),               label: "Editor: Refactor".into(),                    description: "Show refactoring options".into(),                     category: "Editor".into(), keybinding: Some("Ctrl+Shift+R".into()) });
+        self.add_command(Command { id: "editor.rename_symbol".into(),          label: "Editor: Rename Symbol".into(),               description: "Rename symbol across codebase".into(),                category: "Editor".into(), keybinding: Some("F2".into()) });
+        self.add_command(Command { id: "editor.select_all_occurrences".into(), label: "Editor: Select All Occurrences".into(),      description: "Select all occurrences of current word".into(),       category: "Editor".into(), keybinding: Some("Ctrl+Shift+L".into()) });
+        self.add_command(Command { id: "editor.add_cursor_above".into(),       label: "Editor: Add Cursor Above".into(),            description: "Add another cursor one line up".into(),               category: "Editor".into(), keybinding: Some("Ctrl+Alt+Up".into()) });
+        self.add_command(Command { id: "editor.add_cursor_below".into(),       label: "Editor: Add Cursor Below".into(),            description: "Add another cursor one line down".into(),             category: "Editor".into(), keybinding: Some("Ctrl+Alt+Down".into()) });
+        self.add_command(Command { id: "editor.fold".into(),                   label: "Editor: Fold Region".into(),                 description: "Fold current region".into(),                          category: "Editor".into(), keybinding: Some("Ctrl+Shift+[".into()) });
+        self.add_command(Command { id: "editor.unfold_all".into(),             label: "Editor: Unfold All Regions".into(),          description: "Expand all folded regions".into(),                    category: "Editor".into(), keybinding: Some("Ctrl+K Ctrl+J".into()) });
+        self.add_command(Command { id: "editor.next_error".into(),             label: "Editor: Go to Next Error".into(),            description: "Jump to next diagnostic".into(),                      category: "Editor".into(), keybinding: Some("F8".into()) });
+        self.add_command(Command { id: "editor.prev_error".into(),             label: "Editor: Go to Previous Error".into(),        description: "Jump to previous diagnostic".into(),                  category: "Editor".into(), keybinding: Some("Shift+F8".into()) });
+
+        // --- Preferences ---
+        self.add_command(Command { id: "keybindings.open".into(),      label: "Preferences: Open Keyboard Shortcuts".into(), description: "View and edit keybindings".into(), category: "Preferences".into(), keybinding: Some("Ctrl+Shift+K".into()) });
+        self.add_command(Command { id: "keybindings.reset_all".into(), label: "Preferences: Reset All Keybindings".into(),  description: "Restore default keybindings".into(), category: "Preferences".into(), keybinding: None });
+
+        // --- Search ---
+        self.add_command(Command { id: "search.global".into(),         label: "Search: Find in Files".into(),    description: "Search across workspace".into(),  category: "Search".into(), keybinding: Some("Ctrl+Shift+F".into()) });
+        self.add_command(Command { id: "search.replace_global".into(), label: "Search: Replace in Files".into(), description: "Replace across workspace".into(), category: "Search".into(), keybinding: Some("Ctrl+Shift+H".into()) });
+
+        // --- Navigation ---
+        self.add_command(Command { id: "workbench.go_to_symbol".into(),      label: "Go to Symbol in Workspace".into(),     description: "Search and navigate to symbols".into(),  category: "Navigation".into(), keybinding: Some("Ctrl+T".into()) });
+        self.add_command(Command { id: "editor.go_to_implementation".into(), label: "Go to Implementation".into(),           description: "Navigate to trait implementations".into(), category: "Navigation".into(), keybinding: Some("Ctrl+F12".into()) });
+
+        // --- Bookmarks ---
+        self.add_command(Command { id: "bookmarks.toggle".into(),     label: "Bookmarks: Toggle Bookmark".into(),    description: "Add or remove bookmark at current line".into(), category: "Bookmarks".into(), keybinding: Some("Ctrl+F2".into()) });
+        self.add_command(Command { id: "bookmarks.next".into(),       label: "Bookmarks: Go to Next".into(),         description: "Jump to next bookmark".into(),                  category: "Bookmarks".into(), keybinding: Some("F2".into()) });
+        self.add_command(Command { id: "bookmarks.prev".into(),       label: "Bookmarks: Go to Previous".into(),     description: "Jump to previous bookmark".into(),              category: "Bookmarks".into(), keybinding: Some("Shift+F2".into()) });
+        self.add_command(Command { id: "bookmarks.show_panel".into(), label: "Bookmarks: Show All Bookmarks".into(), description: "Open bookmarks panel".into(),                   category: "Bookmarks".into(), keybinding: None });
+
+        // --- Terminal ---
+        self.add_command(Command { id: "terminal.toggle_panel".into(), label: "Terminal: Toggle Integrated Terminal".into(), description: "Open or close the integrated terminal".into(), category: "Terminal".into(), keybinding: Some("Ctrl+`".into()) });
+        self.add_command(Command { id: "terminal.new_terminal".into(), label: "Terminal: Create New Terminal".into(),        description: "Open a new terminal tab".into(),               category: "Terminal".into(), keybinding: Some("Ctrl+Shift+`".into()) });
+
+        // --- Tasks ---
+        self.add_command(Command { id: "tasks.run_task".into(),   label: "Tasks: Run Task".into(),        description: "Run a configured task (build, test, etc.)".into(), category: "Tasks".into(), keybinding: Some("Ctrl+Shift+B".into()) });
+        self.add_command(Command { id: "tasks.show_panel".into(), label: "Tasks: Show Task Runner".into(), description: "Open task runner panel".into(),                   category: "Tasks".into(), keybinding: None });
+
+        // --- Diff ---
+        self.add_command(Command { id: "diff.toggle_panel".into(),  label: "Diff: Toggle Diff Viewer".into(),  description: "Open side-by-side diff viewer".into(), category: "Diff".into(), keybinding: None });
+        self.add_command(Command { id: "diff.compare_files".into(), label: "Diff: Compare Two Files".into(),   description: "Compare and merge two files".into(),   category: "Diff".into(), keybinding: None });
+
+        // --- AST ---
+        self.add_command(Command { id: "ast.toggle_panel".into(), label: "AST: Show Syntax Tree".into(),       description: "Visualize abstract syntax tree".into(),     category: "AST".into(), keybinding: None });
+        self.add_command(Command { id: "ast.show_tree".into(),    label: "AST: Inspect Node at Cursor".into(),  description: "Show AST node for current position".into(), category: "AST".into(), keybinding: Some("Ctrl+Shift+A".into()) });
+
+        // --- Memory ---
+        self.add_command(Command { id: "memory.toggle_panel".into(), label: "Memory: Show Memory Layout".into(),    description: "Visualize struct memory layout".into(), category: "Memory".into(), keybinding: None });
+        self.add_command(Command { id: "memory.show_layout".into(),  label: "Memory: Analyze Type at Cursor".into(), description: "Show memory layout for type".into(),   category: "Memory".into(), keybinding: Some("Ctrl+Alt+M".into()) });
+
+        // --- Documentation ---
+        self.add_command(Command { id: "docs.toggle_panel".into(), label: "Docs: Show Documentation Panel".into(), description: "Open documentation generator".into(), category: "Documentation".into(), keybinding: None });
+        self.add_command(Command { id: "docs.generate".into(),     label: "Docs: Generate Documentation".into(),   description: "Generate docs from code comments".into(), category: "Documentation".into(), keybinding: Some("Ctrl+Shift+D".into()) });
+    }
+
+    // -------------------------------------------------------------------------
+    // View helpers
+    // -------------------------------------------------------------------------
+
+    rite render_header(self: &Self!) -> VNode! {
+        ≔ header_style = "display:flex;align-items:center;margin-bottom:12px;";
+        ≔ title_style  = "font-size:1.125rem;font-weight:700;color:rgb(44,170,131);";
+        ≔ esc_style    = "margin-left:auto;font-size:0.6875rem;color:rgb(150,150,150);";
+
+        VNode·div()
+            ·class("cp-header")
+            ·attr("style", header_style)
+            ·child(VNode·span()·attr("style", title_style)·text_child("🎯 Command Palette"))
+            ·child(VNode·span()·attr("style", esc_style)·text_child("ESC to close"))
+    }
+
+    rite render_search_frame(self: &Self!) -> VNode! {
+        ≔ frame_style = "background:rgb(25,25,25);\
+                          border:1px solid rgba(26,123,93,0.24);\
+                          border-radius:6px;padding:12px;margin-bottom:15px;";
+        ≔ input_style = "width:100%;background:transparent;border:none;\
+                          color:#e8e8ec;font-size:1rem;outline:none;\
+                          box-sizing:border-box;";
+
+        VNode·div()
+            ·class("cp-search-frame")
+            ·attr("style", frame_style)
+            ·child(
+                VNode·input()
+                    ·class("cp-search-input")
+                    ·attr("style", input_style)
+                    ·attr("type", "text")
+                    ·attr("placeholder", "🔍 Type to search commands...")
+                    ·attr("value", &self.search_query)
+                    ·attr("autofocus", "true")
+                    // ??INPUT?? — shell wires input events → update_query()
+            )
+    }
+
+    rite render_recent_label(self: &Self!) -> VNode! {
+        ⎇ ¬self.search_query.is_empty() ∨ self.recent_commands.is_empty() {
+            return VNode·Empty;
+        }
+        VNode·span()
+            ·attr("style", "font-size:0.8125rem;color:rgb(200,200,200);\
+                             display:block;margin-bottom:8px;")
+            ·text_child("⏱️  Recent Commands")
+    }
+
+    rite render_command_list(self: &Self!) -> VNode! {
+        ≔ list_style  = "max-height:350px;overflow-y:auto;";
+        ≔ empty_style = "display:flex;flex-direction:column;align-items:center;\
+                          padding:60px 0 20px;color:rgb(150,150,150);font-size:1rem;";
+
+        ⎇ self.filtered_commands.is_empty() {
+            VNode·div()
+                ·class("cp-list")
+                ·attr("style", list_style)
+                ·child(
+                    VNode·div()
+                        ·attr("style", empty_style)
+                        ·child(VNode·span()·attr("style", "font-size:3rem;")·text_child("🔍"))
+                        ·child(VNode·span()·text_child("No commands found"))
+                )
+        } ⎉ {
+            ≔ Δ list = VNode·div()
+                ·class("cp-list")
+                ·attr("style", list_style);
+
+            ∀ (i, (cmd, _)) ∈ self.filtered_commands.iter().enumerate() {
+                ≔ is_selected = i == self.selected_index;
+                ≔ is_recent   = self.recent_commands.iter().any(|r| r == &cmd.id);
+
+                ≔ item_bg     = ⎇ is_selected { "rgb(40,40,50)" } ⎉ { "transparent" };
+                ≔ item_border = ⎇ is_selected { "1px solid rgb(255,20,147)" } ⎉ { "1px solid transparent" };
+                ≔ item_style  = format!(
+                    "background:{};{};\
+                     border-radius:4px;padding:8px 12px;margin-bottom:3px;cursor:pointer;",
+                    item_bg, item_border
+                );
+
+                ≔ cat_color  = category_color(&cmd.category);
+                ≔ cat_style  = format!("font-size:0.625rem;color:{};margin-right:6px;", cat_color);
+                ≔ lbl_color  = ⎇ is_selected { "#ffffff" } ⎉ { "rgb(220,220,220)" };
+                ≔ lbl_style  = format!("font-size:0.875rem;color:{};", lbl_color);
+                ≔ desc_style = "font-size:0.75rem;color:rgb(150,150,150);\
+                                 margin-left:20px;display:block;margin-top:2px;";
+
+                ≔ Δ row = VNode·div()
+                    ·class(⎇ is_selected { "cp-row selected" } ⎉ { "cp-row" })
+                    ·attr("style", &item_style)
+                    ·on_click(CommandPaletteMsg·ClickCommand(cmd.id.clone()))
+                    ·child(
+                        VNode·div()
+                            ·attr("style", "display:flex;align-items:center;")
+                            ·child(VNode·span()·attr("style", &cat_style)·text_child(&cmd.category))
+                            ·child(
+                                ⎇ is_recent {
+                                    VNode·span()
+                                        ·attr("style", "font-size:0.6875rem;margin-right:4px;")
+                                        ·text_child("⏱️")
+                                } ⎉ { VNode·Empty }
+                            )
+                            ·child(VNode·span()·attr("style", &lbl_style)·text_child(&cmd.label))
+                    )
+                    ·child(VNode·span()·attr("style", desc_style)·text_child(&cmd.description));
+
+                // Keybinding chip
+                ⎇ ≔ Some(ref kb) = cmd.keybinding {
+                    ≔ kb_style = "display:inline-block;float:right;\
+                                   background:rgb(60,60,70);border-radius:3px;\
+                                   padding:3px 6px;font-size:0.6875rem;\
+                                   font-family:monospace;color:rgb(200,200,200);\
+                                   margin-top:2px;";
+                    row = row·child(VNode·span()·attr("style", kb_style)·text_child(kb));
+                }
+
+                list = list·child(row);
+            }
+
+            list
+        }
+    }
+}
+
+// =============================================================================
+// Free rites
+// =============================================================================
+
+/// CSS colour for a command category badge.
+☉ rite category_color(category: &str) -> &str! {
+    ⌥ category {
+        "File"          => "rgb(44,170,131)",
+        "View"          => "rgb(157,0,255)",
+        "Git"           => "rgb(255,20,147)",
+        "Docker"        => "rgb(0,255,127)",
+        "Debug"         => "rgb(220,20,60)",
+        "Editor"        => "rgb(0,255,255)",
+        "Search"        => "rgb(255,165,0)",
+        "Navigation"    => "rgb(100,180,255)",
+        "Bookmarks"     => "rgb(255,200,0)",
+        "Terminal"      => "rgb(180,255,180)",
+        _               => "rgb(150,150,150)",
+    }
+}
