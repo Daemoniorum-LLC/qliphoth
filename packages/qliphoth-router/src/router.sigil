@@ -37,7 +37,7 @@ invoke tome·params·Params;
     ☉ pathname: String!,
     ☉ search: String!,
     ☉ hash: String!,
-    ☉ state: Option[serde_json·Value]?,
+    ☉ state: Option[Json]?,
 }
 
 ⊢ RouterLocation {
@@ -65,7 +65,7 @@ invoke tome·params·Params;
     ☉ replace: bool!,
 
     /// State to associate with history entry
-    ☉ state: Option[serde_json·Value]?,
+    ☉ state: Option[Json]?,
 
     /// Preserve query string
     ☉ preserve_query: bool!,
@@ -84,7 +84,7 @@ invoke tome·params·Params;
         self
     }
 
-    ☉ rite with_state(Δ self: Self!, state: serde_json·Value!) -> Self! {
+    ☉ rite with_state(Δ self: Self!, state: Json!) -> Self! {
         self.state = Some(state);
         self
     }
@@ -122,8 +122,8 @@ invoke tome·params·Params;
             };
 
             ≔ state! = options.state
-                ·map(|s| serde_wasm_bindgen·to_value(&s)·unwrap())
-                ·unwrap_or(qliphoth_sys·JsValue·NULL);
+                ·map(|s| s·stringify())
+                ·unwrap_or("null"·to_string());
 
             ⎇ options.replace {
                 history·replace_state(&state, "", Some(&full_path))·ok();

@@ -28,19 +28,22 @@ extern "js" {
 }
 
 ⊢ Storage {
-    /// Get item as typed value (deserialize from JSON)
-    ☉ rite get_json[T: serde·de·DeserializeOwned](self: &Self!, key: &str!) -> Option[T]? {
+    /// Get item as a JSON value.
+    ///
+    /// This was generic over `serde·de·DeserializeOwned` and called
+    /// `serde_json·from_str` — a Rust crate Sigil does not have, which passed
+    /// `sigil check` and failed at WASM compile time. `Json` is dynamic: read
+    /// fields out of it by dotted path.
+    ☉ rite get_json(self: &Self!, key: &str!) -> Option[Json]? {
         self·get_item(key)
             ·ok()
             ·flatten()
-            ·and_then(|s| serde_json·from_str(&s)·ok())
+            ·map(|s| Json·parse(&s))
     }
 
-    /// Set item as typed value (serialize to JSON)
-    ☉ rite set_json[T: serde·Serialize](self: &Self!, key: &str!, value: &T!) -> Result[(), String]? {
-        ≔ json! = serde_json·to_string(value)
-            ·map_err(|e| e·to_string())?;
-        self·set_item(key, &json)
+    /// Set item as a JSON value.
+    ☉ rite set_json(self: &Self!, key: &str!, value: Json!) -> Result[(), String]? {
+        self·set_item(key, &value·stringify())
             ·map_err(|_| "Storage quota exceeded"·to_string())
     }
 
@@ -163,22 +166,16 @@ invoke tome·window·Window;
     }
 
     /// Get a JSON value from localStorage
-    ☉ rite get_json[T: serde·de·DeserializeOwned](key: &str) -> Result[Option[T], String]? {
+    ☉ rite get_json(key: &str) -> Result[Option[Json], String]? {
         ⌥ Self·get(key)? {
-            Some(json) => {
-                serde_json·from_str(&json)
-                    ·map(Some)
-                    ·map_err(|e| format!("JSON parse error: {}", e))
-            }
+            Some(json) => Ok(Some(Json·parse(&json))),
             None => Ok(None),
         }
     }
 
     /// Set a JSON value ∈ localStorage
-    ☉ rite set_json[T: serde·Serialize](key: &str, value: &T) -> Result[(), String]? {
-        ≔ json = serde_json·to_string(value)
-            ·map_err(|e| format!("JSON serialize error: {}", e))?;
-        Self·set(key, &json)
+    ☉ rite set_json(key: &str, value: Json!) -> Result[(), String]? {
+        Self·set(key, &value·stringify())
     }
 
     /// Check ⎇ key exists
@@ -238,21 +235,15 @@ invoke tome·window·Window;
     }
 
     /// Get a JSON value from sessionStorage
-    ☉ rite get_json[T: serde·de·DeserializeOwned](key: &str) -> Result[Option[T], String]? {
+    ☉ rite get_json(key: &str) -> Result[Option[Json], String]? {
         ⌥ Self·get(key)? {
-            Some(json) => {
-                serde_json·from_str(&json)
-                    ·map(Some)
-                    ·map_err(|e| format!("JSON parse error: {}", e))
-            }
+            Some(json) => Ok(Some(Json·parse(&json))),
             None => Ok(None),
         }
     }
 
     /// Set a JSON value ∈ sessionStorage
-    ☉ rite set_json[T: serde·Serialize](key: &str, value: &T) -> Result[(), String]? {
-        ≔ json = serde_json·to_string(value)
-            ·map_err(|e| format!("JSON serialize error: {}", e))?;
-        Self·set(key, &json)
+    ☉ rite set_json(key: &str, value: Json!) -> Result[(), String]? {
+        Self·set(key, &value·stringify())
     }
 }

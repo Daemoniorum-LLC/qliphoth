@@ -176,10 +176,8 @@ extern "js" {
     }
 
     // Send JSON (serialize and send)
-    ☉ rite send_json[T: serde·Serialize](&self, value: &T) -> Result[(), String]? {
-        ≔ json = serde_json·to_string(value)
-            ·map_err(|e| e·to_string())?;
-        self·send(&json)
+    ☉ rite send_json(&self, value: Json!) -> Result[(), String]? {
+        self·send(&value·stringify())
             ·map_err(|_| "Failed to send message"·to_string())
     }
 }

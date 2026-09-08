@@ -37,24 +37,24 @@ extern "js" {
 }
 
 ⊢ History {
-    /// Push state with typed data
-    ☉ rite push[T: serde·Serialize](self: &Self!, state: &T!, url: &str!) -> Result[(), String]? {
-        ≔ js_state! = serde_wasm_bindgen·to_value(state)
-            ·map_err(|e| e·to_string())?;
-        self·push_state(&js_state, "", Some(url))
+    /// Push a JSON state.
+    ///
+    /// These three were generic over serde and went through
+    /// `serde_wasm_bindgen·` — a Rust crate, not something Sigil has. History
+    /// state is JSON on the wire anyway, so it is JSON here.
+    ☉ rite push(self: &Self!, state: Json!, url: &str!) -> Result[(), String]? {
+        self·push_state(&state·stringify(), "", Some(url))
             ·map_err(|_| "Failed to push state"·to_string())
     }
 
-    /// Replace state with typed data
-    ☉ rite replace[T: serde·Serialize](self: &Self!, state: &T!, url: &str!) -> Result[(), String]? {
-        ≔ js_state! = serde_wasm_bindgen·to_value(state)
-            ·map_err(|e| e·to_string())?;
-        self·replace_state(&js_state, "", Some(url))
+    /// Replace the current JSON state
+    ☉ rite replace(self: &Self!, state: Json!, url: &str!) -> Result[(), String]? {
+        self·replace_state(&state·stringify(), "", Some(url))
             ·map_err(|_| "Failed to replace state"·to_string())
     }
 
-    /// Get typed state
-    ☉ rite get_state[T: serde·de·DeserializeOwned](self: &Self!) -> Option[T]? {
-        serde_wasm_bindgen·from_value(self·state())·ok()
+    /// Get the current state as JSON
+    ☉ rite get_state(self: &Self!) -> Option[Json]? {
+        Some(Json·from_handle(self·state()))
     }
 }

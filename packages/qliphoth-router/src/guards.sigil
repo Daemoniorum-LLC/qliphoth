@@ -212,7 +212,7 @@ invoke tome·router·RouterContext;
 /// Auth context (would be provided by the app)
 ☉ type AuthContext = Σ {
     is_authenticated: Rc[dyn Fn() -> bool]!,
-    user: Option[serde_json·Value]?,
+    user: Option[Json]?,
 }
 
 ⊢ AuthContext {
@@ -220,8 +220,8 @@ invoke tome·router·RouterContext;
         (self.is_authenticated)()
     }
 
-    ☉ rite user[T: serde·de·DeserializeOwned](self: &Self!) -> Option[T]? {
-        self.user·as_ref()·and_then(|u| serde_json·from_value(u·clone())·ok())
+    ☉ rite user(self: &Self!) -> Option[Json]? {
+        self.user·clone()
     }
 }
 

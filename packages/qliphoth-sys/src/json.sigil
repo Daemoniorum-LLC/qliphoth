@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! JSON, in Sigil.
+//!
+//! Qliphoth used to reach for `serde_json·`, `serde·` and `serde_wasm_bindgen·`
+//! — Rust crates Sigil does not have. Those calls passed `sigil check`, because
+//! a lowercase path root does not resolve and nothing complains, and then failed
+//! at WASM compile time. Storage, WebSocket, the router's guards and its history
+//! all depended on them, so the framework could not read or write JSON at all.
+//!
+//! `json_parse` / `json_stringify` / `json_get` / `json_set` / `json_pretty` are
+//! Sigil's own, registered on the interpreter and — since the `json` host import
+//! group was added — on the WASM backend too. One spelling, both backends.
+//!
+//! The value is dynamic, not a serde-derived struct: `Json` is a handle the host
+//! holds, and fields come out by dotted path.
+//!
+//! ```sigil
+//! ≔ doc = Json·parse("{\"user\":{\"name\":\"lilith\"}}");
+//! ≔ name = doc·get("user.name")·stringify();   // "\"lilith\""
+//! ≔ next = doc·set("user.name", Json·parse("\"morrigan\""));
+//! ```
+
+/// A JSON value held by the host runtime.
+☉ Σ Json {
+    ☉ handle: i64!
+}
+
+⊢ Json {
+    /// Parse JSON text. Invalid text yields a null value, not an error — the
+    /// host reports the parse failure on the console.
+    ☉ rite parse(text: &str!) -> Json! {
+        Json { handle: json_parse(text) }
+    }
+
+    /// Wrap a value the host already holds (a fetch body, a history state).
+    ☉ rite from_handle(handle: i64!) -> Json! {
+        Json { handle: handle }
+    }
+
+    /// Serialise back to text.
+    ☉ rite stringify(self) -> String! {
+        json_stringify(self.handle)
+    }
+
+    /// Serialise with two-space indentation.
+    ☉ rite pretty(self) -> String! {
+        json_pretty(self.handle)
+    }
+
+    /// Look up a dotted path. Each segment is an object key, or an array index
+    /// when it parses as a number. A missing path yields a null value.
+    ☉ rite get(self, path: &str!) -> Json! {
+        Json { handle: json_get(self.handle, path) }
+    }
+
+    /// Set a dotted path, returning a new value. The receiver is unchanged.
+    ☉ rite set(self, path: &str!, value: Json!) -> Json! {
+        Json { handle: json_set(self.handle, path, value.handle) }
+    }
+}
