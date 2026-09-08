@@ -222,12 +222,13 @@ extern "js" {
         ≔ ws = ⎇ self·protocols·is_empty() {
             WebSocket·new(&self·url)
         } ⎉ {
-            // Convert protocols to JsValue array
-            ≔ protocols = js_sys·Array·new();
+            // Was `js_sys·Array·new()` — a Rust crate. A Sigil Vec is the
+            // array the host receives.
+            ≔ protocols: Vec[String]! = Vec·new();
             ∀ p ∈ &self·protocols {
-                protocols·push(&JsValue·from_str(p));
+                protocols·push(p·to_string());
             }
-            WebSocket·new_with_protocols(&self·url, &protocols·into())
+            WebSocket·new_with_protocols(&self·url, &protocols)
         }·map_err(|e| format!("Failed to create WebSocket: {:?}", e))?;
 
         ⎇ ≔ Some(bt) = self·binary_type {

@@ -214,6 +214,33 @@ invoke std·collections·HashMap;
             None => self,
         }
     }
+
+    /// Add one of two children, on a condition.
+    ///
+    /// React's `cond ? <a/> : <b/>` has no expression form here — `when` only
+    /// covers the one-sided case — so the migrator emitted `when_else` against
+    /// nothing at all.
+    ☉ rite when_else(Δ self, condition: bool, then_node: VNode, else_node: VNode) -> Self! {
+        ⎇ condition {
+            self·child(then_node)
+        } ⎉ {
+            self·child(else_node)
+        }
+    }
+
+    /// Set an attribute only when a condition holds.
+    ///
+    /// This is `disabled={busy}` and its siblings — a boolean attribute driven
+    /// by state. The migrator used to emit `·when(cond, |n| n·attr(…))`, a
+    /// closure, which this builder deliberately has no form for: the header of
+    /// this file says "No DSL, no function types, no callbacks".
+    ☉ rite attr_when(Δ self, condition: bool, name: &str, value: &str) -> Self! {
+        ⎇ condition {
+            self·attr(name, value)
+        } ⎉ {
+            self
+        }
+    }
 }
 
 /// Virtual Element representing a DOM element
@@ -290,6 +317,24 @@ invoke std·collections·HashMap;
     ☉ rite key(Δ self, k: &str) -> Self! {
         self.key = Some(k.to_string())
         self
+    }
+
+    /// Add one of two children, on a condition
+    ☉ rite when_else(Δ self, condition: bool, then_node: VNode, else_node: VNode) -> Self! {
+        ⎇ condition {
+            self·child(then_node)
+        } ⎉ {
+            self·child(else_node)
+        }
+    }
+
+    /// Set an attribute only when a condition holds
+    ☉ rite attr_when(Δ self, condition: bool, name: &str, value: &str) -> Self! {
+        ⎇ condition {
+            self·attr(name, value)
+        } ⎉ {
+            self
+        }
     }
 
     /// Register click event (stores message ID)
