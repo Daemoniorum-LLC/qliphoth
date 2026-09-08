@@ -239,6 +239,12 @@ function valueToFixed(ref, digits) {
     return writeLengthPrefixedString(Number.isFinite(n) ? n.toFixed(d) : '0');
 }
 
+/// `typeof x`, as a string handle. Arrays report "object", as in JS.
+function valueTypeOf(ref) {
+    const v = jsonResolve(ref);
+    return writeLengthPrefixedString(v === null ? 'object' : typeof v);
+}
+
 function valueIsArray(ref) {
     return BigInt(Array.isArray(jsonResolve(ref)) ? 1 : 0);
 }
@@ -1746,6 +1752,7 @@ export function createImports() {
             is_integer: valueIsInteger,
             to_fixed: valueToFixed,
             is_array: valueIsArray,
+            type_of: valueTypeOf,
         },
         json: {
             parse: jsonParse,
