@@ -189,6 +189,66 @@ function valueToBool(ref) {
     return 1n;
 }
 
+/// `Object.values` / `Object.keys` / `Object.entries` over a value the module
+/// holds as a handle. The migrator emits these because React code uses them to
+/// walk record types, and WASM has no way to enumerate a JS object itself.
+function objectValues(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return jsonHandle([]);
+    if (Array.isArray(v)) return jsonHandle(v.slice());
+    if (typeof v === 'object') return jsonHandle(Object.values(v));
+    return jsonHandle([]);
+}
+
+function objectKeys(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return jsonHandle([]);
+    if (typeof v === 'object') return jsonHandle(Object.keys(v));
+    return jsonHandle([]);
+}
+
+function objectEntries(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return jsonHandle([]);
+    if (typeof v === 'object') return jsonHandle(Object.entries(v).map(([k, x]) => [k, x]));
+    return jsonHandle([]);
+}
+
+function valueIsFinite(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isFinite(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+function valueIsNaN(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isNaN(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+function valueIsInteger(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isInteger(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+/// `new Date(s).getTime()` — epoch millis from a timestamp string. Returns 0
+/// for anything unparseable rather than NaN, which BigInt cannot represent.
+/// `x.toFixed(n)` — a formatted string, returned as a string handle.
+function valueToFixed(ref, digits) {
+    const v = jsonResolve(ref);
+    const n = typeof v === 'number' ? v : Number(v);
+    const d = Math.max(0, Math.min(100, Number(digits)));
+    return writeLengthPrefixedString(Number.isFinite(n) ? n.toFixed(d) : '0');
+}
+
+function valueIsArray(ref) {
+    return BigInt(Array.isArray(jsonResolve(ref)) ? 1 : 0);
+}
+
+function timingParse(ref) {
+    const v = jsonResolve(ref);
+    const ms = typeof v === 'number' ? v : Date.parse(String(v));
+    return BigInt(Number.isFinite(ms) ? Math.trunc(ms) : 0);
+}
+
 function jsonParse(strRef) {
     const text = readLengthPrefixedString(strRef);
     try {
@@ -1607,6 +1667,7 @@ export function createImports() {
             set_interval: timingSetInterval,
             clear_interval: timingClearInterval,
             request_animation_frame: timingRequestAnimationFrame,
+            parse: timingParse,
         },
         fetch: {
             start: fetchStart,
@@ -1677,6 +1738,14 @@ export function createImports() {
         },
         value: {
             to_bool: valueToBool,
+            object_values: objectValues,
+            object_keys: objectKeys,
+            object_entries: objectEntries,
+            is_finite: valueIsFinite,
+            is_nan: valueIsNaN,
+            is_integer: valueIsInteger,
+            to_fixed: valueToFixed,
+            is_array: valueIsArray,
         },
         json: {
             parse: jsonParse,
