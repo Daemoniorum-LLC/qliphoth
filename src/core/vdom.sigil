@@ -194,6 +194,57 @@ invoke std·collections·HashMap;
         }
     }
 
+    /// Register a handler for any event name.
+    ///
+    /// Two things arrive here that the four named methods above could not
+    /// express: DOM events nobody had got round to (`keydown`, `mousedown`,
+    /// `blur`), and a CHILD COMPONENT'S callback prop — `onOpenSession`,
+    /// `onLaunchClaude` — which is not a DOM event at all. The migrator was
+    /// emitting `·on_opensession(…)` for the latter, a method that could never
+    /// exist; 49 distinct names across the generated Lares client, most of them
+    /// used once.
+    ☉ rite on_event(Δ self, name: &str, message_id: u64) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·on_event(name, message_id)),
+            other => other,
+        }
+    }
+
+    /// Register keydown handler
+    ☉ rite on_keydown(Δ self, message_id: u64) -> Self! {
+        self·on_event("keydown", message_id)
+    }
+
+    /// Register keyup handler
+    ☉ rite on_keyup(Δ self, message_id: u64) -> Self! {
+        self·on_event("keyup", message_id)
+    }
+
+    /// Register mousedown handler
+    ☉ rite on_mousedown(Δ self, message_id: u64) -> Self! {
+        self·on_event("mousedown", message_id)
+    }
+
+    /// Register mouseup handler
+    ☉ rite on_mouseup(Δ self, message_id: u64) -> Self! {
+        self·on_event("mouseup", message_id)
+    }
+
+    /// Register focus handler
+    ☉ rite on_focus(Δ self, message_id: u64) -> Self! {
+        self·on_event("focus", message_id)
+    }
+
+    /// Register blur handler
+    ☉ rite on_blur(Δ self, message_id: u64) -> Self! {
+        self·on_event("blur", message_id)
+    }
+
+    /// Register double-click handler
+    ☉ rite on_dblclick(Δ self, message_id: u64) -> Self! {
+        self·on_event("dblclick", message_id)
+    }
+
     // =========================================================================
     // Conditional Helpers
     // =========================================================================
@@ -358,6 +409,12 @@ invoke std·collections·HashMap;
     /// Register change event
     ☉ rite on_change(Δ self, message_id: u64) -> Self! {
         self.events·insert("change".to_string(), message_id)
+        self
+    }
+
+    /// Register a handler for any event name (see `VNode·on_event`)
+    ☉ rite on_event(Δ self, name: &str, message_id: u64) -> Self! {
+        self.events·insert(name.to_string(), message_id)
         self
     }
 }
