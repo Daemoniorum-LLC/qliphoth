@@ -1185,6 +1185,12 @@ function fetchGetStatus(id) {
 }
 
 function fetchGetBody(id) {
+    // A handle from `fetch.request` — the promise-shaped API — keeps its body
+    // here rather than in the polling registry below.
+    const p = promises.get(Number(id));
+    if (p && typeof p.text === 'string') {
+        return writeLengthPrefixedString(p.text);
+    }
     const req = fetchRequests.get(Number(id));
     if (req?.body) {
         return writeLengthPrefixedString(req.body);
@@ -2178,6 +2184,9 @@ export function createImports() {
             parse: timingParse,
         },
         fetch: {
+            request: fetchRequest,
+            status: fetchStatus,
+            ok: fetchOk,
             start: fetchStart,
             poll: fetchPoll,
             get_status: fetchGetStatus,
@@ -2307,7 +2316,12 @@ export function createImports() {
             promise_race: promiseRace,
             spawn: promiseSpawn,
             yield_now: promiseYieldNow,
-            await_promise: promiseAwait,
+            // Suspending where the host supports it: the WASM stack parks
+            // in here until the promise settles. Without JSPI this is the old
+            // synchronous reader, which cannot wait and says so by answering 0.
+            await_promise: jspiAvailable()
+                ? new WebAssembly.Suspending(awaitPromiseAsync)
+                : promiseAwait,
             create_continuation: promiseContinuation,
             resume: promiseResume,
         },
@@ -2370,12 +2384,125 @@ export async function loadWasm(wasmPath, additionalImports = {}) {
 // A module that returns a String hands back a heap handle, not text. The host
 // has no way to read one without this: `render_vnode_to_string` produced
 // perfectly good HTML that nothing on this side could see.
+// The other half of `readSigilString`: a caller could read a string out of a
+// module and had no way to pass one in, so every exported function taking a
+// String was uncallable from the host.
+export function writeSigilString(str) {
+    return writeLengthPrefixedString(String(str));
+}
+
 export function readSigilString(ptr) {
     return readLengthPrefixedString(ptr);
 }
 
 // Instantiate from bytes rather than a URL, for callers that are not a browser
 // fetch — a Node driver, a test harness.
+// ---------------------------------------------------------------------------
+// Asynchrony, through JavaScript Promise Integration.
+//
+// A Sigil program says `.await` and nothing else: it has no event loop, no
+// continuations, and the compiler does no CPS transform. JSPI is what makes
+// that work — `WebAssembly.Suspending` lets a host import suspend the whole
+// WASM stack until a promise settles, and `WebAssembly.promising` turns an
+// export into one that returns a promise. The module's straight-line code is
+// unchanged; the suspension happens underneath it.
+//
+// Where JSPI is not available the import still resolves — it answers with a
+// settled promise's value and `0` for a pending one, which is what it did
+// before. That is wrong for a real request, and `jspiAvailable()` says so
+// rather than pretending.
+// ---------------------------------------------------------------------------
+
+export function jspiAvailable() {
+    return typeof WebAssembly.Suspending === 'function'
+        && typeof WebAssembly.promising === 'function';
+}
+
+// `fetch_request(url, method, body)` — one request, as a promise id.
+//
+// The polling protocol next to it (`start`/`poll`/`get_body`) needs a loop the
+// program does not have. This is the shape `.await` can use.
+function fetchRequest(urlPtr, methodPtr, bodyPtr) {
+    const url = readLengthPrefixedString(urlPtr);
+    const method = methodPtr ? readLengthPrefixedString(methodPtr) : 'GET';
+    const body = bodyPtr ? readLengthPrefixedString(bodyPtr) : null;
+    const id = nextPromiseId++;
+    const entry = { state: PROMISE_PENDING, value: 0n };
+    promises.set(id, entry);
+
+    const init = { method: method || 'GET' };
+    if (body !== null && body !== '' && method && method !== 'GET') {
+        init.body = body;
+        init.headers = { 'content-type': 'application/json' };
+    }
+    // The promise resolves to the id ITSELF, which doubles as the response
+    // handle. `await fetch(…)` in JavaScript gives a Response, not a body, and
+    // migrated code goes on to ask it for `.json()` and `.status`; resolving to
+    // the body would leave those with nothing to read.
+    entry.promise = (typeof fetch === 'function'
+        ? fetch(url, init).then((res) => res.text().then((text) => ({ ok: res.ok, status: res.status, text })))
+        : Promise.reject(new Error('no fetch in this host'))
+    ).then(
+        (r) => {
+            entry.state = PROMISE_RESOLVED;
+            entry.status = r.status;
+            entry.ok = r.ok;
+            entry.text = r.text;
+            entry.value = BigInt(id);
+            return entry.value;
+        },
+        (e) => {
+            entry.state = PROMISE_REJECTED;
+            entry.status = 0;
+            entry.ok = false;
+            entry.text = '';
+            entry.error = String(e && e.message ? e.message : e);
+            entry.value = BigInt(id);
+            return entry.value;
+        },
+    );
+    return id;
+}
+
+// The status of the request a response handle came from, or 0 if it is not one.
+function fetchStatus(id) {
+    const p = promises.get(Number(id));
+    return p && typeof p.status === 'number' ? p.status : 0;
+}
+
+// Whether it succeeded, the way JavaScript's `res.ok` reads.
+function fetchOk(id) {
+    const p = promises.get(Number(id));
+    return p && p.ok ? 1 : 0;
+}
+
+// `async.await_promise`, as a suspending import: the WASM stack parks here
+// until the promise settles, and the value comes back as the call's result.
+async function awaitPromiseAsync(id) {
+    const p = promises.get(Number(id));
+    if (!p) return 0n;
+    if (p.promise) {
+        try {
+            return await p.promise;
+        } catch {
+            return 0n;
+        }
+    }
+    return p.state === PROMISE_RESOLVED ? p.value : 0n;
+}
+
+// An export that may await, as one that returns a promise.
+//
+// JSPI requires the whole stack between a promising export and a suspending
+// import to be WASM, so the entry point has to be wrapped explicitly. Returns
+// the export unchanged when JSPI is not available — the call will not suspend,
+// which is visible rather than silent because `jspiAvailable()` is false.
+export function promising(name) {
+    const fn = wasmExports && wasmExports[name];
+    if (typeof fn !== 'function') return null;
+    return jspiAvailable() ? WebAssembly.promising(fn) : fn;
+}
+
 export function instantiateWasm(bytes, additionalImports = {}) {
     const imports = createImports();
     Object.assign(imports, additionalImports);
