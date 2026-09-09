@@ -563,6 +563,17 @@ function stringFromFloat(value) {
     return writeLengthPrefixedString(str);
 }
 
+// `String·from_utf8(bytes)`. A Sigil `Vec[u8]` is an array of byte values held
+// by the host, not a buffer in linear memory, so decoding happens here.
+function stringFromUtf8(arrId) {
+    const arr = arrays.get(Number(arrId));
+    if (!arr) {
+        return writeLengthPrefixedString('');
+    }
+    const bytes = Uint8Array.from(arr, (b) => Number(b) & 0xff);
+    return writeLengthPrefixedString(new TextDecoder().decode(bytes));
+}
+
 function stringParseInt(ptr) {
     const str = readLengthPrefixedString(ptr);
     return BigInt(parseInt(str, 10) || 0);
@@ -1626,6 +1637,7 @@ export function createImports() {
             eq: stringEq,
             from_int: stringFromInt,
             from_float: stringFromFloat,
+            from_utf8: stringFromUtf8,
             parse_int: stringParseInt,
             parse_float: stringParseFloat,
             lines: stringLines,
