@@ -31,6 +31,7 @@ invoke std·collections·HashMap;
     ☉ rite div() -> Self! { VNode·Element(VElement·new("div")) }
     ☉ rite span() -> Self! { VNode·Element(VElement·new("span")) }
     ☉ rite main_elem() -> Self! { VNode·Element(VElement·new("main")) }
+    ☉ rite main() -> Self! { VNode·Element(VElement·new("main")) }
     ☉ rite section() -> Self! { VNode·Element(VElement·new("section")) }
     ☉ rite article() -> Self! { VNode·Element(VElement·new("article")) }
     ☉ rite aside() -> Self! { VNode·Element(VElement·new("aside")) }
@@ -59,6 +60,18 @@ invoke std·collections·HashMap;
     ☉ rite video() -> Self! { VNode·Element(VElement·new("video")) }
     ☉ rite audio() -> Self! { VNode·Element(VElement·new("audio")) }
     ☉ rite svg() -> Self! { VNode·Element(VElement·new("svg")) }
+    // SVG shapes. `path` was missing, so `bell_glyph` — a component made of two
+    // `<path>` elements — built nodes with an empty tag name and the mount
+    // threw. `main` and `datalist` were missing for the same reason: the list
+    // was never checked against what a real page uses.
+    ☉ rite path() -> Self! { VNode·Element(VElement·new("path")) }
+    ☉ rite circle() -> Self! { VNode·Element(VElement·new("circle")) }
+    ☉ rite rect() -> Self! { VNode·Element(VElement·new("rect")) }
+    ☉ rite line() -> Self! { VNode·Element(VElement·new("line")) }
+    ☉ rite polyline() -> Self! { VNode·Element(VElement·new("polyline")) }
+    ☉ rite polygon() -> Self! { VNode·Element(VElement·new("polygon")) }
+    ☉ rite g() -> Self! { VNode·Element(VElement·new("g")) }
+    ☉ rite datalist() -> Self! { VNode·Element(VElement·new("datalist")) }
 
     // Lists
     ☉ rite ul() -> Self! { VNode·Element(VElement·new("ul")) }
@@ -641,5 +654,44 @@ scroll tests {
             }
             _ => {}
         }
+    }
+}
+
+/// Build the host's node tree from a `VNode` and return its handle.
+///
+/// A `VNode` is a Sigil value; the DOM is not. This is the bridge between them,
+/// and it did not exist: `App·mount` constructed an `App`, discarded it, and
+/// returned — its only comment was "platform-specific mounting handled by
+/// runtime", and no runtime did. Nothing this framework built had ever reached
+/// a page.
+☉ rite to_host_node(node: &VNode) -> i64! {
+    ⌥ node {
+        VNode·Element(el) => {
+            ≔ host! = vdom_create_vnode(&el.tag);
+            ∀ (name, value) ∈ &el.attrs {
+                vdom_set_vnode_str_prop(host, name, value)
+            }
+            ∀ (prop, value) ∈ &el.styles {
+                vdom_set_vnode_style(host, prop, value)
+            }
+            // An event is a message id, not a callback — the host dispatches it
+            // back through the actor's generated dispatcher.
+            ∀ (event, message) ∈ &el.events {
+                vdom_set_vnode_prop(host, "on" + event, message)
+            }
+            ∀ child ∈ &el.children {
+                vdom_append_vnode_child(host, to_host_node(child))
+            }
+            host
+        }
+        VNode·Text(text) => vdom_create_text_vnode(&text.content),
+        VNode·Fragment(frag) => {
+            ≔ host! = vdom_create_fragment();
+            ∀ child ∈ &frag.children {
+                vdom_append_vnode_child(host, to_host_node(child))
+            }
+            host
+        }
+        VNode·Empty => vdom_create_fragment(),
     }
 }
