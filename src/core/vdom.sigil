@@ -665,6 +665,14 @@ scroll tests {
 /// runtime", and no runtime did. Nothing this framework built had ever reached
 /// a page.
 ☉ rite to_host_node(node: &VNode) -> i64! {
+    // A `∅` reaching here is not hypothetical: generated code emits one for a
+    // callback prop or an expression it could not translate, and `·child(∅)`
+    // appends it. `VNode·Element` is discriminant 0, so a null pointer reads as
+    // an element with a garbage tag and the host throws on `createElement('')`.
+    // A node that is not there renders nothing.
+    ⎇ node == ∅ {
+        ⤺ vdom_create_fragment();
+    }
     ⌥ node {
         VNode·Element(el) => {
             ≔ host! = vdom_create_vnode(&el.tag);
@@ -693,5 +701,9 @@ scroll tests {
             host
         }
         VNode·Empty => vdom_create_fragment(),
+        // A handle that is not any of the four. Generated code can still put
+        // one here — an untranslated expression, a callback prop — and reading
+        // a tag name out of it hands the host an empty string. Render nothing.
+        _ => vdom_create_fragment(),
     }
 }

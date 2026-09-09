@@ -194,17 +194,17 @@ function valueToBool(ref) {
 /// walk record types, and WASM has no way to enumerate a JS object itself.
 function objectValues(ref) {
     const v = jsonResolve(ref);
-    if (v === null || v === undefined) return jsonHandle([]);
-    if (Array.isArray(v)) return jsonHandle(v.slice());
-    if (typeof v === 'object') return jsonHandle(Object.values(v));
-    return jsonHandle([]);
+    if (v === null || v === undefined) return BigInt(jsonHandle([]));
+    if (Array.isArray(v)) return BigInt(jsonHandle(v.slice()));
+    if (typeof v === 'object') return BigInt(jsonHandle(Object.values(v)));
+    return BigInt(jsonHandle([]));
 }
 
 function objectKeys(ref) {
     const v = jsonResolve(ref);
-    if (v === null || v === undefined) return jsonHandle([]);
-    if (typeof v === 'object') return jsonHandle(Object.keys(v));
-    return jsonHandle([]);
+    if (v === null || v === undefined) return BigInt(jsonHandle([]));
+    if (typeof v === 'object') return BigInt(jsonHandle(Object.keys(v)));
+    return BigInt(jsonHandle([]));
 }
 
 function objectEntries(ref) {
@@ -236,13 +236,13 @@ function valueToFixed(ref, digits) {
     const v = jsonResolve(ref);
     const n = typeof v === 'number' ? v : Number(v);
     const d = Math.max(0, Math.min(100, Number(digits)));
-    return writeLengthPrefixedString(Number.isFinite(n) ? n.toFixed(d) : '0');
+    return BigInt(writeLengthPrefixedString(Number.isFinite(n) ? n.toFixed(d) : '0'));
 }
 
 /// `typeof x`, as a string handle. Arrays report "object", as in JS.
 function valueTypeOf(ref) {
     const v = jsonResolve(ref);
-    return writeLengthPrefixedString(v === null ? 'object' : typeof v);
+    return BigInt(writeLengthPrefixedString(v === null ? 'object' : typeof v));
 }
 
 function valueIsArray(ref) {
@@ -258,10 +258,10 @@ function timingParse(ref) {
 function jsonParse(strRef) {
     const text = readLengthPrefixedString(strRef);
     try {
-        return jsonHandle(JSON.parse(text));
+        return BigInt(jsonHandle(JSON.parse(text)));
     } catch (e) {
         console.error('[json.parse]', e.message);
-        return jsonHandle(null);
+        return BigInt(jsonHandle(null));
     }
 }
 
@@ -289,7 +289,7 @@ function jsonGet(ref, pathRef) {
             current = null;
         }
     }
-    return jsonHandle(current ?? null);
+    return BigInt(jsonHandle(current ?? null));
 }
 
 function jsonSet(ref, pathRef, valueRef) {
