@@ -45,6 +45,11 @@ function setWasmExports(exports) {
     heapGlobal = exports.__heap_ptr instanceof WebAssembly.Global
         ? exports.__heap_ptr
         : null;
+    // Where the module's string literals live: from the start of its data to
+    // wherever its heap pointer begins. Those are strings this host did not
+    // write, so they are not in `stringHandles`, and `x·to_string()` on one
+    // printed the decimal of its address.
+    literalEnd = heapGlobal ? Number(heapGlobal.value) : 0;
     // An actor compiles to a `<Actor>_dispatch(msg_id, payload)` export. Their
     // presence is what tells this runtime that an `on*` prop carries a message
     // id rather than an indirect-function-table index — a module with no actors
@@ -150,10 +155,29 @@ function heapReserve(size) {
     }
 }
 
+// Every address this host has written a string to.
+//
+// `x·to_string()` cannot be decided from the value: a Sigil value is a bare
+// i64, so 83072 is either the number eighty-three thousand or a pointer to a
+// string, and the compiler only knows which when it can see a literal. It used
+// to assume "number" and print the decimal of the address, so every string that
+// came back from a helper rendered into the DOM as a meaningless integer.
+//
+// The host does not have to guess: it knows which addresses it wrote. Nothing
+// is freed from this bump allocator, so a recorded handle stays a string.
+const stringHandles = new Set();
+
+// The module's own data section: `[LITERAL_START, literalEnd)`. Set when the
+// module is bound, because that is when its heap pointer still marks the end
+// of its literals.
+const LITERAL_START = 1024;
+let literalEnd = 0;
+
 function writeLengthPrefixedString(str) {
     const bytes = new TextEncoder().encode(str);
     heapReserve(4 + bytes.length + 8);
     const ptr = getHeapPtr();
+    stringHandles.add(ptr);
     const view = new DataView(wasmMemory.buffer);
     // Write 4-byte length
     view.setUint32(ptr, bytes.length, true); // little-endian
@@ -620,6 +644,27 @@ function stringEq(ptr1, ptr2) {
     const str1 = readLengthPrefixedString(ptr1);
     const str2 = readLengthPrefixedString(ptr2);
     return str1 === str2 ? 1 : 0;
+}
+
+// `x·to_string()` where the compiler could not prove which it is.
+//
+// A handle this host wrote is that string; anything else is a number. Exact,
+// not a heuristic: the alternative — treating any value that happens to point
+// at plausible bytes as a string — would misprint genuine integers.
+function stringFromValue(value) {
+    const n = Number(value);
+    if (stringHandles.has(n)) return n;
+    // A literal in the module's data section, if it reads as one. Bounded to
+    // that region: outside it, a plausible-looking length is a coincidence and
+    // a genuine integer must print as itself.
+    if (n >= LITERAL_START && n < literalEnd) {
+        try {
+            const view = new DataView(getMemory().buffer);
+            const len = view.getUint32(n, true);
+            if (len > 0 && n + 4 + len <= literalEnd) return n;
+        } catch { /* not a string */ }
+    }
+    return writeLengthPrefixedString(String(n));
 }
 
 function stringFromInt(value) {
@@ -2129,6 +2174,7 @@ export function createImports() {
             slice: stringSlice,
             eq: stringEq,
             from_int: stringFromInt,
+            from_value: stringFromValue,
             from_float: stringFromFloat,
             from_utf8: stringFromUtf8,
             parse_int: stringParseInt,
