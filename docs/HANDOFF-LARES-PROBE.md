@@ -24,6 +24,15 @@ own instead of buried inside a runtime PR.
 
 The base was retargeted from `main` to `develop`.
 
+Two things follow from that. **CI does not run while the PR is conflicted** —
+GitHub cannot compute a merge ref, so `pull_request` workflows do not fire; the
+last green run was `3bb940d`, and absent checks are neither a pass nor a fail.
+And against `develop` the diff reads as 2235 files and +1.1M lines, because
+`develop` and `main` have diverged far more here than in sigil-lang. Most of
+that is not this branch's 42 commits. It is worth asking whether qliphoth wants
+its own main-into-develop reconciliation first, the way sigil-lang#74 is doing,
+rather than resolving it inside this PR.
+
 ## The standing hazard: four copies of `sigil_runtime.js`
 
 Canonical is `runtime/sigil_runtime.js`. Copies live in the Lares repo at
