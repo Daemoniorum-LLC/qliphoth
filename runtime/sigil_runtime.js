@@ -574,6 +574,83 @@ function stringFromUtf8(arrId) {
     return writeLengthPrefixedString(new TextDecoder().decode(bytes));
 }
 
+// ---------------------------------------------------------------------------
+// HashMap / HashSet. A Sigil map is a host object, the same way an array is:
+// the module holds an id, not a buffer. Keys arrive as string handles, so they
+// are read to text — two equal strings at different addresses are one key.
+// ---------------------------------------------------------------------------
+const maps = new Map();
+let nextMapId = 1;
+
+function mapKey(k) {
+    // A key is a string handle when it points at a readable length-prefixed
+    // string, and a plain number otherwise.
+    const n = Number(k);
+    try {
+        const view = new DataView(getMemory().buffer);
+        const len = view.getUint32(n, true);
+        if (len < 4096 && n + 4 + len <= view.byteLength) {
+            return readLengthPrefixedString(n);
+        }
+    } catch { /* not a string */ }
+    return n;
+}
+
+function mapNew() {
+    const id = nextMapId++;
+    maps.set(id, new Map());
+    return id;
+}
+function mapSet(mapId, k, v) {
+    const m = maps.get(Number(mapId));
+    if (m) m.set(mapKey(k), v);
+}
+function mapGet(mapId, k) {
+    const m = maps.get(Number(mapId));
+    const v = m ? m.get(mapKey(k)) : undefined;
+    return v === undefined ? 0n : BigInt(v);
+}
+function mapHas(mapId, k) {
+    const m = maps.get(Number(mapId));
+    return m && m.has(mapKey(k)) ? 1 : 0;
+}
+function mapRemove(mapId, k) {
+    const m = maps.get(Number(mapId));
+    if (m) m.delete(mapKey(k));
+}
+function mapLen(mapId) {
+    const m = maps.get(Number(mapId));
+    return m ? m.size : 0;
+}
+function mapIsEmpty(mapId) {
+    return mapLen(mapId) === 0 ? 1 : 0;
+}
+function arrayOf(values) {
+    const id = arrayNew();
+    const arr = arrays.get(id);
+    for (const v of values) arr.push(v);
+    return id;
+}
+function mapKeys(mapId) {
+    const m = maps.get(Number(mapId));
+    if (!m) return arrayOf([]);
+    return arrayOf([...m.keys()].map((k) =>
+        typeof k === 'string' ? BigInt(writeLengthPrefixedString(k)) : BigInt(k)));
+}
+function mapValues(mapId) {
+    const m = maps.get(Number(mapId));
+    return arrayOf(m ? [...m.values()].map((v) => BigInt(v)) : []);
+}
+function mapEntries(mapId) {
+    const m = maps.get(Number(mapId));
+    if (!m) return arrayOf([]);
+    // Each entry is a two-element array: [key, value].
+    return arrayOf([...m.entries()].map(([k, v]) => BigInt(arrayOf([
+        typeof k === 'string' ? BigInt(writeLengthPrefixedString(k)) : BigInt(k),
+        BigInt(v),
+    ]))));
+}
+
 function stringParseInt(ptr) {
     const str = readLengthPrefixedString(ptr);
     return BigInt(parseInt(str, 10) || 0);
@@ -1630,6 +1707,18 @@ export function createImports() {
             warn: consoleWarn,
             error: consoleError,
         }, 'console'),
+        map: wrapImports({
+            new: mapNew,
+            set: mapSet,
+            get: mapGet,
+            has: mapHas,
+            remove: mapRemove,
+            len: mapLen,
+            is_empty: mapIsEmpty,
+            keys: mapKeys,
+            values: mapValues,
+            entries: mapEntries,
+        }, 'map'),
         string: wrapImports({
             concat: stringConcat,
             length: stringLength,
@@ -1847,6 +1936,23 @@ export async function loadWasm(wasmPath, additionalImports = {}) {
     return instance;
 }
 
+// A module that returns a String hands back a heap handle, not text. The host
+// has no way to read one without this: `render_vnode_to_string` produced
+// perfectly good HTML that nothing on this side could see.
+export function readSigilString(ptr) {
+    return readLengthPrefixedString(ptr);
+}
+
+// Instantiate from bytes rather than a URL, for callers that are not a browser
+// fetch — a Node driver, a test harness.
+export function instantiateWasm(bytes, additionalImports = {}) {
+    const imports = createImports();
+    Object.assign(imports, additionalImports);
+    const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), imports);
+    setWasmExports(instance.exports);
+    return instance;
+}
+
 // Convenience function to mount a vnode to a selector from JS
 export function mountVnode(vnodeId, selector) {
     const container = document.querySelector(selector) || document.getElementById(selector.replace('#', ''));
@@ -1885,4 +1991,4 @@ export class SigilRuntime {
     }
 }
 
-export default { createImports, loadWasm, mountVnode, SigilRuntime };
+export default { createImports, loadWasm, instantiateWasm, mountVnode, readSigilString, SigilRuntime };
