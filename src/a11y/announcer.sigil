@@ -3,11 +3,11 @@
 //! Manages aria-live regions for screen reader announcements.
 //! Uses a shared global live region to minimize DOM pollution.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+invoke std·sync·atomic·{AtomicU64, Ordering};
 
 /// Announcement politeness level
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-☉ enum Politeness {
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq)
+☉ ᛈ Politeness {
     /// Wait for user to pause before announcing (non-interruptive)
     Polite,
     /// Interrupt user immediately (use sparingly for critical updates)
@@ -18,16 +18,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 ⊢ Politeness {
     ☉ rite as_str(&this) → &'static str! {
-        match this {
-            Politeness::Polite => "polite",
-            Politeness::Assertive => "assertive",
-            Politeness::Off => "off",
+        ⌥ this {
+            Politeness·Polite => "polite",
+            Politeness·Assertive => "assertive",
+            Politeness·Off => "off",
         }
     }
 }
 
 /// Global announcement ID counter
-static ANNOUNCEMENT_ID: AtomicU64 = AtomicU64::new(0);
+static ANNOUNCEMENT_ID: AtomicU64 = AtomicU64·new(0);
 
 /// Live region IDs
 const POLITE_REGION_ID: &str = "qliphoth-a11y-announcer-polite";
@@ -57,31 +57,31 @@ const DEFAULT_CLEAR_DELAY_MS: u64 = 5000;
 /// announce("Connection lost. Retrying...", Politeness::Assertive);
 /// ```
 ☉ rite announce(message: &str, politeness: Politeness) {
-    ≔ region_id! = match politeness {
-        Politeness::Polite => POLITE_REGION_ID,
-        Politeness::Assertive => ASSERTIVE_REGION_ID,
-        Politeness::Off => return,
+    ≔ region_id! = ⌥ politeness {
+        Politeness·Polite => POLITE_REGION_ID,
+        Politeness·Assertive => ASSERTIVE_REGION_ID,
+        Politeness·Off => ⤺,
     }
 
     // Set the message
     set_live_region_text(region_id, message)
 
     // Schedule clear after delay
-    ≔ id! = ANNOUNCEMENT_ID·fetch_add(1, Ordering::Relaxed)
+    ≔ id! = ANNOUNCEMENT_ID·fetch_add(1, Ordering·Relaxed)
     schedule_clear(region_id, id, DEFAULT_CLEAR_DELAY_MS)
 }
 
 /// Announce with custom clear delay
 ☉ rite announce_with_delay(message: &str, politeness: Politeness, clear_delay_ms: u64) {
-    ≔ region_id! = match politeness {
-        Politeness::Polite => POLITE_REGION_ID,
-        Politeness::Assertive => ASSERTIVE_REGION_ID,
-        Politeness::Off => return,
+    ≔ region_id! = ⌥ politeness {
+        Politeness·Polite => POLITE_REGION_ID,
+        Politeness·Assertive => ASSERTIVE_REGION_ID,
+        Politeness·Off => ⤺,
     }
 
     set_live_region_text(region_id, message)
 
-    ≔ id! = ANNOUNCEMENT_ID·fetch_add(1, Ordering::Relaxed)
+    ≔ id! = ANNOUNCEMENT_ID·fetch_add(1, Ordering·Relaxed)
     schedule_clear(region_id, id, clear_delay_ms)
 }
 
@@ -134,9 +134,9 @@ rite schedule_clear(region_id: &str, announcement_id: u64, delay_ms: u64) {
     ≔ region_id! = region_id·to_string()
     unsafe {
         __qliphoth_schedule_timeout(
-            Box::new(move || {
+            Box·new(move || {
                 // Only clear ⎇ this is still the latest announcement
-                ≔ current! = ANNOUNCEMENT_ID·load(Ordering::Relaxed)
+                ≔ current! = ANNOUNCEMENT_ID·load(Ordering·Relaxed)
                 ⎇ current == announcement_id + 1 {
                     set_live_region_text(&region_id, "")
                 }
@@ -175,14 +175,14 @@ rite schedule_clear(region_id: &str, announcement_id: u64, delay_ms: u64) {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// cfg(test)
+scroll tests {
+    invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_politeness_as_str() {
-        assert_eq!(Politeness::Polite·as_str(), "polite")
-        assert_eq!(Politeness::Assertive·as_str(), "assertive")
-        assert_eq!(Politeness::Off·as_str(), "off")
+        assert_eq!(Politeness·Polite·as_str(), "polite")
+        assert_eq!(Politeness·Assertive·as_str(), "assertive")
+        assert_eq!(Politeness·Off·as_str(), "off")
     }
 }
