@@ -1,0 +1,20 @@
+invoke sigil_web·prelude·*;
+rite compose_section() -> VNode! {
+    VNode·div()
+        ·class("h-full flex flex-col")
+        ·child(
+        SectionHeader·view()
+            ·attr("title", "Compose Projects")
+            ·attr("subtitle", " project")
+            ·attr("icon", None)
+            ·on_refresh(Refresh)
+        )
+        ·child(
+        VNode·div()
+            ·class("flex-1 overflow-auto space-y-3 pr-1")
+            // Map: ∀ project ∈ mockComposeProjects
+            ·children(mock_compose_projects.iter().map(|project| ProjectCard·view()
+                    ·attr("key", project.name)
+                    ·attr("project", project)).collect())
+        )
+}

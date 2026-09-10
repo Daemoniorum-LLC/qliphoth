@@ -1,0 +1,325 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! Virtual DOM implementation
+//!
+//! Efficient tree diffing and patching ∀ web applications.
+
+invoke std·collections·HashMap;
+invoke std·rc·Rc;
+invoke std·cell·RefCell;
+
+invoke crate·web_sys;
+invoke crate·events·EventHandler;
+
+/// A virtual DOM node
+☉ type VNode = ᛈ {
+    /// Text node
+    Text(String!),
+
+    /// Element node with tag, attributes, and children
+    Element(VElement!),
+
+    /// Component node (lazily rendered)
+    Component(Box[dyn Fn() -> VNode]!),
+
+    /// Fragment (multiple nodes without wrapper)
+    Fragment(Vec[VNode]!),
+
+    /// Empty node (renders nothing)
+    Empty,
+}
+
+/// Virtual element with tag, attributes, and children
+☉ type VElement = Σ {
+    ☉ tag: String!,
+    ☉ attrs: HashMap[String, AttrValue]!,
+    ☉ children: Vec[VNode]!,
+    ☉ events: HashMap[String, EventHandler]!,
+    ☉ key: Option[String]?,
+}
+
+/// Attribute value types
+☉ type AttrValue = ᛈ {
+    String(String!),
+    Bool(bool!),
+    Number(f64!),
+}
+
+⊢ VNode {
+    /// Create a text node
+    ☉ rite text(s: ⊢ Into[String]!) -> Self! {
+        VNode·Text(s·into())
+    }
+
+    /// Create an empty node
+    ☉ rite empty() -> Self! {
+        VNode·Empty
+    }
+
+    /// Create a fragment
+    ☉ rite fragment(children: Vec[VNode]!) -> Self! {
+        VNode·Fragment(children)
+    }
+}
+
+/// Element builder ∀ ergonomic VDOM construction
+☉ type Element = Σ {
+    inner: VElement!,
+}
+
+⊢ Element {
+    /// Create new element with tag name
+    ☉ rite new(tag: &str!) -> Self! {
+        Element {
+            inner: VElement {
+                tag: tag·to_string(),
+                attrs: HashMap·new(),
+                children: Vec·new(),
+                events: HashMap·new(),
+                key: None,
+            },
+        }
+    }
+
+    /// Set an attribute
+    ☉ rite set_attr(self: &Δ Self!, name: &str!, value: ⊢ Into[AttrValue]!) -> &Δ Self! {
+        self.inner.attrs·insert(name·to_string(), value·into());
+        self
+    }
+
+    /// Set class attribute
+    ☉ rite set_class(self: &Δ Self!, class: &str!) -> &Δ Self! {
+        self·set_attr("class", AttrValue·String(class·to_string()))
+    }
+
+    /// Set style attribute
+    ☉ rite set_style(self: &Δ Self!, style: &str!) -> &Δ Self! {
+        self·set_attr("style", AttrValue·String(style·to_string()))
+    }
+
+    /// Set element key ∀ efficient diffing
+    ☉ rite key(self: &Δ Self!, key: ⊢ Into[String]!) -> &Δ Self! {
+        self.inner.key = Some(key·into());
+        self
+    }
+
+    /// Add event handler
+    ☉ rite on(self: &Δ Self!, event: &str!, handler: EventHandler!) -> &Δ Self! {
+        self.inner.events·insert(event·to_string(), handler);
+        self
+    }
+
+    /// Append a child node
+    ☉ rite append(self: &Δ Self!, child: ⊢ Into[VNode]!) -> &Δ Self! {
+        self.inner.children·push(child·into());
+        self
+    }
+
+    /// Append a text child
+    ☉ rite append_text(self: &Δ Self!, text: &str!) -> &Δ Self! {
+        self.inner.children·push(VNode·Text(text·to_string()));
+        self
+    }
+
+    /// Append a child element
+    ☉ rite append_child(self: &Δ Self!, child: Element!) -> &Δ Self! {
+        self.inner.children·push(VNode·Element(child.inner));
+        self
+    }
+
+    /// Build into VNode
+    ☉ rite build(self: Self!) -> VNode! {
+        VNode·Element(self.inner)
+    }
+}
+
+⊢ Into[VNode] ∀ Element {
+    rite into(self: Self!) -> VNode! {
+        self·build()
+    }
+}
+
+⊢ Into[AttrValue] ∀ &str {
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·String(self·to_string())
+    }
+}
+
+⊢ Into[AttrValue] ∀ String {
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·String(self)
+    }
+}
+
+⊢ Into[AttrValue] ∀ bool {
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·Bool(self)
+    }
+}
+
+⊢ Into[AttrValue] ∀ i64 {
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·Number(self as f64)
+    }
+}
+
+⊢ Into[AttrValue] ∀ f64 {
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·Number(self)
+    }
+}
+
+/// Diff two virtual DOM trees and produce patches
+☉ rite diff(old: &VNode!, new: &VNode!) -> Vec[Patch]! {
+    ≔ Δ patches! = Vec·new();
+    diff_recursive(old, new, &Δ patches, 0);
+    patches
+}
+
+/// Patch operation ∀ DOM updates
+☉ type Patch = ᛈ {
+    /// Replace node entirely
+    Replace { index: usize!, node: VNode! },
+
+    /// Update text content
+    UpdateText { index: usize!, text: String! },
+
+    /// Add attribute
+    SetAttr { index: usize!, name: String!, value: AttrValue! },
+
+    /// Remove attribute
+    RemoveAttr { index: usize!, name: String! },
+
+    /// Add event listener
+    AddEvent { index: usize!, event: String!, handler: EventHandler! },
+
+    /// Remove event listener
+    RemoveEvent { index: usize!, event: String! },
+
+    /// Append child
+    AppendChild { parent: usize!, child: VNode! },
+
+    /// Remove child
+    RemoveChild { parent: usize!, index: usize! },
+
+    /// Reorder children
+    Reorder { parent: usize!, moves: Vec[(usize, usize)]! },
+}
+
+/// Recursive diff implementation
+rite diff_recursive(old: &VNode!, new: &VNode!, patches: &Δ Vec[Patch]!, index: usize!) {
+    ⌥ (old, new) {
+        (VNode·Text(old_text), VNode·Text(new_text)) => {
+            ⎇ old_text != new_text {
+                patches·push(Patch·UpdateText {
+                    index,
+                    text: new_text·clone()
+                });
+            }
+        }
+
+        (VNode·Element(old_el), VNode·Element(new_el)) => {
+            ⎇ old_el.tag != new_el.tag {
+                // Different tags, replace entirely
+                patches·push(Patch·Replace {
+                    index,
+                    node: new·clone()
+                });
+            } ⎉ {
+                // Same tag, diff attributes
+                diff_attrs(old_el, new_el, patches, index);
+
+                // Diff children
+                diff_children(&old_el.children, &new_el.children, patches, index);
+            }
+        }
+
+        (VNode·Empty, VNode·Empty) => {
+            // Nothing to do
+        }
+
+        _ => {
+            // Different node types, replace
+            patches·push(Patch·Replace {
+                index,
+                node: new·clone()
+            });
+        }
+    }
+}
+
+/// Diff attributes between elements
+rite diff_attrs(old: &VElement!, new: &VElement!, patches: &Δ Vec[Patch]!, index: usize!) {
+    // Check ∀ new/changed attributes
+    ∀ (name, value) ∈ new.attrs·iter() {
+        ⌥ old.attrs·get(name) {
+            Some(old_value) ⎇ old_value == value => {
+                // No change
+            }
+            _ => {
+                patches·push(Patch·SetAttr {
+                    index,
+                    name: name·clone(),
+                    value: value·clone(),
+                });
+            }
+        }
+    }
+
+    // Check ∀ removed attributes
+    ∀ name ∈ old.attrs·keys() {
+        ⎇ !new.attrs·contains_key(name) {
+            patches·push(Patch·RemoveAttr {
+                index,
+                name: name·clone(),
+            });
+        }
+    }
+
+    // Diff events similarly
+    ∀ (event, handler) ∈ new.events·iter() {
+        ⎇ !old.events·contains_key(event) {
+            patches·push(Patch·AddEvent {
+                index,
+                event: event·clone(),
+                handler: handler·clone(),
+            });
+        }
+    }
+
+    ∀ event ∈ old.events·keys() {
+        ⎇ !new.events·contains_key(event) {
+            patches·push(Patch·RemoveEvent {
+                index,
+                event: event·clone(),
+            });
+        }
+    }
+}
+
+/// Diff children arrays
+rite diff_children(old: &Vec[VNode]!, new: &Vec[VNode]!, patches: &Δ Vec[Patch]!, parent: usize!) {
+    ≔ max_len! = std·cmp·max(old·len(), new·len());
+
+    ∀ i ∈ 0..max_len {
+        ⌥ (old·get(i), new·get(i)) {
+            (Some(old_child), Some(new_child)) => {
+                diff_recursive(old_child, new_child, patches, parent + i + 1);
+            }
+            (None, Some(new_child)) => {
+                patches·push(Patch·AppendChild {
+                    parent,
+                    child: new_child·clone(),
+                });
+            }
+            (Some(_), None) => {
+                patches·push(Patch·RemoveChild {
+                    parent,
+                    index: i,
+                });
+            }
+            (None, None) => unreachable!(),
+        }
+    }
+}

@@ -1,0 +1,283 @@
+invoke qliphoth·prelude·*;
+ᛈ PerformanceMonitorPanelMsg {
+    UpdateProfiling,
+    UpdateMetrics,
+    UpdateCpuHistory,
+    UpdateMemoryHistory,
+    UpdateHotspots,
+}
+☉ actor PerformanceMonitorPanel {
+    state profiling: bool! = false,
+    state metrics: Option<Any>~ = ∅,
+    state cpuHistory: Vec<Any>! = [],
+    state memoryHistory: Vec<Any>! = [],
+    state hotspots: Vec<Any>! = [],
+    state canvasRef: Option<HTMLCanvasElement>! = ∅,
+
+    on UpdateProfiling {
+        self.profiling = msg.0;
+    }
+
+    on UpdateMetrics {
+        self.metrics = msg.0;
+    }
+
+    on UpdateCpuHistory {
+        self.cpuHistory = msg.0;
+    }
+
+    on UpdateMemoryHistory {
+        self.memoryHistory = msg.0;
+    }
+
+    on UpdateHotspots {
+        self.hotspots = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c] bg-[#2b2b2b]")
+                ·child(
+                VNode·div()
+                    ·class("text-[13px] font-semibold text-white")
+                    ·text_child("Performance Monitor")
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-1")
+                    ·when_else(¬self.profiling, Button·view()
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·child(
+                        Play·view()
+                            ·class("w-3.5 h-3.5 mr-1")
+                        )
+                        ·text_child("Start Profiling"), Button·view()
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·child(
+                        Square·view()
+                            ·class("w-3.5 h-3.5 mr-1")
+                        )
+                        ·text_child("Stop Profiling"))
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·when(¬self.profiling ∧ self.cpu_history.len() == 0, |n| n·attr("disabled", "true"))
+                        ·attr("title", "Export Profile")
+                        ·child(
+                        Download·view()
+                            ·class("w-3.5 h-3.5")
+                        )
+                    )
+                )
+            )
+            ·when(self.profiling, VNode·div()
+                ·class("grid grid-cols-2 gap-3 p-3 border-b border-[#3c3c3c]")
+                ·child(
+                VNode·div()
+                    ·class("p-3 bg-[#252526] border border-[#3c3c3c] rounded")
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#858585] uppercase mb-1.5")
+                        ·text_child("CPU Usage")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-2xl font-bold text-white mb-1")
+                        ·text_child(self.metrics.cpu·to_string())
+                        ·text_child("%")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("mb-2")
+                        ·child(
+                        Badge·view()
+                            ·attr("variant", self.get_cpu_color(self.metrics.cpu))
+                            ·class("text-[10px]")
+                            ·text_child(⎇ self.metrics.cpu < 50 { "Normal" } ⎉ { ⎇ self.metrics.cpu < 80 { "High" } ⎉ { "Critical" } }·to_string())
+                        )
+                    )
+                    ·child(
+                    Progress·view()
+                        ·attr("value", self.metrics.cpu)
+                        ·class("h-1.5")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("p-3 bg-[#252526] border border-[#3c3c3c] rounded")
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#858585] uppercase mb-1.5")
+                        ·text_child("Memory")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-2xl font-bold text-white mb-1")
+                        ·text_child(self.metrics.memory·to_string())
+                        ·text_child("%")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("mb-2")
+                        ·child(
+                        Badge·view()
+                            ·attr("variant", self.get_memory_color(self.metrics.memory))
+                            ·class("text-[10px]")
+                            ·text_child(⎇ self.metrics.memory < 60 { "Normal" } ⎉ { ⎇ self.metrics.memory < 85 { "High" } ⎉ { "Critical" } }·to_string())
+                        )
+                    )
+                    ·child(
+                    Progress·view()
+                        ·attr("value", self.metrics.memory)
+                        ·class("h-1.5")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("p-3 bg-[#252526] border border-[#3c3c3c] rounded")
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#858585] uppercase mb-1.5")
+                        ·text_child("Frame Rate")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-2xl font-bold text-white")
+                        ·text_child(self.metrics.fps·to_string())
+                        ·text_child("FPS")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#b0b0b0] mt-1")
+                        ·text_child(⎇ self.metrics.fps >= 55 { "✓ Smooth" } ⎉ { "⚠ Lagging" }·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("p-3 bg-[#252526] border border-[#3c3c3c] rounded")
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#858585] uppercase mb-1.5")
+                        ·text_child("Network")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-2xl font-bold text-white")
+                        ·text_child(self.metrics.network_requests·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#b0b0b0] mt-1")
+                        ·text_child("Active requests")
+                    )
+                ))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto p-3")
+                ·when(¬self.profiling ∧ self.cpu_history.len() == 0, VNode·div()
+                    ·class("flex flex-col items-center justify-center h-full text-center text-[#858585] text-xs")
+                    ·child(
+                    VNode·div()
+                        ·class("text-5xl mb-3")
+                        ·text_child("📊")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·text_child("Click \"Start Profiling\" to begin monitoring performance")
+                    ))
+                ·when(self.profiling, VNode·fragment()
+                    ·child(
+                    VNode·div()
+                        ·class("mb-5")
+                        ·child(
+                        VNode·div()
+                            ·class("text-[11px] font-semibold text-[#858585] uppercase mb-2")
+                            ·text_child("CPU Usage Over Time")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("h-[120px] bg-[#252526] border border-[#3c3c3c] rounded p-2 relative")
+                            ·child(
+                            VNode·canvas()
+                                ·attr("ref", self.canvas_ref)
+                                ·class("w-full h-full")
+                            )
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("mb-5")
+                        ·child(
+                        VNode·div()
+                            ·class("text-[11px] font-semibold text-[#858585] uppercase mb-2")
+                            ·text_child("Performance Hotspots")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex flex-col gap-1")
+                            // Map: ∀ hotspot ∈ hotspots
+                            ·children(self.hotspots.iter().map(|hotspot| VNode·div()
+                                    ·attr("key", self.index)
+                                    ·class("flex items-center justify-between px-3 py-2 bg-[#252526] border border-[#3c3c3c] rounded text-[11px]")
+                                    ·child(
+                                    VNode·div()
+                                        ·class("flex-1")
+                                        ·child(
+                                        VNode·div()
+                                            ·class("text-[#dcdcaa] font-medium")
+                                            ·text_child(hotspot.name·to_string())
+                                        )
+                                        ·child(
+                                        VNode·div()
+                                            ·class("text-[#858585] text-[10px]")
+                                            ·text_child(hotspot.file·to_string())
+                                            ·text_child(":")
+                                            ·text_child(hotspot.line·to_string())
+                                        )
+                                    )
+                                    ·child(
+                                    VNode·div()
+                                        ·class("text-[#f48771] font-semibold ml-3")
+                                        ·text_child(hotspot.time·to_fixed(1)·to_string())
+                                        ·text_child("ms")
+                                    )
+                                    ·child(
+                                    VNode·div()
+                                        ·class("text-[#858585] text-[10px] ml-2")
+                                        ·text_child(hotspot.percentage·to_fixed(1)·to_string())
+                                        ·text_child("%")
+                                    )).collect())
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("mb-5")
+                        ·child(
+                        VNode·div()
+                            ·class("text-[11px] font-semibold text-[#858585] uppercase mb-2")
+                            ·text_child("Call Stack Flame Graph")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("bg-[#252526] border border-[#3c3c3c] rounded p-3 min-h-[200px]")
+                            // Map: ∀ hotspot ∈ hotspots
+                            ·children(self.hotspots.iter().map(|hotspot| VNode·div()
+                                    ·attr("key", self.index)
+                                    ·class("h-5 mb-0.5 flex items-center pl-2 text-[10px] text-white cursor-pointer rounded hover:opacity-80")
+                                    ·style(∅)
+                                    ·text_child(hotspot.name·to_string())
+                                    ·text_child("(")
+                                    ·text_child(hotspot.time·to_fixed(1)·to_string())
+                                    ·text_child("ms)")).collect())
+                        )
+                    ))
+            )
+    }
+}

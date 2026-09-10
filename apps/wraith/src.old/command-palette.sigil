@@ -1,0 +1,70 @@
+invoke sigil_web·prelude·*;
+ᛈ CommandPaletteMsg {
+    UpdateSearchQuery,
+    UpdateSelectedIndex,
+}
+actor CommandPalette {
+    state searchQuery: String! = "",
+    state selectedIndex: i64! = 0,
+    state inputRef: Option<Element>! = ∅,
+    state itemRefs: Option<Any>! = ∅,
+
+    rite new(open: Any, on_close: Any, commands: Any) -> This! {
+        self.open = open;
+        self.on_close = on_close;
+        self.commands = commands;
+        This
+    }
+
+    on UpdateSearchQuery {
+        self.searchQuery = msg.0;
+    }
+
+    on UpdateSelectedIndex {
+        self.selectedIndex = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        Dialog·view()
+            ·attr("open", self.open)
+            ·on_openchange(OpenChange)
+            ·child(
+            DialogContent·view()
+                ·class("max-w-[600px] w-[90vw] max-h-[500px] p-0 overflow-hidden bg-[#252526] border border-[#3c3c3c]")
+                ·child(
+                VNode·div()
+                    ·class("p-3 border-b border-[#3c3c3c] bg-[#1e1e1e]")
+                    ·child(
+                    VNode·div()
+                        ·class("relative")
+                        ·child(
+                        Search·view()
+                            ·class("absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#858585]")
+                        )
+                        ·child(
+                        Input·view()
+                            ·attr("ref", self.input_ref)
+                            ·attr("value", self.search_query)
+                            ·on_change(Change)
+                            ·attr("placeholder", "Type a command or search...")
+                            ·class("w-full bg-[#3c3c3c] border-none text-[#cccccc] text-sm pl-10 pr-16 placeholder:text-[#858585]")
+                        )
+                        ·when(self.search_query, VNode·span()
+                            ·class("absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#858585]")
+                            ·text_child(filtered_commands.len()·to_string())
+                            ·text_child("result")
+                            ·text_child("s"))
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("max-h-[400px] overflow-y-auto p-1")
+                    ·when(flat_commands.len() == 0, VNode·div()
+                        ·class("py-10 px-5 text-center text-[#858585] text-sm")
+                        ·text_child("No commands found for \"")
+                        ·text_child(self.search_query·to_string())
+                        ·text_child("\""))
+                )
+            )
+    }
+}

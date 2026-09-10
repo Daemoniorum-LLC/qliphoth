@@ -1,0 +1,671 @@
+{
+  "id": "ui/components/organisms/PanelContainer.tsx:PanelContainer",
+  "name": "PanelContainer",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/organisms/PanelContainer.tsx",
+    "code": "import React from 'react'\nimport { PanelHeader } from '../molecules'\nimport { ResizeHandle } from '../molecules'\nimport { Skeleton } from '../atoms'\n\nexport interface PanelContainerProps {\n  title: string\n  icon?: React.ReactNode\n  children: React.ReactNode\n  side: 'left' | 'right'\n  width: number\n  minWidth?: number\n  maxWidth?: number\n  isNarrow?: boolean\n  loading?: boolean\n  onClose: () => void\n  onCollapse: () => void\n  onResize: (delta: number) => void\n  className?: string\n}\n\nexport const PanelContainer: React.FC<PanelContainerProps> = ({\n  title,\n  icon,\n  children,\n  side,\n  width,\n  minWidth = 200,\n  maxWidth = 500,\n  isNarrow = false,\n  loading = false,\n  onClose,\n  onCollapse,\n  onResize,\n  className = '',\n}) => {\n  const handleResize = (delta: number) => {\n    // For right panel, invert the delta\n    const adjustedDelta = side === 'right' ? -delta : delta\n    onResize(adjustedDelta)\n  }\n\n  return (\n    <div\n      className={`flex flex-col overflow-hidden transition-[width,opacity] duration-300 ${\n        isNarrow\n          ? 'absolute top-12 left-0 right-0 h-[40vh] w-auto max-w-none z-[100] border-b-2 shadow-[var(--shadow-panel)]'\n          : 'relative'\n      } ${side === 'right' ? 'border-l border-[var(--border-primary)]' : ''} ${className}`}\n      style={isNarrow ? {} : { width: `${width}px`, minWidth: `${minWidth}px`, maxWidth: `${maxWidth}px` }}\n    >\n      {/* Resize handle */}\n      {!isNarrow && (\n        <ResizeHandle\n          direction=\"horizontal\"\n          onResize={handleResize}\n          className={`absolute top-0 bottom-0 ${side === 'left' ? 'right-0' : 'left-0'}`}\n        />\n      )}\n\n      <div className=\"flex flex-col flex-1 overflow-hidden\">\n        <PanelHeader\n          title={title}\n          icon={icon}\n          onClose={onClose}\n          onCollapse={onCollapse}\n        />\n\n        <div className=\"flex-1 overflow-auto bg-[var(--bg-primary)]\">\n          {loading ? (\n            <div className=\"p-4\">\n              <Skeleton variant=\"text\" className=\"mb-2\" />\n              <Skeleton variant=\"text\" className=\"mb-2\" width=\"80%\" />\n              <Skeleton variant=\"text\" width=\"60%\" />\n            </div>\n          ) : (\n            children\n          )}\n        </div>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "PanelContainer",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 22,
+        "start_col": 61,
+        "end_line": 83,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "title",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "icon",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "children",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": true
+        },
+        {
+          "name": "side",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "width",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "minWidth",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "200",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "maxWidth",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "500",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "isNarrow",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "false",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "loading",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "false",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onClose",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onCollapse",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onResize",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "className",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "''",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "Expression",
+                  "code": "`flex flex-col overflow-hidden transition-[width,opacity] duration-300 ${\n        isNarrow\n          ? 'absolute top-12 left-0 right-0 h-[40vh] w-auto max-w-none z-[100] border-b-2 shadow-[var(--shadow-panel)]'\n          : 'relative'\n      } ${side === 'right' ? 'border-l border-[var(--border-primary)]' : ''} ${className}`"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "style",
+                "value": {
+                  "type": "Expression",
+                  "code": "isNarrow ? {} : { width: `${width}px`, minWidth: `${minWidth}px`, maxWidth: `${maxWidth}px` }"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "!isNarrow",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "ResizeHandle",
+                      "is_component": true,
+                      "attributes": [
+                        {
+                          "name": "direction",
+                          "value": {
+                            "type": "String",
+                            "value": "horizontal"
+                          },
+                          "is_event_handler": false
+                        },
+                        {
+                          "name": "onResize",
+                          "value": {
+                            "type": "Expression",
+                            "code": "handleResize"
+                          },
+                          "is_event_handler": true
+                        },
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "Expression",
+                            "code": "`absolute top-0 bottom-0 ${side === 'left' ? 'right-0' : 'left-0'}`"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": []
+                    },
+                    "location": {
+                      "start_line": 54,
+                      "start_col": 8,
+                      "end_line": 58,
+                      "end_col": 10
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 53,
+                  "start_col": 6,
+                  "end_line": 59,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex flex-col flex-1 overflow-hidden"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "PanelHeader",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "title",
+                            "value": {
+                              "type": "Expression",
+                              "code": "title"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "icon",
+                            "value": {
+                              "type": "Expression",
+                              "code": "icon"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClose",
+                            "value": {
+                              "type": "Expression",
+                              "code": "onClose"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "onCollapse",
+                            "value": {
+                              "type": "Expression",
+                              "code": "onCollapse"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 62,
+                        "start_col": 8,
+                        "end_line": 67,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex-1 overflow-auto bg-[var(--bg-primary)]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "loading",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "p-4"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Skeleton",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "mb-2"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 72,
+                                        "start_col": 14,
+                                        "end_line": 72,
+                                        "end_col": 58
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Skeleton",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "mb-2"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "width",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "80%"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 73,
+                                        "start_col": 14,
+                                        "end_line": 73,
+                                        "end_col": 70
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Skeleton",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "width",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "60%"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 74,
+                                        "start_col": 14,
+                                        "end_line": 74,
+                                        "end_col": 53
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 71,
+                                  "start_col": 12,
+                                  "end_line": 75,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 70,
+                              "start_col": 10,
+                              "end_line": 78,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 69,
+                        "start_col": 8,
+                        "end_line": 79,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 61,
+                  "start_col": 6,
+                  "end_line": 80,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 44,
+            "start_col": 4,
+            "end_line": 81,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleResize",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(delta: number) => {\n    // For right panel, invert the delta\n    const adjustedDelta = side === 'right' ? -delta : delta\n    onResize(adjustedDelta)\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "onResize",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "adjustedDelta"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [],
+          "parameters": [
+            {
+              "name": "delta",
+              "type_annotation": ": number"
+            }
+          ],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "PanelHeader",
+        "ResizeHandle",
+        "Skeleton"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/panel_container.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [
+      {
+        "name": "Resize",
+        "from_handler": "handleResize",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "title",
+          "field_type": "Any",
+          "from_prop": "title"
+        },
+        {
+          "name": "icon",
+          "field_type": "Any",
+          "from_prop": "icon"
+        },
+        {
+          "name": "children",
+          "field_type": "Any",
+          "from_prop": "children"
+        },
+        {
+          "name": "side",
+          "field_type": "Any",
+          "from_prop": "side"
+        },
+        {
+          "name": "width",
+          "field_type": "Any",
+          "from_prop": "width"
+        },
+        {
+          "name": "min_width",
+          "field_type": "Any",
+          "from_prop": "minWidth"
+        },
+        {
+          "name": "max_width",
+          "field_type": "Any",
+          "from_prop": "maxWidth"
+        },
+        {
+          "name": "is_narrow",
+          "field_type": "Any",
+          "from_prop": "isNarrow"
+        },
+        {
+          "name": "loading",
+          "field_type": "Any",
+          "from_prop": "loading"
+        },
+        {
+          "name": "on_close",
+          "field_type": "Any",
+          "from_prop": "onClose"
+        },
+        {
+          "name": "on_collapse",
+          "field_type": "Any",
+          "from_prop": "onCollapse"
+        },
+        {
+          "name": "on_resize",
+          "field_type": "Any",
+          "from_prop": "onResize"
+        },
+        {
+          "name": "class_name",
+          "field_type": "Any",
+          "from_prop": "className"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onClose",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onClose' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onCollapse",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onCollapse' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onResize",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onResize' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "PanelHeader",
+      "ResizeHandle",
+      "Skeleton"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [
+    "13 props"
+  ],
+  "status": "pending"
+}

@@ -1,0 +1,34 @@
+invoke qliphoth·prelude·*;
+ᛈ ResizeHandleMsg {
+    UpdateIsDragging,
+    UpdateStartPos,
+}
+☉ actor ResizeHandle {
+    state isDragging: bool! = false,
+    state startPos: i64! = 0,
+
+    rite new(direction: Any, on_resize: Any, on_resize_start: Any, on_resize_end: Any, class_name: Any) -> This! {
+        self.direction = direction;
+        self.on_resize = on_resize;
+        self.on_resize_start = on_resize_start;
+        self.on_resize_end = on_resize_end;
+        self.class_name = class_name;
+        This
+    }
+
+    on UpdateIsDragging {
+        self.isDragging = msg.0;
+    }
+
+    on UpdateStartPos {
+        self.startPos = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·attr("role", "separator")
+            ·attr("aria-orientation", ⎇ self.is_horizontal { "vertical" } ⎉ { "horizontal" })
+            ·on_mousedown(MouseDown)
+            ·class("\n        " + ⎇ self.is_horizontal { "w-2 cursor-col-resize" } ⎉ { "h-2 cursor-row-resize" }.to_string() + "\n        bg-transparent hover:bg-[var(--accent-primary)]\n        transition-colors duration-150\n        flex-shrink-0\n        " + ⎇ self.is_dragging { "bg-[var(--accent-primary)]" } ⎉ { "" }.to_string() + "\n        " + self.class_name.to_string() + "\n      ")
+    }
+}

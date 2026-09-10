@@ -1,0 +1,175 @@
+{
+  "id": "ui/components/atoms/Skeleton.tsx:SkeletonText",
+  "name": "SkeletonText",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/atoms/Skeleton.tsx",
+    "code": "import React from 'react'\n\nexport interface SkeletonProps {\n  className?: string\n  variant?: 'text' | 'circular' | 'rectangular'\n  width?: string | number\n  height?: string | number\n  animation?: 'pulse' | 'wave' | 'none'\n}\n\nexport const Skeleton: React.FC<SkeletonProps> = ({\n  className = '',\n  variant = 'text',\n  width,\n  height,\n  animation = 'pulse',\n}) => {\n  const variantClasses = {\n    text: 'rounded h-4',\n    circular: 'rounded-full',\n    rectangular: 'rounded',\n  }\n\n  const animationClasses = {\n    pulse: 'animate-pulse',\n    wave: 'animate-shimmer',\n    none: '',\n  }\n\n  const style: React.CSSProperties = {\n    width: width,\n    height: height,\n  }\n\n  return (\n    <div\n      className={`bg-[var(--bg-tertiary)] ${variantClasses[variant]} ${animationClasses[animation]} ${className}`}\n      style={style}\n      aria-hidden=\"true\"\n    />\n  )\n}\n\nexport const SkeletonText: React.FC<{ lines?: number; className?: string }> = ({\n  lines = 3,\n  className = '',\n}) => {\n  return (\n    <div className={`space-y-2 ${className}`}>\n      {Array.from({ length: lines }).map((_, i) => (\n        <Skeleton\n          key={i}\n          variant=\"text\"\n          width={i === lines - 1 ? '60%' : '100%'}\n        />\n      ))}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "SkeletonText",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 44,
+        "start_col": 78,
+        "end_line": 59,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "lines",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "3",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "className",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "''",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "Expression",
+                  "code": "`space-y-2 ${className}`"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Map",
+                  "iterable": "Array.from({ length: lines })",
+                  "item_name": "_",
+                  "key_expr": "i",
+                  "body": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "Skeleton",
+                      "is_component": true,
+                      "attributes": [
+                        {
+                          "name": "key",
+                          "value": {
+                            "type": "Expression",
+                            "code": "i"
+                          },
+                          "is_event_handler": false
+                        },
+                        {
+                          "name": "variant",
+                          "value": {
+                            "type": "String",
+                            "value": "text"
+                          },
+                          "is_event_handler": false
+                        },
+                        {
+                          "name": "width",
+                          "value": {
+                            "type": "Expression",
+                            "code": "i === lines - 1 ? '60%' : '100%'"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": []
+                    },
+                    "location": {
+                      "start_line": 51,
+                      "start_col": 8,
+                      "end_line": 55,
+                      "end_col": 10
+                    }
+                  }
+                },
+                "location": {
+                  "start_line": 50,
+                  "start_col": 6,
+                  "end_line": 56,
+                  "end_col": 9
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 49,
+            "start_col": 4,
+            "end_line": 57,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Skeleton"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/skeleton_text.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "lines",
+          "field_type": "Any",
+          "from_prop": "lines"
+        },
+        {
+          "name": "class_name",
+          "field_type": "Any",
+          "from_prop": "className"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "Skeleton"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

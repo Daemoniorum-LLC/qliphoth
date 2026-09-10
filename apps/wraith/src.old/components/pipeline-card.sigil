@@ -1,0 +1,209 @@
+invoke qliphoth·prelude·*;
+ᛈ PipelineCardMsg {
+    UpdateExpanded,
+}
+actor PipelineCard {
+    state expanded: bool! = False,
+
+    rite new(pipeline: Any) -> This! {
+        self.pipeline = pipeline;
+        This
+    }
+
+    on UpdateExpanded {
+        self.expanded = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--bg-hover)]")
+                ·on_click(Click)
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3")
+                    ·child(
+                    VNode·button()
+                        ·class("text-[var(--text-secondary)]")
+                        ·when_else(self.expanded, ChevronDown·view()
+                            ·class("h-4 w-4"), ChevronRight·view()
+                            ·class("h-4 w-4"))
+                    )
+                    ·child(
+                    ProviderIcon·view()
+                        ·attr("provider", pipeline.provider)
+                    )
+                    ·child(
+                    VNode·div()
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2")
+                            ·child(
+                            VNode·span()
+                                ·class("font-medium text-[var(--text-primary)]")
+                                ·text_child(pipeline.name·to_string())
+                            )
+                            ·when(self.run, StatusBadge·view()
+                                ·attr("status", run.status))
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2 text-xs text-[var(--text-muted)] mt-0.5")
+                            ·child(
+                            GitBranch·view()
+                                ·class("h-3 w-3")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child(pipeline.repository·to_string())
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-[var(--border-primary)]")
+                                ·text_child("•")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child(pipeline.branch·to_string())
+                            )
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-4")
+                    ·on_click(Click)
+                    ·when(self.run, VNode·div()
+                        ·class("flex items-center gap-4 text-xs text-[var(--text-secondary)]")
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-1")
+                            ·child(
+                            VNode·span()
+                                ·class("font-mono")
+                                ·text_child("#")
+                                ·text_child(run.number·to_string())
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-1")
+                            ·child(
+                            Clock·view()
+                                ·class("h-3 w-3")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child(format_duration(run.duration)·to_string())
+                            )
+                        )
+                        ·child(
+                        VNode·span()
+                            ·text_child(format_relative_time(run.started_at)·to_string())
+                        ))
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-1")
+                        ·child(
+                        IconButton·view()
+                            ·attr("icon", None)
+                            ·attr("size", "sm")
+                            ·attr("tooltip", "Run pipeline")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        IconButton·view()
+                            ·attr("icon", None)
+                            ·attr("size", "sm")
+                            ·attr("tooltip", "Open in browser")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        ActionMenu·view()
+                            ·child(
+                            ActionItem·view()
+                                ·attr("icon", None)
+                                ·attr("label", "Run")
+                                ·on_click(Click)
+                            )
+                            ·child(
+                            ActionItem·view()
+                                ·attr("icon", None)
+                                ·attr("label", "Cancel")
+                                ·on_click(Click)
+                            )
+                            ·child(
+                            ActionItem·view()
+                                ·attr("icon", None)
+                                ·attr("label", "Retry")
+                                ·on_click(Click)
+                            )
+                        )
+                    )
+                )
+            )
+            ·when(expanded ∧ run, VNode·div()
+                ·class("border-t border-[var(--border-subtle)] bg-[var(--bg-primary)] p-4")
+                ·child(
+                VNode·div()
+                    ·class("mb-3")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2 mb-2")
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs font-medium text-[var(--text-secondary)]")
+                            ·text_child("Latest Run")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs font-mono text-[var(--text-muted)]")
+                            ·text_child(run.commit·to_string())
+                        )
+                    )
+                    ·child(
+                    VNode·p()
+                        ·class("text-sm text-[var(--text-primary)]")
+                        ·text_child(run.commit_message·to_string())
+                    )
+                    ·child(
+                    VNode·p()
+                        ·class("text-xs text-[var(--text-muted)] mt-1")
+                        ·text_child("by")
+                        ·text_child(run.author·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("mb-3")
+                    ·child(
+                    VNode·span()
+                        ·class("text-xs font-medium text-[var(--text-secondary)] block mb-2")
+                        ·text_child("Stages")
+                    )
+                    ·child(
+                    StagesTimeline·view()
+                        ·attr("stages", run.stages)
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-4 text-xs text-[var(--text-muted)]")
+                    ·child(
+                    VNode·div()
+                        ·text_child("Started:")
+                        ·text_child(format_relative_time(run.started_at)·to_string())
+                    )
+                    ·when(run.finished_at, VNode·div()
+                        ·text_child("Finished:")
+                        ·text_child(format_relative_time(run.finished_at)·to_string()))
+                    ·child(
+                    VNode·div()
+                        ·text_child("Duration:")
+                        ·text_child(format_duration(run.duration)·to_string())
+                    )
+                ))
+    }
+}

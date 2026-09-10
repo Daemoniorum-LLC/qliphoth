@@ -1,0 +1,141 @@
+{
+  "id": "domains/devops/components/shared/StatusBadge.tsx:StatusBadge",
+  "name": "StatusBadge",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/shared/StatusBadge.tsx",
+    "code": "import { Badge } from '@ui/components/atoms'\nimport type { ContainerState, PipelineStatus, ComposeServiceStatus } from '../../types'\n\ntype StatusType = ContainerState | PipelineStatus | ComposeServiceStatus | 'connected' | 'error' | 'pending' | 'active' | 'updating' | 'failed' | 'firing' | 'resolved'\n\ninterface StatusBadgeProps {\n  status: StatusType\n  size?: 'sm' | 'md'\n}\n\nconst statusConfig: Record<StatusType, { label: string; variant: 'default' | 'success' | 'warning' | 'error' | 'accent' }> = {\n  // Container states\n  created: { label: 'Created', variant: 'default' },\n  restarting: { label: 'Restarting', variant: 'warning' },\n  running: { label: 'Running', variant: 'success' },\n  paused: { label: 'Paused', variant: 'warning' },\n  exited: { label: 'Exited', variant: 'default' },\n  dead: { label: 'Dead', variant: 'error' },\n\n  // Pipeline states\n  pending: { label: 'Pending', variant: 'default' },\n  success: { label: 'Success', variant: 'success' },\n  failure: { label: 'Failed', variant: 'error' },\n  cancelled: { label: 'Cancelled', variant: 'default' },\n  skipped: { label: 'Skipped', variant: 'default' },\n\n  // Compose states\n  stopped: { label: 'Stopped', variant: 'default' },\n  partial: { label: 'Partial', variant: 'warning' },\n\n  // Provider states\n  connected: { label: 'Connected', variant: 'success' },\n  error: { label: 'Error', variant: 'error' },\n\n  // Infrastructure states\n  active: { label: 'Active', variant: 'success' },\n  updating: { label: 'Updating', variant: 'accent' },\n  failed: { label: 'Failed', variant: 'error' },\n\n  // Alert states\n  firing: { label: 'Firing', variant: 'error' },\n  resolved: { label: 'Resolved', variant: 'success' },\n}\n\nexport function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {\n  const config = statusConfig[status] || { label: status, variant: 'default' as const }\n\n  return (\n    <Badge variant={config.variant} size={size}>\n      {config.label}\n    </Badge>\n  )\n}\n",
+    "extraction": {
+      "name": "StatusBadge",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 45,
+        "start_col": 7,
+        "end_line": 53,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "status",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "size",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "'sm'",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "Badge",
+            "is_component": true,
+            "attributes": [
+              {
+                "name": "variant",
+                "value": {
+                  "type": "Expression",
+                  "code": "config.variant"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "size",
+                "value": {
+                  "type": "Expression",
+                  "code": "size"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "config.label"
+                },
+                "location": {
+                  "start_line": 50,
+                  "start_col": 6,
+                  "end_line": 50,
+                  "end_col": 20
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 49,
+            "start_col": 4,
+            "end_line": 51,
+            "end_col": 12
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Badge"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/status_badge.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "status",
+          "field_type": "Any",
+          "from_prop": "status"
+        },
+        {
+          "name": "size",
+          "field_type": "Any",
+          "from_prop": "size"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "Badge"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

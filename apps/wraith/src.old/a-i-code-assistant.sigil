@@ -1,0 +1,145 @@
+invoke sigil_web·prelude·*;
+ᛈ AICodeAssistantMsg {
+    UpdateCurrentSuggestion,
+    UpdateIsGenerating,
+    UpdateShowFeaturePanel,
+}
+actor AICodeAssistant {
+    state currentSuggestion: Option<Any>~ = None,
+    state isGenerating: bool! = false,
+    state showFeaturePanel: bool! = false,
+    state suggestionTimeoutRef: Option<Any>! = ∅,
+    state inlineWidgetRef: Option<Any>! = ∅,
+
+    rite new(editor: Any, enabled: Any) -> This! {
+        self.editor = editor;
+        self.enabled = enabled;
+        This
+    }
+
+    on UpdateCurrentSuggestion {
+        self.currentSuggestion = msg.0;
+    }
+
+    on UpdateIsGenerating {
+        self.isGenerating = msg.0;
+    }
+
+    on UpdateShowFeaturePanel {
+        self.showFeaturePanel = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("relative w-full h-full")
+            ·when(self.current_suggestion, VNode·div()
+                ·class("absolute top-2 right-2 flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border border-[#4fc3f7] rounded z-[1000] text-xs text-[#cccccc] shadow-lg")
+                ·child(
+                Sparkles·view()
+                    ·class("w-4 h-4 text-[#4fc3f7]")
+                )
+                ·child(
+                VNode·span()
+                    ·class("text-[#4fc3f7] font-medium")
+                    ·text_child("AI Suggestion")
+                )
+                ·child(
+                VNode·span()
+                    ·class("text-[10px] text-[#858585]")
+                    ·text_child("Tab to accept, Esc to dismiss")
+                )
+                ·child(
+                Button·view()
+                    ·attr("size", "sm")
+                    ·on_click(Click)
+                    ·class("bg-[#0e639c] hover:bg-[#1177bb]")
+                    ·child(
+                    CheckCircle·view()
+                        ·class("w-3 h-3")
+                    )
+                )
+                ·child(
+                Button·view()
+                    ·attr("variant", "ghost")
+                    ·attr("size", "sm")
+                    ·on_click(Click)
+                    ·child(
+                    XCircle·view()
+                        ·class("w-3 h-3")
+                    )
+                ))
+            ·when(self.is_generating, VNode·div()
+                ·class("absolute bottom-3 right-3 flex items-center gap-2 px-3 py-1.5 bg-[#2b2b2b] border border-[#4fc3f7] rounded text-[11px] text-[#4fc3f7] z-[1000]")
+                ·child(
+                Loader2·view()
+                    ·class("w-3 h-3 animate-spin")
+                )
+                ·child(
+                VNode·span()
+                    ·text_child("AI generating...")
+                ))
+            ·when(self.show_feature_panel, VNode·div()
+                ·class("absolute top-12 right-3 w-[300px] bg-[#1e1e1e] border border-[#3c3c3c] rounded p-3 z-[1000] shadow-lg")
+                ·child(
+                VNode·div()
+                    ·class("text-sm font-semibold text-white mb-3 flex items-center")
+                    ·child(
+                    Sparkles·view()
+                        ·class("w-4 h-4 mr-2")
+                    )
+                    ·text_child("AI Code Assistant")
+                )
+                ·child(
+                Button·view()
+                    ·attr("variant", "ghost")
+                    ·class("w-full justify-start mb-2")
+                    ·on_click(Click)
+                    ·child(
+                    Sparkles·view()
+                        ·class("w-4 h-4 mr-2 text-[#4fc3f7]")
+                    )
+                    ·text_child("Explain Selected Code")
+                )
+                ·child(
+                Button·view()
+                    ·attr("variant", "ghost")
+                    ·class("w-full justify-start mb-2")
+                    ·on_click(Click)
+                    ·child(
+                    Sparkles·view()
+                        ·class("w-4 h-4 mr-2 text-[#4fc3f7]")
+                    )
+                    ·text_child("Generate Code from Comment")
+                )
+                ·child(
+                Button·view()
+                    ·attr("variant", "ghost")
+                    ·class("w-full justify-start mb-2")
+                    ·on_click(Click)
+                    ·child(
+                    Sparkles·view()
+                        ·class("w-4 h-4 mr-2 text-[#4fc3f7]")
+                    )
+                    ·text_child("Refactor Selected Code")
+                )
+                ·child(
+                Button·view()
+                    ·attr("variant", "outline")
+                    ·attr("size", "sm")
+                    ·class("w-full mt-2")
+                    ·on_click(Click)
+                    ·text_child("Close")
+                ))
+            ·child(
+            Button·view()
+                ·attr("size", "sm")
+                ·on_click(Click)
+                ·class("absolute top-3 right-3 z-[999] bg-[#0e639c] rounded-full w-9 h-9 p-0 min-w-0")
+                ·attr("title", "AI Code Assistant (Ctrl+Shift+A)")
+                ·child(
+                Sparkles·view()
+                    ·class("w-4 h-4")
+                )
+            )
+    }
+}

@@ -1,0 +1,193 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! Component System
+//!
+//! Function components with hooks and lifecycle management.
+
+invoke std·any·{Any, TypeId};
+invoke std·rc·Rc;
+invoke std·cell·RefCell;
+
+invoke crate·vdom·VNode;
+invoke crate·runtime·ComponentInstance;
+
+/// Trait ∀ renderable components
+☉ Θ Component {
+    /// Render the component to a virtual DOM node
+    rite render(self: &Self!) -> VNode!;
+
+    /// Optional: Component name ∀ debugging
+    rite name() -> &'static str! {
+        std·any·type_name[Self]()
+    }
+}
+
+/// Properties ∀ components
+☉ Θ Props: Clone + 'static {}
+
+// Implement Props ∀ common types
+⊢ Props ∀ () {}
+
+/// Component attribute macro
+///
+/// Transforms a function into a component:
+///
+/// ```sigil
+/// #[component]
+/// rite MyComponent(props: MyProps) -> Element! {
+///     html! { <div>"Hello"</div> }
+/// }
+/// ```
+// macro
+☉ macro component($fn:item) {
+    // Macro expands to component wrapper
+    // Implementation handled by compiler
+    $fn
+}
+
+/// Function component wrapper
+☉ type FunctionComponent[P: Props] = Σ {
+    render_fn: Rc[dyn Fn(P) -> VNode]!,
+    props: P!,
+}
+
+impl[P: Props] FunctionComponent[P] {
+    ☉ rite new[F: Fn(P) -> VNode + 'static](f: F!, props: P!) -> Self! {
+        FunctionComponent {
+            render_fn: Rc·new(f),
+            props,
+        }
+    }
+}
+
+impl[P: Props] Component ∀ FunctionComponent[P] {
+    rite render(self: &Self!) -> VNode! {
+        (self.render_fn)(self.props·clone())
+    }
+}
+
+/// Component context ∀ accessing parent-provided values
+☉ type Context[T] = Σ {
+    value: Rc[RefCell[Option[T]]]!,
+}
+
+impl[T: Clone + 'static] Context[T] {
+    /// Create a new context
+    ☉ rite new() -> Self! {
+        Context {
+            value: Rc·new(RefCell·new(None)),
+        }
+    }
+
+    /// Provide a value ∀ child components
+    ☉ rite provide(self: &Self!, value: T!) {
+        *self.value·borrow_mut() = Some(value);
+    }
+
+    /// Get the context value (panics ⎇ not provided)
+    ☉ rite get(self: &Self!) -> T! {
+        self.value·borrow()·clone()·expect("Context not provided")
+    }
+
+    /// Try to get the context value
+    ☉ rite try_get(self: &Self!) -> Option[T]? {
+        self.value·borrow()·clone()
+    }
+}
+
+/// Children passed to a component
+☉ type Children = Vec[VNode];
+
+⊢ Children {
+    /// Render children into a fragment
+    ☉ rite render(self: Self!) -> VNode! {
+        VNode·Fragment(self)
+    }
+
+    /// Check ⎇ there are no children
+    ☉ rite is_empty(self: &Self!) -> bool! {
+        self·len() == 0
+    }
+}
+
+/// Slot ∀ named children
+☉ type Slot = Σ {
+    name: String!,
+    content: Option[VNode]?,
+}
+
+⊢ Slot {
+    ☉ rite new(name: &str!) -> Self! {
+        Slot {
+            name: name·to_string(),
+            content: None,
+        }
+    }
+
+    ☉ rite with_content(name: &str!, content: VNode!) -> Self! {
+        Slot {
+            name: name·to_string(),
+            content: Some(content),
+        }
+    }
+
+    ☉ rite render(self: Self!) -> VNode! {
+        self.content·unwrap_or(VNode·Empty)
+    }
+}
+
+/// Lazy component ∀ code splitting
+☉ type Lazy[C: Component] = Σ {
+    loader: Rc[dyn Fn() -> C]!,
+    loaded: RefCell[Option[C]]?,
+}
+
+impl[C: Component] Lazy[C] {
+    ☉ rite new[F: Fn() -> C + 'static](loader: F!) -> Self! {
+        Lazy {
+            loader: Rc·new(loader),
+            loaded: RefCell·new(None),
+        }
+    }
+
+    ☉ rite get(self: &Self!) -> &C! {
+        ⎇ self.loaded·borrow()·is_none() {
+            ≔ component! = (self.loader)();
+            *self.loaded·borrow_mut() = Some(component);
+        }
+        self.loaded·borrow()·as_ref()·unwrap()
+    }
+}
+
+impl[C: Component] Component ∀ Lazy[C] {
+    rite render(self: &Self!) -> VNode! {
+        self·get()·render()
+    }
+}
+
+/// Error boundary ∀ catching render errors
+☉ type ErrorBoundary = Σ {
+    children: Children!,
+    fallback: Rc[dyn Fn(String) -> VNode]!,
+    error: RefCell[Option[String]]?,
+}
+
+⊢ ErrorBoundary {
+    ☉ rite new[F: Fn(String) -> VNode + 'static](children: Children!, fallback: F!) -> Self! {
+        ErrorBoundary {
+            children,
+            fallback: Rc·new(fallback),
+            error: RefCell·new(None),
+        }
+    }
+}
+
+⊢ Component ∀ ErrorBoundary {
+    rite render(self: &Self!) -> VNode! {
+        ⌥ self.error·borrow()·as_ref() {
+            Some(err) => (self.fallback)(err·clone()),
+            None => self.children·clone()·render(),
+        }
+    }
+}

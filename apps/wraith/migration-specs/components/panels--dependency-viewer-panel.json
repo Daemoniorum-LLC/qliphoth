@@ -1,0 +1,1565 @@
+{
+  "id": "ui/components/panels/DependencyViewerPanel.tsx:DependencyViewerPanel",
+  "name": "DependencyViewerPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/DependencyViewerPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Spinner } from '@persona-framework/ui'\nimport {\n  Package, RefreshCw, AlertTriangle, ArrowUp, CheckCircle, ExternalLink,\n  ChevronDown, ChevronRight, Search, Shield\n} from 'lucide-react'\nimport { makeHttpClient } from '../../../data/https'\n\nconst http = makeHttpClient('/api')\n\ninterface Dependency {\n  name: string\n  currentVersion: string\n  latestVersion?: string\n  type: 'dependencies' | 'devDependencies' | 'peerDependencies'\n  hasUpdate: boolean\n  isOutdated: boolean // Major version behind\n  hasVulnerability: boolean\n  vulnerabilitySeverity?: 'low' | 'moderate' | 'high' | 'critical'\n}\n\ninterface DependencyGroup {\n  type: 'dependencies' | 'devDependencies' | 'peerDependencies'\n  label: string\n  deps: Dependency[]\n}\n\nexport function DependencyViewerPanel() {\n  const [dependencies, setDependencies] = useState<Dependency[]>([])\n  const [loading, setLoading] = useState(true)\n  const [checking, setChecking] = useState(false)\n  const [error, setError] = useState<string | null>(null)\n  const [filter, setFilter] = useState('')\n  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['dependencies']))\n  const [showOutdatedOnly, setShowOutdatedOnly] = useState(false)\n\n  const fetchDependencies = async () => {\n    try {\n      setLoading(true)\n      setError(null)\n      const response = await http.get('/nexus/dependencies')\n      if (response.ok) {\n        const data = await response.json()\n        setDependencies(data)\n      } else if (response.status === 404) {\n        setDependencies(getDemoDependencies())\n      } else {\n        setError('Failed to load dependencies')\n      }\n    } catch {\n      setDependencies(getDemoDependencies())\n    } finally {\n      setLoading(false)\n    }\n  }\n\n  const checkForUpdates = async () => {\n    try {\n      setChecking(true)\n      const response = await http.post('/nexus/dependencies/check-updates', {})\n      if (response.ok) {\n        await fetchDependencies()\n      }\n    } catch {\n      // Check failed silently\n    } finally {\n      setChecking(false)\n    }\n  }\n\n  useEffect(() => {\n    fetchDependencies()\n  }, [])\n\n  const getDemoDependencies = (): Dependency[] => [\n    { name: 'react', currentVersion: '18.2.0', latestVersion: '18.2.0', type: 'dependencies', hasUpdate: false, isOutdated: false, hasVulnerability: false },\n    { name: 'react-dom', currentVersion: '18.2.0', latestVersion: '18.2.0', type: 'dependencies', hasUpdate: false, isOutdated: false, hasVulnerability: false },\n    { name: 'typescript', currentVersion: '5.3.2', latestVersion: '5.9.0', type: 'devDependencies', hasUpdate: true, isOutdated: false, hasVulnerability: false },\n    { name: 'vite', currentVersion: '5.0.0', latestVersion: '7.1.0', type: 'devDependencies', hasUpdate: true, isOutdated: true, hasVulnerability: false },\n    { name: 'tailwindcss', currentVersion: '3.4.0', latestVersion: '3.4.1', type: 'devDependencies', hasUpdate: true, isOutdated: false, hasVulnerability: false },\n    { name: 'eslint', currentVersion: '8.56.0', latestVersion: '9.0.0', type: 'devDependencies', hasUpdate: true, isOutdated: true, hasVulnerability: false },\n    { name: 'lodash', currentVersion: '4.17.20', latestVersion: '4.17.21', type: 'dependencies', hasUpdate: true, isOutdated: false, hasVulnerability: true, vulnerabilitySeverity: 'high' },\n    { name: 'axios', currentVersion: '1.6.0', latestVersion: '1.6.5', type: 'dependencies', hasUpdate: true, isOutdated: false, hasVulnerability: false },\n    { name: 'zustand', currentVersion: '4.4.7', latestVersion: '4.5.0', type: 'dependencies', hasUpdate: true, isOutdated: false, hasVulnerability: false },\n    { name: 'lucide-react', currentVersion: '0.294.0', latestVersion: '0.300.0', type: 'dependencies', hasUpdate: true, isOutdated: false, hasVulnerability: false },\n  ]\n\n  const toggleGroup = (type: string) => {\n    setExpandedGroups(prev => {\n      const next = new Set(prev)\n      if (next.has(type)) {\n        next.delete(type)\n      } else {\n        next.add(type)\n      }\n      return next\n    })\n  }\n\n  const filteredDeps = dependencies.filter(dep => {\n    const matchesFilter = dep.name.toLowerCase().includes(filter.toLowerCase())\n    const matchesOutdated = !showOutdatedOnly || dep.hasUpdate\n    return matchesFilter && matchesOutdated\n  })\n\n  const groups: DependencyGroup[] = [\n    { type: 'dependencies', label: 'Dependencies', deps: filteredDeps.filter(d => d.type === 'dependencies') },\n    { type: 'devDependencies', label: 'Dev Dependencies', deps: filteredDeps.filter(d => d.type === 'devDependencies') },\n    { type: 'peerDependencies', label: 'Peer Dependencies', deps: filteredDeps.filter(d => d.type === 'peerDependencies') },\n  ].filter(g => g.deps.length > 0)\n\n  const stats = {\n    total: dependencies.length,\n    outdated: dependencies.filter(d => d.hasUpdate).length,\n    majorOutdated: dependencies.filter(d => d.isOutdated).length,\n    vulnerable: dependencies.filter(d => d.hasVulnerability).length,\n  }\n\n  const getSeverityStyle = (severity?: string) => {\n    switch (severity) {\n      case 'critical':\n        return 'bg-[rgba(220,38,38,0.2)] text-[#ef4444] border-[#ef4444]'\n      case 'high':\n        return 'bg-[rgba(244,135,113,0.2)] text-[#f48771] border-[#f48771]'\n      case 'moderate':\n        return 'bg-[rgba(255,215,0,0.2)] text-[#ffd700] border-[#ffd700]'\n      default:\n        return 'bg-[rgba(91,206,250,0.2)] text-[#5bcefa] border-[#5bcefa]'\n    }\n  }\n\n  if (loading) {\n    return (\n      <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n        <div className=\"flex flex-col items-center justify-center h-full gap-3\">\n          <Spinner size=\"lg\" />\n          <div className=\"text-sm text-[#b0b0b0]\">Loading dependencies...</div>\n        </div>\n      </div>\n    )\n  }\n\n  if (error) {\n    return (\n      <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n        <div className=\"flex flex-col items-center justify-center h-full p-6\">\n          <div className=\"p-3 bg-[#5a1d1d] rounded-full mb-4\">\n            <AlertTriangle className=\"w-8 h-8 text-[#f48771]\" />\n          </div>\n          <div className=\"text-sm text-[#f48771] font-medium mb-2\">Failed to load dependencies</div>\n          <div className=\"text-xs text-[#858585] text-center mb-4\">{error}</div>\n          <Button size=\"sm\" variant=\"outline\" onClick={fetchDependencies}>\n            <RefreshCw className=\"w-3.5 h-3.5 mr-1.5\" />\n            Retry\n          </Button>\n        </div>\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n      <div className=\"p-3 border-b border-[#3c3c3c] bg-[#252526]\">\n        <div className=\"flex items-center justify-between mb-3\">\n          <div className=\"flex items-center gap-2\">\n            <Package className=\"w-4 h-4 text-[#5bcefa]\" />\n            <span className=\"text-sm font-medium text-white\">Dependencies</span>\n            <span className=\"text-xs text-[#808080]\">({stats.total})</span>\n          </div>\n          <Button\n            size=\"sm\"\n            variant=\"ghost\"\n            onClick={checkForUpdates}\n            disabled={checking}\n            className=\"h-7 px-2\"\n            aria-label=\"Check for updates\"\n          >\n            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${checking ? 'animate-spin' : ''}`} />\n            {checking ? 'Checking...' : 'Check Updates'}\n          </Button>\n        </div>\n\n        <div className=\"grid grid-cols-4 gap-2 mb-3\">\n          <div className=\"p-2 bg-[#2d2d30] rounded text-center\">\n            <div className=\"text-lg font-bold text-white\">{stats.total}</div>\n            <div className=\"text-[10px] text-[#808080] uppercase\">Total</div>\n          </div>\n          <div className=\"p-2 bg-[#2d2d30] rounded text-center\">\n            <div className=\"text-lg font-bold text-[#ffd700]\">{stats.outdated}</div>\n            <div className=\"text-[10px] text-[#808080] uppercase\">Updates</div>\n          </div>\n          <div className=\"p-2 bg-[#2d2d30] rounded text-center\">\n            <div className=\"text-lg font-bold text-[#f48771]\">{stats.majorOutdated}</div>\n            <div className=\"text-[10px] text-[#808080] uppercase\">Major</div>\n          </div>\n          <div className=\"p-2 bg-[#2d2d30] rounded text-center\">\n            <div className=\"text-lg font-bold text-[#ef4444]\">{stats.vulnerable}</div>\n            <div className=\"text-[10px] text-[#808080] uppercase\">Vulns</div>\n          </div>\n        </div>\n\n        <div className=\"flex gap-2\">\n          <div className=\"flex-1 relative\">\n            <Search className=\"absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#808080]\" />\n            <input\n              type=\"text\"\n              placeholder=\"Filter packages...\"\n              value={filter}\n              onChange={(e) => setFilter(e.target.value)}\n              className=\"w-full pl-8 pr-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n            />\n          </div>\n          <button\n            onClick={() => setShowOutdatedOnly(!showOutdatedOnly)}\n            className={`px-2 py-1.5 text-xs rounded transition-colors ${\n              showOutdatedOnly\n                ? 'bg-[rgba(255,215,0,0.2)] text-[#ffd700] border border-[#ffd700]'\n                : 'bg-[#3c3c3c] text-[#b0b0b0] hover:bg-[#4c4c4c]'\n            }`}\n          >\n            <ArrowUp className=\"w-3.5 h-3.5\" />\n          </button>\n        </div>\n      </div>\n\n      <div className=\"flex-1 overflow-auto p-2\">\n        {groups.map(group => {\n          const isExpanded = expandedGroups.has(group.type)\n          return (\n            <div key={group.type} className=\"mb-2\">\n              <div\n                className=\"flex items-center gap-2 p-2 rounded-md cursor-pointer transition-all hover:bg-[#2d2d30]\"\n                onClick={() => toggleGroup(group.type)}\n              >\n                {isExpanded ? (\n                  <ChevronDown className=\"w-4 h-4 text-[#808080]\" />\n                ) : (\n                  <ChevronRight className=\"w-4 h-4 text-[#808080]\" />\n                )}\n                <span className=\"text-sm font-medium text-white\">{group.label}</span>\n                <span className=\"text-xs text-[#808080]\">({group.deps.length})</span>\n              </div>\n\n              {isExpanded && (\n                <div className=\"ml-4\">\n                  {group.deps.map(dep => (\n                    <div\n                      key={dep.name}\n                      className=\"flex items-center gap-2 p-2 rounded-md hover:bg-[#2d2d30] transition-colors\"\n                    >\n                      <Package className=\"w-4 h-4 text-[#808080] flex-shrink-0\" />\n                      <div className=\"flex-1 min-w-0\">\n                        <div className=\"flex items-center gap-2\">\n                          <span className=\"text-sm text-white font-mono\">{dep.name}</span>\n                          {dep.hasVulnerability && (\n                            <span className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border ${getSeverityStyle(dep.vulnerabilitySeverity)}`}>\n                              <Shield className=\"w-3 h-3\" />\n                              {dep.vulnerabilitySeverity || 'vuln'}\n                            </span>\n                          )}\n                        </div>\n                        <div className=\"flex items-center gap-2 text-xs\">\n                          <span className=\"text-[#808080] font-mono\">{dep.currentVersion}</span>\n                          {dep.hasUpdate && dep.latestVersion && (\n                            <>\n                              <ArrowUp className={`w-3 h-3 ${dep.isOutdated ? 'text-[#f48771]' : 'text-[#ffd700]'}`} />\n                              <span className={`font-mono ${dep.isOutdated ? 'text-[#f48771]' : 'text-[#ffd700]'}`}>\n                                {dep.latestVersion}\n                              </span>\n                            </>\n                          )}\n                          {!dep.hasUpdate && (\n                            <CheckCircle className=\"w-3 h-3 text-[#00ff7f]\" />\n                          )}\n                        </div>\n                      </div>\n                      <a\n                        href={`https://www.npmjs.com/package/${dep.name}`}\n                        target=\"_blank\"\n                        rel=\"noopener noreferrer\"\n                        className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                        onClick={(e) => e.stopPropagation()}\n                        aria-label={`View ${dep.name} on npm`}\n                      >\n                        <ExternalLink className=\"w-3.5 h-3.5 text-[#808080]\" />\n                      </a>\n                    </div>\n                  ))}\n                </div>\n              )}\n            </div>\n          )\n        })}\n\n        {groups.length === 0 && (\n          <div className=\"flex flex-col items-center justify-center h-full p-6 text-center\">\n            <div className=\"p-3 bg-[#252526] rounded-full mb-4\">\n              <Package className=\"w-8 h-8 text-[#858585]\" />\n            </div>\n            <div className=\"text-sm text-[#cccccc] font-medium mb-1\">No matching packages</div>\n            <div className=\"text-xs text-[#858585]\">Try a different search term</div>\n          </div>\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "DependencyViewerPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 28,
+        "start_col": 7,
+        "end_line": 307,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 29,
+            "start_col": 42,
+            "end_line": 29,
+            "end_col": 68
+          },
+          "state_name": "dependencies",
+          "setter_name": "setDependencies",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 30,
+            "start_col": 32,
+            "end_line": 30,
+            "end_col": 46
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "true",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 31,
+            "start_col": 34,
+            "end_line": 31,
+            "end_col": 49
+          },
+          "state_name": "checking",
+          "setter_name": "setChecking",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 32,
+            "start_col": 28,
+            "end_line": 32,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 33,
+            "start_col": 30,
+            "end_line": 33,
+            "end_col": 42
+          },
+          "state_name": "filter",
+          "setter_name": "setFilter",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 34,
+            "start_col": 46,
+            "end_line": 34,
+            "end_col": 94
+          },
+          "state_name": "expandedGroups",
+          "setter_name": "setExpandedGroups",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 35,
+            "start_col": 50,
+            "end_line": 35,
+            "end_col": 65
+          },
+          "state_name": "showOutdatedOnly",
+          "setter_name": "setShowOutdatedOnly",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 71,
+            "start_col": 2,
+            "end_line": 73,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-3 border-b border-[#3c3c3c] bg-[#252526]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center justify-between mb-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center gap-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Package",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4 text-[#5bcefa]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 166,
+                                    "start_col": 12,
+                                    "end_line": 166,
+                                    "end_col": 58
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-sm font-medium text-white"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Dependencies"
+                                        },
+                                        "location": {
+                                          "start_line": 167,
+                                          "start_col": 61,
+                                          "end_line": 167,
+                                          "end_col": 73
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 167,
+                                    "start_col": 12,
+                                    "end_line": 167,
+                                    "end_col": 80
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-[#808080]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "("
+                                        },
+                                        "location": {
+                                          "start_line": 168,
+                                          "start_col": 53,
+                                          "end_line": 168,
+                                          "end_col": 54
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "stats.total"
+                                        },
+                                        "location": {
+                                          "start_line": 168,
+                                          "start_col": 54,
+                                          "end_line": 168,
+                                          "end_col": 67
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": ")"
+                                        },
+                                        "location": {
+                                          "start_line": 168,
+                                          "start_col": 67,
+                                          "end_line": 168,
+                                          "end_col": 68
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 168,
+                                    "start_col": 12,
+                                    "end_line": 168,
+                                    "end_col": 75
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 165,
+                              "start_col": 10,
+                              "end_line": 169,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "checkForUpdates"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "disabled",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "checking"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-7 px-2"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "aria-label",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Check for updates"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "RefreshCw",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "`w-3.5 h-3.5 mr-1.5 ${checking ? 'animate-spin' : ''}`"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 178,
+                                    "start_col": 12,
+                                    "end_line": 178,
+                                    "end_col": 92
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "checking ? 'Checking...' : 'Check Updates'"
+                                  },
+                                  "location": {
+                                    "start_line": 179,
+                                    "start_col": 12,
+                                    "end_line": 179,
+                                    "end_col": 56
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 170,
+                              "start_col": 10,
+                              "end_line": 180,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 164,
+                        "start_col": 8,
+                        "end_line": 181,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "grid grid-cols-4 gap-2 mb-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "p-2 bg-[#2d2d30] rounded text-center"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-lg font-bold text-white"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "stats.total"
+                                        },
+                                        "location": {
+                                          "start_line": 185,
+                                          "start_col": 58,
+                                          "end_line": 185,
+                                          "end_col": 71
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 185,
+                                    "start_col": 12,
+                                    "end_line": 185,
+                                    "end_col": 77
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-[10px] text-[#808080] uppercase"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Total"
+                                        },
+                                        "location": {
+                                          "start_line": 186,
+                                          "start_col": 66,
+                                          "end_line": 186,
+                                          "end_col": 71
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 186,
+                                    "start_col": 12,
+                                    "end_line": 186,
+                                    "end_col": 77
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 184,
+                              "start_col": 10,
+                              "end_line": 187,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "p-2 bg-[#2d2d30] rounded text-center"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-lg font-bold text-[#ffd700]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "stats.outdated"
+                                        },
+                                        "location": {
+                                          "start_line": 189,
+                                          "start_col": 62,
+                                          "end_line": 189,
+                                          "end_col": 78
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 189,
+                                    "start_col": 12,
+                                    "end_line": 189,
+                                    "end_col": 84
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-[10px] text-[#808080] uppercase"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Updates"
+                                        },
+                                        "location": {
+                                          "start_line": 190,
+                                          "start_col": 66,
+                                          "end_line": 190,
+                                          "end_col": 73
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 190,
+                                    "start_col": 12,
+                                    "end_line": 190,
+                                    "end_col": 79
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 188,
+                              "start_col": 10,
+                              "end_line": 191,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "p-2 bg-[#2d2d30] rounded text-center"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-lg font-bold text-[#f48771]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "stats.majorOutdated"
+                                        },
+                                        "location": {
+                                          "start_line": 193,
+                                          "start_col": 62,
+                                          "end_line": 193,
+                                          "end_col": 83
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 193,
+                                    "start_col": 12,
+                                    "end_line": 193,
+                                    "end_col": 89
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-[10px] text-[#808080] uppercase"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Major"
+                                        },
+                                        "location": {
+                                          "start_line": 194,
+                                          "start_col": 66,
+                                          "end_line": 194,
+                                          "end_col": 71
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 194,
+                                    "start_col": 12,
+                                    "end_line": 194,
+                                    "end_col": 77
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 192,
+                              "start_col": 10,
+                              "end_line": 195,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "p-2 bg-[#2d2d30] rounded text-center"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-lg font-bold text-[#ef4444]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "stats.vulnerable"
+                                        },
+                                        "location": {
+                                          "start_line": 197,
+                                          "start_col": 62,
+                                          "end_line": 197,
+                                          "end_col": 80
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 197,
+                                    "start_col": 12,
+                                    "end_line": 197,
+                                    "end_col": 86
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-[10px] text-[#808080] uppercase"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Vulns"
+                                        },
+                                        "location": {
+                                          "start_line": 198,
+                                          "start_col": 66,
+                                          "end_line": 198,
+                                          "end_col": 71
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 198,
+                                    "start_col": 12,
+                                    "end_line": 198,
+                                    "end_col": 77
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 196,
+                              "start_col": 10,
+                              "end_line": 199,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 183,
+                        "start_col": 8,
+                        "end_line": 200,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex-1 relative"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Search",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#808080]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 204,
+                                    "start_col": 12,
+                                    "end_line": 204,
+                                    "end_col": 104
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "input",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "type",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "placeholder",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Filter packages..."
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "filter"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onChange",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "(e) => setFilter(e.target.value)"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-full pl-8 pr-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 205,
+                                    "start_col": 12,
+                                    "end_line": 211,
+                                    "end_col": 14
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 203,
+                              "start_col": 10,
+                              "end_line": 212,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "button",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setShowOutdatedOnly(!showOutdatedOnly)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "`px-2 py-1.5 text-xs rounded transition-colors ${\n              showOutdatedOnly\n                ? 'bg-[rgba(255,215,0,0.2)] text-[#ffd700] border border-[#ffd700]'\n                : 'bg-[#3c3c3c] text-[#b0b0b0] hover:bg-[#4c4c4c]'\n            }`"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "ArrowUp",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-3.5 h-3.5"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 221,
+                                    "start_col": 12,
+                                    "end_line": 221,
+                                    "end_col": 47
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 213,
+                              "start_col": 10,
+                              "end_line": 222,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 202,
+                        "start_col": 8,
+                        "end_line": 223,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 163,
+                  "start_col": 6,
+                  "end_line": 224,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto p-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "groups.map(group => {\n          const isExpanded = expandedGroups.has(group.type)\n          return (\n            <div key={group.type} className=\"mb-2\">\n              <div\n                className=\"flex items-center gap-2 p-2 rounded-md cursor-pointer transition-all hover:bg-[#2d2d30]\"\n                onClick={() => toggleGroup(group.type)}\n              >\n                {isExpanded ? (\n                  <ChevronDown className=\"w-4 h-4 text-[#808080]\" />\n                ) : (\n                  <ChevronRight className=\"w-4 h-4 text-[#808080]\" />\n                )}\n                <span className=\"text-sm font-medium text-white\">{group.label}</span>\n                <span className=\"text-xs text-[#808080]\">({group.deps.length})</span>\n              </div>\n\n              {isExpanded && (\n                <div className=\"ml-4\">\n                  {group.deps.map(dep => (\n                    <div\n                      key={dep.name}\n                      className=\"flex items-center gap-2 p-2 rounded-md hover:bg-[#2d2d30] transition-colors\"\n                    >\n                      <Package className=\"w-4 h-4 text-[#808080] flex-shrink-0\" />\n                      <div className=\"flex-1 min-w-0\">\n                        <div className=\"flex items-center gap-2\">\n                          <span className=\"text-sm text-white font-mono\">{dep.name}</span>\n                          {dep.hasVulnerability && (\n                            <span className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border ${getSeverityStyle(dep.vulnerabilitySeverity)}`}>\n                              <Shield className=\"w-3 h-3\" />\n                              {dep.vulnerabilitySeverity || 'vuln'}\n                            </span>\n                          )}\n                        </div>\n                        <div className=\"flex items-center gap-2 text-xs\">\n                          <span className=\"text-[#808080] font-mono\">{dep.currentVersion}</span>\n                          {dep.hasUpdate && dep.latestVersion && (\n                            <>\n                              <ArrowUp className={`w-3 h-3 ${dep.isOutdated ? 'text-[#f48771]' : 'text-[#ffd700]'}`} />\n                              <span className={`font-mono ${dep.isOutdated ? 'text-[#f48771]' : 'text-[#ffd700]'}`}>\n                                {dep.latestVersion}\n                              </span>\n                            </>\n                          )}\n                          {!dep.hasUpdate && (\n                            <CheckCircle className=\"w-3 h-3 text-[#00ff7f]\" />\n                          )}\n                        </div>\n                      </div>\n                      <a\n                        href={`https://www.npmjs.com/package/${dep.name}`}\n                        target=\"_blank\"\n                        rel=\"noopener noreferrer\"\n                        className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                        onClick={(e) => e.stopPropagation()}\n                        aria-label={`View ${dep.name} on npm`}\n                      >\n                        <ExternalLink className=\"w-3.5 h-3.5 text-[#808080]\" />\n                      </a>\n                    </div>\n                  ))}\n                </div>\n              )}\n            </div>\n          )\n        })"
+                      },
+                      "location": {
+                        "start_line": 227,
+                        "start_col": 8,
+                        "end_line": 293,
+                        "end_col": 11
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "groups.length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col items-center justify-center h-full p-6 text-center"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "p-3 bg-[#252526] rounded-full mb-4"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Package",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-8 h-8 text-[#858585]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 298,
+                                        "start_col": 14,
+                                        "end_line": 298,
+                                        "end_col": 60
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 297,
+                                  "start_col": 12,
+                                  "end_line": 299,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-sm text-[#cccccc] font-medium mb-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "No matching packages"
+                                      },
+                                      "location": {
+                                        "start_line": 300,
+                                        "start_col": 69,
+                                        "end_line": 300,
+                                        "end_col": 89
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 300,
+                                  "start_col": 12,
+                                  "end_line": 300,
+                                  "end_col": 95
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-xs text-[#858585]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Try a different search term"
+                                      },
+                                      "location": {
+                                        "start_line": 301,
+                                        "start_col": 52,
+                                        "end_line": 301,
+                                        "end_col": 79
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 301,
+                                  "start_col": 12,
+                                  "end_line": 301,
+                                  "end_col": 85
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 296,
+                            "start_col": 10,
+                            "end_line": 302,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 295,
+                        "start_col": 8,
+                        "end_line": 303,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 226,
+                  "start_col": 6,
+                  "end_line": 304,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 162,
+            "start_col": 4,
+            "end_line": 305,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "ArrowUp",
+        "Button",
+        "Package",
+        "RefreshCw",
+        "Search"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "dependencies",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "checking",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "filter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "expandedGroups",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showOutdatedOnly",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/dependency_viewer_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:dependencies",
+        "to_field": "dependencies",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'dependencies' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "true",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:checking",
+        "to_field": "checking",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'checking' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:filter",
+        "to_field": "filter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'filter' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:expandedGroups",
+        "to_field": "expandedGroups",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'expandedGroups' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showOutdatedOnly",
+        "to_field": "showOutdatedOnly",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showOutdatedOnly' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateDependencies",
+        "from_handler": "setDependencies",
+        "payload": null,
+        "state_changes": [
+          "self.dependencies = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateChecking",
+        "from_handler": "setChecking",
+        "payload": null,
+        "state_changes": [
+          "self.checking = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateFilter",
+        "from_handler": "setFilter",
+        "payload": null,
+        "state_changes": [
+          "self.filter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateExpandedGroups",
+        "from_handler": "setExpandedGroups",
+        "payload": null,
+        "state_changes": [
+          "self.expandedGroups = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowOutdatedOnly",
+        "from_handler": "setShowOutdatedOnly",
+        "payload": null,
+        "state_changes": [
+          "self.showOutdatedOnly = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps → Mount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_mount",
+      "description": "Convert mount-only useEffect to lifecycle",
+      "react": "useEffect(() => { init(); }, []);",
+      "sigil": "on Mount { self.init(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "ArrowUp",
+      "Button",
+      "Package",
+      "RefreshCw",
+      "Search"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "7 state variables"
+  ],
+  "status": "pending"
+}

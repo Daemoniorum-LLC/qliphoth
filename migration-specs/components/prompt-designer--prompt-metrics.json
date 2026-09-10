@@ -1,0 +1,837 @@
+{
+  "id": "domains/prompts/components/PromptDesigner/PromptMetrics.tsx:PromptMetrics",
+  "name": "PromptMetrics",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/prompts/components/PromptDesigner/PromptMetrics.tsx",
+    "code": "import { useEffect, useState } from \"react\"\nimport { Card, Label } from \"@persona-framework/ui\"\nimport { AlertTriangle } from \"lucide-react\"\n\ninterface PromptMetricsProps {\n  content: string\n}\n\nexport function PromptMetrics({ content }: PromptMetricsProps) {\n  const [metrics, setMetrics] = useState({\n    length: 0,\n    readabilityScore: 0,\n    tokenCount: 0,\n    warnings: [] as string[],\n  })\n\n  useEffect(() => {\n    const warnings: string[] = []\n    const length = content.length\n    const tokenCount = Math.ceil(length / 4)\n\n    if (length > 4000) {\n      warnings.push(\"Prompt is very long and may exceed model context limits\")\n    }\n    if (length < 50) {\n      warnings.push(\"Prompt may be too vague or short\")\n    }\n    if (!content.includes(\"?\") && !content.includes(\".\")) {\n      warnings.push(\"Consider adding clear instructions or questions\")\n    }\n    if (content.toLowerCase().includes(\"do not\") || content.toLowerCase().includes(\"don't\")) {\n      warnings.push(\"Consider using positive framing instead of negations\")\n    }\n\n    const readabilityScore = Math.min(100, Math.max(0, 100 - (length / 50)))\n\n    setMetrics({\n      length,\n      readabilityScore,\n      tokenCount,\n      warnings,\n    })\n  }, [content])\n\n  return (\n    <div className=\"flex flex-col gap-3\">\n      <Label className=\"font-semibold\">Prompt Metrics</Label>\n\n      <Card className=\"p-3\">\n        <div className=\"grid grid-cols-2 gap-3\">\n          <div className=\"flex flex-col gap-1\">\n            <span className=\"text-xs text-muted-foreground\">Length</span>\n            <div className=\"text-base font-semibold\">\n              {metrics.length}\n              {\" \"}\n              chars\n            </div>\n          </div>\n          <div className=\"flex flex-col gap-1\">\n            <span className=\"text-xs text-muted-foreground\">Est. Tokens</span>\n            <div className=\"text-base font-semibold\">{metrics.tokenCount}</div>\n          </div>\n          <div className=\"flex flex-col gap-1\">\n            <span className=\"text-xs text-muted-foreground\">Readability</span>\n            <div className=\"text-base font-semibold\">\n              {metrics.readabilityScore.toFixed(0)}\n              %\n            </div>\n          </div>\n        </div>\n      </Card>\n\n      {metrics.warnings.length > 0 && (\n        <>\n          <Label className=\"font-semibold\">Optimization Suggestions</Label>\n          <div className=\"flex flex-col gap-2\">\n            {metrics.warnings.map((warning, index) => (\n              <div className=\"flex items-start gap-2\" key={index}>\n                <AlertTriangle className=\"h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0\" />\n                <span className=\"text-sm text-muted-foreground\">{warning}</span>\n              </div>\n            ))}\n          </div>\n        </>\n      )}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "PromptMetrics",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 9,
+        "start_col": 7,
+        "end_line": 88,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "content",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 10,
+            "start_col": 32,
+            "end_line": 15,
+            "end_col": 4
+          },
+          "state_name": "metrics",
+          "setter_name": "setMetrics",
+          "initial_value": "{}",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 17,
+            "start_col": 2,
+            "end_line": 43,
+            "end_col": 15
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "content"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col gap-3"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Label",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "font-semibold"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "Prompt Metrics"
+                      },
+                      "location": {
+                        "start_line": 47,
+                        "start_col": 39,
+                        "end_line": 47,
+                        "end_col": 53
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 47,
+                  "start_col": 6,
+                  "end_line": 47,
+                  "end_col": 61
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Card",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-3"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "grid grid-cols-2 gap-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex flex-col gap-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-muted-foreground"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Length"
+                                        },
+                                        "location": {
+                                          "start_line": 52,
+                                          "start_col": 60,
+                                          "end_line": 52,
+                                          "end_col": 66
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 52,
+                                    "start_col": 12,
+                                    "end_line": 52,
+                                    "end_col": 73
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-base font-semibold"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "metrics.length"
+                                        },
+                                        "location": {
+                                          "start_line": 54,
+                                          "start_col": 14,
+                                          "end_line": 54,
+                                          "end_col": 30
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "\" \""
+                                        },
+                                        "location": {
+                                          "start_line": 55,
+                                          "start_col": 14,
+                                          "end_line": 55,
+                                          "end_col": 19
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "chars"
+                                        },
+                                        "location": {
+                                          "start_line": 55,
+                                          "start_col": 19,
+                                          "end_line": 57,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 53,
+                                    "start_col": 12,
+                                    "end_line": 57,
+                                    "end_col": 18
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 51,
+                              "start_col": 10,
+                              "end_line": 58,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex flex-col gap-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-muted-foreground"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Est. Tokens"
+                                        },
+                                        "location": {
+                                          "start_line": 60,
+                                          "start_col": 60,
+                                          "end_line": 60,
+                                          "end_col": 71
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 60,
+                                    "start_col": 12,
+                                    "end_line": 60,
+                                    "end_col": 78
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-base font-semibold"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "metrics.tokenCount"
+                                        },
+                                        "location": {
+                                          "start_line": 61,
+                                          "start_col": 53,
+                                          "end_line": 61,
+                                          "end_col": 73
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 61,
+                                    "start_col": 12,
+                                    "end_line": 61,
+                                    "end_col": 79
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 59,
+                              "start_col": 10,
+                              "end_line": 62,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex flex-col gap-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-muted-foreground"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Readability"
+                                        },
+                                        "location": {
+                                          "start_line": 64,
+                                          "start_col": 60,
+                                          "end_line": 64,
+                                          "end_col": 71
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 64,
+                                    "start_col": 12,
+                                    "end_line": 64,
+                                    "end_col": 78
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-base font-semibold"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "metrics.readabilityScore.toFixed(0)"
+                                        },
+                                        "location": {
+                                          "start_line": 66,
+                                          "start_col": 14,
+                                          "end_line": 66,
+                                          "end_col": 51
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "%"
+                                        },
+                                        "location": {
+                                          "start_line": 66,
+                                          "start_col": 51,
+                                          "end_line": 68,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 65,
+                                    "start_col": 12,
+                                    "end_line": 68,
+                                    "end_col": 18
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 63,
+                              "start_col": 10,
+                              "end_line": 69,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 50,
+                        "start_col": 8,
+                        "end_line": 70,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 49,
+                  "start_col": 6,
+                  "end_line": 71,
+                  "end_col": 13
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "metrics.warnings.length > 0",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Fragment",
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Label",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "font-semibold"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "Optimization Suggestions"
+                                },
+                                "location": {
+                                  "start_line": 75,
+                                  "start_col": 43,
+                                  "end_line": 75,
+                                  "end_col": 67
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 75,
+                            "start_col": 10,
+                            "end_line": 75,
+                            "end_col": 75
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col gap-2"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Map",
+                                  "iterable": "metrics.warnings",
+                                  "item_name": "warning",
+                                  "key_expr": "index",
+                                  "body": {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "div",
+                                      "is_component": false,
+                                      "attributes": [
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "flex items-start gap-2"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "key",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "index"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "AlertTriangle",
+                                            "is_component": true,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": []
+                                          },
+                                          "location": {
+                                            "start_line": 79,
+                                            "start_col": 16,
+                                            "end_line": 79,
+                                            "end_col": 90
+                                          }
+                                        },
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "span",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "text-sm text-muted-foreground"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Expression",
+                                                  "code": "warning"
+                                                },
+                                                "location": {
+                                                  "start_line": 80,
+                                                  "start_col": 64,
+                                                  "end_line": 80,
+                                                  "end_col": 73
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 80,
+                                            "start_col": 16,
+                                            "end_line": 80,
+                                            "end_col": 80
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 78,
+                                      "start_col": 14,
+                                      "end_line": 81,
+                                      "end_col": 20
+                                    }
+                                  }
+                                },
+                                "location": {
+                                  "start_line": 77,
+                                  "start_col": 12,
+                                  "end_line": 82,
+                                  "end_col": 15
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 76,
+                            "start_col": 10,
+                            "end_line": 83,
+                            "end_col": 16
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 74,
+                      "start_col": 8,
+                      "end_line": 84,
+                      "end_col": 11
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 73,
+                  "start_col": 6,
+                  "end_line": 85,
+                  "end_col": 8
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 46,
+            "start_col": 4,
+            "end_line": 86,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "AlertTriangle",
+        "Card",
+        "Label"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "metrics",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/prompt_metrics.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:metrics",
+        "to_field": "metrics",
+        "field_type": "Map<String, Any>",
+        "evidentiality": "!",
+        "initial_value": "{}",
+        "reasoning": "useState hook 'metrics' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateMetrics",
+        "from_handler": "setMetrics",
+        "payload": null,
+        "state_changes": [
+          "self.metrics = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[content]",
+        "strategy": "inline",
+        "reasoning": "Deps [content] → inline in handlers that change these",
+        "inline_in": "content",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "content",
+          "field_type": "Any",
+          "from_prop": "content"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_1",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [content] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "AlertTriangle",
+      "Card",
+      "Label"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

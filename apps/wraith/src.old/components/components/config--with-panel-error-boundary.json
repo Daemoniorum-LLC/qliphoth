@@ -1,0 +1,111 @@
+{
+  "id": "wraith/config/panels.tsx:withPanelErrorBoundary",
+  "name": "withPanelErrorBoundary",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/wraith/config/panels.tsx",
+    "code": "import React from 'react'\nimport {\n  FolderOpen, MessageSquare, Terminal as TerminalIcon,\n  GitBranch, Settings, Search, AlertTriangle,\n  Puzzle, Server, Bug, Hammer, FlaskConical,\n  Activity, ScrollText, Sparkles, Palette, Wrench,\n  Bookmark, CheckSquare, Package, Send, Database, Zap\n} from 'lucide-react'\nimport { IntelliJStyleChat } from '@domains/chat'\nimport { TerminalPanel } from '@domains/terminal/components/TerminalPanel'\nimport { DevOpsStudio } from '@domains/devops'\nimport {\n  WorkspacePanel, SettingsPanel, SearchPanel, SourceControlPanel, ProblemsPanel,\n  SprintPanel, DebuggerPanel, BuildPanel, TestExplorerPanel, LogsPanel,\n  AgentToolsPanel, ComponentBrowserPanel, BookmarksPanel, TodoTrackerPanel,\n  EnvironmentManagerPanel, DependencyViewerPanel, RestClientPanel,\n  DatabaseExplorerPanel, AICodeReviewPanel,\n  type EditorSettings\n} from '@ui/components/panels'\nimport { ErrorBoundary } from '@ui/components/ErrorBoundary'\nimport { PromptDesigner } from '@domains/prompts/components/PromptDesigner/PromptDesigner'\nimport { ExtensionsPanel as ExtensionsPanelComponent, type Extension as UIExtension } from '@ui/components/organisms'\nimport type { PanelRegistry, ExtensionPanelType } from '../types'\nimport { AVAILABLE_EXTENSIONS } from './extensions'\n\n// Wrap panel components with error boundary for resilience\nfunction withPanelErrorBoundary(component: React.ReactNode, panelName: string) {\n  return (\n    <ErrorBoundary\n      onError={(error) => {\n        // Could send to error reporting service\n        if (process.env.NODE_ENV === 'development') {\n          console.warn(`[${panelName}] Panel error:`, error.message)\n        }\n      }}\n    >\n      {component}\n    </ErrorBoundary>\n  )\n}\n\ninterface CreatePanelRegistryOptions {\n  onFileClick: (filePath: string) => void\n  onSendMessage: (message: string, context: any[], onStreamUpdate?: (text: string) => void, options?: any) => Promise<any>\n  isGenerating: boolean\n  editorSettings: EditorSettings\n  onSaveSettings: (settings: EditorSettings) => void\n  enabledExtensions: ExtensionPanelType[]\n  onToggleExtension: (id: ExtensionPanelType) => void\n}\n\nexport function createPanelRegistry({\n  onFileClick,\n  onSendMessage,\n  isGenerating,\n  editorSettings,\n  onSaveSettings,\n  enabledExtensions,\n  onToggleExtension,\n}: CreatePanelRegistryOptions): PanelRegistry {\n  const extensionsForUI: UIExtension[] = AVAILABLE_EXTENSIONS.map(ext => ({\n    id: ext.id,\n    name: ext.name,\n    description: ext.description,\n    icon: ext.icon,\n    category: ext.category,\n  }))\n\n  const panels: PanelRegistry = {\n    // Core panels - always available\n    workspace: {\n      name: 'Files',\n      icon: <FolderOpen className=\"h-5 w-5\" />,\n      component: withPanelErrorBoundary(<WorkspacePanel onFileClick={onFileClick} />, 'Workspace'),\n    },\n    search: {\n      name: 'Search',\n      icon: <Search className=\"h-5 w-5\" />,\n      component: withPanelErrorBoundary(<SearchPanel onFileClick={onFileClick} />, 'Search'),\n    },\n    'source-control': {\n      name: 'Git',\n      icon: <GitBranch className=\"h-5 w-5\" />,\n      component: withPanelErrorBoundary(<SourceControlPanel />, 'Source Control'),\n    },\n    terminal: {\n      name: 'Terminal',\n      icon: <TerminalIcon className=\"h-5 w-5\" />,\n      component: withPanelErrorBoundary(<TerminalPanel />, 'Terminal'),\n    },\n    chat: {\n      name: 'AI Chat',\n      icon: <MessageSquare className=\"h-5 w-5\" />,\n      component: withPanelErrorBoundary(<IntelliJStyleChat onSendMessage={onSendMessage} isGenerating={isGenerating} />, 'AI Chat'),\n    },\n    problems: {\n      name: 'Problems',\n      icon: <AlertTriangle className=\"h-5 w-5\" />,\n      component: withPanelErrorBoundary(<ProblemsPanel />, 'Problems'),\n    },\n    settings: {\n      name: 'Settings',\n      icon: <Settings className=\"h-5 w-5\" />,\n      component: withPanelErrorBoundary(<SettingsPanel settings={editorSettings} onSave={onSaveSettings} />, 'Settings'),\n    },\n    extensions: {\n      name: 'Extensions',\n      icon: <Puzzle className=\"h-5 w-5\" />,\n      component: withPanelErrorBoundary(\n        <ExtensionsPanelComponent\n          extensions={extensionsForUI}\n          enabledExtensions={enabledExtensions}\n          onToggleExtension={(id) => onToggleExtension(id as ExtensionPanelType)}\n        />,\n        'Extensions'\n      ),\n    },\n  }\n\n  // Add enabled extension panels (all wrapped with error boundaries)\n  if (enabledExtensions.includes('devops-studio')) {\n    panels['devops-studio'] = { name: 'DevOps Studio', icon: <Server className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<DevOpsStudio />, 'DevOps Studio') }\n  }\n  if (enabledExtensions.includes('debugger')) {\n    panels.debugger = { name: 'Debugger', icon: <Bug className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<DebuggerPanel />, 'Debugger') }\n  }\n  if (enabledExtensions.includes('build')) {\n    panels.build = { name: 'Build & Tasks', icon: <Hammer className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<BuildPanel />, 'Build & Tasks') }\n  }\n  if (enabledExtensions.includes('test-explorer')) {\n    panels['test-explorer'] = { name: 'Test Explorer', icon: <FlaskConical className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<TestExplorerPanel />, 'Test Explorer') }\n  }\n  if (enabledExtensions.includes('sprint')) {\n    panels.sprint = { name: 'Sprint Board', icon: <Activity className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<SprintPanel />, 'Sprint Board') }\n  }\n  if (enabledExtensions.includes('logs')) {\n    panels.logs = { name: 'Server Logs', icon: <ScrollText className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<LogsPanel />, 'Server Logs') }\n  }\n  if (enabledExtensions.includes('agent-tools')) {\n    panels['agent-tools'] = { name: 'Agent Tools', icon: <Wrench className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<AgentToolsPanel />, 'Agent Tools') }\n  }\n  if (enabledExtensions.includes('prompt-designer')) {\n    panels['prompt-designer'] = { name: 'Prompt Designer', icon: <Sparkles className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<PromptDesigner />, 'Prompt Designer') }\n  }\n  if (enabledExtensions.includes('component-designer')) {\n    panels['component-designer'] = { name: 'Components', icon: <Palette className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<ComponentBrowserPanel />, 'Components') }\n  }\n  if (enabledExtensions.includes('bookmarks')) {\n    panels.bookmarks = { name: 'Bookmarks', icon: <Bookmark className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<BookmarksPanel onFileClick={onFileClick} />, 'Bookmarks') }\n  }\n  if (enabledExtensions.includes('todo-tracker')) {\n    panels['todo-tracker'] = { name: 'TODO Tracker', icon: <CheckSquare className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<TodoTrackerPanel onFileClick={onFileClick} />, 'TODO Tracker') }\n  }\n  if (enabledExtensions.includes('environment-manager')) {\n    panels['environment-manager'] = { name: 'Environments', icon: <Settings className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<EnvironmentManagerPanel />, 'Environment Manager') }\n  }\n  if (enabledExtensions.includes('dependency-viewer')) {\n    panels['dependency-viewer'] = { name: 'Dependencies', icon: <Package className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<DependencyViewerPanel />, 'Dependency Viewer') }\n  }\n  if (enabledExtensions.includes('rest-client')) {\n    panels['rest-client'] = { name: 'REST Client', icon: <Send className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<RestClientPanel />, 'REST Client') }\n  }\n  if (enabledExtensions.includes('database-explorer')) {\n    panels['database-explorer'] = { name: 'Database', icon: <Database className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<DatabaseExplorerPanel />, 'Database Explorer') }\n  }\n  if (enabledExtensions.includes('ai-code-review')) {\n    panels['ai-code-review'] = { name: 'AI Review', icon: <Zap className=\"h-5 w-5\" />, component: withPanelErrorBoundary(<AICodeReviewPanel onFileClick={onFileClick} />, 'AI Code Review') }\n  }\n\n  return panels\n}\n",
+    "extraction": {
+      "name": "withPanelErrorBoundary",
+      "component_type": "functional",
+      "exported": false,
+      "export_type": null,
+      "location": {
+        "start_line": 27,
+        "start_col": 0,
+        "end_line": 40,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "ErrorBoundary",
+            "is_component": true,
+            "attributes": [
+              {
+                "name": "onError",
+                "value": {
+                  "type": "Expression",
+                  "code": "(error) => {\n        // Could send to error reporting service\n        if (process.env.NODE_ENV === 'development') {\n          console.warn(`[${panelName}] Panel error:`, error.message)\n        }\n      }"
+                },
+                "is_event_handler": true
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "component"
+                },
+                "location": {
+                  "start_line": 37,
+                  "start_col": 6,
+                  "end_line": 37,
+                  "end_col": 17
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 29,
+            "start_col": 4,
+            "end_line": 38,
+            "end_col": 20
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "ErrorBoundary"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/with_panel_error_boundary.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "ErrorBoundary"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

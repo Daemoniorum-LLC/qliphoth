@@ -1,0 +1,2921 @@
+{
+  "id": "ui/components/panels/DatabaseExplorerPanel.tsx:DatabaseExplorerPanel",
+  "name": "DatabaseExplorerPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/DatabaseExplorerPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Spinner } from '@persona-framework/ui'\nimport {\n  Database, Table, Key, Hash, ChevronDown, ChevronRight, Play, Plus, Trash2,\n  RefreshCw, AlertTriangle, Settings, Check, X, Eye\n} from 'lucide-react'\nimport { makeHttpClient } from '../../../data/https'\n\nconst http = makeHttpClient('/api')\nconst CONNECTIONS_KEY = 'wraith_db_connections'\n\ntype DatabaseType = 'postgresql' | 'mysql' | 'sqlite' | 'mongodb'\n\ninterface DatabaseConnection {\n  id: string\n  name: string\n  type: DatabaseType\n  host: string\n  port: number\n  database: string\n  username: string\n  password: string\n  isConnected: boolean\n}\n\ninterface TableInfo {\n  name: string\n  columns: ColumnInfo[]\n  rowCount?: number\n}\n\ninterface ColumnInfo {\n  name: string\n  type: string\n  nullable: boolean\n  isPrimaryKey: boolean\n}\n\ninterface QueryResult {\n  columns: string[]\n  rows: Record<string, unknown>[]\n  rowCount: number\n  duration: number\n}\n\nconst DB_TYPE_CONFIG: Record<DatabaseType, { color: string; defaultPort: number }> = {\n  postgresql: { color: 'text-[#336791]', defaultPort: 5432 },\n  mysql: { color: 'text-[#4479a1]', defaultPort: 3306 },\n  sqlite: { color: 'text-[#003b57]', defaultPort: 0 },\n  mongodb: { color: 'text-[#00ed64]', defaultPort: 27017 },\n}\n\nfunction loadConnections(): DatabaseConnection[] {\n  try {\n    const stored = localStorage.getItem(CONNECTIONS_KEY)\n    if (stored) {\n      const parsed = JSON.parse(stored)\n      if (Array.isArray(parsed)) {\n        return parsed.map(c => ({ ...c, isConnected: false }))\n      }\n    }\n  } catch {\n    // Invalid storage\n  }\n  return []\n}\n\nfunction saveConnections(connections: DatabaseConnection[]) {\n  try {\n    const toSave = connections.map(c => ({ ...c, isConnected: false, password: '' }))\n    localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(toSave))\n  } catch {\n    // Storage unavailable\n  }\n}\n\nexport function DatabaseExplorerPanel() {\n  const [connections, setConnections] = useState<DatabaseConnection[]>(() => loadConnections())\n  const [activeConnection, setActiveConnection] = useState<DatabaseConnection | null>(null)\n  const [tables, setTables] = useState<TableInfo[]>([])\n  const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set())\n  const [query, setQuery] = useState('SELECT * FROM ')\n  const [queryResult, setQueryResult] = useState<QueryResult | null>(null)\n  const [loading, setLoading] = useState(false)\n  const [error, setError] = useState<string | null>(null)\n  const [showAddConnection, setShowAddConnection] = useState(false)\n  const [newConnection, setNewConnection] = useState<Partial<DatabaseConnection>>({\n    type: 'postgresql',\n    host: 'localhost',\n    port: 5432,\n    database: '',\n    username: '',\n    password: '',\n    name: '',\n  })\n  const [activeTab, setActiveTab] = useState<'schema' | 'query' | 'results'>('schema')\n\n  useEffect(() => {\n    saveConnections(connections)\n  }, [connections])\n\n  const connectToDatabase = async (connection: DatabaseConnection) => {\n    try {\n      setLoading(true)\n      setError(null)\n\n      const response = await http.post('/nexus/database/connect', {\n        type: connection.type,\n        host: connection.host,\n        port: connection.port,\n        database: connection.database,\n        username: connection.username,\n        password: connection.password,\n      })\n\n      if (response.ok) {\n        setActiveConnection({ ...connection, isConnected: true })\n        await fetchTables(connection.id)\n      } else {\n        // For demo, simulate connection\n        setActiveConnection({ ...connection, isConnected: true })\n        setTables(getDemoTables())\n      }\n    } catch {\n      // For demo, simulate connection\n      setActiveConnection({ ...connection, isConnected: true })\n      setTables(getDemoTables())\n    } finally {\n      setLoading(false)\n    }\n  }\n\n  const fetchTables = async (connectionId: string) => {\n    try {\n      const response = await http.get(`/nexus/database/${connectionId}/tables`)\n      if (response.ok) {\n        const data = await response.json()\n        setTables(data)\n      } else {\n        setTables(getDemoTables())\n      }\n    } catch {\n      setTables(getDemoTables())\n    }\n  }\n\n  const executeQuery = async () => {\n    if (!query.trim() || !activeConnection) return\n\n    try {\n      setLoading(true)\n      setError(null)\n      setQueryResult(null)\n\n      const startTime = Date.now()\n      const response = await http.post('/nexus/database/query', {\n        connectionId: activeConnection.id,\n        query,\n      })\n\n      if (response.ok) {\n        const data = await response.json()\n        setQueryResult(data)\n        setActiveTab('results')\n      } else {\n        // For demo, show sample results\n        setQueryResult(getDemoQueryResult(query))\n        setActiveTab('results')\n      }\n    } catch {\n      // For demo, show sample results\n      setQueryResult(getDemoQueryResult(query))\n      setActiveTab('results')\n    } finally {\n      setLoading(false)\n    }\n  }\n\n  const getDemoTables = (): TableInfo[] => [\n    {\n      name: 'users',\n      rowCount: 1234,\n      columns: [\n        { name: 'id', type: 'uuid', nullable: false, isPrimaryKey: true },\n        { name: 'email', type: 'varchar(255)', nullable: false, isPrimaryKey: false },\n        { name: 'name', type: 'varchar(100)', nullable: true, isPrimaryKey: false },\n        { name: 'created_at', type: 'timestamp', nullable: false, isPrimaryKey: false },\n      ],\n    },\n    {\n      name: 'posts',\n      rowCount: 5678,\n      columns: [\n        { name: 'id', type: 'uuid', nullable: false, isPrimaryKey: true },\n        { name: 'user_id', type: 'uuid', nullable: false, isPrimaryKey: false },\n        { name: 'title', type: 'varchar(200)', nullable: false, isPrimaryKey: false },\n        { name: 'content', type: 'text', nullable: true, isPrimaryKey: false },\n        { name: 'published', type: 'boolean', nullable: false, isPrimaryKey: false },\n      ],\n    },\n    {\n      name: 'comments',\n      rowCount: 9012,\n      columns: [\n        { name: 'id', type: 'uuid', nullable: false, isPrimaryKey: true },\n        { name: 'post_id', type: 'uuid', nullable: false, isPrimaryKey: false },\n        { name: 'author', type: 'varchar(100)', nullable: false, isPrimaryKey: false },\n        { name: 'body', type: 'text', nullable: false, isPrimaryKey: false },\n      ],\n    },\n  ]\n\n  const getDemoQueryResult = (q: string): QueryResult => {\n    const duration = Math.floor(Math.random() * 50) + 5\n    if (q.toLowerCase().includes('users')) {\n      return {\n        columns: ['id', 'email', 'name', 'created_at'],\n        rows: [\n          { id: '1', email: 'alice@example.com', name: 'Alice', created_at: '2024-01-15' },\n          { id: '2', email: 'bob@example.com', name: 'Bob', created_at: '2024-02-20' },\n          { id: '3', email: 'carol@example.com', name: 'Carol', created_at: '2024-03-10' },\n        ],\n        rowCount: 3,\n        duration,\n      }\n    }\n    return {\n      columns: ['id', 'title', 'published'],\n      rows: [\n        { id: '1', title: 'First Post', published: true },\n        { id: '2', title: 'Draft Post', published: false },\n      ],\n      rowCount: 2,\n      duration,\n    }\n  }\n\n  const addConnection = () => {\n    if (!newConnection.name?.trim() || !newConnection.database?.trim()) return\n\n    const connection: DatabaseConnection = {\n      id: crypto.randomUUID(),\n      name: newConnection.name.trim(),\n      type: newConnection.type || 'postgresql',\n      host: newConnection.host || 'localhost',\n      port: newConnection.port || 5432,\n      database: newConnection.database.trim(),\n      username: newConnection.username || '',\n      password: newConnection.password || '',\n      isConnected: false,\n    }\n\n    setConnections([...connections, connection])\n    setNewConnection({\n      type: 'postgresql',\n      host: 'localhost',\n      port: 5432,\n      database: '',\n      username: '',\n      password: '',\n      name: '',\n    })\n    setShowAddConnection(false)\n  }\n\n  const deleteConnection = (id: string) => {\n    if (activeConnection?.id === id) {\n      setActiveConnection(null)\n      setTables([])\n    }\n    setConnections(connections.filter(c => c.id !== id))\n  }\n\n  const toggleTable = (tableName: string) => {\n    setExpandedTables(prev => {\n      const next = new Set(prev)\n      if (next.has(tableName)) {\n        next.delete(tableName)\n      } else {\n        next.add(tableName)\n      }\n      return next\n    })\n  }\n\n  return (\n    <div className=\"flex h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n      {/* Sidebar - Connections & Schema */}\n      <div className=\"w-56 border-r border-[#3c3c3c] flex flex-col\">\n        <div className=\"p-2 border-b border-[#3c3c3c] bg-[#252526]\">\n          <div className=\"flex items-center justify-between mb-2\">\n            <div className=\"flex items-center gap-2\">\n              <Database className=\"w-4 h-4 text-[#5bcefa]\" />\n              <span className=\"text-xs font-medium text-white\">Connections</span>\n            </div>\n            <Button\n              size=\"sm\"\n              variant=\"ghost\"\n              onClick={() => setShowAddConnection(!showAddConnection)}\n              className=\"h-6 w-6 p-0\"\n              aria-label=\"Add connection\"\n            >\n              {showAddConnection ? <X className=\"w-3.5 h-3.5\" /> : <Plus className=\"w-3.5 h-3.5\" />}\n            </Button>\n          </div>\n\n          {showAddConnection && (\n            <div className=\"flex flex-col gap-1.5 mt-2 p-2 bg-[#2d2d30] rounded\">\n              <input\n                type=\"text\"\n                placeholder=\"Connection name\"\n                value={newConnection.name || ''}\n                onChange={(e) => setNewConnection({ ...newConnection, name: e.target.value })}\n                className=\"w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n              />\n              <select\n                value={newConnection.type}\n                onChange={(e) => {\n                  const type = e.target.value as DatabaseType\n                  setNewConnection({\n                    ...newConnection,\n                    type,\n                    port: DB_TYPE_CONFIG[type].defaultPort,\n                  })\n                }}\n                className=\"w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]\"\n              >\n                <option value=\"postgresql\">PostgreSQL</option>\n                <option value=\"mysql\">MySQL</option>\n                <option value=\"sqlite\">SQLite</option>\n                <option value=\"mongodb\">MongoDB</option>\n              </select>\n              <div className=\"flex gap-1.5\">\n                <input\n                  type=\"text\"\n                  placeholder=\"Host\"\n                  value={newConnection.host || ''}\n                  onChange={(e) => setNewConnection({ ...newConnection, host: e.target.value })}\n                  className=\"flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n                />\n                <input\n                  type=\"number\"\n                  placeholder=\"Port\"\n                  value={newConnection.port || ''}\n                  onChange={(e) => setNewConnection({ ...newConnection, port: parseInt(e.target.value) })}\n                  className=\"w-16 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n                />\n              </div>\n              <input\n                type=\"text\"\n                placeholder=\"Database name\"\n                value={newConnection.database || ''}\n                onChange={(e) => setNewConnection({ ...newConnection, database: e.target.value })}\n                className=\"w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n              />\n              <input\n                type=\"text\"\n                placeholder=\"Username\"\n                value={newConnection.username || ''}\n                onChange={(e) => setNewConnection({ ...newConnection, username: e.target.value })}\n                className=\"w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n              />\n              <input\n                type=\"password\"\n                placeholder=\"Password\"\n                value={newConnection.password || ''}\n                onChange={(e) => setNewConnection({ ...newConnection, password: e.target.value })}\n                className=\"w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n              />\n              <Button size=\"sm\" onClick={addConnection} disabled={!newConnection.name?.trim()}>\n                <Plus className=\"w-3 h-3 mr-1\" />\n                Add\n              </Button>\n            </div>\n          )}\n        </div>\n\n        {/* Connection list */}\n        <div className=\"p-2 border-b border-[#3c3c3c] max-h-32 overflow-auto\">\n          {connections.length === 0 ? (\n            <div className=\"text-center text-xs text-[#808080] py-2\">No connections</div>\n          ) : (\n            connections.map(conn => (\n              <div\n                key={conn.id}\n                className={`flex items-center gap-2 p-1.5 rounded cursor-pointer transition-colors mb-1 ${\n                  activeConnection?.id === conn.id\n                    ? 'bg-[rgba(91,206,250,0.2)] border border-[#5bcefa]'\n                    : 'hover:bg-[#2d2d30]'\n                }`}\n                onClick={() => connectToDatabase(conn)}\n              >\n                <Database className={`w-3.5 h-3.5 ${DB_TYPE_CONFIG[conn.type].color}`} />\n                <span className=\"text-xs text-white flex-1 truncate\">{conn.name}</span>\n                {activeConnection?.id === conn.id && conn.isConnected && (\n                  <Check className=\"w-3 h-3 text-[#00ff7f]\" />\n                )}\n                <button\n                  onClick={(e) => {\n                    e.stopPropagation()\n                    deleteConnection(conn.id)\n                  }}\n                  className=\"p-0.5 rounded hover:bg-[#5a1d1d] opacity-0 group-hover:opacity-100 transition-opacity\"\n                  aria-label=\"Delete connection\"\n                >\n                  <Trash2 className=\"w-3 h-3 text-[#f48771]\" />\n                </button>\n              </div>\n            ))\n          )}\n        </div>\n\n        {/* Schema browser */}\n        <div className=\"flex-1 overflow-auto p-2\">\n          {activeConnection ? (\n            tables.length === 0 ? (\n              <div className=\"text-center text-xs text-[#808080] py-4\">No tables found</div>\n            ) : (\n              tables.map(table => (\n                <div key={table.name} className=\"mb-1\">\n                  <div\n                    className=\"flex items-center gap-1.5 p-1.5 rounded cursor-pointer hover:bg-[#2d2d30]\"\n                    onClick={() => toggleTable(table.name)}\n                  >\n                    {expandedTables.has(table.name) ? (\n                      <ChevronDown className=\"w-3.5 h-3.5 text-[#808080]\" />\n                    ) : (\n                      <ChevronRight className=\"w-3.5 h-3.5 text-[#808080]\" />\n                    )}\n                    <Table className=\"w-3.5 h-3.5 text-[#ffd700]\" />\n                    <span className=\"text-xs text-white\">{table.name}</span>\n                    {table.rowCount !== undefined && (\n                      <span className=\"text-[10px] text-[#808080]\">({table.rowCount})</span>\n                    )}\n                  </div>\n                  {expandedTables.has(table.name) && (\n                    <div className=\"ml-5 border-l border-[#3c3c3c] pl-2\">\n                      {table.columns.map(col => (\n                        <div\n                          key={col.name}\n                          className=\"flex items-center gap-1.5 py-0.5 text-[11px]\"\n                        >\n                          {col.isPrimaryKey ? (\n                            <Key className=\"w-3 h-3 text-[#ffd700]\" />\n                          ) : (\n                            <Hash className=\"w-3 h-3 text-[#808080]\" />\n                          )}\n                          <span className=\"text-[#b0b0b0]\">{col.name}</span>\n                          <span className=\"text-[#606060]\">{col.type}</span>\n                        </div>\n                      ))}\n                    </div>\n                  )}\n                </div>\n              ))\n            )\n          ) : (\n            <div className=\"text-center text-xs text-[#808080] py-4\">\n              Connect to a database to browse schema\n            </div>\n          )}\n        </div>\n      </div>\n\n      {/* Main Content */}\n      <div className=\"flex-1 flex flex-col overflow-hidden\">\n        {/* Query Editor */}\n        <div className=\"p-3 border-b border-[#3c3c3c] bg-[#252526]\">\n          <div className=\"flex items-center gap-2 mb-2\">\n            <span className=\"text-xs text-[#808080]\">Query</span>\n            <div className=\"flex-1\" />\n            <Button\n              size=\"sm\"\n              onClick={executeQuery}\n              disabled={loading || !activeConnection || !query.trim()}\n            >\n              {loading ? (\n                <Spinner size=\"sm\" />\n              ) : (\n                <>\n                  <Play className=\"w-3.5 h-3.5 mr-1.5\" />\n                  Execute\n                </>\n              )}\n            </Button>\n          </div>\n          <textarea\n            value={query}\n            onChange={(e) => setQuery(e.target.value)}\n            placeholder=\"SELECT * FROM table_name WHERE ...\"\n            className=\"w-full h-20 p-2 text-sm bg-[#2d2d30] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] resize-none\"\n            onKeyDown={(e) => {\n              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {\n                executeQuery()\n              }\n            }}\n          />\n          <div className=\"text-[10px] text-[#606060] mt-1\">Ctrl+Enter to execute</div>\n        </div>\n\n        {/* Results */}\n        <div className=\"flex-1 overflow-auto\">\n          {loading && (\n            <div className=\"flex flex-col items-center justify-center h-full gap-3\">\n              <Spinner size=\"lg\" />\n              <div className=\"text-sm text-[#b0b0b0]\">Executing query...</div>\n            </div>\n          )}\n\n          {error && (\n            <div className=\"p-4 m-3 bg-[rgba(244,135,113,0.1)] border border-[#f48771] rounded\">\n              <div className=\"flex items-center gap-2 text-sm text-[#f48771] font-medium\">\n                <AlertTriangle className=\"w-4 h-4\" />\n                Query Error\n              </div>\n              <div className=\"text-xs text-[#b0b0b0] mt-1\">{error}</div>\n            </div>\n          )}\n\n          {queryResult && !loading && (\n            <div className=\"p-3\">\n              <div className=\"flex items-center gap-4 mb-3 text-xs text-[#808080]\">\n                <span>{queryResult.rowCount} rows</span>\n                <span>{queryResult.duration}ms</span>\n              </div>\n              <div className=\"overflow-auto rounded border border-[#3c3c3c]\">\n                <table className=\"w-full text-xs\">\n                  <thead className=\"bg-[#252526] sticky top-0\">\n                    <tr>\n                      {queryResult.columns.map(col => (\n                        <th\n                          key={col}\n                          className=\"px-3 py-2 text-left text-[#b0b0b0] font-medium border-b border-[#3c3c3c]\"\n                        >\n                          {col}\n                        </th>\n                      ))}\n                    </tr>\n                  </thead>\n                  <tbody>\n                    {queryResult.rows.map((row, idx) => (\n                      <tr key={idx} className=\"hover:bg-[#2d2d30]\">\n                        {queryResult.columns.map(col => (\n                          <td\n                            key={col}\n                            className=\"px-3 py-1.5 text-white font-mono border-b border-[#3c3c3c]\"\n                          >\n                            {row[col] === null ? (\n                              <span className=\"text-[#606060] italic\">NULL</span>\n                            ) : (\n                              String(row[col])\n                            )}\n                          </td>\n                        ))}\n                      </tr>\n                    ))}\n                  </tbody>\n                </table>\n              </div>\n            </div>\n          )}\n\n          {!loading && !error && !queryResult && (\n            <div className=\"flex flex-col items-center justify-center h-full text-center\">\n              <Database className=\"w-8 h-8 text-[#858585] mb-3\" />\n              <div className=\"text-sm text-[#cccccc] font-medium\">No results yet</div>\n              <div className=\"text-xs text-[#858585]\">\n                {activeConnection ? 'Write a query and click Execute' : 'Connect to a database first'}\n              </div>\n            </div>\n          )}\n        </div>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "DatabaseExplorerPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 77,
+        "start_col": 7,
+        "end_line": 576,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 78,
+            "start_col": 40,
+            "end_line": 78,
+            "end_col": 95
+          },
+          "state_name": "connections",
+          "setter_name": "setConnections",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 79,
+            "start_col": 50,
+            "end_line": 79,
+            "end_col": 91
+          },
+          "state_name": "activeConnection",
+          "setter_name": "setActiveConnection",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 80,
+            "start_col": 30,
+            "end_line": 80,
+            "end_col": 55
+          },
+          "state_name": "tables",
+          "setter_name": "setTables",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 81,
+            "start_col": 46,
+            "end_line": 81,
+            "end_col": 78
+          },
+          "state_name": "expandedTables",
+          "setter_name": "setExpandedTables",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 82,
+            "start_col": 28,
+            "end_line": 82,
+            "end_col": 54
+          },
+          "state_name": "query",
+          "setter_name": "setQuery",
+          "initial_value": "\"SELECT * FROM \"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 83,
+            "start_col": 40,
+            "end_line": 83,
+            "end_col": 74
+          },
+          "state_name": "queryResult",
+          "setter_name": "setQueryResult",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 84,
+            "start_col": 32,
+            "end_line": 84,
+            "end_col": 47
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 85,
+            "start_col": 28,
+            "end_line": 85,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 86,
+            "start_col": 52,
+            "end_line": 86,
+            "end_col": 67
+          },
+          "state_name": "showAddConnection",
+          "setter_name": "setShowAddConnection",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 87,
+            "start_col": 44,
+            "end_line": 95,
+            "end_col": 4
+          },
+          "state_name": "newConnection",
+          "setter_name": "setNewConnection",
+          "initial_value": "∅",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 96,
+            "start_col": 36,
+            "end_line": 96,
+            "end_col": 86
+          },
+          "state_name": "activeTab",
+          "setter_name": "setActiveTab",
+          "initial_value": "\"schema\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 98,
+            "start_col": 2,
+            "end_line": 100,
+            "end_col": 19
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "connections"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "w-56 border-r border-[#3c3c3c] flex flex-col"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "p-2 border-b border-[#3c3c3c] bg-[#252526]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center justify-between mb-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "flex items-center gap-2"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "Database",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "w-4 h-4 text-[#5bcefa]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 293,
+                                          "start_col": 14,
+                                          "end_line": 293,
+                                          "end_col": 61
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "span",
+                                          "is_component": false,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "text-xs font-medium text-white"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Connections"
+                                              },
+                                              "location": {
+                                                "start_line": 294,
+                                                "start_col": 63,
+                                                "end_line": 294,
+                                                "end_col": 74
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 294,
+                                          "start_col": 14,
+                                          "end_line": 294,
+                                          "end_col": 81
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 292,
+                                    "start_col": 12,
+                                    "end_line": 295,
+                                    "end_col": 18
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Button",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "variant",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "ghost"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => setShowAddConnection(!showAddConnection)"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-6 w-6 p-0"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "aria-label",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Add connection"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Conditional",
+                                          "condition": "showAddConnection",
+                                          "consequent": {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "X",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "w-3.5 h-3.5"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 303,
+                                              "start_col": 35,
+                                              "end_line": 303,
+                                              "end_col": 64
+                                            }
+                                          },
+                                          "alternate": {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "Plus",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "w-3.5 h-3.5"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 303,
+                                              "start_col": 67,
+                                              "end_line": 303,
+                                              "end_col": 99
+                                            }
+                                          }
+                                        },
+                                        "location": {
+                                          "start_line": 303,
+                                          "start_col": 14,
+                                          "end_line": 303,
+                                          "end_col": 100
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 296,
+                                    "start_col": 12,
+                                    "end_line": 304,
+                                    "end_col": 21
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 291,
+                              "start_col": 10,
+                              "end_line": 305,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "showAddConnection",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex flex-col gap-1.5 mt-2 p-2 bg-[#2d2d30] rounded"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "input",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "type",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "placeholder",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Connection name"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "newConnection.name || ''"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => setNewConnection({ ...newConnection, name: e.target.value })"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 309,
+                                        "start_col": 14,
+                                        "end_line": 315,
+                                        "end_col": 16
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "select",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "newConnection.type"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => {\n                  const type = e.target.value as DatabaseType\n                  setNewConnection({\n                    ...newConnection,\n                    type,\n                    port: DB_TYPE_CONFIG[type].defaultPort,\n                  })\n                }"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "option",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "value",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "postgresql"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "PostgreSQL"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 328,
+                                                    "start_col": 43,
+                                                    "end_line": 328,
+                                                    "end_col": 53
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 328,
+                                              "start_col": 16,
+                                              "end_line": 328,
+                                              "end_col": 62
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "option",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "value",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "mysql"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "MySQL"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 329,
+                                                    "start_col": 38,
+                                                    "end_line": 329,
+                                                    "end_col": 43
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 329,
+                                              "start_col": 16,
+                                              "end_line": 329,
+                                              "end_col": 52
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "option",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "value",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "sqlite"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "SQLite"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 330,
+                                                    "start_col": 39,
+                                                    "end_line": 330,
+                                                    "end_col": 45
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 330,
+                                              "start_col": 16,
+                                              "end_line": 330,
+                                              "end_col": 54
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "option",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "value",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "mongodb"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "MongoDB"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 331,
+                                                    "start_col": 40,
+                                                    "end_line": 331,
+                                                    "end_col": 47
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 331,
+                                              "start_col": 16,
+                                              "end_line": 331,
+                                              "end_col": 56
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 316,
+                                        "start_col": 14,
+                                        "end_line": 332,
+                                        "end_col": 23
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex gap-1.5"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "input",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "type",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "text"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "placeholder",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "Host"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "newConnection.host || ''"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "onChange",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "(e) => setNewConnection({ ...newConnection, host: e.target.value })"
+                                                  },
+                                                  "is_event_handler": true
+                                                },
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 334,
+                                              "start_col": 16,
+                                              "end_line": 340,
+                                              "end_col": 18
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "input",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "type",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "number"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "placeholder",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "Port"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "value",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "newConnection.port || ''"
+                                                  },
+                                                  "is_event_handler": false
+                                                },
+                                                {
+                                                  "name": "onChange",
+                                                  "value": {
+                                                    "type": "Expression",
+                                                    "code": "(e) => setNewConnection({ ...newConnection, port: parseInt(e.target.value) })"
+                                                  },
+                                                  "is_event_handler": true
+                                                },
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "w-16 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 341,
+                                              "start_col": 16,
+                                              "end_line": 347,
+                                              "end_col": 18
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 333,
+                                        "start_col": 14,
+                                        "end_line": 348,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "input",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "type",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "placeholder",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Database name"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "newConnection.database || ''"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => setNewConnection({ ...newConnection, database: e.target.value })"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 349,
+                                        "start_col": 14,
+                                        "end_line": 355,
+                                        "end_col": 16
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "input",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "type",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "placeholder",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Username"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "newConnection.username || ''"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => setNewConnection({ ...newConnection, username: e.target.value })"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 356,
+                                        "start_col": 14,
+                                        "end_line": 362,
+                                        "end_col": 16
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "input",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "type",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "password"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "placeholder",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Password"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "newConnection.password || ''"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => setNewConnection({ ...newConnection, password: e.target.value })"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-full px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 363,
+                                        "start_col": 14,
+                                        "end_line": 369,
+                                        "end_col": 16
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Button",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "size",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "sm"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onClick",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "addConnection"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "disabled",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "!newConnection.name?.trim()"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "Plus",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "w-3 h-3 mr-1"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 371,
+                                              "start_col": 16,
+                                              "end_line": 371,
+                                              "end_col": 49
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Add"
+                                            },
+                                            "location": {
+                                              "start_line": 371,
+                                              "start_col": 49,
+                                              "end_line": 373,
+                                              "end_col": 14
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 370,
+                                        "start_col": 14,
+                                        "end_line": 373,
+                                        "end_col": 23
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 308,
+                                  "start_col": 12,
+                                  "end_line": 374,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 307,
+                              "start_col": 10,
+                              "end_line": 375,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 290,
+                        "start_col": 8,
+                        "end_line": 376,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "p-2 border-b border-[#3c3c3c] max-h-32 overflow-auto"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "connections.length === 0",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-center text-xs text-[#808080] py-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "No connections"
+                                      },
+                                      "location": {
+                                        "start_line": 381,
+                                        "start_col": 69,
+                                        "end_line": 381,
+                                        "end_col": 83
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 381,
+                                  "start_col": 12,
+                                  "end_line": 381,
+                                  "end_col": 89
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 380,
+                              "start_col": 10,
+                              "end_line": 410,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 379,
+                        "start_col": 8,
+                        "end_line": 411,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex-1 overflow-auto p-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "activeConnection ? (\n            tables.length === 0 ? (\n              <div className=\"text-center text-xs text-[#808080] py-4\">No tables found</div>\n            ) : (\n              tables.map(table => (\n                <div key={table.name} className=\"mb-1\">\n                  <div\n                    className=\"flex items-center gap-1.5 p-1.5 rounded cursor-pointer hover:bg-[#2d2d30]\"\n                    onClick={() => toggleTable(table.name)}\n                  >\n                    {expandedTables.has(table.name) ? (\n                      <ChevronDown className=\"w-3.5 h-3.5 text-[#808080]\" />\n                    ) : (\n                      <ChevronRight className=\"w-3.5 h-3.5 text-[#808080]\" />\n                    )}\n                    <Table className=\"w-3.5 h-3.5 text-[#ffd700]\" />\n                    <span className=\"text-xs text-white\">{table.name}</span>\n                    {table.rowCount !== undefined && (\n                      <span className=\"text-[10px] text-[#808080]\">({table.rowCount})</span>\n                    )}\n                  </div>\n                  {expandedTables.has(table.name) && (\n                    <div className=\"ml-5 border-l border-[#3c3c3c] pl-2\">\n                      {table.columns.map(col => (\n                        <div\n                          key={col.name}\n                          className=\"flex items-center gap-1.5 py-0.5 text-[11px]\"\n                        >\n                          {col.isPrimaryKey ? (\n                            <Key className=\"w-3 h-3 text-[#ffd700]\" />\n                          ) : (\n                            <Hash className=\"w-3 h-3 text-[#808080]\" />\n                          )}\n                          <span className=\"text-[#b0b0b0]\">{col.name}</span>\n                          <span className=\"text-[#606060]\">{col.type}</span>\n                        </div>\n                      ))}\n                    </div>\n                  )}\n                </div>\n              ))\n            )\n          ) : (\n            <div className=\"text-center text-xs text-[#808080] py-4\">\n              Connect to a database to browse schema\n            </div>\n          )"
+                            },
+                            "location": {
+                              "start_line": 415,
+                              "start_col": 10,
+                              "end_line": 461,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 414,
+                        "start_col": 8,
+                        "end_line": 462,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 289,
+                  "start_col": 6,
+                  "end_line": 463,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 flex flex-col overflow-hidden"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "p-3 border-b border-[#3c3c3c] bg-[#252526]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center gap-2 mb-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-[#808080]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Query"
+                                        },
+                                        "location": {
+                                          "start_line": 470,
+                                          "start_col": 53,
+                                          "end_line": 470,
+                                          "end_col": 58
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 470,
+                                    "start_col": 12,
+                                    "end_line": 470,
+                                    "end_col": 65
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "flex-1"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 471,
+                                    "start_col": 12,
+                                    "end_line": 471,
+                                    "end_col": 38
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Button",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "executeQuery"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "disabled",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "loading || !activeConnection || !query.trim()"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Conditional",
+                                          "condition": "loading",
+                                          "consequent": {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "Spinner",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "size",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "sm"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 478,
+                                              "start_col": 16,
+                                              "end_line": 478,
+                                              "end_col": 37
+                                            }
+                                          },
+                                          "alternate": {
+                                            "node_type": {
+                                              "type": "Fragment",
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "Play",
+                                                    "is_component": true,
+                                                    "attributes": [
+                                                      {
+                                                        "name": "className",
+                                                        "value": {
+                                                          "type": "String",
+                                                          "value": "w-3.5 h-3.5 mr-1.5"
+                                                        },
+                                                        "is_event_handler": false
+                                                      }
+                                                    ],
+                                                    "children": []
+                                                  },
+                                                  "location": {
+                                                    "start_line": 481,
+                                                    "start_col": 18,
+                                                    "end_line": 481,
+                                                    "end_col": 57
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "Execute"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 481,
+                                                    "start_col": 57,
+                                                    "end_line": 483,
+                                                    "end_col": 16
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 480,
+                                              "start_col": 16,
+                                              "end_line": 483,
+                                              "end_col": 19
+                                            }
+                                          }
+                                        },
+                                        "location": {
+                                          "start_line": 477,
+                                          "start_col": 14,
+                                          "end_line": 484,
+                                          "end_col": 16
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 472,
+                                    "start_col": 12,
+                                    "end_line": 485,
+                                    "end_col": 21
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 469,
+                              "start_col": 10,
+                              "end_line": 486,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "textarea",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "query"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => setQuery(e.target.value)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "placeholder",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "SELECT * FROM table_name WHERE ..."
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "w-full h-20 p-2 text-sm bg-[#2d2d30] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] resize-none"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onKeyDown",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => {\n              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {\n                executeQuery()\n              }\n            }"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 487,
+                              "start_col": 10,
+                              "end_line": 497,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-[10px] text-[#606060] mt-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Ctrl+Enter to execute"
+                                  },
+                                  "location": {
+                                    "start_line": 498,
+                                    "start_col": 59,
+                                    "end_line": 498,
+                                    "end_col": 80
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 498,
+                              "start_col": 10,
+                              "end_line": 498,
+                              "end_col": 86
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 468,
+                        "start_col": 8,
+                        "end_line": 499,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex-1 overflow-auto"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "loading",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex flex-col items-center justify-center h-full gap-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Spinner",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "size",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "lg"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 505,
+                                        "start_col": 14,
+                                        "end_line": 505,
+                                        "end_col": 35
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-sm text-[#b0b0b0]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Executing query..."
+                                            },
+                                            "location": {
+                                              "start_line": 506,
+                                              "start_col": 54,
+                                              "end_line": 506,
+                                              "end_col": 72
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 506,
+                                        "start_col": 14,
+                                        "end_line": 506,
+                                        "end_col": 78
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 504,
+                                  "start_col": 12,
+                                  "end_line": 507,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 503,
+                              "start_col": 10,
+                              "end_line": 508,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "error",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "p-4 m-3 bg-[rgba(244,135,113,0.1)] border border-[#f48771] rounded"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex items-center gap-2 text-sm text-[#f48771] font-medium"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "AlertTriangle",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "w-4 h-4"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 513,
+                                              "start_col": 16,
+                                              "end_line": 513,
+                                              "end_col": 53
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Query Error"
+                                            },
+                                            "location": {
+                                              "start_line": 513,
+                                              "start_col": 53,
+                                              "end_line": 515,
+                                              "end_col": 14
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 512,
+                                        "start_col": 14,
+                                        "end_line": 515,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-xs text-[#b0b0b0] mt-1"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "error"
+                                            },
+                                            "location": {
+                                              "start_line": 516,
+                                              "start_col": 59,
+                                              "end_line": 516,
+                                              "end_col": 66
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 516,
+                                        "start_col": 14,
+                                        "end_line": 516,
+                                        "end_col": 72
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 511,
+                                  "start_col": 12,
+                                  "end_line": 517,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 510,
+                              "start_col": 10,
+                              "end_line": 518,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "queryResult && !loading",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "p-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex items-center gap-4 mb-3 text-xs text-[#808080]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "span",
+                                              "is_component": false,
+                                              "attributes": [],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "queryResult.rowCount"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 523,
+                                                    "start_col": 22,
+                                                    "end_line": 523,
+                                                    "end_col": 44
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "rows"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 523,
+                                                    "start_col": 44,
+                                                    "end_line": 523,
+                                                    "end_col": 49
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 523,
+                                              "start_col": 16,
+                                              "end_line": 523,
+                                              "end_col": 56
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "span",
+                                              "is_component": false,
+                                              "attributes": [],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "queryResult.duration"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 524,
+                                                    "start_col": 22,
+                                                    "end_line": 524,
+                                                    "end_col": 44
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "ms"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 524,
+                                                    "start_col": 44,
+                                                    "end_line": 524,
+                                                    "end_col": 46
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 524,
+                                              "start_col": 16,
+                                              "end_line": 524,
+                                              "end_col": 53
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 522,
+                                        "start_col": 14,
+                                        "end_line": 525,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "overflow-auto rounded border border-[#3c3c3c]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "table",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "w-full text-xs"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "thead",
+                                                    "is_component": false,
+                                                    "attributes": [
+                                                      {
+                                                        "name": "className",
+                                                        "value": {
+                                                          "type": "String",
+                                                          "value": "bg-[#252526] sticky top-0"
+                                                        },
+                                                        "is_event_handler": false
+                                                      }
+                                                    ],
+                                                    "children": [
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Element",
+                                                          "tag": "tr",
+                                                          "is_component": false,
+                                                          "attributes": [],
+                                                          "children": [
+                                                            {
+                                                              "node_type": {
+                                                                "type": "Map",
+                                                                "iterable": "queryResult.columns",
+                                                                "item_name": "col",
+                                                                "key_expr": "col",
+                                                                "body": {
+                                                                  "node_type": {
+                                                                    "type": "Element",
+                                                                    "tag": "th",
+                                                                    "is_component": false,
+                                                                    "attributes": [
+                                                                      {
+                                                                        "name": "key",
+                                                                        "value": {
+                                                                          "type": "Expression",
+                                                                          "code": "col"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      },
+                                                                      {
+                                                                        "name": "className",
+                                                                        "value": {
+                                                                          "type": "String",
+                                                                          "value": "px-3 py-2 text-left text-[#b0b0b0] font-medium border-b border-[#3c3c3c]"
+                                                                        },
+                                                                        "is_event_handler": false
+                                                                      }
+                                                                    ],
+                                                                    "children": [
+                                                                      {
+                                                                        "node_type": {
+                                                                          "type": "Expression",
+                                                                          "code": "col"
+                                                                        },
+                                                                        "location": {
+                                                                          "start_line": 535,
+                                                                          "start_col": 26,
+                                                                          "end_line": 535,
+                                                                          "end_col": 31
+                                                                        }
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 531,
+                                                                    "start_col": 24,
+                                                                    "end_line": 536,
+                                                                    "end_col": 29
+                                                                  }
+                                                                }
+                                                              },
+                                                              "location": {
+                                                                "start_line": 530,
+                                                                "start_col": 22,
+                                                                "end_line": 537,
+                                                                "end_col": 25
+                                                              }
+                                                            }
+                                                          ]
+                                                        },
+                                                        "location": {
+                                                          "start_line": 529,
+                                                          "start_col": 20,
+                                                          "end_line": 538,
+                                                          "end_col": 25
+                                                        }
+                                                      }
+                                                    ]
+                                                  },
+                                                  "location": {
+                                                    "start_line": 528,
+                                                    "start_col": 18,
+                                                    "end_line": 539,
+                                                    "end_col": 26
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Element",
+                                                    "tag": "tbody",
+                                                    "is_component": false,
+                                                    "attributes": [],
+                                                    "children": [
+                                                      {
+                                                        "node_type": {
+                                                          "type": "Map",
+                                                          "iterable": "queryResult.rows",
+                                                          "item_name": "row",
+                                                          "key_expr": "idx",
+                                                          "body": {
+                                                            "node_type": {
+                                                              "type": "Element",
+                                                              "tag": "tr",
+                                                              "is_component": false,
+                                                              "attributes": [
+                                                                {
+                                                                  "name": "key",
+                                                                  "value": {
+                                                                    "type": "Expression",
+                                                                    "code": "idx"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                },
+                                                                {
+                                                                  "name": "className",
+                                                                  "value": {
+                                                                    "type": "String",
+                                                                    "value": "hover:bg-[#2d2d30]"
+                                                                  },
+                                                                  "is_event_handler": false
+                                                                }
+                                                              ],
+                                                              "children": [
+                                                                {
+                                                                  "node_type": {
+                                                                    "type": "Map",
+                                                                    "iterable": "queryResult.columns",
+                                                                    "item_name": "col",
+                                                                    "key_expr": "col",
+                                                                    "body": {
+                                                                      "node_type": {
+                                                                        "type": "Element",
+                                                                        "tag": "td",
+                                                                        "is_component": false,
+                                                                        "attributes": [
+                                                                          {
+                                                                            "name": "key",
+                                                                            "value": {
+                                                                              "type": "Expression",
+                                                                              "code": "col"
+                                                                            },
+                                                                            "is_event_handler": false
+                                                                          },
+                                                                          {
+                                                                            "name": "className",
+                                                                            "value": {
+                                                                              "type": "String",
+                                                                              "value": "px-3 py-1.5 text-white font-mono border-b border-[#3c3c3c]"
+                                                                            },
+                                                                            "is_event_handler": false
+                                                                          }
+                                                                        ],
+                                                                        "children": [
+                                                                          {
+                                                                            "node_type": {
+                                                                              "type": "Conditional",
+                                                                              "condition": "row[col] === null",
+                                                                              "consequent": {
+                                                                                "node_type": {
+                                                                                  "type": "Element",
+                                                                                  "tag": "span",
+                                                                                  "is_component": false,
+                                                                                  "attributes": [
+                                                                                    {
+                                                                                      "name": "className",
+                                                                                      "value": {
+                                                                                        "type": "String",
+                                                                                        "value": "text-[#606060] italic"
+                                                                                      },
+                                                                                      "is_event_handler": false
+                                                                                    }
+                                                                                  ],
+                                                                                  "children": [
+                                                                                    {
+                                                                                      "node_type": {
+                                                                                        "type": "Text",
+                                                                                        "value": "NULL"
+                                                                                      },
+                                                                                      "location": {
+                                                                                        "start_line": 549,
+                                                                                        "start_col": 70,
+                                                                                        "end_line": 549,
+                                                                                        "end_col": 74
+                                                                                      }
+                                                                                    }
+                                                                                  ]
+                                                                                },
+                                                                                "location": {
+                                                                                  "start_line": 549,
+                                                                                  "start_col": 30,
+                                                                                  "end_line": 549,
+                                                                                  "end_col": 81
+                                                                                }
+                                                                              },
+                                                                              "alternate": null
+                                                                            },
+                                                                            "location": {
+                                                                              "start_line": 548,
+                                                                              "start_col": 28,
+                                                                              "end_line": 552,
+                                                                              "end_col": 30
+                                                                            }
+                                                                          }
+                                                                        ]
+                                                                      },
+                                                                      "location": {
+                                                                        "start_line": 544,
+                                                                        "start_col": 26,
+                                                                        "end_line": 553,
+                                                                        "end_col": 31
+                                                                      }
+                                                                    }
+                                                                  },
+                                                                  "location": {
+                                                                    "start_line": 543,
+                                                                    "start_col": 24,
+                                                                    "end_line": 554,
+                                                                    "end_col": 27
+                                                                  }
+                                                                }
+                                                              ]
+                                                            },
+                                                            "location": {
+                                                              "start_line": 542,
+                                                              "start_col": 22,
+                                                              "end_line": 555,
+                                                              "end_col": 27
+                                                            }
+                                                          }
+                                                        },
+                                                        "location": {
+                                                          "start_line": 541,
+                                                          "start_col": 20,
+                                                          "end_line": 556,
+                                                          "end_col": 23
+                                                        }
+                                                      }
+                                                    ]
+                                                  },
+                                                  "location": {
+                                                    "start_line": 540,
+                                                    "start_col": 18,
+                                                    "end_line": 557,
+                                                    "end_col": 26
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 527,
+                                              "start_col": 16,
+                                              "end_line": 558,
+                                              "end_col": 24
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 526,
+                                        "start_col": 14,
+                                        "end_line": 559,
+                                        "end_col": 20
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 521,
+                                  "start_col": 12,
+                                  "end_line": 560,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 520,
+                              "start_col": 10,
+                              "end_line": 561,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "!loading && !error && !queryResult",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex flex-col items-center justify-center h-full text-center"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Database",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-8 h-8 text-[#858585] mb-3"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 565,
+                                        "start_col": 14,
+                                        "end_line": 565,
+                                        "end_col": 66
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-sm text-[#cccccc] font-medium"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "No results yet"
+                                            },
+                                            "location": {
+                                              "start_line": 566,
+                                              "start_col": 66,
+                                              "end_line": 566,
+                                              "end_col": 80
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 566,
+                                        "start_col": 14,
+                                        "end_line": 566,
+                                        "end_col": 86
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-xs text-[#858585]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "activeConnection ? 'Write a query and click Execute' : 'Connect to a database first'"
+                                            },
+                                            "location": {
+                                              "start_line": 568,
+                                              "start_col": 16,
+                                              "end_line": 568,
+                                              "end_col": 102
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 567,
+                                        "start_col": 14,
+                                        "end_line": 569,
+                                        "end_col": 20
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 564,
+                                  "start_col": 12,
+                                  "end_line": 570,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 563,
+                              "start_col": 10,
+                              "end_line": 571,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 502,
+                        "start_col": 8,
+                        "end_line": 572,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 466,
+                  "start_col": 6,
+                  "end_line": 573,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 287,
+            "start_col": 4,
+            "end_line": 574,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "AlertTriangle",
+        "Button",
+        "Database",
+        "Play",
+        "Plus",
+        "Spinner",
+        "X"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "connections",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "activeConnection",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "tables",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "expandedTables",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "query",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "queryResult",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showAddConnection",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "newConnection",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "activeTab",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/database_explorer_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:connections",
+        "to_field": "connections",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'connections' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:activeConnection",
+        "to_field": "activeConnection",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'activeConnection' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:tables",
+        "to_field": "tables",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'tables' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:expandedTables",
+        "to_field": "expandedTables",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'expandedTables' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:query",
+        "to_field": "query",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"SELECT * FROM \"",
+        "reasoning": "useState hook 'query' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:queryResult",
+        "to_field": "queryResult",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'queryResult' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showAddConnection",
+        "to_field": "showAddConnection",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showAddConnection' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:newConnection",
+        "to_field": "newConnection",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "∅",
+        "reasoning": "useState hook 'newConnection' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:activeTab",
+        "to_field": "activeTab",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"schema\"",
+        "reasoning": "useState hook 'activeTab' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateConnections",
+        "from_handler": "setConnections",
+        "payload": null,
+        "state_changes": [
+          "self.connections = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateActiveConnection",
+        "from_handler": "setActiveConnection",
+        "payload": null,
+        "state_changes": [
+          "self.activeConnection = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateTables",
+        "from_handler": "setTables",
+        "payload": null,
+        "state_changes": [
+          "self.tables = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateExpandedTables",
+        "from_handler": "setExpandedTables",
+        "payload": null,
+        "state_changes": [
+          "self.expandedTables = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateQuery",
+        "from_handler": "setQuery",
+        "payload": null,
+        "state_changes": [
+          "self.query = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateQueryResult",
+        "from_handler": "setQueryResult",
+        "payload": null,
+        "state_changes": [
+          "self.queryResult = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowAddConnection",
+        "from_handler": "setShowAddConnection",
+        "payload": null,
+        "state_changes": [
+          "self.showAddConnection = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateNewConnection",
+        "from_handler": "setNewConnection",
+        "payload": null,
+        "state_changes": [
+          "self.newConnection = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateActiveTab",
+        "from_handler": "setActiveTab",
+        "payload": null,
+        "state_changes": [
+          "self.activeTab = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[connections]",
+        "strategy": "inline",
+        "reasoning": "Deps [connections] → inline in handlers that change these",
+        "inline_in": "connections",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_11",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [connections] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "AlertTriangle",
+      "Button",
+      "Database",
+      "Play",
+      "Plus",
+      "Spinner",
+      "X"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "11 state variables"
+  ],
+  "status": "pending"
+}

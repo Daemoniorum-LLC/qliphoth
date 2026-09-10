@@ -1,0 +1,259 @@
+invoke qliphoth·prelude·*;
+ᛈ SearchPanelMsg {
+    UpdateSearchQuery,
+    UpdateReplaceQuery,
+    UpdateShowReplace,
+    UpdateCaseSensitive,
+    UpdateWholeWord,
+    UpdateUseRegex,
+    UpdateIncludePattern,
+    UpdateExcludePattern,
+    UpdateShowFilters,
+    UpdateResults,
+    UpdateSearching,
+    UpdateTotalMatches,
+    Search,
+    Replace,
+    ReplaceAll,
+    MatchClick,
+}
+actor SearchPanel {
+    state searchQuery: String! = "",
+    state replaceQuery: String! = "",
+    state showReplace: bool! = False,
+    state caseSensitive: bool! = False,
+    state wholeWord: bool! = False,
+    state useRegex: bool! = False,
+    state includePattern: String! = "",
+    state excludePattern: String! = None,
+    state showFilters: bool! = False,
+    state results: Vec<Any>! = [],
+    state searching: bool! = False,
+    state totalMatches: i64! = 0,
+
+    rite new(on_file_click: Any) -> This! {
+        self.on_file_click = on_file_click;
+        This
+    }
+
+    on UpdateSearchQuery {
+        self.searchQuery = msg.0;
+    }
+
+    on UpdateReplaceQuery {
+        self.replaceQuery = msg.0;
+    }
+
+    on UpdateShowReplace {
+        self.showReplace = msg.0;
+    }
+
+    on UpdateCaseSensitive {
+        self.caseSensitive = msg.0;
+    }
+
+    on UpdateWholeWord {
+        self.wholeWord = msg.0;
+    }
+
+    on UpdateUseRegex {
+        self.useRegex = msg.0;
+    }
+
+    on UpdateIncludePattern {
+        self.includePattern = msg.0;
+    }
+
+    on UpdateExcludePattern {
+        self.excludePattern = msg.0;
+    }
+
+    on UpdateShowFilters {
+        self.showFilters = msg.0;
+    }
+
+    on UpdateResults {
+        self.results = msg.0;
+    }
+
+    on UpdateSearching {
+        self.searching = msg.0;
+    }
+
+    on UpdateTotalMatches {
+        self.totalMatches = msg.0;
+    }
+
+    on Search {
+        self.results = [];
+        self.searching = True;
+        // Effect: Deps [searchQuery, caseSensitive, wholeWord, useRegex, includePattern, excludePattern] → inline in handlers that change these
+    }
+
+    on Replace {
+        // TODO: implement
+    }
+
+    on ReplaceAll {
+        // TODO: implement
+    }
+
+    on MatchClick {
+        // TODO: implement
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c] flex flex-col gap-2")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·child(
+                    VNode·div()
+                        ·class("relative flex-1")
+                        ·child(
+                        Search·view()
+                            ·class("absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#858585]")
+                        )
+                        ·child(
+                        Input·view()
+                            ·attr("placeholder", "Search")
+                            ·attr("value", self.search_query)
+                            ·on_change(Change)
+                            ·class("h-7 text-xs pl-7 pr-7 bg-[#3c3c3c] border-[#3c3c3c]")
+                        )
+                        ·when(self.search_query, XCircle·view()
+                            ·class("absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#858585] cursor-pointer hover:text-[#cccccc]")
+                            ·on_click(Click))
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex gap-0.5 ml-1")
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "secondary")
+                            ·on_click(Click)
+                            ·attr("title", "Match Case")
+                            ·class("h-7 w-7 p-0 text-xs")
+                            ·text_child("Aa")
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "secondary")
+                            ·on_click(Click)
+                            ·attr("title", "Match Whole Word")
+                            ·class("h-7 w-7 p-0 text-xs")
+                            ·text_child("ab")
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "secondary")
+                            ·on_click(Click)
+                            ·attr("title", "Use Regular Expression")
+                            ·class("h-7 w-7 p-0 text-xs")
+                            ·text_child(".*")
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-2 items-center text-[11px]")
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "secondary")
+                        ·on_click(Click)
+                        ·class("h-6 text-[11px]")
+                        ·text_child("Replace")
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "secondary")
+                        ·on_click(Click)
+                        ·class("h-6 text-[11px]")
+                        ·text_child("Filters")
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·when(¬search_query.trim(), |n| n·attr("disabled", "True"))
+                        ·class("h-6 text-[11px]")
+                        ·text_child("Search")
+                    )
+                )
+                ·when(self.show_replace, VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·child(
+                    Input·view()
+                        ·attr("placeholder", "Replace")
+                        ·attr("value", self.replace_query)
+                        ·on_change(Change)
+                        ·class("h-7 text-xs flex-1 bg-[#3c3c3c] border-[#3c3c3c]")
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·when(self.results.len() == 0, |n| n·attr("disabled", "True"))
+                        ·on_click(Click)
+                        ·class("h-7 text-[11px]")
+                        ·text_child("Replace All")
+                    ))
+            )
+            ·when(self.show_filters, VNode·div()
+                ·class("border-t border-[#3c3c3c] p-2 flex flex-col gap-2")
+                ·child(
+                Input·view()
+                    ·attr("placeholder", "Files to include (e.g., **/*.ts, **/*.tsx)")
+                    ·attr("value", self.include_pattern)
+                    ·on_change(Change)
+                    ·class("h-7 text-xs bg-[#3c3c3c] border-[#3c3c3c]")
+                )
+                ·child(
+                Input·view()
+                    ·attr("placeholder", "Files to exclude")
+                    ·attr("value", self.exclude_pattern)
+                    ·on_change(Change)
+                    ·class("h-7 text-xs bg-[#3c3c3c] border-[#3c3c3c]")
+                ))
+            ·when(self.results.len() > 0, VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c] text-xs text-[#858585] flex justify-between items-center")
+                ·child(
+                VNode·span()
+                    ·text_child(self.total_matches·to_string())
+                    ·text_child("result"·to_string())
+                    ·text_child("in")
+                    ·text_child(self.results.len()·to_string())
+                    ·text_child("file"·to_string())
+                ))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto px-3 py-2")
+                ·when(self.searching, VNode·div()
+                    ·class("flex flex-col items-center gap-3 py-10 px-5")
+                    ·child(
+                    Spinner·view()
+                        ·class("h-6 w-6")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-xs text-[#858585]")
+                        ·text_child("Searching...")
+                    ))
+                ·when(¬searching ∧ search_query ∧ results.len() == 0, VNode·div()
+                    ·class("py-10 px-5 text-center text-[#858585] text-[13px]")
+                    ·text_child("No results found for \"")
+                    ·text_child(self.search_query·to_string())
+                    ·text_child("\""))
+                ·text_child(None·to_string())
+            )
+    }
+}

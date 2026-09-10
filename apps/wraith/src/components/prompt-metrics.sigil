@@ -1,0 +1,102 @@
+invoke qliphoth·prelude·*;
+ᛈ PromptMetricsMsg {
+    UpdateMetrics,
+}
+actor PromptMetrics {
+    state metrics: Option<Any>~ = ∅,
+
+    rite new(content: Any) -> This! {
+        self.content = content;
+        This
+    }
+
+    on UpdateMetrics {
+        self.metrics = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col gap-3")
+            ·child(
+            Label·view()
+                ·class("font-semibold")
+                ·text_child("Prompt Metrics")
+            )
+            ·child(
+            Card·view()
+                ·class("p-3")
+                ·child(
+                VNode·div()
+                    ·class("grid grid-cols-2 gap-3")
+                    ·child(
+                    VNode·div()
+                        ·class("flex flex-col gap-1")
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-muted-foreground")
+                            ·text_child("Length")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-base font-semibold")
+                            ·text_child(self.metrics.len()·to_string())
+                            ·text_child(" "·to_string())
+                            ·text_child("chars")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex flex-col gap-1")
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-muted-foreground")
+                            ·text_child("Est. Tokens")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-base font-semibold")
+                            ·text_child(self.metrics.token_count·to_string())
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex flex-col gap-1")
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-muted-foreground")
+                            ·text_child("Readability")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-base font-semibold")
+                            ·text_child(self.metrics.readability_score.to_fixed(0)·to_string())
+                            ·text_child("%")
+                        )
+                    )
+                )
+            )
+            ·when(self.metrics.warnings.len() > 0, VNode·fragment()
+                ·child(
+                Label·view()
+                    ·class("font-semibold")
+                    ·text_child("Optimization Suggestions")
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex flex-col gap-2")
+                    // Map: ∀ warning ∈ metrics.warnings
+                    ·children(self.metrics.warnings.iter().map(|warning| VNode·div()
+                            ·class("flex items-start gap-2")
+                            ·attr("key", self.index)
+                            ·child(
+                            AlertTriangle·view()
+                                ·class("h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-sm text-muted-foreground")
+                                ·text_child(warning·to_string())
+                            )).collect())
+                ))
+    }
+}

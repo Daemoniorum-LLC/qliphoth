@@ -1,0 +1,296 @@
+{
+  "id": "ui/components/organisms/TabBar.tsx:TabBar",
+  "name": "TabBar",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/organisms/TabBar.tsx",
+    "code": "import React from 'react'\nimport { TabItem } from '../molecules'\n\nexport interface Tab {\n  id: string\n  title: string\n  icon?: React.ReactNode\n  filePath?: string\n}\n\nexport interface TabBarProps {\n  tabs: Tab[]\n  activeTabId: string | null\n  pinnedTabs: string[]\n  onTabClick: (tabId: string) => void\n  onTabClose: (tabId: string) => void\n  onTabPin: (tabId: string) => void\n  onTabContextMenu?: (tabId: string, e: React.MouseEvent) => void\n  className?: string\n}\n\nexport const TabBar: React.FC<TabBarProps> = ({\n  tabs,\n  activeTabId,\n  pinnedTabs,\n  onTabClick,\n  onTabClose,\n  onTabPin,\n  onTabContextMenu,\n  className = '',\n}) => {\n  if (tabs.length === 0) return null\n\n  // Sort tabs: pinned first\n  const sortedTabs = [...tabs].sort((a, b) => {\n    const aPinned = pinnedTabs.includes(a.id)\n    const bPinned = pinnedTabs.includes(b.id)\n    if (aPinned && !bPinned) return -1\n    if (!aPinned && bPinned) return 1\n    return 0\n  })\n\n  return (\n    <div\n      role=\"tablist\"\n      aria-label=\"Open files\"\n      className={`flex items-center bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] overflow-x-auto ${className}`}\n    >\n      {sortedTabs.map((tab) => {\n        const isPinned = pinnedTabs.includes(tab.id)\n        return (\n          <TabItem\n            key={tab.id}\n            id={tab.id}\n            title={tab.title}\n            icon={tab.icon}\n            active={activeTabId === tab.id}\n            pinned={isPinned}\n            onClick={() => onTabClick(tab.id)}\n            onClose={() => onTabClose(tab.id)}\n            onPin={() => onTabPin(tab.id)}\n            onContextMenu={(e) => onTabContextMenu?.(tab.id, e)}\n          />\n        )\n      })}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "TabBar",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 22,
+        "start_col": 45,
+        "end_line": 68,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "tabs",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "activeTabId",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "pinnedTabs",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onTabClick",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onTabClose",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onTabPin",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onTabContextMenu",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "className",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "''",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "role",
+                "value": {
+                  "type": "String",
+                  "value": "tablist"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "aria-label",
+                "value": {
+                  "type": "String",
+                  "value": "Open files"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "className",
+                "value": {
+                  "type": "Expression",
+                  "code": "`flex items-center bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] overflow-x-auto ${className}`"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "sortedTabs.map((tab) => {\n        const isPinned = pinnedTabs.includes(tab.id)\n        return (\n          <TabItem\n            key={tab.id}\n            id={tab.id}\n            title={tab.title}\n            icon={tab.icon}\n            active={activeTabId === tab.id}\n            pinned={isPinned}\n            onClick={() => onTabClick(tab.id)}\n            onClose={() => onTabClose(tab.id)}\n            onPin={() => onTabPin(tab.id)}\n            onContextMenu={(e) => onTabContextMenu?.(tab.id, e)}\n          />\n        )\n      })"
+                },
+                "location": {
+                  "start_line": 49,
+                  "start_col": 6,
+                  "end_line": 65,
+                  "end_col": 9
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 44,
+            "start_col": 4,
+            "end_line": 66,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/tab_bar.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "tabs",
+          "field_type": "Any",
+          "from_prop": "tabs"
+        },
+        {
+          "name": "active_tab_id",
+          "field_type": "Any",
+          "from_prop": "activeTabId"
+        },
+        {
+          "name": "pinned_tabs",
+          "field_type": "Any",
+          "from_prop": "pinnedTabs"
+        },
+        {
+          "name": "on_tab_click",
+          "field_type": "Any",
+          "from_prop": "onTabClick"
+        },
+        {
+          "name": "on_tab_close",
+          "field_type": "Any",
+          "from_prop": "onTabClose"
+        },
+        {
+          "name": "on_tab_pin",
+          "field_type": "Any",
+          "from_prop": "onTabPin"
+        },
+        {
+          "name": "on_tab_context_menu",
+          "field_type": "Any",
+          "from_prop": "onTabContextMenu"
+        },
+        {
+          "name": "class_name",
+          "field_type": "Any",
+          "from_prop": "className"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onTabClick",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onTabClick' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onTabClose",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onTabClose' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onTabPin",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onTabPin' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onTabContextMenu",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onTabContextMenu' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

@@ -1,0 +1,869 @@
+{
+  "id": "ui/components/GoToLineDialog.tsx:GoToLineDialog",
+  "name": "GoToLineDialog",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/GoToLineDialog.tsx",
+    "code": "import React, { useState, useEffect, useRef } from 'react'\nimport { Input, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, Button } from '@persona-framework/ui'\n\ninterface GoToLineDialogProps {\n  open: boolean\n  onClose: () => void\n  onGoToLine: (lineNumber: number) => void\n  maxLine?: number\n}\n\nexport function GoToLineDialog({ open, onClose, onGoToLine, maxLine }: GoToLineDialogProps) {\n  const [lineNumber, setLineNumber] = useState('')\n  const [error, setError] = useState('')\n  const inputRef = useRef<HTMLInputElement>(null)\n\n  useEffect(() => {\n    if (open && inputRef.current) {\n      setTimeout(() => {\n        inputRef.current?.focus()\n        inputRef.current?.select()\n      }, 100)\n      setLineNumber('')\n      setError('')\n    }\n  }, [open])\n\n  const handleSubmit = () => {\n    const num = parseInt(lineNumber)\n\n    if (isNaN(num) || num < 1) {\n      setError('Please enter a valid line number (1 or greater)')\n      return\n    }\n\n    if (maxLine && num > maxLine) {\n      setError(`Line number must be between 1 and ${maxLine}`)\n      return\n    }\n\n    onGoToLine(num)\n    onClose()\n  }\n\n  const handleKeyDown = (e: React.KeyboardEvent) => {\n    if (e.key === 'Enter') {\n      e.preventDefault()\n      handleSubmit()\n    } else if (e.key === 'Escape') {\n      e.preventDefault()\n      onClose()\n    }\n  }\n\n  return (\n    <Dialog open={open} onOpenChange={onClose}>\n      <DialogContent className=\"max-w-[400px] w-[90vw] p-5 bg-[#252526] border border-[#3c3c3c]\">\n        <DialogHeader>\n          <DialogTitle className=\"text-sm font-semibold text-[#cccccc]\">Go to Line</DialogTitle>\n        </DialogHeader>\n\n        <div className=\"space-y-4\">\n          <Input\n            ref={inputRef}\n            value={lineNumber}\n            onChange={(e) => {\n              setLineNumber(e.target.value)\n              setError('')\n            }}\n            onKeyDown={handleKeyDown}\n            placeholder={maxLine ? `Enter line number (1-${maxLine})` : 'Enter line number'}\n            type=\"number\"\n            className=\"w-full bg-[#3c3c3c] border-none text-[#cccccc] placeholder:text-[#858585]\"\n          />\n\n          {error && <div className=\"text-[#f48771] text-xs -mt-3\">{error}</div>}\n        </div>\n\n        <DialogFooter className=\"flex justify-end gap-2\">\n          <Button variant=\"outline\" onClick={onClose}>\n            Cancel\n          </Button>\n          <Button onClick={handleSubmit}>\n            Go\n          </Button>\n        </DialogFooter>\n      </DialogContent>\n    </Dialog>\n  )\n}\n",
+    "extraction": {
+      "name": "GoToLineDialog",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 11,
+        "start_col": 7,
+        "end_line": 89,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "open",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onClose",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onGoToLine",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "maxLine",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 12,
+            "start_col": 38,
+            "end_line": 12,
+            "end_col": 50
+          },
+          "state_name": "lineNumber",
+          "setter_name": "setLineNumber",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 13,
+            "start_col": 28,
+            "end_line": 13,
+            "end_col": 40
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 14,
+            "start_col": 19,
+            "end_line": 14,
+            "end_col": 49
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "inputRef",
+          "ref_type": "HTMLInputElement",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 16,
+            "start_col": 2,
+            "end_line": 25,
+            "end_col": 12
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "open"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "Dialog",
+            "is_component": true,
+            "attributes": [
+              {
+                "name": "open",
+                "value": {
+                  "type": "Expression",
+                  "code": "open"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "onOpenChange",
+                "value": {
+                  "type": "Expression",
+                  "code": "onClose"
+                },
+                "is_event_handler": true
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "DialogContent",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "max-w-[400px] w-[90vw] p-5 bg-[#252526] border border-[#3c3c3c]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "DialogHeader",
+                        "is_component": true,
+                        "attributes": [],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "DialogTitle",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-sm font-semibold text-[#cccccc]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Go to Line"
+                                  },
+                                  "location": {
+                                    "start_line": 58,
+                                    "start_col": 72,
+                                    "end_line": 58,
+                                    "end_col": 82
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 58,
+                              "start_col": 10,
+                              "end_line": 58,
+                              "end_col": 96
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 57,
+                        "start_col": 8,
+                        "end_line": 59,
+                        "end_col": 23
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "space-y-4"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Input",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "ref",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "inputRef"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "lineNumber"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => {\n              setLineNumber(e.target.value)\n              setError('')\n            }"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "onKeyDown",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "handleKeyDown"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "placeholder",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "maxLine ? `Enter line number (1-${maxLine})` : 'Enter line number'"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "type",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "number"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "w-full bg-[#3c3c3c] border-none text-[#cccccc] placeholder:text-[#858585]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 62,
+                              "start_col": 10,
+                              "end_line": 73,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "error",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-[#f48771] text-xs -mt-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "error"
+                                      },
+                                      "location": {
+                                        "start_line": 75,
+                                        "start_col": 66,
+                                        "end_line": 75,
+                                        "end_col": 73
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 75,
+                                  "start_col": 20,
+                                  "end_line": 75,
+                                  "end_col": 79
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 75,
+                              "start_col": 10,
+                              "end_line": 75,
+                              "end_col": 80
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 61,
+                        "start_col": 8,
+                        "end_line": 76,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "DialogFooter",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex justify-end gap-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "outline"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "onClose"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Cancel"
+                                  },
+                                  "location": {
+                                    "start_line": 79,
+                                    "start_col": 54,
+                                    "end_line": 81,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 79,
+                              "start_col": 10,
+                              "end_line": 81,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "handleSubmit"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Go"
+                                  },
+                                  "location": {
+                                    "start_line": 82,
+                                    "start_col": 41,
+                                    "end_line": 84,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 82,
+                              "start_col": 10,
+                              "end_line": 84,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 78,
+                        "start_col": 8,
+                        "end_line": 85,
+                        "end_col": 23
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 56,
+                  "start_col": 6,
+                  "end_line": 86,
+                  "end_col": 22
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 55,
+            "start_col": 4,
+            "end_line": 87,
+            "end_col": 13
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleSubmit",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    const num = parseInt(lineNumber)\n\n    if (isNaN(num) || num < 1) {\n      setError('Please enter a valid line number (1 or greater)')\n      return\n    }\n\n    if (maxLine && num > maxLine) {\n      setError(`Line number must be between 1 and ${maxLine}`)\n      return\n    }\n\n    onGoToLine(num)\n    onClose()\n  }",
+          "state_mutations": [
+            "setError('Please enter a valid line number (1 or greater)')",
+            "setError(`Line number must be between 1 and ${maxLine}`)"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "parseInt",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "lineNumber"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "isNaN",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "num"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setError",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "error"
+              },
+              "arguments": [
+                "'Please enter a valid line number (1 or greater)'"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setError",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "error"
+              },
+              "arguments": [
+                "`Line number must be between 1 and ${maxLine}`"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "onGoToLine",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "num"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "onClose",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setError"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setError"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": true,
+          "has_early_return": true
+        },
+        {
+          "name": "handleKeyDown",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(e: React.KeyboardEvent) => {\n    if (e.key === 'Enter') {\n      e.preventDefault()\n      handleSubmit()\n    } else if (e.key === 'Escape') {\n      e.preventDefault()\n      onClose()\n    }\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "e.preventDefault",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            },
+            {
+              "name": "handleSubmit",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            }
+          ],
+          "side_effects": [],
+          "parameters": [
+            {
+              "name": "e",
+              "type_annotation": ": React.KeyboardEvent"
+            }
+          ],
+          "has_conditionals": true,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Button",
+        "Dialog",
+        "DialogContent",
+        "DialogFooter",
+        "DialogHeader",
+        "DialogTitle",
+        "Input"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "lineNumber",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/go_to_line_dialog.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:lineNumber",
+        "to_field": "lineNumber",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'lineNumber' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:inputRef",
+        "to_field": "inputRef",
+        "field_type": "Option<Element>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'inputRef' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateLineNumber",
+        "from_handler": "setLineNumber",
+        "payload": null,
+        "state_changes": [
+          "self.lineNumber = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Submit",
+        "from_handler": "handleSubmit",
+        "payload": null,
+        "state_changes": [
+          "self.error = 'Please enter a valid line number (1 or greater)'",
+          "self.error = `Line number must be between 1 and ${maxLine}`"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "KeyDown",
+        "from_handler": "handleKeyDown",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[open]",
+        "strategy": "inline",
+        "reasoning": "Deps [open] → inline in handlers that change these",
+        "inline_in": "open",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "open",
+          "field_type": "Any",
+          "from_prop": "open"
+        },
+        {
+          "name": "on_close",
+          "field_type": "Any",
+          "from_prop": "onClose"
+        },
+        {
+          "name": "on_go_to_line",
+          "field_type": "Any",
+          "from_prop": "onGoToLine"
+        },
+        {
+          "name": "max_line",
+          "field_type": "Any",
+          "from_prop": "maxLine"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_3",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [open] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onClose",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onClose' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onGoToLine",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onGoToLine' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Dialog",
+      "DialogContent",
+      "DialogFooter",
+      "DialogHeader",
+      "DialogTitle",
+      "Input"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

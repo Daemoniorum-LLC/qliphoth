@@ -1,0 +1,42 @@
+invoke sigil_web·prelude·*;
+rite service_row(service: Any) -> VNode! {
+    VNode·div()
+        ·class("flex items-center justify-between py-2 px-3 hover:bg-[var(--bg-hover)] rounded")
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-2")
+            ·child(
+            VNode·div()
+                ·class("w-2 h-2 rounded-full ")
+            )
+            ·child(
+            VNode·span()
+                ·class("text-sm text-[var(--text-primary)]")
+                ·text_child(service.name·to_string())
+            )
+            ·child(
+            VNode·span()
+                ·class("text-xs text-[var(--text-muted)]")
+                ·text_child(service.image·to_string())
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-3")
+            ·child(
+            VNode·span()
+                ·class("text-xs text-[var(--text-secondary)]")
+                ·text_child(service.replicas.running·to_string())
+                ·text_child("/")
+                ·text_child(service.replicas.desired·to_string())
+            )
+            ·when(service.ports.len() > 0, VNode·span()
+                ·class("text-xs font-mono text-[var(--text-muted)]")
+                ·text_child(service.ports.join(", ")·to_string()))
+            ·child(
+            StatusBadge·view()
+                ·attr("status", service.status)
+                ·attr("size", "sm")
+            )
+        )
+}

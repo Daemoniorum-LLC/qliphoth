@@ -1,0 +1,21 @@
+invoke qliphoth·prelude·*;
+rite providers_section() -> VNode! {
+    VNode·div()
+        ·class("h-full flex flex-col")
+        ·child(
+        SectionHeader·view()
+            ·attr("title", "Cloud Providers")
+            ·attr("subtitle", mock_providers.len().to_string() + " provider" + ⎇ mock_providers.len() != 1 { "s" } ⎉ { "" }.to_string() + " connected")
+            ·attr("icon", None)
+            ·on_refresh(Refresh)
+            ·attr("actions", None)
+        )
+        ·child(
+        VNode·div()
+            ·class("flex-1 overflow-auto space-y-3 pr-1")
+            // Map: ∀ provider ∈ mockProviders
+            ·children(mock_providers.iter().map(|provider| ProviderCard·view()
+                    ·attr("key", provider.id)
+                    ·attr("provider", provider)).collect())
+        )
+}

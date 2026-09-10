@@ -1,0 +1,114 @@
+invoke sigil_web·prelude·*;
+ᛈ ExtensionManagerPanelMsg {
+    UpdateSearchQuery,
+    UpdateActiveTab,
+    UpdateExtensions,
+    UpdateLoading,
+}
+actor ExtensionManagerPanel {
+    state searchQuery: String! = "",
+    state activeTab: String! = "installed",
+    state extensions: Vec<Any>! = [],
+    state loading: bool! = false,
+
+    on UpdateSearchQuery {
+        self.searchQuery = msg.0;
+    }
+
+    on UpdateActiveTab {
+        self.activeTab = msg.0;
+    }
+
+    on UpdateExtensions {
+        self.extensions = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center gap-2 px-3 py-3 border-b border-[#3c3c3c]")
+                ·child(
+                Plug·view()
+                    ·class("w-[18px] h-[18px]")
+                )
+                ·child(
+                VNode·span()
+                    ·class("text-sm font-semibold text-white")
+                    ·text_child("Extension Manager")
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("px-3 py-3 border-b border-[#3c3c3c]")
+                ·child(
+                VNode·div()
+                    ·class("relative")
+                    ·child(
+                    Search·view()
+                        ·class("absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858585]")
+                    )
+                    ·child(
+                    Input·view()
+                        ·attr("placeholder", "Search extensions...")
+                        ·attr("value", self.search_query)
+                        ·on_change(Change)
+                        ·class("w-full pl-8")
+                    )
+                )
+            )
+            ·child(
+            Tabs·view()
+                ·attr("value", self.active_tab)
+                ·on_valuechange(ValueChange)
+                ·class("flex flex-col flex-1")
+                ·child(
+                VNode·div()
+                    ·class("px-3 py-2 border-b border-[#3c3c3c]")
+                    ·child(
+                    TabsList·view()
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "installed")
+                            ·text_child("Installed")
+                        )
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "marketplace")
+                            ·text_child("Marketplace")
+                        )
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "featured")
+                            ·text_child("Featured")
+                        )
+                    )
+                )
+                ·child(
+                TabsContent·view()
+                    ·attr("value", self.active_tab)
+                    ·class("flex-1 overflow-auto px-3 py-3")
+                    ·when(self.loading, VNode·div()
+                        ·class("flex flex-col items-center gap-3 px-5 py-10")
+                        ·child(
+                        Spinner·view()
+                            ·attr("size", "md")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·text_child("Loading extensions...")
+                        ))
+                    ·when(¬loading ∧ filtered_extensions.len() = 0, VNode·div()
+                        ·class("px-5 py-10 text-center text-[#858585] text-[13px]")
+                        ·text_child("No extensions found for """
+                ·to_string()))
+                    ·text_child(None·to_string())
+                )
+            )
+    }
+}

@@ -1,0 +1,52 @@
+invoke sigil_web·prelude·*;
+rite status_bar(file_path: Any, tab_size: Any, insert_spaces: Any, encoding: Any, on_git_click: Any, on_problems_click: Any, left_items: Any, right_items: Any, class_name: Any) -> VNode! {
+    VNode·div()
+        ·attr("role", "status")
+        ·attr("aria-label", "Status bar")
+        ·class("h-[var(--statusbar-height)] flex items-center justify-between px-3 bg-[var(--statusbar-bg)] select-none ")
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-3")
+            ·when(on_git_click, StatusBarItem·view()
+                ·attr("icon", None)
+                ·on_click(Click)
+                ·attr("tooltip", "Source Control")
+                ·child(
+                VNode·span()
+                    ·class("sr-only")
+                    ·text_child("Source Control")
+                ))
+            ·when(on_problems_click, StatusBarItem·view()
+                ·attr("icon", None)
+                ·on_click(Click)
+                ·attr("tooltip", "Problems")
+                ·child(
+                VNode·span()
+                    ·class("sr-only")
+                    ·text_child("Problems")
+                ))
+            ·text_child(left_items·to_string())
+            ·when(file_path, StatusBarItem·view()
+                ·attr("tooltip", file_path)
+                ·child(
+                VNode·span()
+                    ·class("truncate max-w-[300px]")
+                    ·text_child(file_path·to_string())
+                ))
+        )
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-3")
+            ·text_child(right_items·to_string())
+            ·child(
+            StatusBarItem·view()
+                ·text_child("Spaces" ·to_string())
+                ·text_child(":")
+                ·text_child(tab_size·to_string())
+            )
+            ·child(
+            StatusBarItem·view()
+                ·text_child(encoding·to_string())
+            )
+        )
+}

@@ -1,0 +1,67 @@
+invoke qliphoth·prelude·*;
+rite prompt_version_history(versions: Any, on_restore: Any) -> VNode! {
+    VNode·div()
+        ·class("flex flex-col gap-3")
+        ·child(
+        VNode·div()
+            ·class("flex items-center justify-between gap-2")
+            ·child(
+            Label·view()
+                ·class("font-semibold")
+                ·text_child("Version History")
+            )
+            ·child(
+            History·view()
+                ·class("h-5 w-5")
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex flex-col gap-2 max-h-[400px] overflow-auto")
+            ·when(versions.len() == 0, VNode·div()
+                ·class("text-muted-foreground p-4 text-center")
+                ·text_child("No version history yet. Versions are saved automatically when you make changes."))
+            // Map: ∀ version ∈ versions
+            ·children(versions.iter().map(|version| Card·view()
+                    ·class("p-3 cursor-pointer transition-colors hover:bg-accent")
+                    ·attr("key", version.id)
+                    ·on_click(Click)
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center justify-between mb-1")
+                        ·child(
+                        Label·view()
+                            ·class("font-semibold")
+                            ·text_child("Version")
+                            ·text_child(" "·to_string())
+                            ·text_child(versions.len() - index·to_string())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-muted-foreground")
+                            ·text_child(new date(version.timestamp).to_locale_string()·to_string())
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-sm text-muted-foreground")
+                        ·text_child(version.content.substring(0, 100)·to_string())
+                        ·text_child("..."·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-xs text-muted-foreground mt-1")
+                        ·text_child("Temp:")
+                        ·text_child(" "·to_string())
+                        ·text_child(version.config.temperature·to_string())
+                        ·text_child(" "·to_string())
+                        ·text_child("| Max tokens:")
+                        ·text_child(" "·to_string())
+                        ·text_child(version.config.max_tokens·to_string())
+                        ·text_child(" "·to_string())
+                        ·text_child("| Variables:")
+                        ·text_child(" "·to_string())
+                        ·text_child(version.variables.len()·to_string())
+                    )).collect())
+        )
+}

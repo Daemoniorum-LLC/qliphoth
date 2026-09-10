@@ -1,0 +1,137 @@
+invoke qliphoth·prelude·*;
+ᛈ GitDiffViewerMsg {
+    UpdateOriginalContent,
+    UpdateModifiedContent,
+    UpdateLoading,
+    UpdateError,
+    UpdateDiffStats,
+    Refresh,
+}
+☉ actor GitDiffViewer {
+    state originalContent: String! = "",
+    state modifiedContent: String! = "",
+    state loading: bool! = false,
+    state error: Option<Any>~ = None,
+    state diffStats: Option<Any>~ = ∅,
+
+    rite new(file_path: Any, on_close: Any) -> This! {
+        self.file_path = file_path;
+        self.on_close = on_close;
+        This
+    }
+
+    on UpdateOriginalContent {
+        self.originalContent = msg.0;
+    }
+
+    on UpdateModifiedContent {
+        self.modifiedContent = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateDiffStats {
+        self.diffStats = msg.0;
+    }
+
+    on Refresh {
+        // TODO: implement
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("w-full h-full flex flex-col bg-[#1e1e1e]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3")
+                    ·child(
+                    VNode·span()
+                        ·text_child(self.file_path·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("px-2 py-0.5 rounded-xl text-[11px] font-semibold uppercase " + self.get_status_color(self.diff_stats.status).to_string())
+                        ·text_child(self.diff_stats.status·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex gap-4 text-[11px]")
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-1")
+                            ·child(
+                            VNode·span()
+                                ·class("font-semibold text-[#10b981]")
+                                ·text_child("+")
+                                ·text_child(self.diff_stats.additions·to_string())
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child("additions")
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-1")
+                            ·child(
+                            VNode·span()
+                                ·class("font-semibold text-[#ef4444]")
+                                ·text_child("-")
+                                ·text_child(self.diff_stats.deletions·to_string())
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child("deletions")
+                            )
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-2")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Refresh diff")
+                        ·child(
+                        RefreshCw·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·when(self.on_close, Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Close diff view")
+                        ·child(
+                        X·view()
+                            ·class("w-4 h-4")
+                        ))
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 min-h-0")
+                ·child(
+                DiffEditor·view()
+                    ·attr("height", "100%")
+                    ·attr("language", self.get_language(self.file_path))
+                    ·attr("original", self.original_content)
+                    ·attr("modified", self.modified_content)
+                    ·attr("theme", "vs-dark")
+                    ·attr("options", { read_only: true, render_side_by_side: true, minimap: { enabled: false }, font_size: 13, line_numbers: "on", scroll_beyond_last_line: false, automatic_layout: true, render_overview_ruler: true, diff_word_wrap: "on" })
+                )
+            )
+    }
+}

@@ -1,0 +1,151 @@
+invoke qliphoth·prelude·*;
+ᛈ TodoTrackerPanelMsg {
+    UpdateTodos,
+    UpdateLoading,
+    UpdateError,
+    UpdateFilter,
+    UpdateTypeFilter,
+    UpdateScanning,
+}
+☉ actor TodoTrackerPanel {
+    state todos: Vec<Any>! = [],
+    state loading: bool! = true,
+    state error: Option<Any>~ = None,
+    state filter: String! = "",
+    state typeFilter: String! = "ALL",
+    state scanning: bool! = false,
+
+    rite new(on_file_click: Any) -> This! {
+        self.on_file_click = on_file_click;
+        This
+    }
+
+    on UpdateTodos {
+        self.todos = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateFilter {
+        self.filter = msg.0;
+    }
+
+    on UpdateTypeFilter {
+        self.typeFilter = msg.0;
+    }
+
+    on UpdateScanning {
+        self.scanning = msg.0;
+    }
+
+    on Mount {
+        // Empty deps → Mount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c] bg-[#252526]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center justify-between mb-3")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        CheckSquare·view()
+                            ·class("w-4 h-4 text-[#5bcefa]")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-sm font-medium text-white")
+                            ·text_child("TODO Tracker")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-[#808080]")
+                            ·text_child("(")
+                            ·text_child(self.todos.len()·to_string())
+                            ·text_child(")")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·when(self.scanning, |n| n·attr("disabled", "true"))
+                        ·class("h-7 px-2")
+                        ·attr("aria-label", "Rescan workspace")
+                        ·child(
+                        RefreshCw·view()
+                            ·class("w-3.5 h-3.5 " + ⎇ self.scanning { "animate-spin" } ⎉ { "" }.to_string())
+                        )
+                    )
+                )
+                ·child(
+                VNode·input()
+                    ·attr("type", "text")
+                    ·attr("placeholder", "Filter TODOs...")
+                    ·attr("value", self.filter)
+                    ·on_change(Change)
+                    ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] mb-2")
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-1 flex-wrap")
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("px-2 py-1 text-[10px] font-medium rounded transition-colors " + ⎇ self.type_filter == "ALL" { "bg-[#5bcefa] text-[#1e1e1e]" } ⎉ { "bg-[#3c3c3c] text-[#b0b0b0] hover:bg-[#4c4c4c]" }.to_string())
+                        ·text_child("ALL (")
+                        ·text_child(self.todos.len()·to_string())
+                        ·text_child(")")
+                    )
+                    // Map: ∀ type ∈ (Object.keys(TODO_STYLES) as TodoType[])
+                    ·children((self.object·keys(self.t_o_d_o__s_t_y_l_e_s)).iter().map(|type| VNode·button()
+                            ·attr("key", type)
+                            ·on_click(Click)
+                            ·class("px-2 py-1 text-[10px] font-medium rounded transition-colors " + ⎇ self.type_filter == type { self.t_o_d_o__s_t_y_l_e_s[type].bg.to_string() + " " + self.t_o_d_o__s_t_y_l_e_s[type].text.to_string() + " " + self.t_o_d_o__s_t_y_l_e_s[type].border.to_string() + " border" } ⎉ { "bg-[#3c3c3c] text-[#b0b0b0] hover:bg-[#4c4c4c]" }.to_string())
+                            ·text_child(type·to_string())
+                            ·text_child("(")
+                            ·text_child(self.counts[type]·to_string())
+                            ·text_child(")")).collect())
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto")
+                ·when_else(self.filtered_todos.len() == 0, VNode·div()
+                    ·class("flex flex-col items-center justify-center h-full p-6 text-center")
+                    ·child(
+                    VNode·div()
+                        ·class("p-3 bg-[#252526] rounded-full mb-4")
+                        ·child(
+                        CheckSquare·view()
+                            ·class("w-8 h-8 text-[#858585]")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-sm text-[#cccccc] font-medium mb-1")
+                        ·text_child(⎇ self.todos.len() == 0 { "No TODOs found" } ⎉ { "No matching TODOs" }·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-xs text-[#858585]")
+                        ·text_child(⎇ self.todos.len() == 0 { "Your codebase is clean!" } ⎉ { "Try a different filter" }·to_string())
+                    ), VNode·div()
+                    ·class("p-2")
+                    ·text_child(None·to_string()))
+            )
+    }
+}

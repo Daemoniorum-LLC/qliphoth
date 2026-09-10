@@ -1,0 +1,1263 @@
+{
+  "id": "ui/components/AICodeAssistant.tsx:AICodeAssistant",
+  "name": "AICodeAssistant",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/AICodeAssistant.tsx",
+    "code": "import React, { useState, useEffect, useRef } from 'react'\nimport { Button } from '@persona-framework/ui'\nimport { Sparkles, CheckCircle, XCircle, Loader2 } from 'lucide-react'\nimport type * as Monaco from 'monaco-editor'\n\ninterface AICodeAssistantProps {\n  editor: Monaco.editor.IStandaloneCodeEditor | null\n  enabled?: boolean\n}\n\ninterface Suggestion {\n  text: string\n  position: Monaco.IPosition\n  range: Monaco.IRange\n}\n\nexport function AICodeAssistant({ editor, enabled = true }: AICodeAssistantProps) {\n  const [currentSuggestion, setCurrentSuggestion] = useState<Suggestion | null>(null)\n  const [isGenerating, setIsGenerating] = useState(false)\n  const [showFeaturePanel, setShowFeaturePanel] = useState(false)\n  const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null)\n  const inlineWidgetRef = useRef<Monaco.editor.IContentWidget | null>(null)\n\n  useEffect(() => {\n    if (!editor || !enabled) return\n\n    const onDidChangeContent = editor.onDidChangeModelContent((e) => {\n      if (suggestionTimeoutRef.current) {\n        clearTimeout(suggestionTimeoutRef.current)\n      }\n\n      suggestionTimeoutRef.current = setTimeout(() => {\n        generateInlineSuggestion()\n      }, 800)\n    })\n\n    return () => {\n      onDidChangeContent.dispose()\n      if (suggestionTimeoutRef.current) {\n        clearTimeout(suggestionTimeoutRef.current)\n      }\n    }\n  }, [editor, enabled])\n\n  useEffect(() => {\n    if (!editor) return\n\n    const onKeyDown = editor.onKeyDown((e) => {\n      if (e.keyCode === 2 && currentSuggestion) {\n        e.preventDefault()\n        acceptSuggestion()\n      }\n      else if (e.keyCode === 9 && currentSuggestion) {\n        e.preventDefault()\n        dismissSuggestion()\n      }\n    })\n\n    return () => {\n      onKeyDown.dispose()\n    }\n  }, [editor, currentSuggestion])\n\n  const generateInlineSuggestion = async () => {\n    if (!editor) return\n\n    const model = editor.getModel()\n    if (!model) return\n\n    const position = editor.getPosition()\n    if (!position) return\n\n    const lineNumber = position.lineNumber\n    const currentLine = model.getLineContent(lineNumber)\n\n    if (!currentLine.trim()) return\n\n    const startLine = Math.max(1, lineNumber - 10)\n    const context = []\n    for (let i = startLine; i < lineNumber; i++) {\n      context.push(model.getLineContent(i))\n    }\n    context.push(currentLine)\n\n    const contextText = context.join('\\n')\n\n    if (currentLine.trim().startsWith('//') || currentLine.trim().startsWith('/*')) {\n      return\n    }\n\n    setIsGenerating(true)\n\n    try {\n      const response = await fetch('/api/ai/code-completion', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          context: contextText,\n          language: model.getLanguageId(),\n          position: { line: position.lineNumber, column: position.column },\n        }),\n      })\n\n      if (response.ok) {\n        const data = await response.json()\n        if (data.suggestion && data.suggestion.trim()) {\n          const suggestionText = data.suggestion\n          const range: Monaco.IRange = {\n            startLineNumber: position.lineNumber,\n            startColumn: position.column,\n            endLineNumber: position.lineNumber,\n            endColumn: position.column,\n          }\n\n          setCurrentSuggestion({\n            text: suggestionText,\n            position,\n            range,\n          })\n\n          showInlineWidget(suggestionText, position)\n        }\n      }\n    } catch (error) {\n      console.error('Failed to generate code suggestion:', error)\n    } finally {\n      setIsGenerating(false)\n    }\n  }\n\n  const showInlineWidget = (text: string, position: Monaco.IPosition) => {\n    if (!editor) return\n\n    if (inlineWidgetRef.current) {\n      editor.removeContentWidget(inlineWidgetRef.current)\n    }\n\n    const widget: Monaco.editor.IContentWidget = {\n      getId: () => 'ai-suggestion-widget',\n      getDomNode: () => {\n        const node = document.createElement('div')\n        node.style.color = '#858585'\n        node.style.fontStyle = 'italic'\n        node.style.opacity = '0.6'\n        node.style.pointerEvents = 'none'\n        node.textContent = text\n        return node\n      },\n      getPosition: () => ({\n        position,\n        preference: [1],\n      }),\n    }\n\n    editor.addContentWidget(widget)\n    inlineWidgetRef.current = widget\n  }\n\n  const acceptSuggestion = () => {\n    if (!editor || !currentSuggestion) return\n\n    const model = editor.getModel()\n    if (!model) return\n\n    editor.executeEdits('ai-assistant', [\n      {\n        range: currentSuggestion.range,\n        text: currentSuggestion.text,\n        forceMoveMarkers: true,\n      },\n    ])\n\n    dismissSuggestion()\n  }\n\n  const dismissSuggestion = () => {\n    if (!editor) return\n\n    if (inlineWidgetRef.current) {\n      editor.removeContentWidget(inlineWidgetRef.current)\n      inlineWidgetRef.current = null\n    }\n\n    setCurrentSuggestion(null)\n  }\n\n  const explainCode = async () => {\n    if (!editor) return\n\n    const selection = editor.getSelection()\n    const model = editor.getModel()\n    if (!selection || !model) return\n\n    const selectedText = model.getValueInRange(selection)\n    if (!selectedText.trim()) {\n      alert('Please select code to explain')\n      return\n    }\n\n    setShowFeaturePanel(false)\n\n    try {\n      const response = await fetch('/api/ai/explain-code', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          code: selectedText,\n          language: model.getLanguageId(),\n        }),\n      })\n\n      if (response.ok) {\n        const data = await response.json()\n        alert(`Code Explanation:\\n\\n${data.explanation}`)\n      }\n    } catch (error) {\n      console.error('Failed to explain code:', error)\n      alert('Failed to explain code. Please try again.')\n    }\n  }\n\n  const generateCodeFromComment = async () => {\n    if (!editor) return\n\n    const position = editor.getPosition()\n    const model = editor.getModel()\n    if (!position || !model) return\n\n    const currentLine = model.getLineContent(position.lineNumber)\n\n    if (!currentLine.trim().startsWith('//') && !currentLine.trim().startsWith('/*')) {\n      alert('Place cursor on a comment line to generate code from it')\n      return\n    }\n\n    const comment = currentLine.replace(/^[\\s/*]*/, '').replace(/[*\\/]*$/, '').trim()\n\n    setShowFeaturePanel(false)\n    setIsGenerating(true)\n\n    try {\n      const response = await fetch('/api/ai/generate-code', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          prompt: comment,\n          language: model.getLanguageId(),\n          context: model.getValue(),\n        }),\n      })\n\n      if (response.ok) {\n        const data = await response.json()\n        if (data.code) {\n          const insertPosition = {\n            lineNumber: position.lineNumber + 1,\n            column: 1,\n          }\n\n          editor.executeEdits('ai-assistant', [\n            {\n              range: {\n                startLineNumber: insertPosition.lineNumber,\n                startColumn: insertPosition.column,\n                endLineNumber: insertPosition.lineNumber,\n                endColumn: insertPosition.column,\n              },\n              text: data.code + '\\n',\n              forceMoveMarkers: true,\n            },\n          ])\n        }\n      }\n    } catch (error) {\n      console.error('Failed to generate code:', error)\n      alert('Failed to generate code. Please try again.')\n    } finally {\n      setIsGenerating(false)\n    }\n  }\n\n  const refactorCode = async () => {\n    if (!editor) return\n\n    const selection = editor.getSelection()\n    const model = editor.getModel()\n    if (!selection || !model) return\n\n    const selectedText = model.getValueInRange(selection)\n    if (!selectedText.trim()) {\n      alert('Please select code to refactor')\n      return\n    }\n\n    setShowFeaturePanel(false)\n    setIsGenerating(true)\n\n    try {\n      const response = await fetch('/api/ai/refactor-code', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          code: selectedText,\n          language: model.getLanguageId(),\n        }),\n      })\n\n      if (response.ok) {\n        const data = await response.json()\n        if (data.refactored) {\n          editor.executeEdits('ai-assistant', [\n            {\n              range: selection,\n              text: data.refactored,\n              forceMoveMarkers: true,\n            },\n          ])\n        }\n      }\n    } catch (error) {\n      console.error('Failed to refactor code:', error)\n      alert('Failed to refactor code. Please try again.')\n    } finally {\n      setIsGenerating(false)\n    }\n  }\n\n  if (!enabled) return null\n\n  return (\n    <div className=\"relative w-full h-full\">\n      {currentSuggestion && (\n        <div className=\"absolute top-2 right-2 flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border border-[#4fc3f7] rounded z-[1000] text-xs text-[#cccccc] shadow-lg\">\n          <Sparkles className=\"w-4 h-4 text-[#4fc3f7]\" />\n          <span className=\"text-[#4fc3f7] font-medium\">AI Suggestion</span>\n          <span className=\"text-[10px] text-[#858585]\">Tab to accept, Esc to dismiss</span>\n          <Button\n            size=\"sm\"\n            onClick={acceptSuggestion}\n            className=\"bg-[#0e639c] hover:bg-[#1177bb]\"\n          >\n            <CheckCircle className=\"w-3 h-3\" />\n          </Button>\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={dismissSuggestion}\n          >\n            <XCircle className=\"w-3 h-3\" />\n          </Button>\n        </div>\n      )}\n\n      {isGenerating && (\n        <div className=\"absolute bottom-3 right-3 flex items-center gap-2 px-3 py-1.5 bg-[#2b2b2b] border border-[#4fc3f7] rounded text-[11px] text-[#4fc3f7] z-[1000]\">\n          <Loader2 className=\"w-3 h-3 animate-spin\" />\n          <span>AI generating...</span>\n        </div>\n      )}\n\n      {showFeaturePanel && (\n        <div className=\"absolute top-12 right-3 w-[300px] bg-[#1e1e1e] border border-[#3c3c3c] rounded p-3 z-[1000] shadow-lg\">\n          <div className=\"text-sm font-semibold text-white mb-3 flex items-center\">\n            <Sparkles className=\"w-4 h-4 mr-2\" />\n            AI Code Assistant\n          </div>\n\n          <Button\n            variant=\"ghost\"\n            className=\"w-full justify-start mb-2\"\n            onClick={explainCode}\n          >\n            <Sparkles className=\"w-4 h-4 mr-2 text-[#4fc3f7]\" />\n            Explain Selected Code\n          </Button>\n\n          <Button\n            variant=\"ghost\"\n            className=\"w-full justify-start mb-2\"\n            onClick={generateCodeFromComment}\n          >\n            <Sparkles className=\"w-4 h-4 mr-2 text-[#4fc3f7]\" />\n            Generate Code from Comment\n          </Button>\n\n          <Button\n            variant=\"ghost\"\n            className=\"w-full justify-start mb-2\"\n            onClick={refactorCode}\n          >\n            <Sparkles className=\"w-4 h-4 mr-2 text-[#4fc3f7]\" />\n            Refactor Selected Code\n          </Button>\n\n          <Button\n            variant=\"outline\"\n            size=\"sm\"\n            className=\"w-full mt-2\"\n            onClick={() => setShowFeaturePanel(false)}\n          >\n            Close\n          </Button>\n        </div>\n      )}\n\n      <Button\n        size=\"sm\"\n        onClick={() => setShowFeaturePanel(!showFeaturePanel)}\n        className=\"absolute top-3 right-3 z-[999] bg-[#0e639c] rounded-full w-9 h-9 p-0 min-w-0\"\n        title=\"AI Code Assistant (Ctrl+Shift+A)\"\n      >\n        <Sparkles className=\"w-4 h-4\" />\n      </Button>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "AICodeAssistant",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 17,
+        "start_col": 7,
+        "end_line": 416,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "editor",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "enabled",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "true",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 18,
+            "start_col": 52,
+            "end_line": 18,
+            "end_col": 85
+          },
+          "state_name": "currentSuggestion",
+          "setter_name": "setCurrentSuggestion",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 19,
+            "start_col": 42,
+            "end_line": 19,
+            "end_col": 57
+          },
+          "state_name": "isGenerating",
+          "setter_name": "setIsGenerating",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 20,
+            "start_col": 50,
+            "end_line": 20,
+            "end_col": 65
+          },
+          "state_name": "showFeaturePanel",
+          "setter_name": "setShowFeaturePanel",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 21,
+            "start_col": 31,
+            "end_line": 21,
+            "end_col": 66
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "suggestionTimeoutRef",
+          "ref_type": "/* type */",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 22,
+            "start_col": 26,
+            "end_line": 22,
+            "end_col": 75
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "inlineWidgetRef",
+          "ref_type": "/* type */",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 24,
+            "start_col": 2,
+            "end_line": 43,
+            "end_col": 23
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "editor",
+            "enabled"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 45,
+            "start_col": 2,
+            "end_line": 62,
+            "end_col": 33
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "editor",
+            "currentSuggestion"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "relative w-full h-full"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "currentSuggestion",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "absolute top-2 right-2 flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border border-[#4fc3f7] rounded z-[1000] text-xs text-[#cccccc] shadow-lg"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Sparkles",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "w-4 h-4 text-[#4fc3f7]"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 334,
+                            "start_col": 10,
+                            "end_line": 334,
+                            "end_col": 57
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "span",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-[#4fc3f7] font-medium"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "AI Suggestion"
+                                },
+                                "location": {
+                                  "start_line": 335,
+                                  "start_col": 55,
+                                  "end_line": 335,
+                                  "end_col": 68
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 335,
+                            "start_col": 10,
+                            "end_line": 335,
+                            "end_col": 75
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "span",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-[10px] text-[#858585]"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "Tab to accept, Esc to dismiss"
+                                },
+                                "location": {
+                                  "start_line": 336,
+                                  "start_col": 55,
+                                  "end_line": 336,
+                                  "end_col": 84
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 336,
+                            "start_col": 10,
+                            "end_line": 336,
+                            "end_col": 91
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "size",
+                                "value": {
+                                  "type": "String",
+                                  "value": "sm"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "acceptSuggestion"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "bg-[#0e639c] hover:bg-[#1177bb]"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "CheckCircle",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-3 h-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 342,
+                                  "start_col": 12,
+                                  "end_line": 342,
+                                  "end_col": 47
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 337,
+                            "start_col": 10,
+                            "end_line": 343,
+                            "end_col": 19
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "variant",
+                                "value": {
+                                  "type": "String",
+                                  "value": "ghost"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "size",
+                                "value": {
+                                  "type": "String",
+                                  "value": "sm"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "dismissSuggestion"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "XCircle",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-3 h-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 349,
+                                  "start_col": 12,
+                                  "end_line": 349,
+                                  "end_col": 43
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 344,
+                            "start_col": 10,
+                            "end_line": 350,
+                            "end_col": 19
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 333,
+                      "start_col": 8,
+                      "end_line": 351,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 332,
+                  "start_col": 6,
+                  "end_line": 352,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "isGenerating",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "absolute bottom-3 right-3 flex items-center gap-2 px-3 py-1.5 bg-[#2b2b2b] border border-[#4fc3f7] rounded text-[11px] text-[#4fc3f7] z-[1000]"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Loader2",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "w-3 h-3 animate-spin"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 356,
+                            "start_col": 10,
+                            "end_line": 356,
+                            "end_col": 54
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "span",
+                            "is_component": false,
+                            "attributes": [],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "AI generating..."
+                                },
+                                "location": {
+                                  "start_line": 357,
+                                  "start_col": 16,
+                                  "end_line": 357,
+                                  "end_col": 32
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 357,
+                            "start_col": 10,
+                            "end_line": 357,
+                            "end_col": 39
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 355,
+                      "start_col": 8,
+                      "end_line": 358,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 354,
+                  "start_col": 6,
+                  "end_line": 359,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "showFeaturePanel",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "absolute top-12 right-3 w-[300px] bg-[#1e1e1e] border border-[#3c3c3c] rounded p-3 z-[1000] shadow-lg"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-sm font-semibold text-white mb-3 flex items-center"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Sparkles",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-4 h-4 mr-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 364,
+                                  "start_col": 12,
+                                  "end_line": 364,
+                                  "end_col": 49
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "AI Code Assistant"
+                                },
+                                "location": {
+                                  "start_line": 364,
+                                  "start_col": 49,
+                                  "end_line": 366,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 363,
+                            "start_col": 10,
+                            "end_line": 366,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "variant",
+                                "value": {
+                                  "type": "String",
+                                  "value": "ghost"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "w-full justify-start mb-2"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "explainCode"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Sparkles",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-4 h-4 mr-2 text-[#4fc3f7]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 373,
+                                  "start_col": 12,
+                                  "end_line": 373,
+                                  "end_col": 64
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "Explain Selected Code"
+                                },
+                                "location": {
+                                  "start_line": 373,
+                                  "start_col": 64,
+                                  "end_line": 375,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 368,
+                            "start_col": 10,
+                            "end_line": 375,
+                            "end_col": 19
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "variant",
+                                "value": {
+                                  "type": "String",
+                                  "value": "ghost"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "w-full justify-start mb-2"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "generateCodeFromComment"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Sparkles",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-4 h-4 mr-2 text-[#4fc3f7]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 382,
+                                  "start_col": 12,
+                                  "end_line": 382,
+                                  "end_col": 64
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "Generate Code from Comment"
+                                },
+                                "location": {
+                                  "start_line": 382,
+                                  "start_col": 64,
+                                  "end_line": 384,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 377,
+                            "start_col": 10,
+                            "end_line": 384,
+                            "end_col": 19
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "variant",
+                                "value": {
+                                  "type": "String",
+                                  "value": "ghost"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "w-full justify-start mb-2"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "refactorCode"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Sparkles",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-4 h-4 mr-2 text-[#4fc3f7]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 391,
+                                  "start_col": 12,
+                                  "end_line": 391,
+                                  "end_col": 64
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "Refactor Selected Code"
+                                },
+                                "location": {
+                                  "start_line": 391,
+                                  "start_col": 64,
+                                  "end_line": 393,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 386,
+                            "start_col": 10,
+                            "end_line": 393,
+                            "end_col": 19
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "variant",
+                                "value": {
+                                  "type": "String",
+                                  "value": "outline"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "size",
+                                "value": {
+                                  "type": "String",
+                                  "value": "sm"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "w-full mt-2"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "() => setShowFeaturePanel(false)"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "Close"
+                                },
+                                "location": {
+                                  "start_line": 400,
+                                  "start_col": 11,
+                                  "end_line": 402,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 395,
+                            "start_col": 10,
+                            "end_line": 402,
+                            "end_col": 19
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 362,
+                      "start_col": 8,
+                      "end_line": 403,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 361,
+                  "start_col": 6,
+                  "end_line": 404,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Button",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "size",
+                      "value": {
+                        "type": "String",
+                        "value": "sm"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onClick",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => setShowFeaturePanel(!showFeaturePanel)"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "absolute top-3 right-3 z-[999] bg-[#0e639c] rounded-full w-9 h-9 p-0 min-w-0"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "title",
+                      "value": {
+                        "type": "String",
+                        "value": "AI Code Assistant (Ctrl+Shift+A)"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Sparkles",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "w-4 h-4"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 412,
+                        "start_col": 8,
+                        "end_line": 412,
+                        "end_col": 40
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 406,
+                  "start_col": 6,
+                  "end_line": 413,
+                  "end_col": 15
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 331,
+            "start_col": 4,
+            "end_line": 414,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "CheckCircle",
+        "Loader2",
+        "Sparkles",
+        "XCircle"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "currentSuggestion",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "isGenerating",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showFeaturePanel",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/a_i_code_assistant.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:currentSuggestion",
+        "to_field": "currentSuggestion",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'currentSuggestion' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:isGenerating",
+        "to_field": "isGenerating",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'isGenerating' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showFeaturePanel",
+        "to_field": "showFeaturePanel",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showFeaturePanel' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:suggestionTimeoutRef",
+        "to_field": "suggestionTimeoutRef",
+        "field_type": "Option</* type */>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'suggestionTimeoutRef' becomes non-reactive state (no re-render on change)"
+      },
+      {
+        "from_hook": "useRef:inlineWidgetRef",
+        "to_field": "inlineWidgetRef",
+        "field_type": "Option</* type */>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'inlineWidgetRef' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateCurrentSuggestion",
+        "from_handler": "setCurrentSuggestion",
+        "payload": null,
+        "state_changes": [
+          "self.currentSuggestion = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIsGenerating",
+        "from_handler": "setIsGenerating",
+        "payload": null,
+        "state_changes": [
+          "self.isGenerating = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowFeaturePanel",
+        "from_handler": "setShowFeaturePanel",
+        "payload": null,
+        "state_changes": [
+          "self.showFeaturePanel = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[editor,enabled]",
+        "strategy": "inline",
+        "reasoning": "Deps [editor, enabled] → inline in handlers that change these",
+        "inline_in": "editor_enabled",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[editor,currentSuggestion]",
+        "strategy": "inline",
+        "reasoning": "Deps [editor, currentSuggestion] → inline in handlers that change these",
+        "inline_in": "editor_currentSuggestion",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "editor",
+          "field_type": "Any",
+          "from_prop": "editor"
+        },
+        {
+          "name": "enabled",
+          "field_type": "Any",
+          "from_prop": "enabled"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_5",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [editor, enabled] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_6",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [editor, currentSuggestion] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "CheckCircle",
+      "Loader2",
+      "Sparkles",
+      "XCircle"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

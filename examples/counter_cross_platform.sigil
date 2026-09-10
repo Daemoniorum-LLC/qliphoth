@@ -4,39 +4,39 @@
 // Cross-Platform Counter Example
 // Runs on: Browser (WASM), Server (SSR), Desktop (GTK)
 //
-// Compile for web:    sigil compile --target wasm32 -o counter.wasm
-// Compile for native: sigil compile --features gtk -o counter
+// Compile ∀ web:    sigil compile --target wasm32 -o counter.wasm
+// Compile ∀ native: sigil compile --features gtk -o counter
 //
 // Copyright © 2025 Daemoniorum, LLC. All rights reserved.
 
-use qliphoth::prelude::*
+invoke qliphoth·prelude·*
 
 /// A simple counter component that works across all platforms
 component Counter {
-    /// The current count value (! = known/certain)
-    state count: i64! ≔ 0
+    /// The current count value (! = computed/certain)
+    state count: i64! = 0
 
     /// Increment the counter
-    rite increment(&mut self) {
+    rite increment(&Δ self) {
         self.count += 1
     }
 
     /// Decrement the counter
-    rite decrement(&mut self) {
+    rite decrement(&Δ self) {
         self.count -= 1
     }
 
     /// Reset to zero
-    rite reset(&mut self) {
-        self.count ≔ 0
+    rite reset(&Δ self) {
+        self.count = 0
     }
 
     /// Render the counter UI
     /// This same code renders to:
-    /// - DOM elements in browser
+    /// - DOM elements ∈ browser
     /// - HTML string on server
     /// - GTK widgets on desktop
-    rite render(self) → Element {
+    rite render(self) -> Element {
         div[class: "counter"] {
             h1[class: "counter-title"] { "Cross-Platform Counter" }
 
@@ -45,28 +45,28 @@ component Counter {
             }
 
             div[class: "counter-buttons"] {
-                button[onclick: || self·decrement()] { "−" }
-                button[onclick: || self·reset()] { "Reset" }
-                button[onclick: || self·increment()] { "+" }
+                button[onclick: || self.decrement()] { "−" }
+                button[onclick: || self.reset()] { "Reset" }
+                button[onclick: || self.increment()] { "+" }
             }
 
             // Platform indicator
             p[class: "platform-info"] {
-                #[cfg(target_arch = "wasm32")]
+                // cfg(target_arch = "wasm32")
                 { "Running in: Browser (WebAssembly)" }
 
-                #[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
+                // cfg(all(not(target_arch = "wasm32"), feature = "gtk"))
                 { "Running in: Desktop (GTK4)" }
 
-                #[cfg(all(not(target_arch = "wasm32"), not(feature = "gtk")))]
+                // cfg(all(not(target_arch = "wasm32"), not(feature = "gtk")))
                 { "Running in: Server (SSR)" }
             }
         }
     }
 }
 
-/// Styles for the counter (works on all platforms)
-const COUNTER_STYLES: &str ≔ r#"
+/// Styles ∀ the counter (works on all platforms)
+const COUNTER_STYLES: &str = r#"
     .counter {
         font-family: system-ui, -apple-system, sans-serif;
         max-width: 400px;
@@ -124,7 +124,7 @@ const COUNTER_STYLES: &str ≔ r#"
 /// Main entry point
 rite main() {
     // Detect platform automatically
-    ≔ platform! ≔ qliphoth::platform·detect();
+    ≔ platform! = qliphoth·platform·detect();
 
     // Mount the app
     App·new()
@@ -132,16 +132,16 @@ rite main() {
         ·mount("#root", Counter·new())
 }
 
-/// Native-specific entry point (for GTK)
-#[cfg(all(not(target_arch = "wasm32"), feature = "gtk"))]
+/// Native-specific entry point (∀ GTK)
+// cfg(all(not(target_arch = "wasm32"), feature = "gtk"))
 rite main_native() {
-    use qliphoth::platform::native;
+    invoke qliphoth·platform·native;
 
     // Create native platform explicitly
-    ≔ platform! ≔ native();
+    ≔ platform! = native();
 
     // Create and mount the app
-    ≔ app! ≔ App·new()
+    ≔ app! = App·new()
         ·with_platform(platform)
         ·with_styles(COUNTER_STYLES)
 

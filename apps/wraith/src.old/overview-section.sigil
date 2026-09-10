@@ -1,0 +1,133 @@
+invoke sigil_web·prelude·*;
+rite overview_section(on_navigate: Any) -> VNode! {
+    VNode·div()
+        ·class("h-full overflow-auto pr-1")
+        ·child(
+        VNode·div()
+            ·class("mb-6")
+            ·child(
+            VNode·h2()
+                ·class("text-lg font-semibold text-[var(--text-primary)] mb-1")
+                ·text_child("DevOps Overview")
+            )
+            ·child(
+            VNode·p()
+                ·class("text-sm text-[var(--text-secondary)]")
+                ·text_child("Monitor your infrastructure, pipelines, and deployments")
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6")
+            ·child(
+            StatCard·view()
+                ·attr("title", "Containers")
+                ·attr("value", mock_containers.len())
+                ·attr("icon", None)
+                ·attr("items", [
+            { label: "running", value: running_containers, variant: "success" },
+            { label: "stopped", value: stopped_containers },
+          ])
+                ·on_click(Click)
+            )
+            ·child(
+            StatCard·view()
+                ·attr("title", "Pipelines")
+                ·attr("value", mock_pipelines.len())
+                ·attr("icon", None)
+                ·attr("items", [
+            { label: "success", value: success_pipelines, variant: "success" },
+            { label: "failed", value: failed_pipelines, variant: "error" },
+            { label: "running", value: running_pipelines, variant: "warning" },
+          ])
+                ·on_click(Click)
+            )
+            ·child(
+            StatCard·view()
+                ·attr("title", "Cloud Providers")
+                ·attr("value", mock_providers.len())
+                ·attr("icon", None)
+                ·attr("items", [
+            { label: "connected", value: connected_providers, variant: "success" },
+            { label: "error", value: error_providers, variant: "error" },
+          ])
+                ·on_click(Click)
+            )
+            ·child(
+            StatCard·view()
+                ·attr("title", "Infra Stacks")
+                ·attr("value", mock_infra_stacks.len())
+                ·attr("icon", None)
+                ·attr("items", [
+            { label: "active", value: mock_infra_stacks.filter|(s| s.status = "active").len(), variant: "success" },
+          ])
+                ·on_click(Click)
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("grid grid-cols-1 lg:grid-cols-2 gap-6")
+            ·child(
+            VNode·div()
+                ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]")
+                    ·child(
+                    VNode·h3()
+                        ·class("text-sm font-medium text-[var(--text-primary)]")
+                        ·text_child("Recent Pipeline Runs")
+                    )
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("text-xs text-[var(--accent-primary)] hover:underline")
+                        ·text_child("View all")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("p-2")
+                    // Map: ∀ pipeline ∈ mockPipelines.slice(0, 4)
+                    ·children(mock_pipelines.slice(0, 4).iter().map(|pipeline| RecentPipelineRun·view()
+                            ·attr("key", pipeline.id)
+                            ·attr("pipeline", pipeline)).collect())
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        VNode·h3()
+                            ·class("text-sm font-medium text-[var(--text-primary)]")
+                            ·text_child("Active Alerts")
+                        )
+                        ·when(firing_alerts > 0, VNode·span()
+                            ·class("px-1.5 py-0.5 text-xs bg-[var(--accent-error)]/20 text-[var(--accent-error)] rounded")
+                            ·text_child(firing_alerts·to_string())
+                            ·text_child("firing"))
+                    )
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("text-xs text-[var(--accent-primary)] hover:underline")
+                        ·text_child("View all")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("p-2 space-y-1")
+                    // Map: ∀ alert ∈ mockAlerts.slice(0, 4)
+                    ·children(mock_alerts.slice(0, 4).iter().map(|alert| ActiveAlert·view()
+                            ·attr("key", alert.id)
+                            ·attr("alert", alert)).collect())
+                )
+            )
+        )
+}

@@ -1,0 +1,40 @@
+invoke sigil_web·prelude·*;
+ᛈ DevOpsStudioMsg {
+    UpdateActiveSection,
+}
+actor DevOpsStudio {
+    state activeSection: String! = "overview",
+
+    on UpdateActiveSection {
+        self.activeSection = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("h-full flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)]")
+            ·child(
+            VNode·div()
+                ·class("flex-shrink-0 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center overflow-x-auto scrollbar-thin")
+                    // Map: ∀ item ∈ navItems
+                    ·children(self.nav_items.iter().map(|item| VNode·button()
+                            ·attr("key", item.id)
+                            ·on_click(Click)
+                            ·class("
+                flex items-center gap-2 px-4 py-2.5 text-xs font-medium whitespace-nowrap
+                border-b-2 transition-colors
+                
+              ")
+                            ·text_child(item.icon·to_string())
+                            ·text_child(item.label·to_string())).collect())
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-hidden p-4")
+                ·text_child(render_section()·to_string())
+            )
+    }
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "useState_to_state",
+    "description": "Convert useState hook to actor state field",
+    "react": "const [count, setCount] = useState(0);",
+    "sigil": "state count: i32! = 0,"
+  },
+  {
+    "name": "onClick_to_message",
+    "description": "Convert onClick handler to message dispatch",
+    "react": "<button onClick={() => setCount(c => c + 1)}>",
+    "sigil": "VNode·button()·on_click(Increment)"
+  },
+  {
+    "name": "useEffect_mount",
+    "description": "Convert mount-only useEffect to lifecycle",
+    "react": "useEffect(() => { init(); }, []);",
+    "sigil": "on Mount { self.init(); }"
+  },
+  {
+    "name": "useEffect_deps",
+    "description": "Convert useEffect with deps to inline in message handler",
+    "react": "useEffect(() => { save(count); }, [count]);",
+    "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+  },
+  {
+    "name": "conditional_render",
+    "description": "Convert conditional JSX to .when()",
+    "react": "{isVisible && <Modal />}",
+    "sigil": "·when(self.is_visible, Modal·render())"
+  },
+  {
+    "name": "list_render",
+    "description": "Convert .map() to explicit loop",
+    "react": "{items.map(item => <Item key={item.id} item={item} />)}",
+    "sigil": "≔ children: Vec<VNode>! = vec![];\n∀ item ∈ self.items {\n    children.push(Item·render(item));\n}\n·children(children)"
+  },
+  {
+    "name": "jsx_to_builder",
+    "description": "Convert JSX element to VNode builder",
+    "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+    "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+  },
+  {
+    "name": "input_controlled",
+    "description": "Convert controlled input to message-based",
+    "react": "<input\n  value={text}\n  onChange={e => setText(e.target.value)}\n/>",
+    "sigil": "VNode·input()\n    ·attr(\"value\", self.text·as_str())\n    ·on_input(TextChanged)"
+  },
+  {
+    "name": "useRef_to_state",
+    "description": "Convert useRef to non-reactive state field",
+    "react": "const inputRef = useRef<HTMLInputElement>(null);",
+    "sigil": "state input_ref: Option<Element>! = ∅,"
+  },
+  {
+    "name": "useCallback_remove",
+    "description": "useCallback is not needed in actors",
+    "react": "const handleClick = useCallback(() => { ... }, [dep]);",
+    "sigil": "// No equivalent needed - actors don't re-render like React"
+  }
+]

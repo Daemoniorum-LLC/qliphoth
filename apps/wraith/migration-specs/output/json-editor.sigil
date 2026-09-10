@@ -1,0 +1,97 @@
+invoke qliphoth·prelude·*;
+ᛈ JsonEditorMsg {
+    UpdateError,
+    UpdateIsValid,
+}
+actor JsonEditor {
+    state error: Option<Any>~ = None,
+    state isValid: bool! = false,
+
+    rite new(value: Any, on_change: Any, placeholder: Any, min_height: Any, max_height: Any, label: Any, required: Any) -> This! {
+        self.value = value;
+        self.on_change = on_change;
+        self.placeholder = placeholder;
+        self.min_height = min_height;
+        self.max_height = max_height;
+        self.label = label;
+        self.required = required;
+        This
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateIsValid {
+        self.isValid = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("space-y-1")
+            ·when(self.label, VNode·div()
+                ·class("flex items-center justify-between")
+                ·child(
+                VNode·label()
+                    ·class("text-xs text-[#808080] flex items-center gap-1")
+                    ·text_child(self.label·to_string())
+                    ·when(self.required, VNode·span()
+                        ·class("text-[#f48771]")
+                        ·text_child("*"))
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·when(self.is_valid, VNode·span()
+                        ·class("text-[10px] text-[#00ff7f] flex items-center gap-1")
+                        ·child(
+                        Check·view()
+                            ·class("w-3 h-3")
+                        )
+                        ·text_child("Valid"))
+                    ·when(value.trim() ∧ is_valid, VNode·fragment()
+                        ·child(
+                        VNode·button()
+                            ·on_click(Click)
+                            ·class("text-[10px] text-[#5bcefa] hover:text-[#7dd3fc] px-1.5 py-0.5 rounded hover:bg-[#3c3c3c]")
+                            ·attr("title", "Format JSON")
+                            ·text_child("Format")
+                        )
+                        ·child(
+                        VNode·button()
+                            ·on_click(Click)
+                            ·class("text-[10px] text-[#5bcefa] hover:text-[#7dd3fc] px-1.5 py-0.5 rounded hover:bg-[#3c3c3c]")
+                            ·attr("title", "Minify JSON")
+                            ·text_child("Minify")
+                        ))
+                ))
+            ·child(
+            VNode·div()
+                ·class("relative")
+                ·child(
+                VNode·textarea()
+                    ·attr("value", self.value)
+                    ·on_change(Change)
+                    ·attr("placeholder", self.placeholder)
+                    ·class("w-full p-3 text-sm bg-[#2d2d30] border rounded text-white font-mono resize-y focus:outline-none ")
+                    ·style(∅)
+                    ·attr("spellCheck", False)
+                    ·attr("aria-label", label ∨ "JSON input")
+                    ·attr("aria-invalid", ¬¬error)
+                    ·attr("aria-describedby", "json-error")
+                )
+            )
+            ·when(self.error, VNode·div()
+                ·id("json-error")
+                ·class("flex items-start gap-1.5 text-xs text-[#f48771] bg-[rgba(244,135,113,0.1)] px-2 py-1.5 rounded")
+                ·attr("role", "alert")
+                ·child(
+                AlertCircle·view()
+                    ·class("w-3.5 h-3.5 mt-0.5 flex-shrink-0")
+                )
+                ·child(
+                VNode·span()
+                    ·text_child(self.error·to_string())
+                ))
+    }
+}

@@ -1,0 +1,143 @@
+invoke qliphoth·prelude·*;
+ᛈ TerminalPanelMsg {
+    UpdateTerminals,
+    UpdateActiveTerminalId,
+    UpdateSplitMode,
+}
+☉ actor TerminalPanel {
+    state terminals: Vec<Any>! = [],
+    state activeTerminalId: Option<Any>~ = None,
+    state splitMode: String! = "none",
+    state terminalRefs: Option<Map>! = ∅,
+
+    on UpdateTerminals {
+        self.terminals = msg.0;
+    }
+
+    on UpdateActiveTerminalId {
+        self.activeTerminalId = msg.0;
+    }
+
+    on UpdateSplitMode {
+        self.splitMode = msg.0;
+    }
+
+    on Mount {
+        // Empty deps → Mount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full w-full bg-neutral-50 overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-2 py-1 bg-[#2b2b2b] border-b border-[#3c3c3c] gap-2")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-2 flex-1 min-w-0")
+                    ·child(
+                    Tabs·view()
+                        ·attr("value", self.active_terminal_id ∨ None)
+                        ·on_valuechange(ValueChange)
+                        ·child(
+                        TabsList·view()
+                            ·class("h-8")
+                            // Map: ∀ term ∈ terminals
+                            ·children(self.terminals.iter().map(|term| TabsTrigger·view()
+                                    ·attr("key", term.id)
+                                    ·attr("value", term.id)
+                                    ·class("text-xs")
+                                    ·text_child(term.profile·to_string())
+                                    ·child(
+                                    Button·view()
+                                        ·attr("variant", "ghost")
+                                        ·attr("size", "sm")
+                                        ·on_click(Click)
+                                        ·class("ml-1 h-4 w-4 p-0")
+                                        ·child(
+                                        X·view()
+                                            ·class("w-3 h-3")
+                                        )
+                                    )).collect())
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Split Vertically")
+                        ·child(
+                        SplitSquareVertical·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Split Horizontally")
+                        ·child(
+                        SplitSquareHorizontal·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·child(
+                    DropdownMenu·view()
+                        ·child(
+                        DropdownMenuTrigger·view()
+                            ·attr("asChild", "true")
+                            ·child(
+                            Button·view()
+                                ·attr("size", "sm")
+                                ·class("gap-1")
+                                ·child(
+                                Plus·view()
+                                    ·class("w-4 h-4")
+                                )
+                                ·text_child("New Terminal")
+                                ·child(
+                                ChevronDown·view()
+                                    ·class("w-3 h-3 ml-1")
+                                )
+                            )
+                        )
+                        ·child(
+                        DropdownMenuContent·view()
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Bash")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Zsh")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Sh")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Fish")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("PowerShell")
+                            )
+                        )
+                    )
+                )
+            )
+            ·text_child(self.render_terminals()·to_string())
+    }
+}

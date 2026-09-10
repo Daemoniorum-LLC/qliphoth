@@ -1,0 +1,178 @@
+invoke qliphoth·prelude·*;
+ᛈ BookmarksPanelMsg {
+    UpdateBookmarks,
+    UpdateShowAddForm,
+    UpdateNewBookmark,
+    UpdateFilter,
+    BookmarkClick,
+}
+actor BookmarksPanel {
+    state bookmarks: Any~ = None,
+    state showAddForm: bool! = False,
+    state newBookmark: Option<Any>~ = ∅,
+    state filter: String! = "",
+
+    rite new(on_file_click: Any) -> This! {
+        self.on_file_click = on_file_click;
+        This
+    }
+
+    on UpdateBookmarks {
+        self.bookmarks = msg.0;
+    }
+
+    on UpdateShowAddForm {
+        self.showAddForm = msg.0;
+    }
+
+    on UpdateNewBookmark {
+        self.newBookmark = msg.0;
+    }
+
+    on UpdateFilter {
+        self.filter = msg.0;
+    }
+
+    on BookmarkClick {
+        // TODO: implement
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c] bg-[#252526]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center justify-between mb-3")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        Bookmark·view()
+                            ·class("w-4 h-4 text-[#5bcefa]")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-sm font-medium text-white")
+                            ·text_child("Bookmarks")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-[#808080]")
+                            ·text_child("(")
+                            ·text_child(self.bookmarks.len()·to_string())
+                            ·text_child(")")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·class("h-7 w-7 p-0")
+                        ·attr("aria-label", "Cancel add bookmark")
+                        ·when_else(self.show_add_form, X·view()
+                            ·class("w-4 h-4"), Plus·view()
+                            ·class("w-4 h-4"))
+                    )
+                )
+                ·child(
+                VNode·input()
+                    ·attr("type", "text")
+                    ·attr("placeholder", "Filter bookmarks...")
+                    ·attr("value", self.filter)
+                    ·on_change(Change)
+                    ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                )
+            )
+            ·when(self.show_add_form, VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c] bg-[#2d2d30]")
+                ·child(
+                VNode·div()
+                    ·class("flex flex-col gap-2")
+                    ·child(
+                    VNode·input()
+                        ·attr("type", "text")
+                        ·attr("placeholder", "File path (e.g., src/index.ts)")
+                        ·attr("value", new_bookmark.file_path)
+                        ·on_change(Change)
+                        ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex gap-2")
+                        ·child(
+                        VNode·input()
+                            ·attr("type", "number")
+                            ·attr("min", 1)
+                            ·attr("placeholder", "Line")
+                            ·attr("value", new_bookmark.line)
+                            ·on_change(Change)
+                            ·class("w-20 px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                        )
+                        ·child(
+                        VNode·input()
+                            ·attr("type", "text")
+                            ·attr("placeholder", "Label (optional)")
+                            ·attr("value", new_bookmark.label)
+                            ·on_change(Change)
+                            ·class("flex-1 px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        VNode·span()
+                            ·class("text-xs text-[#808080]")
+                            ·text_child("Color:")
+                        )
+                        // Map: ∀ color ∈ (Object.keys(COLORS) as BookmarkItem['color'][])
+                        ·children((object.keys(COLORS)"color"][]).iter().map(|color| VNode·button()
+                                ·attr("key", color)
+                                ·on_click(Click)
+                                ·class("w-5 h-5 rounded-full border-2 transition-transform   ")
+                                ·attr("aria-label", "Select  color")).collect())
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·when(¬new_bookmark.file_path.trim(), |n| n·attr("disabled", "True"))
+                        ·child(
+                        Plus·view()
+                            ·class("w-3.5 h-3.5 mr-1.5")
+                        )
+                        ·text_child("Add Bookmark")
+                    )
+                ))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto")
+                ·when_else(filtered_bookmarks.len() == 0, VNode·div()
+                    ·class("flex flex-col items-center justify-center h-full p-6 text-center")
+                    ·child(
+                    VNode·div()
+                        ·class("p-3 bg-[#252526] rounded-full mb-4")
+                        ·child(
+                        Bookmark·view()
+                            ·class("w-8 h-8 text-[#858585]")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-sm text-[#cccccc] font-medium mb-1")
+                        ·text_child("No bookmarks yet"·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-xs text-[#858585]")
+                        ·text_child("Add bookmarks to quickly navigate to important code"·to_string())
+                    ), VNode·div()
+                    ·class("p-2")
+                    ·text_child(None·to_string()))
+            )
+    }
+}

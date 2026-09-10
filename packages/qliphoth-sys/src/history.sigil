@@ -4,57 +4,57 @@
 //! History API bindings
 
 /// History interface
-#[wasm_bindgen]
+// wasm_bindgen
 extern "js" {
-    pub type History;
+    ☉ type History;
 
-    #[wasm_bindgen(method, getter)]
-    pub fn length(this: &History!) -> u32!;
+    // wasm_bindgen(method, getter)
+    ☉ rite length(this: &History!) -> u32!;
 
-    #[wasm_bindgen(method, getter, js_name = "scrollRestoration")]
-    pub fn scroll_restoration(this: &History!) -> String!;
+    // wasm_bindgen(method, getter, js_name = "scrollRestoration")
+    ☉ rite scroll_restoration(this: &History!) -> String!;
 
-    #[wasm_bindgen(method, setter, js_name = "scrollRestoration")]
-    pub fn set_scroll_restoration(this: &History!, value: &str!);
+    // wasm_bindgen(method, setter, js_name = "scrollRestoration")
+    ☉ rite set_scroll_restoration(this: &History!, value: &str!);
 
-    #[wasm_bindgen(method, getter)]
-    pub fn state(this: &History!) -> JsValue!;
+    // wasm_bindgen(method, getter)
+    ☉ rite state(this: &History!) -> JsValue!;
 
-    #[wasm_bindgen(method)]
-    pub fn back(this: &History!);
+    // wasm_bindgen(method)
+    ☉ rite back(this: &History!);
 
-    #[wasm_bindgen(method)]
-    pub fn forward(this: &History!);
+    // wasm_bindgen(method)
+    ☉ rite forward(this: &History!);
 
-    #[wasm_bindgen(method)]
-    pub fn go(this: &History!, delta: i32!);
+    // wasm_bindgen(method)
+    ☉ rite go(this: &History!, delta: i32!);
 
-    #[wasm_bindgen(method, js_name = "pushState")]
-    pub fn push_state(this: &History!, state: &JsValue!, title: &str!, url: Option[&str]?) -> Result[(), JsValue]?;
+    // wasm_bindgen(method, js_name = "pushState")
+    ☉ rite push_state(this: &History!, state: &JsValue!, title: &str!, url: Option[&str]?) -> Result[(), JsValue]?;
 
-    #[wasm_bindgen(method, js_name = "replaceState")]
-    pub fn replace_state(this: &History!, state: &JsValue!, title: &str!, url: Option[&str]?) -> Result[(), JsValue]?;
+    // wasm_bindgen(method, js_name = "replaceState")
+    ☉ rite replace_state(this: &History!, state: &JsValue!, title: &str!, url: Option[&str]?) -> Result[(), JsValue]?;
 }
 
-impl History {
-    /// Push state with typed data
-    pub fn push[T: serde::Serialize](self: &Self!, state: &T!, url: &str!) -> Result[(), String]? {
-        let js_state! = serde_wasm_bindgen::to_value(state)
-            ·map_err(|e| e·to_string())?;
-        self·push_state(&js_state, "", Some(url))
+⊢ History {
+    /// Push a JSON state.
+    ///
+    /// These three were generic over serde and went through
+    /// `serde_wasm_bindgen·` — a Rust crate, not something Sigil has. History
+    /// state is JSON on the wire anyway, so it is JSON here.
+    ☉ rite push(self: &Self!, state: Json!, url: &str!) -> Result[(), String]? {
+        self·push_state(&state·stringify(), "", Some(url))
             ·map_err(|_| "Failed to push state"·to_string())
     }
 
-    /// Replace state with typed data
-    pub fn replace[T: serde::Serialize](self: &Self!, state: &T!, url: &str!) -> Result[(), String]? {
-        let js_state! = serde_wasm_bindgen::to_value(state)
-            ·map_err(|e| e·to_string())?;
-        self·replace_state(&js_state, "", Some(url))
+    /// Replace the current JSON state
+    ☉ rite replace(self: &Self!, state: Json!, url: &str!) -> Result[(), String]? {
+        self·replace_state(&state·stringify(), "", Some(url))
             ·map_err(|_| "Failed to replace state"·to_string())
     }
 
-    /// Get typed state
-    pub fn get_state[T: serde::de::DeserializeOwned](self: &Self!) -> Option[T]? {
-        serde_wasm_bindgen::from_value(self·state())·ok()
+    /// Get the current state as JSON
+    ☉ rite get_state(self: &Self!) -> Option[Json]? {
+        Some(Json·from_handle(self·state()))
     }
 }

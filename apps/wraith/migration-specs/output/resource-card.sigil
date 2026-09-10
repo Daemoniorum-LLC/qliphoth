@@ -1,0 +1,59 @@
+invoke qliphoth·prelude·*;
+rite resource_card(title: Any, subtitle: Any, icon: Any, status: Any, stats: Any, actions: Any, on_click: Any, class_name: Any) -> VNode! {
+    VNode·div()
+        ·on_click(Click)
+        ·class("
+        bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)]
+        p-4 transition-all duration-150
+        
+        
+      ")
+        ·child(
+        VNode·div()
+            ·class("flex items-start justify-between gap-3")
+            ·child(
+            VNode·div()
+                ·class("flex items-start gap-3 min-w-0")
+                ·when(icon, VNode·div()
+                    ·class("flex-shrink-0 text-[var(--accent-primary)]")
+                    ·text_child(icon·to_string()))
+                ·child(
+                VNode·div()
+                    ·class("min-w-0")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        VNode·h3()
+                            ·class("text-sm font-medium text-[var(--text-primary)] truncate")
+                            ·text_child(title·to_string())
+                        )
+                        ·text_child(status·to_string())
+                    )
+                    ·when(subtitle, VNode·p()
+                        ·class("text-xs text-[var(--text-secondary)] mt-0.5 truncate")
+                        ·text_child(subtitle·to_string()))
+                )
+            )
+            ·when(actions, VNode·div()
+                ·class("flex-shrink-0")
+                ·on_click(Click)
+                ·text_child(actions·to_string()))
+        )
+        ·when(stats ∧ stats.len() > 0, VNode·div()
+            ·class("flex items-center gap-4 mt-3 pt-3 border-t border-[var(--border-subtle)]")
+            // Map: ∀ stat ∈ stats
+            ·children(stats.iter().map(|stat| VNode·div()
+                    ·attr("key", idx)
+                    ·class("flex flex-col")
+                    ·child(
+                    VNode·span()
+                        ·class("text-xs text-[var(--text-muted)]")
+                        ·text_child(stat.label·to_string())
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-sm font-medium text-[var(--text-primary)]")
+                        ·text_child(stat.value·to_string())
+                    )).collect()))
+}

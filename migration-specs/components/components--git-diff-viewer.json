@@ -1,0 +1,1086 @@
+{
+  "id": "ui/components/GitDiffViewer.tsx:GitDiffViewer",
+  "name": "GitDiffViewer",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/GitDiffViewer.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button } from '@persona-framework/ui'\nimport { DiffEditor } from '@monaco-editor/react'\nimport { RefreshCw, X, Loader2 } from 'lucide-react'\n\ninterface GitDiffViewerProps {\n  filePath: string | null\n  onClose?: () => void\n}\n\ninterface DiffStats {\n  additions: number\n  deletions: number\n  status: 'modified' | 'added' | 'deleted' | 'renamed'\n}\n\nexport function GitDiffViewer({ filePath, onClose }: GitDiffViewerProps) {\n  const [originalContent, setOriginalContent] = useState<string>('')\n  const [modifiedContent, setModifiedContent] = useState<string>('')\n  const [loading, setLoading] = useState(false)\n  const [error, setError] = useState<string | null>(null)\n  const [diffStats, setDiffStats] = useState<DiffStats>({ additions: 0, deletions: 0, status: 'modified' })\n\n  const fetchGitDiff = async (path: string) => {\n    setLoading(true)\n    setError(null)\n\n    try {\n      const absolutePath = path.startsWith('/') ? path : `/workspace/persona-framework/${path}`\n\n      const currentResponse = await fetch(`/api/project/read?path=${encodeURIComponent(absolutePath)}`)\n      if (!currentResponse.ok) {\n        throw new Error(`Failed to read current file: ${currentResponse.statusText}`)\n      }\n      const currentData = await currentResponse.json()\n      setModifiedContent(currentData.content || '')\n\n      const gitResponse = await fetch(`/api/git/show?path=${encodeURIComponent(path)}&ref=HEAD`)\n      if (gitResponse.ok) {\n        const gitData = await gitResponse.json()\n        setOriginalContent(gitData.content || '')\n\n        const stats = calculateDiffStats(gitData.content || '', currentData.content || '')\n        setDiffStats(stats)\n      } else {\n        setOriginalContent('')\n        setDiffStats({ additions: currentData.content.split('\\n').length, deletions: 0, status: 'added' })\n      }\n\n      setLoading(false)\n    } catch (err: any) {\n      setError(err.message || 'Failed to load git diff')\n      setLoading(false)\n    }\n  }\n\n  const calculateDiffStats = (original: string, modified: string): DiffStats => {\n    const originalLines = original.split('\\n')\n    const modifiedLines = modified.split('\\n')\n\n    let additions = 0\n    let deletions = 0\n\n    const maxLines = Math.max(originalLines.length, modifiedLines.length)\n\n    for (let i = 0; i < maxLines; i++) {\n      const origLine = originalLines[i]\n      const modLine = modifiedLines[i]\n\n      if (origLine === undefined && modLine !== undefined) {\n        additions++\n      } else if (origLine !== undefined && modLine === undefined) {\n        deletions++\n      } else if (origLine !== modLine) {\n        additions++\n        deletions++\n      }\n    }\n\n    let status: 'modified' | 'added' | 'deleted' = 'modified'\n    if (original === '' && modified !== '') status = 'added'\n    if (original !== '' && modified === '') status = 'deleted'\n\n    return { additions, deletions, status }\n  }\n\n  useEffect(() => {\n    if (filePath) {\n      fetchGitDiff(filePath)\n    }\n  }, [filePath])\n\n  const handleRefresh = () => {\n    if (filePath) {\n      fetchGitDiff(filePath)\n    }\n  }\n\n  const getLanguage = (path: string | null): string => {\n    if (!path) return 'plaintext'\n\n    const ext = path.split('.').pop()?.toLowerCase()\n    const languageMap: Record<string, string> = {\n      ts: 'typescript',\n      tsx: 'typescript',\n      js: 'javascript',\n      jsx: 'javascript',\n      json: 'json',\n      md: 'markdown',\n      java: 'java',\n      kt: 'kotlin',\n      py: 'python',\n      css: 'css',\n      html: 'html',\n      xml: 'xml',\n      yaml: 'yaml',\n      yml: 'yaml',\n      sh: 'shell',\n      sql: 'sql',\n    }\n    return languageMap[ext || ''] || 'plaintext'\n  }\n\n  const getStatusColor = (status: string) => {\n    switch (status) {\n      case 'modified':\n        return 'bg-[#f59e0b33] text-[#f59e0b]'\n      case 'added':\n        return 'bg-[#10b98133] text-[#10b981]'\n      case 'deleted':\n        return 'bg-[#ef444433] text-[#ef4444]'\n      default:\n        return 'bg-[#3c3c3c] text-[#cccccc]'\n    }\n  }\n\n  if (!filePath) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"p-10 text-center text-[#858585]\">\n          Select a file to view git diff\n        </div>\n      </div>\n    )\n  }\n\n  if (loading) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">\n          <span>{filePath}</span>\n        </div>\n        <div className=\"flex flex-col items-center justify-center gap-3 p-10\">\n          <Loader2 className=\"w-6 h-6 animate-spin\" />\n          <span className=\"text-sm\">Loading git diff...</span>\n        </div>\n      </div>\n    )\n  }\n\n  if (error) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">\n          <span>{filePath}</span>\n          {onClose && (\n            <Button\n              variant=\"ghost\"\n              size=\"sm\"\n              onClick={onClose}\n              className=\"ml-auto\"\n            >\n              <X className=\"w-4 h-4\" />\n            </Button>\n          )}\n        </div>\n        <div className=\"p-5 text-[#f48771]\">{error}</div>\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n      <div className=\"flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">\n        <div className=\"flex items-center gap-3\">\n          <span>{filePath}</span>\n          <div className={`px-2 py-0.5 rounded-xl text-[11px] font-semibold uppercase ${getStatusColor(diffStats.status)}`}>\n            {diffStats.status}\n          </div>\n          <div className=\"flex gap-4 text-[11px]\">\n            <div className=\"flex items-center gap-1\">\n              <span className=\"font-semibold text-[#10b981]\">\n                +{diffStats.additions}\n              </span>\n              <span>additions</span>\n            </div>\n            <div className=\"flex items-center gap-1\">\n              <span className=\"font-semibold text-[#ef4444]\">\n                -{diffStats.deletions}\n              </span>\n              <span>deletions</span>\n            </div>\n          </div>\n        </div>\n        <div className=\"flex items-center gap-2\">\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={handleRefresh}\n            title=\"Refresh diff\"\n          >\n            <RefreshCw className=\"w-4 h-4\" />\n          </Button>\n          {onClose && (\n            <Button\n              variant=\"ghost\"\n              size=\"sm\"\n              onClick={onClose}\n              title=\"Close diff view\"\n            >\n              <X className=\"w-4 h-4\" />\n            </Button>\n          )}\n        </div>\n      </div>\n\n      <div className=\"flex-1 min-h-0\">\n        <DiffEditor\n          height=\"100%\"\n          language={getLanguage(filePath)}\n          original={originalContent}\n          modified={modifiedContent}\n          theme=\"vs-dark\"\n          options={{\n            readOnly: true,\n            renderSideBySide: true,\n            minimap: { enabled: false },\n            fontSize: 13,\n            lineNumbers: 'on',\n            scrollBeyondLastLine: false,\n            automaticLayout: true,\n            renderOverviewRuler: true,\n            diffWordWrap: 'on',\n          }}\n        />\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "GitDiffViewer",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 17,
+        "start_col": 7,
+        "end_line": 249,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "filePath",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onClose",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 18,
+            "start_col": 48,
+            "end_line": 18,
+            "end_col": 68
+          },
+          "state_name": "originalContent",
+          "setter_name": "setOriginalContent",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 19,
+            "start_col": 48,
+            "end_line": 19,
+            "end_col": 68
+          },
+          "state_name": "modifiedContent",
+          "setter_name": "setModifiedContent",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 20,
+            "start_col": 32,
+            "end_line": 20,
+            "end_col": 47
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 21,
+            "start_col": 28,
+            "end_line": 21,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 22,
+            "start_col": 36,
+            "end_line": 22,
+            "end_col": 107
+          },
+          "state_name": "diffStats",
+          "setter_name": "setDiffStats",
+          "initial_value": "{}",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 87,
+            "start_col": 2,
+            "end_line": 91,
+            "end_col": 16
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "filePath"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "w-full h-full flex flex-col bg-[#1e1e1e]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "span",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "filePath"
+                                  },
+                                  "location": {
+                                    "start_line": 186,
+                                    "start_col": 16,
+                                    "end_line": 186,
+                                    "end_col": 26
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 186,
+                              "start_col": 10,
+                              "end_line": 186,
+                              "end_col": 33
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "`px-2 py-0.5 rounded-xl text-[11px] font-semibold uppercase ${getStatusColor(diffStats.status)}`"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "diffStats.status"
+                                  },
+                                  "location": {
+                                    "start_line": 188,
+                                    "start_col": 12,
+                                    "end_line": 188,
+                                    "end_col": 30
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 187,
+                              "start_col": 10,
+                              "end_line": 189,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex gap-4 text-[11px]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "flex items-center gap-1"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "span",
+                                          "is_component": false,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "font-semibold text-[#10b981]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "+"
+                                              },
+                                              "location": {
+                                                "start_line": 192,
+                                                "start_col": 61,
+                                                "end_line": 193,
+                                                "end_col": 17
+                                              }
+                                            },
+                                            {
+                                              "node_type": {
+                                                "type": "Expression",
+                                                "code": "diffStats.additions"
+                                              },
+                                              "location": {
+                                                "start_line": 193,
+                                                "start_col": 17,
+                                                "end_line": 193,
+                                                "end_col": 38
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 192,
+                                          "start_col": 14,
+                                          "end_line": 194,
+                                          "end_col": 21
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "span",
+                                          "is_component": false,
+                                          "attributes": [],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "additions"
+                                              },
+                                              "location": {
+                                                "start_line": 195,
+                                                "start_col": 20,
+                                                "end_line": 195,
+                                                "end_col": 29
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 195,
+                                          "start_col": 14,
+                                          "end_line": 195,
+                                          "end_col": 36
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 191,
+                                    "start_col": 12,
+                                    "end_line": 196,
+                                    "end_col": 18
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "flex items-center gap-1"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "span",
+                                          "is_component": false,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "font-semibold text-[#ef4444]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "-"
+                                              },
+                                              "location": {
+                                                "start_line": 198,
+                                                "start_col": 61,
+                                                "end_line": 199,
+                                                "end_col": 17
+                                              }
+                                            },
+                                            {
+                                              "node_type": {
+                                                "type": "Expression",
+                                                "code": "diffStats.deletions"
+                                              },
+                                              "location": {
+                                                "start_line": 199,
+                                                "start_col": 17,
+                                                "end_line": 199,
+                                                "end_col": 38
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 198,
+                                          "start_col": 14,
+                                          "end_line": 200,
+                                          "end_col": 21
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "span",
+                                          "is_component": false,
+                                          "attributes": [],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "deletions"
+                                              },
+                                              "location": {
+                                                "start_line": 201,
+                                                "start_col": 20,
+                                                "end_line": 201,
+                                                "end_col": 29
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 201,
+                                          "start_col": 14,
+                                          "end_line": 201,
+                                          "end_col": 36
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 197,
+                                    "start_col": 12,
+                                    "end_line": 202,
+                                    "end_col": 18
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 190,
+                              "start_col": 10,
+                              "end_line": 203,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 185,
+                        "start_col": 8,
+                        "end_line": 204,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "handleRefresh"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Refresh diff"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "RefreshCw",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 212,
+                                    "start_col": 12,
+                                    "end_line": 212,
+                                    "end_col": 45
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 206,
+                              "start_col": 10,
+                              "end_line": 213,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "onClose",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "variant",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "ghost"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "onClose"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "title",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Close diff view"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "X",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 221,
+                                        "start_col": 14,
+                                        "end_line": 221,
+                                        "end_col": 39
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 215,
+                                  "start_col": 12,
+                                  "end_line": 222,
+                                  "end_col": 21
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 214,
+                              "start_col": 10,
+                              "end_line": 223,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 205,
+                        "start_col": 8,
+                        "end_line": 224,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 184,
+                  "start_col": 6,
+                  "end_line": 225,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 min-h-0"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "DiffEditor",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "height",
+                            "value": {
+                              "type": "String",
+                              "value": "100%"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "language",
+                            "value": {
+                              "type": "Expression",
+                              "code": "getLanguage(filePath)"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "original",
+                            "value": {
+                              "type": "Expression",
+                              "code": "originalContent"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "modified",
+                            "value": {
+                              "type": "Expression",
+                              "code": "modifiedContent"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "theme",
+                            "value": {
+                              "type": "String",
+                              "value": "vs-dark"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "options",
+                            "value": {
+                              "type": "Expression",
+                              "code": "{\n            readOnly: true,\n            renderSideBySide: true,\n            minimap: { enabled: false },\n            fontSize: 13,\n            lineNumbers: 'on',\n            scrollBeyondLastLine: false,\n            automaticLayout: true,\n            renderOverviewRuler: true,\n            diffWordWrap: 'on',\n          }"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 228,
+                        "start_col": 8,
+                        "end_line": 245,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 227,
+                  "start_col": 6,
+                  "end_line": 246,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 183,
+            "start_col": 4,
+            "end_line": 247,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleRefresh",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    if (filePath) {\n      fetchGitDiff(filePath)\n    }\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "fetchGitDiff",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "filePath"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [],
+          "parameters": [],
+          "has_conditionals": true,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Button",
+        "DiffEditor",
+        "RefreshCw",
+        "X"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "originalContent",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "modifiedContent",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "diffStats",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/git_diff_viewer.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:originalContent",
+        "to_field": "originalContent",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'originalContent' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:modifiedContent",
+        "to_field": "modifiedContent",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'modifiedContent' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:diffStats",
+        "to_field": "diffStats",
+        "field_type": "Map<String, Any>",
+        "evidentiality": "!",
+        "initial_value": "{}",
+        "reasoning": "useState hook 'diffStats' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateOriginalContent",
+        "from_handler": "setOriginalContent",
+        "payload": null,
+        "state_changes": [
+          "self.originalContent = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateModifiedContent",
+        "from_handler": "setModifiedContent",
+        "payload": null,
+        "state_changes": [
+          "self.modifiedContent = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateDiffStats",
+        "from_handler": "setDiffStats",
+        "payload": null,
+        "state_changes": [
+          "self.diffStats = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Refresh",
+        "from_handler": "handleRefresh",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[filePath]",
+        "strategy": "inline",
+        "reasoning": "Deps [filePath] → inline in handlers that change these",
+        "inline_in": "filePath",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "file_path",
+          "field_type": "Any",
+          "from_prop": "filePath"
+        },
+        {
+          "name": "on_close",
+          "field_type": "Any",
+          "from_prop": "onClose"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_5",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [filePath] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onClose",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onClose' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "DiffEditor",
+      "RefreshCw",
+      "X"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

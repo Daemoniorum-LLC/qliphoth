@@ -1,0 +1,1864 @@
+{
+  "id": "ui/components/panels/LogsPanel.tsx:LogsPanel",
+  "name": "LogsPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/LogsPanel.tsx",
+    "code": "import React from 'react'\nimport { Spinner, Button, Input, Badge, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@persona-framework/ui'\nimport { getDefaultApiClient } from '@shared/api/client'\nimport { Filter, Search, RefreshCw, Maximize, Circle } from 'lucide-react'\n\ninterface LogEntry {\n  timestamp: string\n  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'\n  logger: string\n  thread: string\n  message: string\n  stackTrace?: string\n}\n\ninterface LogsPanelProps {\n  onOpenFullScreen?: () => void\n}\n\ntype ConnectionStatus = 'connected' | 'connecting' | 'disconnected'\n\nexport function LogsPanel({ onOpenFullScreen }: LogsPanelProps = {}) {\n  const [logs, setLogs] = React.useState<LogEntry[]>([])\n  const [levelFilter, setLevelFilter] = React.useState('ALL')\n  const [searchQuery, setSearchQuery] = React.useState('')\n  const [loggerFilter, setLoggerFilter] = React.useState('')\n  const [connectionStatus, setConnectionStatus] = React.useState<ConnectionStatus>('connecting')\n  const [isLoading, setIsLoading] = React.useState(true)\n  const scrollRef = React.useRef<HTMLDivElement>(null)\n  const eventSourceRef = React.useRef<EventSource | null>(null)\n  const autoScrollRef = React.useRef(true)\n\n  React.useEffect(() => {\n    const loadInitialLogs = async () => {\n      try {\n        const client = getDefaultApiClient()\n        const params: Record<string, any> = { limit: 500 }\n        if (levelFilter !== 'ALL') params.level = levelFilter\n        if (searchQuery) params.message = searchQuery\n        if (loggerFilter) params.logger = loggerFilter\n\n        const res = await client.get('/api/logs/recent', { params })\n        const recentLogs = res?.data?.logs || []\n        setLogs(recentLogs)\n        setIsLoading(false)\n      } catch (error) {\n        console.error('Failed to load initial logs:', error)\n        setLogs([])\n        setIsLoading(false)\n      }\n    }\n\n    loadInitialLogs()\n  }, [levelFilter, searchQuery, loggerFilter])\n\n  React.useEffect(() => {\n    const baseUrl = getDefaultApiClient().defaults.baseURL || 'http://localhost:8989'\n    const sseUrl = `${baseUrl}/api/logs/stream`\n\n    setConnectionStatus('connecting')\n\n    const eventSource = new EventSource(sseUrl)\n    eventSourceRef.current = eventSource\n\n    eventSource.addEventListener('connected', (event) => {\n      console.log('SSE connected:', event.data)\n      setConnectionStatus('connected')\n    })\n\n    eventSource.addEventListener('log', (event) => {\n      try {\n        const logEntry: LogEntry = JSON.parse(event.data)\n\n        const passesLevelFilter = levelFilter === 'ALL' || logEntry.level === levelFilter\n        const passesLoggerFilter = !loggerFilter || logEntry.logger.toLowerCase().includes(loggerFilter.toLowerCase())\n        const passesSearchFilter = !searchQuery || logEntry.message.toLowerCase().includes(searchQuery.toLowerCase())\n\n        if (passesLevelFilter && passesLoggerFilter && passesSearchFilter) {\n          setLogs(prev => {\n            const newLogs = [...prev, logEntry].slice(-500)\n            return newLogs\n          })\n        }\n      } catch (error) {\n        console.error('Failed to parse log event:', error)\n      }\n    })\n\n    eventSource.addEventListener('heartbeat', () => {\n    })\n\n    eventSource.onerror = (error) => {\n      console.error('SSE error:', error)\n      setConnectionStatus('disconnected')\n\n      setTimeout(() => {\n        if (eventSource.readyState === EventSource.CONNECTING) {\n          setConnectionStatus('connecting')\n        }\n      }, 1000)\n    }\n\n    eventSource.onopen = () => {\n      setConnectionStatus('connected')\n    }\n\n    return () => {\n      eventSource.close()\n      eventSourceRef.current = null\n    }\n  }, [levelFilter, searchQuery, loggerFilter])\n\n  React.useEffect(() => {\n    if (scrollRef.current && autoScrollRef.current) {\n      scrollRef.current.scrollTop = scrollRef.current.scrollHeight\n    }\n  }, [logs])\n\n  const handleScroll = React.useCallback(() => {\n    if (scrollRef.current) {\n      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current\n      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50\n      autoScrollRef.current = isAtBottom\n    }\n  }, [])\n\n  const handleRefresh = async () => {\n    setIsLoading(true)\n    try {\n      const client = getDefaultApiClient()\n      const params: Record<string, any> = { limit: 500 }\n      if (levelFilter !== 'ALL') params.level = levelFilter\n      if (searchQuery) params.message = searchQuery\n      if (loggerFilter) params.logger = loggerFilter\n\n      const res = await client.get('/api/logs/recent', { params })\n      const recentLogs = res?.data?.logs || []\n      setLogs(recentLogs)\n    } catch (error) {\n      console.error('Failed to refresh logs:', error)\n    } finally {\n      setIsLoading(false)\n    }\n  }\n\n  const handleClearLogs = async () => {\n    try {\n      const client = getDefaultApiClient()\n      await client.post('/api/logs/clear')\n      setLogs([])\n    } catch (error) {\n      console.error('Failed to clear logs:', error)\n    }\n  }\n\n  const getLevelColor = (level: string) => {\n    switch (level.toUpperCase()) {\n      case 'ERROR': return '#f48771'\n      case 'WARN': return '#fbbf24'\n      case 'INFO': return '#60a5fa'\n      case 'DEBUG': return '#a78bfa'\n      default: return '#cccccc'\n    }\n  }\n\n  const getLevelBadgeVariant = (level: string): \"default\" | \"secondary\" | \"destructive\" | \"outline\" => {\n    switch (level.toUpperCase()) {\n      case 'ERROR': return 'destructive'\n      case 'WARN': return 'default'\n      case 'INFO': return 'secondary'\n      default: return 'outline'\n    }\n  }\n\n  const getStatusColor = () => {\n    switch (connectionStatus) {\n      case 'connected': return 'text-green-500'\n      case 'connecting': return 'text-amber-500'\n      case 'disconnected': return 'text-red-500'\n    }\n  }\n\n  const getStatusText = () => {\n    switch (connectionStatus) {\n      case 'connected': return 'Connected'\n      case 'connecting': return 'Connecting...'\n      case 'disconnected': return 'Disconnected'\n    }\n  }\n\n  if (isLoading) {\n    return (\n      <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n        <div className=\"px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold\">\n          Server Logs\n        </div>\n        <div className=\"p-4 flex justify-center\">\n          <Spinner size=\"sm\" />\n          <span className=\"ml-2 text-sm\">Loading logs...</span>\n        </div>\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n      <div className=\"px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold flex justify-between items-center\">\n        <div className=\"flex items-center\">\n          <span>Server Logs</span>\n          <div className=\"ml-3 text-[11px] flex items-center\">\n            <Circle className={`w-2 h-2 mr-1.5 fill-current ${getStatusColor()}`} />\n            <span className=\"text-[#858585]\">{getStatusText()}</span>\n          </div>\n        </div>\n        {onOpenFullScreen && (\n          <Button\n            variant=\"ghost\"\n            size=\"sm\"\n            onClick={onOpenFullScreen}\n            title=\"Open full-screen logs viewer\"\n          >\n            <Maximize className=\"w-4 h-4\" />\n          </Button>\n        )}\n      </div>\n      <div className=\"p-2 border-b border-[#3c3c3c] flex flex-col gap-1.5\">\n        <div className=\"flex gap-1 flex-wrap\">\n          <Select value={levelFilter} onValueChange={setLevelFilter}>\n            <SelectTrigger className=\"w-20 h-7 text-xs\">\n              <SelectValue />\n            </SelectTrigger>\n            <SelectContent>\n              <SelectItem value=\"ALL\">All</SelectItem>\n              <SelectItem value=\"ERROR\">ERROR</SelectItem>\n              <SelectItem value=\"WARN\">WARN</SelectItem>\n              <SelectItem value=\"INFO\">INFO</SelectItem>\n              <SelectItem value=\"DEBUG\">DEBUG</SelectItem>\n            </SelectContent>\n          </Select>\n          <div className=\"relative w-[100px]\">\n            <Search className=\"absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400\" />\n            <Input\n              className=\"h-7 text-xs pl-7\"\n              placeholder=\"Search...\"\n              value={searchQuery}\n              onChange={(e) => setSearchQuery(e.target.value)}\n            />\n          </div>\n          <div className=\"relative w-[90px]\">\n            <Filter className=\"absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400\" />\n            <Input\n              className=\"h-7 text-xs pl-7\"\n              placeholder=\"Logger...\"\n              value={loggerFilter}\n              onChange={(e) => setLoggerFilter(e.target.value)}\n            />\n          </div>\n          <Button\n            size=\"sm\"\n            variant=\"ghost\"\n            onClick={handleRefresh}\n            title=\"Refresh logs\"\n            className=\"h-7 px-2\"\n          >\n            <RefreshCw className=\"w-3 h-3\" />\n          </Button>\n          <Button\n            size=\"sm\"\n            variant=\"ghost\"\n            onClick={handleClearLogs}\n            title=\"Clear log buffer\"\n            className=\"h-7 text-xs\"\n          >\n            Clear\n          </Button>\n        </div>\n        <div className=\"text-[10px] text-[#858585]\">\n          {logs.length} entries • Live streaming\n        </div>\n      </div>\n      <div ref={scrollRef} className=\"flex-1 overflow-y-auto p-2 font-mono text-[11px]\" onScroll={handleScroll}>\n        {logs.length === 0 ? (\n          <div className=\"text-[#858585] text-center p-4\">\n            No logs found\n          </div>\n        ) : (\n          logs.map((log, idx) => {\n            const timestamp = log.timestamp?.includes('T') ? log.timestamp : null\n            const loggerShortName = log.logger && log.logger !== 'unknown'\n              ? log.logger.split('.').slice(-2).join('.')\n              : 'system'\n\n            return (\n              <div\n                key={`${log.timestamp}-${idx}`}\n                className={`px-2 py-1 rounded-sm mb-0.5 whitespace-pre-wrap break-words ${\n                  log.level === 'ERROR' ? 'bg-[#2d1e1e]' : log.level === 'WARN' ? 'bg-[#2d2a1e]' : ''\n                }`}\n              >\n                <div className=\"flex gap-1.5 items-center mb-0.5 flex-wrap\">\n                  {timestamp && (\n                    <span className=\"text-[#858585] text-[10px]\">\n                      {new Date(timestamp).toLocaleTimeString()}\n                    </span>\n                  )}\n                  <Badge variant={getLevelBadgeVariant(log.level)} className=\"text-[10px] px-1.5 py-0\">\n                    {log.level}\n                  </Badge>\n                  <span className=\"text-[#858585] text-[10px]\">\n                    {loggerShortName}\n                  </span>\n                  {log.thread && (\n                    <span className=\"text-[#858585] text-[9px]\">\n                      [{log.thread}]\n                    </span>\n                  )}\n                </div>\n                <div style={{ color: getLevelColor(log.level) }}>\n                  {log.message}\n                </div>\n                {log.stackTrace && (\n                  <div className=\"text-[#f48771] text-[10px] mt-1 pl-2 border-l-2 border-[#f48771]\">\n                    {log.stackTrace}\n                  </div>\n                )}\n              </div>\n            )\n          })\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "LogsPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 21,
+        "start_col": 7,
+        "end_line": 332,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 22,
+            "start_col": 26,
+            "end_line": 22,
+            "end_col": 56
+          },
+          "state_name": "logs",
+          "setter_name": "setLogs",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 23,
+            "start_col": 40,
+            "end_line": 23,
+            "end_col": 61
+          },
+          "state_name": "levelFilter",
+          "setter_name": "setLevelFilter",
+          "initial_value": "\"ALL\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 24,
+            "start_col": 40,
+            "end_line": 24,
+            "end_col": 58
+          },
+          "state_name": "searchQuery",
+          "setter_name": "setSearchQuery",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 25,
+            "start_col": 42,
+            "end_line": 25,
+            "end_col": 60
+          },
+          "state_name": "loggerFilter",
+          "setter_name": "setLoggerFilter",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 26,
+            "start_col": 50,
+            "end_line": 26,
+            "end_col": 96
+          },
+          "state_name": "connectionStatus",
+          "setter_name": "setConnectionStatus",
+          "initial_value": "\"connecting\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 27,
+            "start_col": 36,
+            "end_line": 27,
+            "end_col": 56
+          },
+          "state_name": "isLoading",
+          "setter_name": "setIsLoading",
+          "initial_value": "true",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 28,
+            "start_col": 20,
+            "end_line": 28,
+            "end_col": 54
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "scrollRef",
+          "ref_type": "HTMLDivElement",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 29,
+            "start_col": 25,
+            "end_line": 29,
+            "end_col": 63
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "eventSourceRef",
+          "ref_type": "/* type */",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 30,
+            "start_col": 24,
+            "end_line": 30,
+            "end_col": 42
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "autoScrollRef",
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 32,
+            "start_col": 2,
+            "end_line": 53,
+            "end_col": 46
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "levelFilter",
+            "searchQuery",
+            "loggerFilter"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 55,
+            "start_col": 2,
+            "end_line": 110,
+            "end_col": 46
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "levelFilter",
+            "searchQuery",
+            "loggerFilter"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 112,
+            "start_col": 2,
+            "end_line": 116,
+            "end_col": 12
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "logs"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 118,
+            "start_col": 23,
+            "end_line": 124,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold flex justify-between items-center"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "span",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Server Logs"
+                                  },
+                                  "location": {
+                                    "start_line": 208,
+                                    "start_col": 16,
+                                    "end_line": 208,
+                                    "end_col": 27
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 208,
+                              "start_col": 10,
+                              "end_line": 208,
+                              "end_col": 34
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ml-3 text-[11px] flex items-center"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Circle",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "`w-2 h-2 mr-1.5 fill-current ${getStatusColor()}`"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 210,
+                                    "start_col": 12,
+                                    "end_line": 210,
+                                    "end_col": 84
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-[#858585]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "getStatusText()"
+                                        },
+                                        "location": {
+                                          "start_line": 211,
+                                          "start_col": 45,
+                                          "end_line": 211,
+                                          "end_col": 62
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 211,
+                                    "start_col": 12,
+                                    "end_line": 211,
+                                    "end_col": 69
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 209,
+                              "start_col": 10,
+                              "end_line": 212,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 207,
+                        "start_col": 8,
+                        "end_line": 213,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "onOpenFullScreen",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "variant",
+                                "value": {
+                                  "type": "String",
+                                  "value": "ghost"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "size",
+                                "value": {
+                                  "type": "String",
+                                  "value": "sm"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "onOpenFullScreen"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "title",
+                                "value": {
+                                  "type": "String",
+                                  "value": "Open full-screen logs viewer"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Maximize",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-4 h-4"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 221,
+                                  "start_col": 12,
+                                  "end_line": 221,
+                                  "end_col": 44
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 215,
+                            "start_col": 10,
+                            "end_line": 222,
+                            "end_col": 19
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 214,
+                        "start_col": 8,
+                        "end_line": 223,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 206,
+                  "start_col": 6,
+                  "end_line": 224,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-2 border-b border-[#3c3c3c] flex flex-col gap-1.5"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-1 flex-wrap"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Select",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "levelFilter"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onValueChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "setLevelFilter"
+                                  },
+                                  "is_event_handler": true
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SelectTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-20 h-7 text-xs"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectValue",
+                                          "is_component": true,
+                                          "attributes": [],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 229,
+                                          "start_col": 14,
+                                          "end_line": 229,
+                                          "end_col": 29
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 228,
+                                    "start_col": 12,
+                                    "end_line": 230,
+                                    "end_col": 28
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SelectContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "ALL"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "All"
+                                              },
+                                              "location": {
+                                                "start_line": 232,
+                                                "start_col": 38,
+                                                "end_line": 232,
+                                                "end_col": 41
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 232,
+                                          "start_col": 14,
+                                          "end_line": 232,
+                                          "end_col": 54
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "ERROR"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "ERROR"
+                                              },
+                                              "location": {
+                                                "start_line": 233,
+                                                "start_col": 40,
+                                                "end_line": 233,
+                                                "end_col": 45
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 233,
+                                          "start_col": 14,
+                                          "end_line": 233,
+                                          "end_col": 58
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "WARN"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "WARN"
+                                              },
+                                              "location": {
+                                                "start_line": 234,
+                                                "start_col": 39,
+                                                "end_line": 234,
+                                                "end_col": 43
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 234,
+                                          "start_col": 14,
+                                          "end_line": 234,
+                                          "end_col": 56
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "INFO"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "INFO"
+                                              },
+                                              "location": {
+                                                "start_line": 235,
+                                                "start_col": 39,
+                                                "end_line": 235,
+                                                "end_col": 43
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 235,
+                                          "start_col": 14,
+                                          "end_line": 235,
+                                          "end_col": 56
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "SelectItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "value",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "DEBUG"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "DEBUG"
+                                              },
+                                              "location": {
+                                                "start_line": 236,
+                                                "start_col": 40,
+                                                "end_line": 236,
+                                                "end_col": 45
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 236,
+                                          "start_col": 14,
+                                          "end_line": 236,
+                                          "end_col": 58
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 231,
+                                    "start_col": 12,
+                                    "end_line": 237,
+                                    "end_col": 28
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 227,
+                              "start_col": 10,
+                              "end_line": 238,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "relative w-[100px]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Search",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 240,
+                                    "start_col": 12,
+                                    "end_line": 240,
+                                    "end_col": 97
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Input",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-7 text-xs pl-7"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "placeholder",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Search..."
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "searchQuery"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onChange",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "(e) => setSearchQuery(e.target.value)"
+                                        },
+                                        "is_event_handler": true
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 241,
+                                    "start_col": 12,
+                                    "end_line": 246,
+                                    "end_col": 14
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 239,
+                              "start_col": 10,
+                              "end_line": 247,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "relative w-[90px]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Filter",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 249,
+                                    "start_col": 12,
+                                    "end_line": 249,
+                                    "end_col": 97
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Input",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "h-7 text-xs pl-7"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "placeholder",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Logger..."
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "loggerFilter"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onChange",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "(e) => setLoggerFilter(e.target.value)"
+                                        },
+                                        "is_event_handler": true
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 250,
+                                    "start_col": 12,
+                                    "end_line": 255,
+                                    "end_col": 14
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 248,
+                              "start_col": 10,
+                              "end_line": 256,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "handleRefresh"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Refresh logs"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-7 px-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "RefreshCw",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-3 h-3"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 264,
+                                    "start_col": 12,
+                                    "end_line": 264,
+                                    "end_col": 45
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 257,
+                              "start_col": 10,
+                              "end_line": 265,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "handleClearLogs"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Clear log buffer"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-7 text-xs"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "Clear"
+                                  },
+                                  "location": {
+                                    "start_line": 272,
+                                    "start_col": 11,
+                                    "end_line": 274,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 266,
+                              "start_col": 10,
+                              "end_line": 274,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 226,
+                        "start_col": 8,
+                        "end_line": 275,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-[10px] text-[#858585]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "logs.length"
+                            },
+                            "location": {
+                              "start_line": 277,
+                              "start_col": 10,
+                              "end_line": 277,
+                              "end_col": 23
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "entries • Live streaming"
+                            },
+                            "location": {
+                              "start_line": 277,
+                              "start_col": 23,
+                              "end_line": 278,
+                              "end_col": 8
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 276,
+                        "start_col": 8,
+                        "end_line": 278,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 225,
+                  "start_col": 6,
+                  "end_line": 279,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "ref",
+                      "value": {
+                        "type": "Expression",
+                        "code": "scrollRef"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-y-auto p-2 font-mono text-[11px]"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onScroll",
+                      "value": {
+                        "type": "Expression",
+                        "code": "handleScroll"
+                      },
+                      "is_event_handler": true
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "logs.length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-[#858585] text-center p-4"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "No logs found"
+                                },
+                                "location": {
+                                  "start_line": 282,
+                                  "start_col": 58,
+                                  "end_line": 284,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 282,
+                            "start_col": 10,
+                            "end_line": 284,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 281,
+                        "start_col": 8,
+                        "end_line": 328,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 280,
+                  "start_col": 6,
+                  "end_line": 329,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 205,
+            "start_col": 4,
+            "end_line": 330,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleRefresh",
+          "event_type": null,
+          "is_async": true,
+          "body_summary": "async () => {\n    setIsLoading(true)\n    try {\n      const client = getDefaultApiClient()\n      const params: Record<string, any> = { limit: 500 }\n      if (levelFilter !== 'ALL') params.level = levelFilter\n      if (searchQuery) params.message = searchQuery\n      if (loggerFilter) params.logger = loggerFilter\n\n      const res = await client.get('/api/logs/recent', { params })\n      const recentLogs = res?.data?.logs || []\n      setLogs(recentLogs)\n    } catch (error) {\n      console.error('Failed to refresh logs:', error)\n    } finally {\n      setIsLoading(false)\n    }\n  }",
+          "state_mutations": [
+            "setIsLoading(true)"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setIsLoading",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "isLoading"
+              },
+              "arguments": [
+                "true"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "getDefaultApiClient",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            },
+            {
+              "name": "client.get",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "'/api/logs/recent'",
+                "{ params }"
+              ],
+              "is_async": true
+            },
+            {
+              "name": "setLogs",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "logs"
+              },
+              "arguments": [
+                "recentLogs"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setIsLoading"
+            },
+            {
+              "kind": "StateMutation",
+              "target": "setLogs"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": true,
+          "has_early_return": false
+        },
+        {
+          "name": "handleClearLogs",
+          "event_type": null,
+          "is_async": true,
+          "body_summary": "async () => {\n    try {\n      const client = getDefaultApiClient()\n      await client.post('/api/logs/clear')\n      setLogs([])\n    } catch (error) {\n      console.error('Failed to clear logs:', error)\n    }\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "getDefaultApiClient",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            },
+            {
+              "name": "client.post",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "'/api/logs/clear'"
+              ],
+              "is_async": true
+            },
+            {
+              "name": "setLogs",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "logs"
+              },
+              "arguments": [
+                "[]"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setLogs"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Button",
+        "Circle",
+        "Filter",
+        "Input",
+        "Maximize",
+        "RefreshCw",
+        "Search",
+        "Select",
+        "SelectContent",
+        "SelectItem",
+        "SelectTrigger",
+        "SelectValue"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "logs",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "levelFilter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "searchQuery",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loggerFilter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "connectionStatus",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "isLoading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/logs_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:logs",
+        "to_field": "logs",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'logs' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:levelFilter",
+        "to_field": "levelFilter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"ALL\"",
+        "reasoning": "useState hook 'levelFilter' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:searchQuery",
+        "to_field": "searchQuery",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'searchQuery' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loggerFilter",
+        "to_field": "loggerFilter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'loggerFilter' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:connectionStatus",
+        "to_field": "connectionStatus",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"connecting\"",
+        "reasoning": "useState hook 'connectionStatus' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:isLoading",
+        "to_field": "isLoading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "true",
+        "reasoning": "useState hook 'isLoading' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:scrollRef",
+        "to_field": "scrollRef",
+        "field_type": "Option<HTMLDivElement>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'scrollRef' becomes non-reactive state (no re-render on change)"
+      },
+      {
+        "from_hook": "useRef:eventSourceRef",
+        "to_field": "eventSourceRef",
+        "field_type": "Option</* type */>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'eventSourceRef' becomes non-reactive state (no re-render on change)"
+      },
+      {
+        "from_hook": "useRef:autoScrollRef",
+        "to_field": "autoScrollRef",
+        "field_type": "Option<Element>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'autoScrollRef' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateLogs",
+        "from_handler": "setLogs",
+        "payload": null,
+        "state_changes": [
+          "self.logs = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLevelFilter",
+        "from_handler": "setLevelFilter",
+        "payload": null,
+        "state_changes": [
+          "self.levelFilter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSearchQuery",
+        "from_handler": "setSearchQuery",
+        "payload": null,
+        "state_changes": [
+          "self.searchQuery = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoggerFilter",
+        "from_handler": "setLoggerFilter",
+        "payload": null,
+        "state_changes": [
+          "self.loggerFilter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateConnectionStatus",
+        "from_handler": "setConnectionStatus",
+        "payload": null,
+        "state_changes": [
+          "self.connectionStatus = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIsLoading",
+        "from_handler": "setIsLoading",
+        "payload": null,
+        "state_changes": [
+          "self.isLoading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Refresh",
+        "from_handler": "handleRefresh",
+        "payload": null,
+        "state_changes": [
+          "self.isLoading = true"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "ClearLogs",
+        "from_handler": "handleClearLogs",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[levelFilter,searchQuery,loggerFilter]",
+        "strategy": "inline",
+        "reasoning": "Deps [levelFilter, searchQuery, loggerFilter] → inline in handlers that change these",
+        "inline_in": "levelFilter_searchQuery_loggerFilter",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[levelFilter,searchQuery,loggerFilter]",
+        "strategy": "inline",
+        "reasoning": "Deps [levelFilter, searchQuery, loggerFilter] → inline in handlers that change these",
+        "inline_in": "levelFilter_searchQuery_loggerFilter",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[logs]",
+        "strategy": "inline",
+        "reasoning": "Deps [logs] → inline in handlers that change these",
+        "inline_in": "logs",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "useCallback_remove",
+      "description": "useCallback is not needed in actors",
+      "react": "const handleClick = useCallback(() => { ... }, [dep]);",
+      "sigil": "// No equivalent needed - actors don't re-render like React"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_9",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [levelFilter, searchQuery, loggerFilter] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_10",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [levelFilter, searchQuery, loggerFilter] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_11",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [logs] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Circle",
+      "Filter",
+      "Input",
+      "Maximize",
+      "RefreshCw",
+      "Search",
+      "Select",
+      "SelectContent",
+      "SelectItem",
+      "SelectTrigger",
+      "SelectValue"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "6 state variables"
+  ],
+  "status": "pending"
+}

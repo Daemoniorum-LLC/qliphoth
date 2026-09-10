@@ -1,314 +1,101 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2025 Daemoniorum, LLC
 
-// Sigil Web - A React-inspired web framework for Sigil
+// Qliphoth - Agent-Centric Web Framework for Sigil
 // Copyright © 2025 Daemoniorum, LLC. All rights reserved.
 
-//! # Sigil Web
+//! # Qliphoth
 //!
-//! A React-inspired web application framework built on Sigil's polysynthetic
-//! programming paradigm. Sigil Web leverages Sigil's unique features to create
-//! type-safe, high-performance web applications.
+//! An agent-centric web application framework built on Sigil's actor model.
+//! Qliphoth uses native Sigil paradigms instead of React patterns:
 //!
-//! ## Features
-//!
-//! - **Evidentiality-Driven State**: Track data provenance with `!` (computed),
-//!   `?` (uncertain), `~` (remote), and `‽` (untrusted) markers
-//! - **Morpheme Components**: Compose UI with pipe operators and transformations
-//! - **Actor-Based State Management**: Predictable state updates via message passing
-//! - **Zero-Cost Abstractions**: Compile-time optimization for production builds
+//! - **Actors for components** - not function components with hooks
+//! - **Messages for events** - not callbacks
+//! - **Builders for views** - not DSL/JSX syntax
+//! - **Evidentiality for data** - not loading booleans
 //!
 //! ## Quick Start
 //!
 //! ```sigil
-//! use qliphoth::prelude::*
+//! invoke qliphoth·prelude·*
 //!
-//! component Counter {
+//! actor Counter {
 //!     state count: i64! = 0
 //!
-//!     rite render(this) → Element {
-//!         div {
-//!             h1 { "Count: {this.count}" }
-//!             button[onclick: || this.count += 1] { "+" }
-//!             button[onclick: || this.count -= 1] { "-" }
-//!         }
+//!     on Increment { self.count += 1 }
+//!     on Decrement { self.count -= 1 }
+//!
+//!     rite view(self) -> VNode! {
+//!         VNode::div()
+//!             ·child(VNode::button()·on_click(Decrement)·text_child("-"))
+//!             ·child(VNode::span()·text_child(self.count.to_string()))
+//!             ·child(VNode::button()·on_click(Increment)·text_child("+"))
 //!     }
 //! }
 //!
 //! rite main() {
-//!     App::mount("#root", Counter::new())
+//!     App·mount("#root", Counter·view())
 //! }
 //! ```
 
-☉ mod core;
-☉ mod components;
-☉ mod hooks;
-☉ mod router;
-☉ mod dom;
-☉ mod state;
-☉ mod platform;
-☉ mod a11y;
-☉ mod app;
-☉ mod animation;
+☉ scroll core;
+☉ scroll dom;
+☉ scroll platform;
 
 // Version information
-☉ const VERSION: &str = "0.1.0";
+☉ const VERSION: &str = "0.2.0";
 ☉ const VERSION_MAJOR: u32 = 0;
-☉ const VERSION_MINOR: u32 = 1;
+☉ const VERSION_MINOR: u32 = 2;
 ☉ const VERSION_PATCH: u32 = 0;
 
 /// Prelude module - import everything commonly needed
-☉ mod prelude {
+☉ scroll prelude {
     // Core
-    ☉ use crate::core::{App, AppConfig};
-    ☉ use crate::core::vdom::{VNode, VElement, VText, VFragment};
-    ☉ use crate::core::events::{Event, EventType, EventHandler};
+    ☉ invoke tome·core·{App, AppConfig, RenderTarget};
+    ☉ invoke tome·core·vdom·{VNode, VElement, VText, VFragment, Patch, diff};
+    ☉ invoke tome·core·events·{Event, EventType, EventRegistry};
 
-    // Components
-    ☉ use crate::components::{Component, Context, ErrorBoundary, Suspense, Memo, Fragment, Portal};
-
-    // Hooks
-    ☉ use crate::hooks::{
-        use_state, use_state_with,
-        use_reducer,
-        use_effect, use_layout_effect,
-        use_memo, use_callback,
-        use_ref,
-        use_context,
-        use_fetch, use_fetch_with, use_mutation,
-        use_debounce, use_throttle,
-        use_local_storage,
-        use_media_query, use_window_size, use_online,
-        use_intersection,
-        use_transition, use_deferred_value,
-        use_animation_frame,
-        AsyncState
-    };
-
-    // Router
-    ☉ use crate::router::{
-        Router, Route, RouteProps, RouteMatch,
-        Link, NavLink, Redirect, Outlet, ProtectedRoute,
-        use_router, use_params, use_query, use_location, use_navigate, use_match,
-        Location, Navigator, Params, Query
-    };
-
-    // DOM
-    ☉ use crate::dom::{
-        ElementBuilder,
-        // Structure
-        div, span, main_elem, section, article, aside, header, footer, nav,
-        // Text
-        h1, h2, h3, h4, h5, h6, p, pre, code, blockquote, em, strong, small,
-        // Links and media
-        a, img, video, audio, svg,
-        // Lists
-        ul, ol, li,
-        // Tables
-        table, thead, tbody, tr, th, td,
-        // Forms
-        form, input, textarea, select, option, button, label,
-        // Other
-        br, hr,
-        // Helpers
-        fragment, text, when, if_else, map_to_elements,
-        // Styling
-        style, classes, Style, Classes
-    };
-
-    // State
-    ☉ use crate::state::{
-        Store, Action, Selector, Slice,
-        use_store, use_selector, use_dispatch,
-        signal, computed, effect,
-        Signal, Computed,
-        Atom, use_atom, use_atom_value, use_set_atom,
-        produce
-    };
+    // DOM helpers
+    ☉ invoke tome·dom·*;
 
     // Platform
-    ☉ use crate::platform::{Platform, BrowserPlatform, ServerPlatform, auto_detect, detect_with_options, detect_native_platform};
-
-    // Cross-Platform App
-    ☉ use crate::app::{
-        CrossPlatformApp, CrossPlatformConfig,
-        launch, launch_with_config, render_to_string,
-        PlatformInfo, get_platform_info
-    };
-
-    // Accessibility
-    ☉ use crate::a11y::{
-        // Initialization
-        init_accessibility, init_a11y,
-        // Hooks
-        use_reduced_motion, use_announcer, use_focus_trap, use_focus_visible,
-        use_keyboard_navigation, use_roving_tabindex,
-        // Hook Options
-        FocusTrapOptions, KeyboardNavConfig, Orientation,
-        // Announcer
-        announce, Politeness,
-        // Focus utilities
-        FocusScope, focus_first, focus_last, get_active_element,
-        // Keyboard utilities
-        shortcuts, Direction, GridNav,
-        // Components
-        SkipLink, VisuallyHidden, LiveRegion, Icon, LoadingIndicator, ProgressBar,
-    };
-
-    // Animation
-    ☉ use crate::animation::{
-        // Primitives
-        AnimatedValue, AnimationConfig, AnimationType,
-        SpringConfig, SpringPreset,
-        Easing, apply_easing,
-        // Keyframes
-        Keyframe, KeyframeAnimation, AnimationDirection, FillMode,
-        // CSS Transitions
-        Transition, transitions_to_css,
-        // Hooks
-        use_animation, use_spring, use_spring_config, use_keyframes,
-        use_transition, use_motion, use_presence,
-        AnimationState, SpringState, KeyframeState, TransitionState, MotionState, MotionProps, PresenceState, PresencePhase,
-        // Components
-        Animated, AnimatePresence, Stagger, Collapse, Fade, Slide, Scale, Spin,
-        AnimatedProps, AnimatedStyle, SlideDirection,
-        // Gestures
-        use_pan, use_pan_config, use_pinch, use_rotate, use_swipe, use_long_press,
-        PanState, PanGesture, PanConfig, PanDirection,
-        PinchState, PinchGesture,
-        RotateState, RotateGesture,
-        SwipeState, SwipeGesture, SwipeConfig, SwipeDirection,
-        LongPressState, LongPressGesture, LongPressConfig,
-        Point, Velocity, GestureState
-    };
-
-    // Macros
-    ☉ use crate::{jsx, el};
+    ☉ invoke tome·platform·Platform;
 }
 
 /// Server-side rendering utilities
-☉ mod ssr {
-    ☉ use crate::platform::ServerPlatform;
-    ☉ use crate::core::App;
+☉ scroll ssr {
+    invoke tome·core·{App, render_vnode_to_string};
+    invoke tome·core·vdom·VNode;
 
-    /// Render a component to an HTML string
-    ☉ rite render_to_string<C: crate::components::Component>(component: C) → String! {
-        crate::core::App::render_to_string(component)
-    }
-
-    /// Render with streaming support
-    ☉ async rite render_to_stream<C: crate::components::Component>(
-        component: C,
-        on_chunk: fn(String)
-    ) {
-        // Stream HTML chunks as they're rendered
-        ≔ html! = render_to_string(component)
-        on_chunk(html)
+    /// Render a VNode to an HTML string
+    ☉ rite render_to_string(node: &VNode) -> String! {
+        render_vnode_to_string(node)
     }
 }
 
 /// Development utilities
-☉ mod dev {
-    /// Enable React DevTools compatibility
-    ☉ rite enable_devtools() {
-        // Connect to browser devtools
-    }
-
-    /// Hot module replacement support
-    ☉ rite enable_hmr() {
-        // Setup HMR handlers
+☉ scroll dev {
+    /// Enable development mode logging
+    ☉ rite enable_dev_mode() {
+        // Enable debug logging
     }
 
     /// Performance profiling
-    ☉ sigil Profiler {
+    ☉ Σ Profiler {
         name: String!
         start_time: f64!
     }
 
     ⊢ Profiler {
-        ☉ rite start(name: &str) → This! {
+        ☉ rite start(name: &str) -> Self! {
             Profiler {
                 name: name.to_string(),
-                start_time: 0.0 // Platform-specific time
+                start_time: 0.0
             }
         }
 
-        ☉ rite end(this) {
+        ☉ rite end(self) {
             // Log performance metrics
         }
-    }
-
-    /// Component inspection
-    ☉ rite inspect_component<C: crate::components::Component>(component: &C) {
-        // Log component details for debugging
-    }
-}
-
-/// Testing utilities
-#[cfg(test)]
-☉ mod testing {
-    use crate::core::vdom::VNode;
-    use crate::components::Component;
-
-    /// Render a component for testing
-    ☉ rite render<C: Component>(component: C) → TestRenderer! {
-        TestRenderer {
-            root: component·to_vnode()
-        }
-    }
-
-    /// Test renderer for assertions
-    ☉ sigil TestRenderer {
-        root: VNode!
-    }
-
-    ⊢ TestRenderer {
-        /// Find element by test ID
-        ☉ rite find_by_test_id(&this, id: &str) → Option<&VNode>? {
-            // Search tree for data-testid attribute
-            None
-        }
-
-        /// Find all elements matching selector
-        ☉ rite find_all(&this, selector: &str) → Vec<&VNode>! {
-            Vec::new()
-        }
-
-        /// Get rendered HTML
-        ☉ rite to_html(&this) → String! {
-            crate::platform::render_vnode_to_string(&this.root)
-        }
-
-        /// Simulate click event
-        ☉ rite click(&vary this, target: &str) {
-            // Dispatch click event
-        }
-
-        /// Simulate input event
-        ☉ rite input(&vary this, target: &str, value: &str) {
-            // Dispatch input event
-        }
-
-        /// Wait for async updates
-        ☉ async rite wait_for_update(&vary this) {
-            // Wait for pending state updates
-        }
-    }
-
-    /// Assert component renders expected HTML
-    #[macro_export]
-    macro_rules! assert_renders {
-        ($component:expr, $expected:expr) => {
-            ≔ renderer! = render($component)
-            assert_eq!(renderer·to_html(), $expected)
-        };
-    }
-
-    /// Assert element exists
-    #[macro_export]
-    macro_rules! assert_element {
-        ($renderer:expr, $selector:expr) => {
-            assert!($renderer·find_all($selector)·len() > 0, "Element not found: {}", $selector)
-        };
     }
 }

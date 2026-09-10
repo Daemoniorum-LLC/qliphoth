@@ -1,0 +1,295 @@
+invoke qliphoth·prelude·*;
+ᛈ AICodeReviewPanelMsg {
+    UpdateCode,
+    UpdateFileName,
+    UpdateLanguage,
+    UpdateReviewing,
+    UpdateCurrentReview,
+    UpdateHistory,
+    UpdateExpandedIssues,
+    UpdateShowConfig,
+    UpdateCopied,
+    UpdateConfig,
+}
+☉ actor AICodeReviewPanel {
+    state code: String! = "",
+    state fileName: String! = "",
+    state language: String! = "typescript",
+    state reviewing: bool! = false,
+    state currentReview: Option<Any>~ = None,
+    state history: Any~ = None,
+    state expandedIssues: Any~ = None,
+    state showConfig: bool! = false,
+    state copied: Option<Any>~ = None,
+    state config: Option<Any>~ = ∅,
+
+    rite new(on_file_click: Any) -> This! {
+        self.on_file_click = on_file_click;
+        This
+    }
+
+    on UpdateCode {
+        self.code = msg.0;
+    }
+
+    on UpdateFileName {
+        self.fileName = msg.0;
+    }
+
+    on UpdateLanguage {
+        self.language = msg.0;
+    }
+
+    on UpdateReviewing {
+        self.reviewing = msg.0;
+    }
+
+    on UpdateCurrentReview {
+        self.currentReview = msg.0;
+    }
+
+    on UpdateHistory {
+        self.history = msg.0;
+    }
+
+    on UpdateExpandedIssues {
+        self.expandedIssues = msg.0;
+    }
+
+    on UpdateShowConfig {
+        self.showConfig = msg.0;
+    }
+
+    on UpdateCopied {
+        self.copied = msg.0;
+    }
+
+    on UpdateConfig {
+        self.config = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c] bg-[#252526]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center justify-between mb-3")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        Sparkles·view()
+                            ·class("w-4 h-4 text-[#9d00ff]")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-sm font-medium text-white")
+                            ·text_child("AI Code Review")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·on_click(Click)
+                            ·class("h-7 w-7 p-0")
+                            ·attr("aria-label", "Settings")
+                            ·child(
+                            Settings·view()
+                                ·class("w-3.5 h-3.5 " + ⎇ self.show_config { "text-[#5bcefa]" } ⎉ { "" }.to_string())
+                            )
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·when(self.reviewing ∨ ¬self.code·trim(), |n| n·attr("disabled", "true"))
+                            ·when_else(self.reviewing, Spinner·view()
+                                ·attr("size", "sm"), VNode·fragment()
+                                ·child(
+                                Play·view()
+                                    ·class("w-3.5 h-3.5 mr-1.5")
+                                )
+                                ·text_child("Review"))
+                        )
+                    )
+                )
+                ·when(self.show_config, VNode·div()
+                    ·class("flex flex-wrap gap-2 mb-3 p-2 bg-[#2d2d30] rounded")
+                    // Map: ∀ key ∈ (Object.keys(config) as (keyof ReviewConfig)[])
+                    ·children((self.object·keys(self.config)).iter().map(|key| VNode·label()
+                            ·attr("key", key)
+                            ·class("flex items-center gap-1.5 text-xs cursor-pointer")
+                            ·child(
+                            VNode·input()
+                                ·attr("type", "checkbox")
+                                ·when(self.config[key], |n| n·attr("checked", "true"))
+                                ·on_change(Change)
+                                ·class("w-3.5 h-3.5 rounded")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-[#b0b0b0]")
+                                ·text_child(key·replace("check", "")·to_string())
+                            )).collect()))
+                ·child(
+                VNode·div()
+                    ·class("flex gap-2")
+                    ·child(
+                    VNode·input()
+                        ·attr("type", "text")
+                        ·attr("placeholder", "File name (optional)")
+                        ·attr("value", self.file_name)
+                        ·on_change(Change)
+                        ·class("w-40 px-2 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                    )
+                    ·child(
+                    VNode·select()
+                        ·attr("value", self.language)
+                        ·on_change(Change)
+                        ·class("px-2 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]")
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "typescript")
+                            ·text_child("TypeScript")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "javascript")
+                            ·text_child("JavaScript")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "python")
+                            ·text_child("Python")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "java")
+                            ·text_child("Java")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "go")
+                            ·text_child("Go")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "rust")
+                            ·text_child("Rust")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "csharp")
+                            ·text_child("C#")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "cpp")
+                            ·text_child("C++")
+                        )
+                    )
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c]")
+                ·child(
+                VNode·textarea()
+                    ·attr("value", self.code)
+                    ·on_change(Change)
+                    ·attr("placeholder", "Paste your code here for AI review...")
+                    ·class("w-full h-32 p-3 text-sm bg-[#2d2d30] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] resize-none")
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto")
+                ·when(self.reviewing, VNode·div()
+                    ·class("flex flex-col items-center justify-center h-full gap-3")
+                    ·child(
+                    Spinner·view()
+                        ·attr("size", "lg")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-sm text-[#b0b0b0]")
+                        ·text_child("Analyzing code...")
+                    ))
+                ·when(self.current_review ∧ ¬self.reviewing, VNode·div()
+                    ·class("p-3")
+                    ·child(
+                    VNode·div()
+                        ·class("p-4 rounded-lg border mb-4 " + self.get_score_bg(self.current_review.score).to_string())
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center justify-between mb-2")
+                            ·child(
+                            VNode·span()
+                                ·class("text-sm font-medium text-white")
+                                ·text_child("Code Quality Score")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-3xl font-bold " + self.get_score_color(self.current_review.score).to_string())
+                                ·text_child(self.current_review.score·to_string())
+                                ·text_child("/100")
+                            )
+                        )
+                        ·child(
+                        VNode·p()
+                            ·class("text-xs text-[#b0b0b0]")
+                            ·text_child(self.current_review.summary·to_string())
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex gap-3 mb-4")
+                        ·text_child(None·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("space-y-2")
+                        ·text_child(None·to_string())
+                    )
+                    ·when(self.current_review.issues.len() == 0, VNode·div()
+                        ·class("flex flex-col items-center justify-center py-8 text-center")
+                        ·child(
+                        CheckCircle·view()
+                            ·class("w-8 h-8 text-[#00ff7f] mb-3")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-sm text-white font-medium")
+                            ·text_child("No issues found!")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-[#858585]")
+                            ·text_child("Your code looks great.")
+                        )))
+                ·when(¬self.reviewing ∧ ¬self.current_review, VNode·div()
+                    ·class("flex flex-col items-center justify-center h-full text-center p-6")
+                    ·child(
+                    Sparkles·view()
+                        ·class("w-8 h-8 text-[#858585] mb-3")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-sm text-[#cccccc] font-medium")
+                        ·text_child("Ready to review")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-xs text-[#858585]")
+                        ·text_child("Paste your code and click Review")
+                    ))
+            )
+    }
+}

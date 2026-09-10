@@ -1,0 +1,207 @@
+invoke qliphoth·prelude·*;
+ᛈ LogsPanelMsg {
+    UpdateLogs,
+    UpdateLevelFilter,
+    UpdateSearchQuery,
+    UpdateLoggerFilter,
+    UpdateConnectionStatus,
+    UpdateIsLoading,
+    Refresh,
+    ClearLogs,
+}
+actor LogsPanel {
+    state logs: Vec<Any>! = [],
+    state levelFilter: String! = "ALL",
+    state searchQuery: String! = "",
+    state loggerFilter: String! = "",
+    state connectionStatus: String! = "connecting",
+    state isLoading: bool! = True,
+    state scrollRef: Option<HTMLDivElement>! = ∅,
+    state eventSourceRef: Option<Any>! = ∅,
+    state autoScrollRef: Option<Element>! = ∅,
+
+    on UpdateLogs {
+        self.logs = msg.0;
+    }
+
+    on UpdateLevelFilter {
+        self.levelFilter = msg.0;
+    }
+
+    on UpdateSearchQuery {
+        self.searchQuery = msg.0;
+    }
+
+    on UpdateLoggerFilter {
+        self.loggerFilter = msg.0;
+    }
+
+    on UpdateConnectionStatus {
+        self.connectionStatus = msg.0;
+    }
+
+    on UpdateIsLoading {
+        self.isLoading = msg.0;
+    }
+
+    on Refresh {
+        self.isLoading = True;
+    }
+
+    on ClearLogs {
+        // TODO: implement
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold flex justify-between items-center")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center")
+                    ·child(
+                    VNode·span()
+                        ·text_child("Server Logs")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("ml-3 text-[11px] flex items-center")
+                        ·child(
+                        Circle·view()
+                            ·class("w-2 h-2 mr-1.5 fill-current ")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-[#858585]")
+                            ·text_child(get_status_text()·to_string())
+                        )
+                    )
+                )
+                ·when(self.on_open_full_screen, Button·view()
+                    ·attr("variant", "ghost")
+                    ·attr("size", "sm")
+                    ·on_click(Click)
+                    ·attr("title", "Open full-screen logs viewer")
+                    ·child(
+                    Maximize·view()
+                        ·class("w-4 h-4")
+                    ))
+            )
+            ·child(
+            VNode·div()
+                ·class("p-2 border-b border-[#3c3c3c] flex flex-col gap-1.5")
+                ·child(
+                VNode·div()
+                    ·class("flex gap-1 flex-wrap")
+                    ·child(
+                    Select·view()
+                        ·attr("value", self.level_filter)
+                        ·on_valuechange(ValueChange)
+                        ·child(
+                        SelectTrigger·view()
+                            ·class("w-20 h-7 text-xs")
+                            ·child(
+                            SelectValue·view()
+                            )
+                        )
+                        ·child(
+                        SelectContent·view()
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "ALL")
+                                ·text_child("All")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "ERROR")
+                                ·text_child("ERROR")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "WARN")
+                                ·text_child("WARN")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "INFO")
+                                ·text_child("INFO")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "DEBUG")
+                                ·text_child("DEBUG")
+                            )
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("relative w-[100px]")
+                        ·child(
+                        Search·view()
+                            ·class("absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400")
+                        )
+                        ·child(
+                        Input·view()
+                            ·class("h-7 text-xs pl-7")
+                            ·attr("placeholder", "Search...")
+                            ·attr("value", self.search_query)
+                            ·on_change(Change)
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("relative w-[90px]")
+                        ·child(
+                        Filter·view()
+                            ·class("absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400")
+                        )
+                        ·child(
+                        Input·view()
+                            ·class("h-7 text-xs pl-7")
+                            ·attr("placeholder", "Logger...")
+                            ·attr("value", self.logger_filter)
+                            ·on_change(Change)
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·attr("title", "Refresh logs")
+                        ·class("h-7 px-2")
+                        ·child(
+                        RefreshCw·view()
+                            ·class("w-3 h-3")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·attr("title", "Clear log buffer")
+                        ·class("h-7 text-xs")
+                        ·text_child("Clear")
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("text-[10px] text-[#858585]")
+                    ·text_child(self.logs.len()·to_string())
+                    ·text_child("entries • Live streaming")
+                )
+            )
+            ·child(
+            VNode·div()
+                ·attr("ref", self.scroll_ref)
+                ·class("flex-1 overflow-y-auto p-2 font-mono text-[11px]")
+                ·on_scroll(Scroll)
+                ·when(self.logs.len() == 0, VNode·div()
+                    ·class("text-[#858585] text-center p-4")
+                    ·text_child("No logs found"))
+            )
+    }
+}

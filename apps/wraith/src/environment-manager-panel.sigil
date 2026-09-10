@@ -1,0 +1,147 @@
+invoke qliphoth·prelude·*;
+ᛈ EnvironmentManagerPanelMsg {
+    UpdateEnvironments,
+    UpdateExpandedEnvs,
+    UpdateRevealedSecrets,
+    UpdateCopiedKey,
+    UpdateShowAddEnv,
+    UpdateNewEnv,
+}
+☉ actor EnvironmentManagerPanel {
+    state environments: Any~ = None,
+    state expandedEnvs: Any~ = None,
+    state revealedSecrets: Any~ = None,
+    state copiedKey: Option<Any>~ = None,
+    state showAddEnv: bool! = false,
+    state newEnv: Option<Any>~ = ∅,
+
+    on UpdateEnvironments {
+        self.environments = msg.0;
+    }
+
+    on UpdateExpandedEnvs {
+        self.expandedEnvs = msg.0;
+    }
+
+    on UpdateRevealedSecrets {
+        self.revealedSecrets = msg.0;
+    }
+
+    on UpdateCopiedKey {
+        self.copiedKey = msg.0;
+    }
+
+    on UpdateShowAddEnv {
+        self.showAddEnv = msg.0;
+    }
+
+    on UpdateNewEnv {
+        self.newEnv = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c] bg-[#252526]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center justify-between mb-2")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        Settings·view()
+                            ·class("w-4 h-4 text-[#5bcefa]")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-sm font-medium text-white")
+                            ·text_child("Environments")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "ghost")
+                        ·on_click(Click)
+                        ·class("h-7 w-7 p-0")
+                        ·attr("aria-label", "Add environment")
+                        ·child(
+                        Plus·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                )
+                ·when(self.active_env, VNode·div()
+                    ·class("flex items-center gap-2 px-2 py-1 rounded text-xs " + self.e_n_v__t_y_p_e__s_t_y_l_e_s[self.active_env.type].bg.to_string())
+                    ·child(
+                    VNode·div()
+                        ·class("w-2 h-2 rounded-full " + self.e_n_v__t_y_p_e__s_t_y_l_e_s[self.active_env.type].bg.to_string() + " " + self.e_n_v__t_y_p_e__s_t_y_l_e_s[self.active_env.type].border.to_string() + " border-2")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class(self.e_n_v__t_y_p_e__s_t_y_l_e_s[self.active_env.type].text)
+                        ·text_child("Active:")
+                        ·text_child(self.active_env.name·to_string())
+                    ))
+            )
+            ·when(self.show_add_env, VNode·div()
+                ·class("p-3 border-b border-[#3c3c3c] bg-[#2d2d30]")
+                ·child(
+                VNode·div()
+                    ·class("flex flex-col gap-2")
+                    ·child(
+                    VNode·input()
+                        ·attr("type", "text")
+                        ·attr("placeholder", "Environment name")
+                        ·attr("value", self.new_env.name)
+                        ·on_change(Change)
+                        ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]")
+                    )
+                    ·child(
+                    VNode·select()
+                        ·attr("value", self.new_env.type)
+                        ·on_change(Change)
+                        ·class("w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]")
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "development")
+                            ·text_child("Development")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "staging")
+                            ·text_child("Staging")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "production")
+                            ·text_child("Production")
+                        )
+                        ·child(
+                        VNode·option()
+                            ·attr("value", "custom")
+                            ·text_child("Custom")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·when(¬self.new_env.name·trim(), |n| n·attr("disabled", "true"))
+                        ·child(
+                        Plus·view()
+                            ·class("w-3.5 h-3.5 mr-1.5")
+                        )
+                        ·text_child("Add Environment")
+                    )
+                ))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto p-2")
+                ·text_child(None·to_string())
+            )
+    }
+}

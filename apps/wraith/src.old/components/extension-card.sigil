@@ -1,0 +1,31 @@
+invoke qliphoth·prelude·*;
+rite extension_card(name: Any, description: Any, icon: Any, enabled: Any, on_toggle: Any) -> VNode! {
+    VNode·button()
+        ·attr("type", "button")
+        ·on_click(Click)
+        ·class("w-full flex items-center gap-3 p-2 rounded text-left transition-colors ")
+        ·child(
+        VNode·div()
+            ·class("text-[var(--accent-primary)]")
+            ·text_child(icon·to_string())
+        )
+        ·child(
+        VNode·div()
+            ·class("flex-1 min-w-0")
+            ·child(
+            VNode·div()
+                ·class("text-sm font-medium")
+                ·text_child(name·to_string())
+            )
+            ·child(
+            VNode·div()
+                ·class("text-xs text-[var(--text-secondary)] truncate")
+                ·text_child(description·to_string())
+            )
+        )
+        ·child(
+        Toggle·view()
+            ·when(enabled, |n| n·attr("checked", "True"))
+            ·on_change(Change)
+        )
+}

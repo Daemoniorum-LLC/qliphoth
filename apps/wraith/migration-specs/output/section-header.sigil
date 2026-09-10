@@ -1,0 +1,34 @@
+invoke qliphoth·prelude·*;
+rite section_header(title: Any, subtitle: Any, icon: Any, actions: Any, on_refresh: Any, is_refreshing: Any) -> VNode! {
+    VNode·div()
+        ·class("flex items-center justify-between gap-4 mb-4")
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-3")
+            ·when(icon, VNode·div()
+                ·class("text-[var(--accent-primary)]")
+                ·text_child(icon·to_string()))
+            ·child(
+            VNode·div()
+                ·child(
+                VNode·h2()
+                    ·class("text-base font-semibold text-[var(--text-primary)]")
+                    ·text_child(title·to_string())
+                )
+                ·when(subtitle, VNode·p()
+                    ·class("text-xs text-[var(--text-secondary)] mt-0.5")
+                    ·text_child(subtitle·to_string()))
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex items-center gap-2")
+            ·text_child(actions·to_string())
+            ·when(on_refresh, IconButton·view()
+                ·attr("icon", None)
+                ·attr("size", "sm")
+                ·attr("tooltip", "Refresh")
+                ·on_click(Click)
+                ·when(is_refreshing, |n| n·attr("disabled", "true")))
+        )
+}

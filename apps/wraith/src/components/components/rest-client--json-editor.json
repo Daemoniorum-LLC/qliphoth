@@ -1,0 +1,1006 @@
+{
+  "id": "ui/components/panels/RestClient/JsonEditor.tsx:JsonEditor",
+  "name": "JsonEditor",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/RestClient/JsonEditor.tsx",
+    "code": "import React, { useState, useEffect, useCallback } from 'react'\nimport { AlertCircle, Check, Wand2 } from 'lucide-react'\n\ninterface JsonEditorProps {\n  value: string\n  onChange: (value: string) => void\n  placeholder?: string\n  minHeight?: string\n  maxHeight?: string\n  label?: string\n  required?: boolean\n}\n\nexport function JsonEditor({\n  value,\n  onChange,\n  placeholder = '{\"key\": \"value\"}',\n  minHeight = '8rem',\n  maxHeight,\n  label,\n  required = false,\n}: JsonEditorProps) {\n  const [error, setError] = useState<string | null>(null)\n  const [isValid, setIsValid] = useState(false)\n\n  // Validate JSON on value change\n  useEffect(() => {\n    if (!value.trim()) {\n      setError(null)\n      setIsValid(false)\n      return\n    }\n\n    try {\n      JSON.parse(value)\n      setError(null)\n      setIsValid(true)\n    } catch (err) {\n      setError(err instanceof Error ? err.message : 'Invalid JSON')\n      setIsValid(false)\n    }\n  }, [value])\n\n  // Format JSON\n  const handleFormat = useCallback(() => {\n    if (!value.trim()) return\n\n    try {\n      const parsed = JSON.parse(value)\n      onChange(JSON.stringify(parsed, null, 2))\n    } catch {\n      // Can't format invalid JSON\n    }\n  }, [value, onChange])\n\n  // Minify JSON\n  const handleMinify = useCallback(() => {\n    if (!value.trim()) return\n\n    try {\n      const parsed = JSON.parse(value)\n      onChange(JSON.stringify(parsed))\n    } catch {\n      // Can't minify invalid JSON\n    }\n  }, [value, onChange])\n\n  return (\n    <div className=\"space-y-1\">\n      {label && (\n        <div className=\"flex items-center justify-between\">\n          <label className=\"text-xs text-[#808080] flex items-center gap-1\">\n            {label}\n            {required && <span className=\"text-[#f48771]\">*</span>}\n          </label>\n          <div className=\"flex items-center gap-1\">\n            {isValid && (\n              <span className=\"text-[10px] text-[#00ff7f] flex items-center gap-1\">\n                <Check className=\"w-3 h-3\" />\n                Valid\n              </span>\n            )}\n            {value.trim() && isValid && (\n              <>\n                <button\n                  onClick={handleFormat}\n                  className=\"text-[10px] text-[#5bcefa] hover:text-[#7dd3fc] px-1.5 py-0.5 rounded hover:bg-[#3c3c3c]\"\n                  title=\"Format JSON\"\n                >\n                  Format\n                </button>\n                <button\n                  onClick={handleMinify}\n                  className=\"text-[10px] text-[#5bcefa] hover:text-[#7dd3fc] px-1.5 py-0.5 rounded hover:bg-[#3c3c3c]\"\n                  title=\"Minify JSON\"\n                >\n                  Minify\n                </button>\n              </>\n            )}\n          </div>\n        </div>\n      )}\n\n      <div className=\"relative\">\n        <textarea\n          value={value}\n          onChange={(e) => onChange(e.target.value)}\n          placeholder={placeholder}\n          className={`w-full p-3 text-sm bg-[#2d2d30] border rounded text-white font-mono resize-y focus:outline-none ${\n            error\n              ? 'border-[#f48771] focus:border-[#f48771]'\n              : 'border-[#3c3c3c] focus:border-[#5bcefa]'\n          }`}\n          style={{\n            minHeight,\n            maxHeight: maxHeight || undefined,\n          }}\n          spellCheck={false}\n          aria-label={label || 'JSON input'}\n          aria-invalid={!!error}\n          aria-describedby={error ? 'json-error' : undefined}\n        />\n\n        {/* Line numbers gutter could be added here if needed */}\n      </div>\n\n      {error && (\n        <div\n          id=\"json-error\"\n          className=\"flex items-start gap-1.5 text-xs text-[#f48771] bg-[rgba(244,135,113,0.1)] px-2 py-1.5 rounded\"\n          role=\"alert\"\n        >\n          <AlertCircle className=\"w-3.5 h-3.5 mt-0.5 flex-shrink-0\" />\n          <span>{error}</span>\n        </div>\n      )}\n    </div>\n  )\n}\n\n// Standalone validation function\nexport function validateJson(value: string): { valid: boolean; error?: string } {\n  if (!value.trim()) {\n    return { valid: true }\n  }\n\n  try {\n    JSON.parse(value)\n    return { valid: true }\n  } catch (err) {\n    return {\n      valid: false,\n      error: err instanceof Error ? err.message : 'Invalid JSON',\n    }\n  }\n}\n\n// Format JSON string\nexport function formatJson(value: string): string {\n  try {\n    return JSON.stringify(JSON.parse(value), null, 2)\n  } catch {\n    return value\n  }\n}\n\n// Minify JSON string\nexport function minifyJson(value: string): string {\n  try {\n    return JSON.stringify(JSON.parse(value))\n  } catch {\n    return value\n  }\n}\n",
+    "extraction": {
+      "name": "JsonEditor",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 14,
+        "start_col": 7,
+        "end_line": 140,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "value",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onChange",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "placeholder",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "'{\"key\": \"value\"}'",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "minHeight",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "'8rem'",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "maxHeight",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "label",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "required",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "false",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 23,
+            "start_col": 28,
+            "end_line": 23,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 24,
+            "start_col": 32,
+            "end_line": 24,
+            "end_col": 47
+          },
+          "state_name": "isValid",
+          "setter_name": "setIsValid",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 27,
+            "start_col": 2,
+            "end_line": 42,
+            "end_col": 13
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "value"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 45,
+            "start_col": 23,
+            "end_line": 54,
+            "end_col": 23
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "value",
+            "onChange"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 57,
+            "start_col": 23,
+            "end_line": 66,
+            "end_col": 23
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "value",
+            "onChange"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "space-y-1"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "label",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "flex items-center justify-between"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "label",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-xs text-[#808080] flex items-center gap-1"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "label"
+                                },
+                                "location": {
+                                  "start_line": 73,
+                                  "start_col": 12,
+                                  "end_line": 73,
+                                  "end_col": 19
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Conditional",
+                                  "condition": "required",
+                                  "consequent": {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "span",
+                                      "is_component": false,
+                                      "attributes": [
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "text-[#f48771]"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Text",
+                                            "value": "*"
+                                          },
+                                          "location": {
+                                            "start_line": 74,
+                                            "start_col": 58,
+                                            "end_line": 74,
+                                            "end_col": 59
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 74,
+                                      "start_col": 25,
+                                      "end_line": 74,
+                                      "end_col": 66
+                                    }
+                                  },
+                                  "alternate": null
+                                },
+                                "location": {
+                                  "start_line": 74,
+                                  "start_col": 12,
+                                  "end_line": 74,
+                                  "end_col": 67
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 72,
+                            "start_col": 10,
+                            "end_line": 75,
+                            "end_col": 18
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex items-center gap-1"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Conditional",
+                                  "condition": "isValid",
+                                  "consequent": {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "span",
+                                      "is_component": false,
+                                      "attributes": [
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "text-[10px] text-[#00ff7f] flex items-center gap-1"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "Check",
+                                            "is_component": true,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "w-3 h-3"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": []
+                                          },
+                                          "location": {
+                                            "start_line": 79,
+                                            "start_col": 16,
+                                            "end_line": 79,
+                                            "end_col": 45
+                                          }
+                                        },
+                                        {
+                                          "node_type": {
+                                            "type": "Text",
+                                            "value": "Valid"
+                                          },
+                                          "location": {
+                                            "start_line": 79,
+                                            "start_col": 45,
+                                            "end_line": 81,
+                                            "end_col": 14
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 78,
+                                      "start_col": 14,
+                                      "end_line": 81,
+                                      "end_col": 21
+                                    }
+                                  },
+                                  "alternate": null
+                                },
+                                "location": {
+                                  "start_line": 77,
+                                  "start_col": 12,
+                                  "end_line": 82,
+                                  "end_col": 14
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Conditional",
+                                  "condition": "value.trim() && isValid",
+                                  "consequent": {
+                                    "node_type": {
+                                      "type": "Fragment",
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "button",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "onClick",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "handleFormat"
+                                                },
+                                                "is_event_handler": true
+                                              },
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "text-[10px] text-[#5bcefa] hover:text-[#7dd3fc] px-1.5 py-0.5 rounded hover:bg-[#3c3c3c]"
+                                                },
+                                                "is_event_handler": false
+                                              },
+                                              {
+                                                "name": "title",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "Format JSON"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Text",
+                                                  "value": "Format"
+                                                },
+                                                "location": {
+                                                  "start_line": 89,
+                                                  "start_col": 17,
+                                                  "end_line": 91,
+                                                  "end_col": 16
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 85,
+                                            "start_col": 16,
+                                            "end_line": 91,
+                                            "end_col": 25
+                                          }
+                                        },
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "button",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "onClick",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "handleMinify"
+                                                },
+                                                "is_event_handler": true
+                                              },
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "text-[10px] text-[#5bcefa] hover:text-[#7dd3fc] px-1.5 py-0.5 rounded hover:bg-[#3c3c3c]"
+                                                },
+                                                "is_event_handler": false
+                                              },
+                                              {
+                                                "name": "title",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "Minify JSON"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Text",
+                                                  "value": "Minify"
+                                                },
+                                                "location": {
+                                                  "start_line": 96,
+                                                  "start_col": 17,
+                                                  "end_line": 98,
+                                                  "end_col": 16
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 92,
+                                            "start_col": 16,
+                                            "end_line": 98,
+                                            "end_col": 25
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 84,
+                                      "start_col": 14,
+                                      "end_line": 99,
+                                      "end_col": 17
+                                    }
+                                  },
+                                  "alternate": null
+                                },
+                                "location": {
+                                  "start_line": 83,
+                                  "start_col": 12,
+                                  "end_line": 100,
+                                  "end_col": 14
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 76,
+                            "start_col": 10,
+                            "end_line": 101,
+                            "end_col": 16
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 71,
+                      "start_col": 8,
+                      "end_line": 102,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 70,
+                  "start_col": 6,
+                  "end_line": 103,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "relative"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "textarea",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "value"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onChange",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(e) => onChange(e.target.value)"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "placeholder",
+                            "value": {
+                              "type": "Expression",
+                              "code": "placeholder"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "Expression",
+                              "code": "`w-full p-3 text-sm bg-[#2d2d30] border rounded text-white font-mono resize-y focus:outline-none ${\n            error\n              ? 'border-[#f48771] focus:border-[#f48771]'\n              : 'border-[#3c3c3c] focus:border-[#5bcefa]'\n          }`"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "style",
+                            "value": {
+                              "type": "Expression",
+                              "code": "{\n            minHeight,\n            maxHeight: maxHeight || undefined,\n          }"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "spellCheck",
+                            "value": {
+                              "type": "Expression",
+                              "code": "false"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "aria-label",
+                            "value": {
+                              "type": "Expression",
+                              "code": "label || 'JSON input'"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "aria-invalid",
+                            "value": {
+                              "type": "Expression",
+                              "code": "!!error"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "aria-describedby",
+                            "value": {
+                              "type": "Expression",
+                              "code": "error ? 'json-error' : undefined"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 106,
+                        "start_col": 8,
+                        "end_line": 123,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 105,
+                  "start_col": 6,
+                  "end_line": 126,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "error",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "id",
+                          "value": {
+                            "type": "String",
+                            "value": "json-error"
+                          },
+                          "is_event_handler": false
+                        },
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "flex items-start gap-1.5 text-xs text-[#f48771] bg-[rgba(244,135,113,0.1)] px-2 py-1.5 rounded"
+                          },
+                          "is_event_handler": false
+                        },
+                        {
+                          "name": "role",
+                          "value": {
+                            "type": "String",
+                            "value": "alert"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "AlertCircle",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "w-3.5 h-3.5 mt-0.5 flex-shrink-0"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 134,
+                            "start_col": 10,
+                            "end_line": 134,
+                            "end_col": 70
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "span",
+                            "is_component": false,
+                            "attributes": [],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "error"
+                                },
+                                "location": {
+                                  "start_line": 135,
+                                  "start_col": 16,
+                                  "end_line": 135,
+                                  "end_col": 23
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 135,
+                            "start_col": 10,
+                            "end_line": 135,
+                            "end_col": 30
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 129,
+                      "start_col": 8,
+                      "end_line": 136,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 128,
+                  "start_col": 6,
+                  "end_line": 137,
+                  "end_col": 8
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 69,
+            "start_col": 4,
+            "end_line": 138,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "AlertCircle",
+        "Check"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "isValid",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/json_editor.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:isValid",
+        "to_field": "isValid",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'isValid' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIsValid",
+        "from_handler": "setIsValid",
+        "payload": null,
+        "state_changes": [
+          "self.isValid = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[value]",
+        "strategy": "inline",
+        "reasoning": "Deps [value] → inline in handlers that change these",
+        "inline_in": "value",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "value",
+          "field_type": "Any",
+          "from_prop": "value"
+        },
+        {
+          "name": "on_change",
+          "field_type": "Any",
+          "from_prop": "onChange"
+        },
+        {
+          "name": "placeholder",
+          "field_type": "Any",
+          "from_prop": "placeholder"
+        },
+        {
+          "name": "min_height",
+          "field_type": "Any",
+          "from_prop": "minHeight"
+        },
+        {
+          "name": "max_height",
+          "field_type": "Any",
+          "from_prop": "maxHeight"
+        },
+        {
+          "name": "label",
+          "field_type": "Any",
+          "from_prop": "label"
+        },
+        {
+          "name": "required",
+          "field_type": "Any",
+          "from_prop": "required"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "useCallback_remove",
+      "description": "useCallback is not needed in actors",
+      "react": "const handleClick = useCallback(() => { ... }, [dep]);",
+      "sigil": "// No equivalent needed - actors don't re-render like React"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_2",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [value] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onChange",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onChange' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "AlertCircle",
+      "Check"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

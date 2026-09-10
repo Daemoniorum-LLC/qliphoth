@@ -1,0 +1,325 @@
+invoke qliphoth·prelude·*;
+ᛈ BuildPanelMsg {
+    UpdateActiveTab,
+    UpdateSelectedConfig,
+    UpdateBuildStatus,
+    UpdateCurrentTask,
+    UpdateBuildOutput,
+    UpdateBuildProgress,
+    UpdateBuildHistory,
+    UpdateTasks,
+    BuildMessage,
+}
+☉ actor BuildPanel {
+    state activeTab: String! = "tasks",
+    state selectedConfig: String! = "Development",
+    state buildStatus: String! = "idle",
+    state currentTask: Option<Any>~ = None,
+    state buildOutput: Vec<Any>! = [],
+    state buildProgress: i64! = 0,
+    state buildHistory: Vec<Any>! = [],
+    state tasks: Vec<Any>! = [],
+    state outputRef: Option<HTMLDivElement>! = ∅,
+    state wsRef: Option<Any>! = ∅,
+
+    on UpdateActiveTab {
+        self.activeTab = msg.0;
+    }
+
+    on UpdateSelectedConfig {
+        self.selectedConfig = msg.0;
+    }
+
+    on UpdateBuildStatus {
+        self.buildStatus = msg.0;
+    }
+
+    on UpdateCurrentTask {
+        self.currentTask = msg.0;
+    }
+
+    on UpdateBuildOutput {
+        self.buildOutput = msg.0;
+    }
+
+    on UpdateBuildProgress {
+        self.buildProgress = msg.0;
+    }
+
+    on UpdateBuildHistory {
+        self.buildHistory = msg.0;
+    }
+
+    on UpdateTasks {
+        self.tasks = msg.0;
+    }
+
+    on BuildMessage {
+        // TODO: implement
+    }
+
+    on Mount {
+        // Empty deps → Mount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c] bg-[#2b2b2b]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-2")
+                    ·child(
+                    VNode·div()
+                        ·class("text-[13px] font-semibold text-white")
+                        ·text_child("Build & Tasks")
+                    )
+                    ·child(
+                    DropdownMenu·view()
+                        ·child(
+                        DropdownMenuTrigger·view()
+                            ·attr("asChild", "true")
+                            ·child(
+                            Button·view()
+                                ·attr("variant", "ghost")
+                                ·attr("size", "sm")
+                                ·class("h-6 px-2 text-[11px] text-[#858585]")
+                                ·text_child(self.selected_config·to_string())
+                                ·child(
+                                ChevronDown·view()
+                                    ·class("ml-1")
+                                    ·attr("size", 12)
+                                )
+                            )
+                        )
+                        ·child(
+                        DropdownMenuContent·view()
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Development")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Production")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Test")
+                            )
+                            ·child(
+                            DropdownMenuItem·view()
+                                ·on_click(Click)
+                                ·text_child("Staging")
+                            )
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·when(self.build_status == "running", VNode·fragment()
+                        ·child(
+                        Button·view()
+                            ·attr("variant", "ghost")
+                            ·attr("size", "sm")
+                            ·class("h-6 w-6 p-0")
+                            ·on_click(Click)
+                            ·attr("title", "Restart")
+                            ·child(
+                            RotateCw·view()
+                                ·attr("size", 14)
+                            )
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("variant", "ghost")
+                            ·attr("size", "sm")
+                            ·class("h-6 w-6 p-0")
+                            ·on_click(Click)
+                            ·attr("title", "Stop Build")
+                            ·child(
+                            Square·view()
+                                ·attr("size", 14)
+                            )
+                        ))
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·class("h-6 w-6 p-0")
+                        ·attr("title", "Build Settings")
+                        ·child(
+                        Settings·view()
+                            ·attr("size", 14)
+                        )
+                    )
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c]")
+                ·child(
+                Tabs·view()
+                    ·attr("value", self.active_tab)
+                    ·on_valuechange(ValueChange)
+                    ·child(
+                    TabsList·view()
+                        ·class("h-8")
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "tasks")
+                            ·class("text-xs")
+                            ·text_child("Tasks")
+                        )
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "output")
+                            ·class("text-xs")
+                            ·child(
+                            VNode·span()
+                                ·text_child("Output")
+                            )
+                            ·when(self.build_status == "running", Badge·view()
+                                ·class("ml-1.5 bg-blue-600")
+                                ·text_child("Running"))
+                        )
+                        ·child(
+                        TabsTrigger·view()
+                            ·attr("value", "history")
+                            ·class("text-xs")
+                            ·text_child("History")
+                        )
+                    )
+                )
+            )
+            ·when(self.build_status == "running", VNode·div()
+                ·class("px-3 pb-3")
+                ·child(
+                Progress·view()
+                    ·attr("value", self.build_progress)
+                    ·attr("max", 100)
+                ))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto flex flex-col")
+                ·child(
+                Tabs·view()
+                    ·attr("value", self.active_tab)
+                    ·child(
+                    TabsContent·view()
+                        ·attr("value", "tasks")
+                        ·class("p-3 space-y-2")
+                        // Map: ∀ task ∈ tasks
+                        ·children(self.tasks.iter().map(|task| VNode·div()
+                                ·attr("key", task.id)
+                                ·class("flex items-center gap-3 p-3 bg-[#252526] border border-[#3c3c3c] rounded cursor-pointer transition-all hover:bg-[#2b2b2b] hover:border-[#4fc3f7]")
+                                ·on_click(Click)
+                                ·child(
+                                VNode·div()
+                                    ·class("text-lg")
+                                    ·text_child(task.icon·to_string())
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("flex-1 min-w-0")
+                                    ·child(
+                                    VNode·div()
+                                        ·class("text-[13px] font-semibold text-white mb-1")
+                                        ·text_child(task.name·to_string())
+                                    )
+                                    ·child(
+                                    VNode·div()
+                                        ·class("text-[11px] text-[#858585] font-mono")
+                                        ·text_child(task.command·to_string())
+                                    )
+                                )
+                                ·child(
+                                VNode·div()
+                                    ·class("flex items-center gap-1")
+                                    ·child(
+                                    Button·view()
+                                        ·attr("size", "sm")
+                                        ·class("h-7")
+                                        ·on_click(Click)
+                                        ·child(
+                                        Play·view()
+                                            ·attr("size", 14)
+                                            ·class("mr-1")
+                                        )
+                                        ·text_child("Run")
+                                    )
+                                )).collect())
+                    )
+                    ·child(
+                    TabsContent·view()
+                        ·attr("value", "output")
+                        ·class("flex-1")
+                        ·child(
+                        VNode·div()
+                            ·attr("ref", self.output_ref)
+                            ·class("flex-1 p-3 font-mono text-xs leading-relaxed overflow-auto bg-[#1e1e1e] text-[#cccccc] whitespace-pre-wrap break-all h-full")
+                            ·when(self.build_output.len() == 0, VNode·div()
+                                ·class("py-10 px-5 text-center text-[#858585] text-[13px]")
+                                ·text_child("No build output yet. Select a task to run."))
+                        )
+                    )
+                    ·child(
+                    TabsContent·view()
+                        ·attr("value", "history")
+                        ·class("p-3 space-y-2")
+                        ·when(self.build_history.len() == 0, VNode·div()
+                            ·class("py-10 px-5 text-center text-[#858585] text-[13px]")
+                            ·text_child("No build history yet."))
+                    )
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-3 py-2 border-t border-[#3c3c3c] bg-[#252526] text-[11px]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-1")
+                        ·text_child(self.get_status_icon(self.build_status)·to_string())
+                        ·child(
+                        VNode·span()
+                            ·text_child(⎇ self.build_status == "idle" { "Ready" } ⎉ { "" }·to_string())
+                            ·text_child(⎇ self.build_status == "running" { "Running: " + self.current_task?.name.to_string() } ⎉ { "" }·to_string())
+                            ·text_child(⎇ self.build_status == "success" { "Build Successful" } ⎉ { "" }·to_string())
+                            ·text_child(⎇ self.build_status == "failed" { "Build Failed" } ⎉ { "" }·to_string())
+                            ·text_child(⎇ self.build_status == "cancelled" { "Build Cancelled" } ⎉ { "" }·to_string())
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-1")
+                        ·child(
+                        VNode·span()
+                            ·text_child(self.build_history.len()·to_string())
+                            ·text_child("builds")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-1")
+                        ·child(
+                        VNode·span()
+                            ·text_child("Config:")
+                            ·text_child(self.selected_config·to_string())
+                        )
+                    )
+                )
+            )
+    }
+}

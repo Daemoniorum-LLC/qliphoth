@@ -1,0 +1,448 @@
+{
+  "id": "App.tsx:App",
+  "name": "App",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/App.tsx",
+    "code": "import { useState, useEffect } from \"react\"\nimport { HomePage } from \"./pages/HomePage\"\nimport { LoginPage } from \"./pages/LoginPage\"\nimport { OAuthCallbackPage } from './auth'\nimport Wraith from \"./Wraith\"\n\nfunction App() {\n  const [isAuthenticated, setIsAuthenticated] = useState(() => {\n    const token = localStorage.getItem('wraith_access_token')\n    return !!token\n  })\n  const [showHomepage, setShowHomepage] = useState(() => {\n    const dismissed = localStorage.getItem('wraith_homepage_dismissed')\n    return dismissed !== 'true'\n  })\n  const [currentPath, setCurrentPath] = useState(window.location.pathname)\n\n  const handleLoginSuccess = () => {\n    setIsAuthenticated(true)\n  }\n\n  // When user becomes authenticated, hide homepage and mark as dismissed\n  useEffect(() => {\n    if (isAuthenticated) {\n      setShowHomepage(false)\n      localStorage.setItem('wraith_homepage_dismissed', 'true')\n    }\n  }, [isAuthenticated])\n\n  // Handle route changes\n  useEffect(() => {\n    const handleLocationChange = () => {\n      setCurrentPath(window.location.pathname)\n    }\n\n    window.addEventListener('popstate', handleLocationChange)\n    return () => window.removeEventListener('popstate', handleLocationChange)\n  }, [])\n\n  // Listen for OAuth success messages from popup\n  useEffect(() => {\n    const handleMessage = (event: MessageEvent) => {\n      if (event.origin === window.location.origin && event.data?.type === 'OAUTH_SUCCESS') {\n        // OAuth completed, check for token\n        const token = localStorage.getItem('wraith_access_token')\n        if (token) {\n          setIsAuthenticated(true)\n        }\n      }\n    }\n\n    window.addEventListener('message', handleMessage)\n    return () => window.removeEventListener('message', handleMessage)\n  }, [])\n\n  const handleGetStarted = () => {\n    setShowHomepage(false)\n    localStorage.setItem('wraith_homepage_dismissed', 'true')\n  }\n\n  // Handle OAuth callback route\n  if (currentPath === '/auth/oauth/callback') {\n    return <OAuthCallbackPage />\n  }\n\n  // Check if we're on OAuth callback route - never show homepage for this\n  const isOAuthCallback = currentPath === '/auth/oauth/callback'\n\n  // Show homepage ONLY if not authenticated AND user hasn't dismissed it AND not on OAuth callback\n  if (!isAuthenticated && showHomepage && !isOAuthCallback) {\n    return <HomePage onGetStarted={handleGetStarted} />\n  }\n\n  if (!isAuthenticated) {\n    return <LoginPage onSuccess={handleLoginSuccess} />\n  }\n\n  return <Wraith />\n}\n\nexport default App\n",
+    "extraction": {
+      "name": "App",
+      "component_type": "functional",
+      "exported": false,
+      "export_type": null,
+      "location": {
+        "start_line": 7,
+        "start_col": 0,
+        "end_line": 79,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 8,
+            "start_col": 48,
+            "end_line": 11,
+            "end_col": 4
+          },
+          "state_name": "isAuthenticated",
+          "setter_name": "setIsAuthenticated",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 12,
+            "start_col": 42,
+            "end_line": 15,
+            "end_col": 4
+          },
+          "state_name": "showHomepage",
+          "setter_name": "setShowHomepage",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 16,
+            "start_col": 40,
+            "end_line": 16,
+            "end_col": 74
+          },
+          "state_name": "currentPath",
+          "setter_name": "setCurrentPath",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 23,
+            "start_col": 2,
+            "end_line": 28,
+            "end_col": 23
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "isAuthenticated"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 31,
+            "start_col": 2,
+            "end_line": 38,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 41,
+            "start_col": 2,
+            "end_line": 54,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "Wraith",
+            "is_component": true,
+            "attributes": [],
+            "children": []
+          },
+          "location": {
+            "start_line": 78,
+            "start_col": 9,
+            "end_line": 78,
+            "end_col": 19
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleLoginSuccess",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    setIsAuthenticated(true)\n  }",
+          "state_mutations": [
+            "setIsAuthenticated(true)"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setIsAuthenticated",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "isAuthenticated"
+              },
+              "arguments": [
+                "true"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setIsAuthenticated"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handleGetStarted",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    setShowHomepage(false)\n    localStorage.setItem('wraith_homepage_dismissed', 'true')\n  }",
+          "state_mutations": [
+            "setShowHomepage(false)",
+            "localStorage.setItem('wraith_homepage_dismissed', 'true')"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setShowHomepage",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "showHomepage"
+              },
+              "arguments": [
+                "false"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "localStorage.setItem",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "'wraith_homepage_dismissed'",
+                "'true'"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setShowHomepage"
+            },
+            {
+              "kind": "StorageWrite",
+              "storage_type": "localStorage"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Wraith"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "isAuthenticated",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showHomepage",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "currentPath",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/app.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:isAuthenticated",
+        "to_field": "isAuthenticated",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'isAuthenticated' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showHomepage",
+        "to_field": "showHomepage",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'showHomepage' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:currentPath",
+        "to_field": "currentPath",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'currentPath' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateIsAuthenticated",
+        "from_handler": "setIsAuthenticated",
+        "payload": null,
+        "state_changes": [
+          "self.isAuthenticated = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowHomepage",
+        "from_handler": "setShowHomepage",
+        "payload": null,
+        "state_changes": [
+          "self.showHomepage = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateCurrentPath",
+        "from_handler": "setCurrentPath",
+        "payload": null,
+        "state_changes": [
+          "self.currentPath = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "LoginSuccess",
+        "from_handler": "handleLoginSuccess",
+        "payload": null,
+        "state_changes": [
+          "self.isAuthenticated = true"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "GetStarted",
+        "from_handler": "handleGetStarted",
+        "payload": null,
+        "state_changes": [
+          "self.showHomepage = false",
+          "localStorage.setItem('wraith_homepage_dismissed', 'true')"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[isAuthenticated]",
+        "strategy": "inline",
+        "reasoning": "Deps [isAuthenticated] → inline in handlers that change these",
+        "inline_in": "isAuthenticated",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps with cleanup → Mount/Unmount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      },
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps with cleanup → Mount/Unmount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "useEffect_mount",
+      "description": "Convert mount-only useEffect to lifecycle",
+      "react": "useEffect(() => { init(); }, []);",
+      "sigil": "on Mount { self.init(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_3",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [isAuthenticated] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Wraith"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

@@ -1,0 +1,1642 @@
+{
+  "id": "ui/components/CollaborativeEditor.tsx:CollaborativeEditor",
+  "name": "CollaborativeEditor",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/CollaborativeEditor.tsx",
+    "code": "import React, { useState, useEffect, useRef } from 'react'\nimport { Avatar } from '@persona-framework/ui'\nimport { User } from 'lucide-react'\nimport type * as Monaco from 'monaco-editor'\n\ninterface CollaborativeEditorProps {\n  editor: Monaco.editor.IStandaloneCodeEditor | null\n  filePath: string | null\n  userId: string\n  userName: string\n  enabled?: boolean\n}\n\ninterface User {\n  id: string\n  name: string\n  color: string\n  cursor: Monaco.IPosition | null\n  selection: Monaco.IRange | null\n  active: boolean\n}\n\ninterface CursorUpdate {\n  userId: string\n  userName: string\n  position: Monaco.IPosition\n  selection?: Monaco.IRange\n}\n\ninterface EditUpdate {\n  userId: string\n  userName: string\n  changes: Monaco.editor.IModelContentChange[]\n  versionId: number\n}\n\nconst USER_COLORS = [\n  '#ff6b6b',\n  '#4ecdc4',\n  '#45b7d1',\n  '#f9ca24',\n  '#6c5ce7',\n  '#fd79a8',\n  '#fdcb6e',\n  '#00b894',\n  '#e17055',\n  '#a29bfe',\n]\n\nexport function CollaborativeEditor({\n  editor,\n  filePath,\n  userId,\n  userName,\n  enabled = true,\n}: CollaborativeEditorProps) {\n  const [activeUsers, setActiveUsers] = useState<Map<string, User>>(new Map())\n  const [showUsersPanel, setShowUsersPanel] = useState(false)\n  const wsRef = useRef<WebSocket | null>(null)\n  const cursorDecorationsRef = useRef<Map<string, string[]>>(new Map())\n  const suppressLocalUpdatesRef = useRef(false)\n\n  useEffect(() => {\n    if (!editor || !enabled || !filePath) return\n\n    const ws = new WebSocket(`ws://localhost:8989/ws/collab`)\n\n    ws.onopen = () => {\n      console.log('[Collab] Connected to collaboration server')\n\n      ws.send(\n        JSON.stringify({\n          type: 'join',\n          userId,\n          userName,\n          filePath,\n          color: getUserColor(userId),\n        })\n      )\n    }\n\n    ws.onmessage = (event) => {\n      const message = JSON.parse(event.data)\n      handleCollabMessage(message)\n    }\n\n    ws.onerror = (error) => {\n      console.error('[Collab] WebSocket error:', error)\n    }\n\n    ws.onclose = () => {\n      console.log('[Collab] Disconnected from collaboration server')\n    }\n\n    wsRef.current = ws\n\n    const onDidChangeCursorPosition = editor.onDidChangeCursorPosition((e) => {\n      if (ws.readyState === WebSocket.OPEN) {\n        const selection = editor.getSelection()\n        ws.send(\n          JSON.stringify({\n            type: 'cursor',\n            userId,\n            userName,\n            filePath,\n            position: e.position,\n            selection: selection || undefined,\n          })\n        )\n      }\n    })\n\n    const onDidChangeModelContent = editor.onDidChangeModelContent((e) => {\n      if (suppressLocalUpdatesRef.current) return\n\n      if (ws.readyState === WebSocket.OPEN) {\n        ws.send(\n          JSON.stringify({\n            type: 'edit',\n            userId,\n            userName,\n            filePath,\n            changes: e.changes,\n            versionId: e.versionId,\n          })\n        )\n      }\n    })\n\n    return () => {\n      if (ws.readyState === WebSocket.OPEN) {\n        ws.send(\n          JSON.stringify({\n            type: 'leave',\n            userId,\n            filePath,\n          })\n        )\n        ws.close()\n      }\n\n      onDidChangeCursorPosition.dispose()\n      onDidChangeModelContent.dispose()\n      wsRef.current = null\n    }\n  }, [editor, enabled, filePath, userId, userName])\n\n  const handleCollabMessage = (message: any) => {\n    if (!editor) return\n\n    switch (message.type) {\n      case 'user-joined':\n        handleUserJoined(message)\n        break\n\n      case 'user-left':\n        handleUserLeft(message)\n        break\n\n      case 'cursor-update':\n        handleCursorUpdate(message)\n        break\n\n      case 'edit-update':\n        handleEditUpdate(message)\n        break\n\n      case 'users-list':\n        handleUsersList(message)\n        break\n    }\n  }\n\n  const handleUserJoined = (message: any) => {\n    const { userId: joinedUserId, userName: joinedUserName, color } = message\n\n    if (joinedUserId === userId) return\n\n    setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      newMap.set(joinedUserId, {\n        id: joinedUserId,\n        name: joinedUserName,\n        color,\n        cursor: null,\n        selection: null,\n        active: true,\n      })\n      return newMap\n    })\n\n    console.log(`[Collab] ${joinedUserName} joined`)\n  }\n\n  const handleUserLeft = (message: any) => {\n    const { userId: leftUserId } = message\n\n    setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      newMap.delete(leftUserId)\n      return newMap\n    })\n\n    removeCursorDecoration(leftUserId)\n  }\n\n  const handleCursorUpdate = (message: CursorUpdate) => {\n    if (!editor || message.userId === userId) return\n\n    setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      const user = newMap.get(message.userId)\n\n      if (user) {\n        newMap.set(message.userId, {\n          ...user,\n          cursor: message.position,\n          selection: message.selection || null,\n          active: true,\n        })\n      }\n\n      return newMap\n    })\n\n    updateCursorDecoration(message)\n  }\n\n  const handleEditUpdate = (message: EditUpdate) => {\n    if (!editor || message.userId === userId) return\n\n    const model = editor.getModel()\n    if (!model) return\n\n    suppressLocalUpdatesRef.current = true\n\n    model.pushEditOperations(\n      [],\n      message.changes.map((change) => ({\n        range: change.range,\n        text: change.text,\n        forceMoveMarkers: true,\n      })),\n      () => null\n    )\n\n    suppressLocalUpdatesRef.current = false\n  }\n\n  const handleUsersList = (message: any) => {\n    const { users } = message\n\n    const usersMap = new Map<string, User>()\n    users.forEach((user: any) => {\n      if (user.userId !== userId) {\n        usersMap.set(user.userId, {\n          id: user.userId,\n          name: user.userName,\n          color: user.color,\n          cursor: null,\n          selection: null,\n          active: true,\n        })\n      }\n    })\n\n    setActiveUsers(usersMap)\n  }\n\n  const updateCursorDecoration = (cursorUpdate: CursorUpdate) => {\n    if (!editor) return\n\n    const user = activeUsers.get(cursorUpdate.userId)\n    if (!user) return\n\n    const oldDecorations = cursorDecorationsRef.current.get(cursorUpdate.userId) || []\n\n    const decorations: Monaco.editor.IModelDeltaDecoration[] = []\n\n    if (cursorUpdate.position) {\n      decorations.push({\n        range: new (window as any).monaco.Range(\n          cursorUpdate.position.lineNumber,\n          cursorUpdate.position.column,\n          cursorUpdate.position.lineNumber,\n          cursorUpdate.position.column\n        ),\n        options: {\n          className: 'remote-cursor',\n          beforeContentClassName: 'remote-cursor-line',\n          stickiness: 1,\n          hoverMessage: { value: `**${cursorUpdate.userName}** is here` },\n        },\n      })\n    }\n\n    if (cursorUpdate.selection) {\n      decorations.push({\n        range: cursorUpdate.selection,\n        options: {\n          className: 'remote-selection',\n          stickiness: 1,\n          inlineClassName: `remote-selection-inline`,\n        },\n      })\n    }\n\n    const newDecorationIds = editor.deltaDecorations(oldDecorations, decorations)\n    cursorDecorationsRef.current.set(cursorUpdate.userId, newDecorationIds)\n\n    injectCursorStyle(cursorUpdate.userId, user.color)\n  }\n\n  const removeCursorDecoration = (userId: string) => {\n    if (!editor) return\n\n    const decorations = cursorDecorationsRef.current.get(userId) || []\n    editor.deltaDecorations(decorations, [])\n    cursorDecorationsRef.current.delete(userId)\n  }\n\n  const injectCursorStyle = (userId: string, color: string) => {\n    const styleId = `collab-cursor-${userId}`\n    let style = document.getElementById(styleId)\n\n    if (!style) {\n      style = document.createElement('style')\n      style.id = styleId\n      document.head.appendChild(style)\n    }\n\n    style.textContent = `\n      .remote-cursor-${userId} {\n        border-left: 2px solid ${color};\n      }\n      .remote-selection-${userId} {\n        background-color: ${color}33;\n      }\n    `\n  }\n\n  const getUserColor = (id: string): string => {\n    const hash = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)\n    return USER_COLORS[hash % USER_COLORS.length]\n  }\n\n  if (!enabled) return null\n\n  const usersArray = Array.from(activeUsers.values())\n\n  return (\n    <div className=\"relative w-full h-full\">\n      {usersArray.length > 0 && (\n        <div className=\"absolute top-2 left-2 flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border border-[#3c3c3c] rounded-2xl z-[1000] text-[11px] text-[#cccccc] shadow-md\">\n          <div className=\"flex items-center gap-1 text-[#4fc3f7] font-medium\">\n            <User className=\"w-3.5 h-3.5\" />\n            <span>{usersArray.length + 1}</span>\n          </div>\n\n          <div\n            className=\"flex items-center gap-1 cursor-pointer\"\n            onClick={() => setShowUsersPanel(!showUsersPanel)}\n          >\n            <Avatar\n              className=\"w-6 h-6\"\n              style={{\n                border: `2px solid ${getUserColor(userId)}`,\n              }}\n            >\n              {userName.substring(0, 2).toUpperCase()}\n            </Avatar>\n\n            {usersArray.slice(0, 5).map((user) => (\n              <Avatar\n                key={user.id}\n                className=\"w-6 h-6\"\n                style={{\n                  border: `2px solid ${user.color}`,\n                }}\n              >\n                {user.name.substring(0, 2).toUpperCase()}\n              </Avatar>\n            ))}\n\n            {usersArray.length > 5 && (\n              <Avatar className=\"w-6 h-6 bg-[#3c3c3c]\">\n                +{usersArray.length - 5}\n              </Avatar>\n            )}\n          </div>\n        </div>\n      )}\n\n      {showUsersPanel && (\n        <div className=\"absolute top-14 left-3 w-[280px] bg-[#1e1e1e] border border-[#3c3c3c] rounded p-3 z-[1000] shadow-lg\">\n          <div className=\"text-sm font-semibold text-white mb-3 flex items-center\">\n            <User className=\"w-4 h-4 mr-2\" />\n            Active Users ({usersArray.length + 1})\n          </div>\n\n          <div className=\"flex items-center gap-3 p-2 rounded mb-1\">\n            <Avatar className=\"w-8 h-8\">\n              {userName.substring(0, 2).toUpperCase()}\n            </Avatar>\n            <div className=\"flex-1\">\n              <div className=\"text-xs text-[#cccccc]\">{userName} (You)</div>\n              <div className=\"text-[10px] text-[#858585]\">Editing</div>\n            </div>\n            <div className=\"w-2 h-2 rounded-full bg-[#4ec9b0]\" />\n          </div>\n\n          {usersArray.map((user) => (\n            <div key={user.id} className=\"flex items-center gap-3 p-2 rounded mb-1\">\n              <Avatar className=\"w-8 h-8\">\n                {user.name.substring(0, 2).toUpperCase()}\n              </Avatar>\n              <div className=\"flex-1\">\n                <div className=\"text-xs text-[#cccccc]\">{user.name}</div>\n                <div className=\"text-[10px] text-[#858585]\">\n                  {user.active ? 'Editing' : 'Viewing'}\n                </div>\n              </div>\n              <div\n                className=\"w-2 h-2 rounded-full\"\n                style={{ backgroundColor: user.color }}\n              />\n            </div>\n          ))}\n        </div>\n      )}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "CollaborativeEditor",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 50,
+        "start_col": 7,
+        "end_line": 433,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "editor",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "filePath",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "userId",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "userName",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "enabled",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "true",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 57,
+            "start_col": 40,
+            "end_line": 57,
+            "end_col": 78
+          },
+          "state_name": "activeUsers",
+          "setter_name": "setActiveUsers",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 58,
+            "start_col": 46,
+            "end_line": 58,
+            "end_col": 61
+          },
+          "state_name": "showUsersPanel",
+          "setter_name": "setShowUsersPanel",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 59,
+            "start_col": 16,
+            "end_line": 59,
+            "end_col": 46
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "wsRef",
+          "ref_type": "Any",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 60,
+            "start_col": 31,
+            "end_line": 60,
+            "end_col": 71
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "cursorDecorationsRef",
+          "ref_type": "Map",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 61,
+            "start_col": 34,
+            "end_line": 61,
+            "end_col": 47
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "suppressLocalUpdatesRef",
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 63,
+            "start_col": 2,
+            "end_line": 146,
+            "end_col": 51
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "editor",
+            "enabled",
+            "filePath",
+            "userId",
+            "userName"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "relative w-full h-full"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "usersArray.length > 0",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "absolute top-2 left-2 flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border border-[#3c3c3c] rounded-2xl z-[1000] text-[11px] text-[#cccccc] shadow-md"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex items-center gap-1 text-[#4fc3f7] font-medium"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "User",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-3.5 h-3.5"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 356,
+                                  "start_col": 12,
+                                  "end_line": 356,
+                                  "end_col": 44
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "usersArray.length + 1"
+                                      },
+                                      "location": {
+                                        "start_line": 357,
+                                        "start_col": 18,
+                                        "end_line": 357,
+                                        "end_col": 41
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 357,
+                                  "start_col": 12,
+                                  "end_line": 357,
+                                  "end_col": 48
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 355,
+                            "start_col": 10,
+                            "end_line": 358,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex items-center gap-1 cursor-pointer"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "() => setShowUsersPanel(!showUsersPanel)"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Avatar",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-6 h-6"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "style",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "{\n                border: `2px solid ${getUserColor(userId)}`,\n              }"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "userName.substring(0, 2).toUpperCase()"
+                                      },
+                                      "location": {
+                                        "start_line": 370,
+                                        "start_col": 14,
+                                        "end_line": 370,
+                                        "end_col": 54
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 364,
+                                  "start_col": 12,
+                                  "end_line": 371,
+                                  "end_col": 21
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Map",
+                                  "iterable": "usersArray.slice(0, 5)",
+                                  "item_name": "user",
+                                  "key_expr": "user.id",
+                                  "body": {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "Avatar",
+                                      "is_component": true,
+                                      "attributes": [
+                                        {
+                                          "name": "key",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "user.id"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "w-6 h-6"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "style",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "{\n                  border: `2px solid ${user.color}`,\n                }"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Expression",
+                                            "code": "user.name.substring(0, 2).toUpperCase()"
+                                          },
+                                          "location": {
+                                            "start_line": 381,
+                                            "start_col": 16,
+                                            "end_line": 381,
+                                            "end_col": 57
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 374,
+                                      "start_col": 14,
+                                      "end_line": 382,
+                                      "end_col": 23
+                                    }
+                                  }
+                                },
+                                "location": {
+                                  "start_line": 373,
+                                  "start_col": 12,
+                                  "end_line": 383,
+                                  "end_col": 15
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Conditional",
+                                  "condition": "usersArray.length > 5",
+                                  "consequent": {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "Avatar",
+                                      "is_component": true,
+                                      "attributes": [
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "w-6 h-6 bg-[#3c3c3c]"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Text",
+                                            "value": "+"
+                                          },
+                                          "location": {
+                                            "start_line": 386,
+                                            "start_col": 55,
+                                            "end_line": 387,
+                                            "end_col": 17
+                                          }
+                                        },
+                                        {
+                                          "node_type": {
+                                            "type": "Expression",
+                                            "code": "usersArray.length - 5"
+                                          },
+                                          "location": {
+                                            "start_line": 387,
+                                            "start_col": 17,
+                                            "end_line": 387,
+                                            "end_col": 40
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 386,
+                                      "start_col": 14,
+                                      "end_line": 388,
+                                      "end_col": 23
+                                    }
+                                  },
+                                  "alternate": null
+                                },
+                                "location": {
+                                  "start_line": 385,
+                                  "start_col": 12,
+                                  "end_line": 389,
+                                  "end_col": 14
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 360,
+                            "start_col": 10,
+                            "end_line": 390,
+                            "end_col": 16
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 354,
+                      "start_col": 8,
+                      "end_line": 391,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 353,
+                  "start_col": 6,
+                  "end_line": 392,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "showUsersPanel",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "absolute top-14 left-3 w-[280px] bg-[#1e1e1e] border border-[#3c3c3c] rounded p-3 z-[1000] shadow-lg"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-sm font-semibold text-white mb-3 flex items-center"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "User",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-4 h-4 mr-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 397,
+                                  "start_col": 12,
+                                  "end_line": 397,
+                                  "end_col": 45
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "Active Users ("
+                                },
+                                "location": {
+                                  "start_line": 397,
+                                  "start_col": 45,
+                                  "end_line": 398,
+                                  "end_col": 26
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "usersArray.length + 1"
+                                },
+                                "location": {
+                                  "start_line": 398,
+                                  "start_col": 26,
+                                  "end_line": 398,
+                                  "end_col": 49
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": ")"
+                                },
+                                "location": {
+                                  "start_line": 398,
+                                  "start_col": 49,
+                                  "end_line": 399,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 396,
+                            "start_col": 10,
+                            "end_line": 399,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex items-center gap-3 p-2 rounded mb-1"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Avatar",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-8 h-8"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "userName.substring(0, 2).toUpperCase()"
+                                      },
+                                      "location": {
+                                        "start_line": 403,
+                                        "start_col": 14,
+                                        "end_line": 403,
+                                        "end_col": 54
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 402,
+                                  "start_col": 12,
+                                  "end_line": 404,
+                                  "end_col": 21
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-xs text-[#cccccc]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "userName"
+                                            },
+                                            "location": {
+                                              "start_line": 406,
+                                              "start_col": 54,
+                                              "end_line": 406,
+                                              "end_col": 64
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "(You)"
+                                            },
+                                            "location": {
+                                              "start_line": 406,
+                                              "start_col": 64,
+                                              "end_line": 406,
+                                              "end_col": 70
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 406,
+                                        "start_col": 14,
+                                        "end_line": 406,
+                                        "end_col": 76
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-[10px] text-[#858585]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Editing"
+                                            },
+                                            "location": {
+                                              "start_line": 407,
+                                              "start_col": 58,
+                                              "end_line": 407,
+                                              "end_col": 65
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 407,
+                                        "start_col": 14,
+                                        "end_line": 407,
+                                        "end_col": 71
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 405,
+                                  "start_col": 12,
+                                  "end_line": 408,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-2 h-2 rounded-full bg-[#4ec9b0]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 409,
+                                  "start_col": 12,
+                                  "end_line": 409,
+                                  "end_col": 65
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 401,
+                            "start_col": 10,
+                            "end_line": 410,
+                            "end_col": 16
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Map",
+                            "iterable": "usersArray",
+                            "item_name": "user",
+                            "key_expr": "user.id",
+                            "body": {
+                              "node_type": {
+                                "type": "Element",
+                                "tag": "div",
+                                "is_component": false,
+                                "attributes": [
+                                  {
+                                    "name": "key",
+                                    "value": {
+                                      "type": "Expression",
+                                      "code": "user.id"
+                                    },
+                                    "is_event_handler": false
+                                  },
+                                  {
+                                    "name": "className",
+                                    "value": {
+                                      "type": "String",
+                                      "value": "flex items-center gap-3 p-2 rounded mb-1"
+                                    },
+                                    "is_event_handler": false
+                                  }
+                                ],
+                                "children": [
+                                  {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "Avatar",
+                                      "is_component": true,
+                                      "attributes": [
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "w-8 h-8"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Expression",
+                                            "code": "user.name.substring(0, 2).toUpperCase()"
+                                          },
+                                          "location": {
+                                            "start_line": 415,
+                                            "start_col": 16,
+                                            "end_line": 415,
+                                            "end_col": 57
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 414,
+                                      "start_col": 14,
+                                      "end_line": 416,
+                                      "end_col": 23
+                                    }
+                                  },
+                                  {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "div",
+                                      "is_component": false,
+                                      "attributes": [
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "flex-1"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": [
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "div",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "text-xs text-[#cccccc]"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Expression",
+                                                  "code": "user.name"
+                                                },
+                                                "location": {
+                                                  "start_line": 418,
+                                                  "start_col": 56,
+                                                  "end_line": 418,
+                                                  "end_col": 67
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 418,
+                                            "start_col": 16,
+                                            "end_line": 418,
+                                            "end_col": 73
+                                          }
+                                        },
+                                        {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "div",
+                                            "is_component": false,
+                                            "attributes": [
+                                              {
+                                                "name": "className",
+                                                "value": {
+                                                  "type": "String",
+                                                  "value": "text-[10px] text-[#858585]"
+                                                },
+                                                "is_event_handler": false
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Expression",
+                                                  "code": "user.active ? 'Editing' : 'Viewing'"
+                                                },
+                                                "location": {
+                                                  "start_line": 420,
+                                                  "start_col": 18,
+                                                  "end_line": 420,
+                                                  "end_col": 55
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 419,
+                                            "start_col": 16,
+                                            "end_line": 421,
+                                            "end_col": 22
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "location": {
+                                      "start_line": 417,
+                                      "start_col": 14,
+                                      "end_line": 422,
+                                      "end_col": 20
+                                    }
+                                  },
+                                  {
+                                    "node_type": {
+                                      "type": "Element",
+                                      "tag": "div",
+                                      "is_component": false,
+                                      "attributes": [
+                                        {
+                                          "name": "className",
+                                          "value": {
+                                            "type": "String",
+                                            "value": "w-2 h-2 rounded-full"
+                                          },
+                                          "is_event_handler": false
+                                        },
+                                        {
+                                          "name": "style",
+                                          "value": {
+                                            "type": "Expression",
+                                            "code": "{ backgroundColor: user.color }"
+                                          },
+                                          "is_event_handler": false
+                                        }
+                                      ],
+                                      "children": []
+                                    },
+                                    "location": {
+                                      "start_line": 423,
+                                      "start_col": 14,
+                                      "end_line": 426,
+                                      "end_col": 16
+                                    }
+                                  }
+                                ]
+                              },
+                              "location": {
+                                "start_line": 413,
+                                "start_col": 12,
+                                "end_line": 427,
+                                "end_col": 18
+                              }
+                            }
+                          },
+                          "location": {
+                            "start_line": 412,
+                            "start_col": 10,
+                            "end_line": 428,
+                            "end_col": 13
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 395,
+                      "start_col": 8,
+                      "end_line": 429,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 394,
+                  "start_col": 6,
+                  "end_line": 430,
+                  "end_col": 8
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 352,
+            "start_col": 4,
+            "end_line": 431,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleCollabMessage",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(message: any) => {\n    if (!editor) return\n\n    switch (message.type) {\n      case 'user-joined':\n        handleUserJoined(message)\n        break\n\n      case 'user-left':\n        handleUserLeft(message)\n        break\n\n      case 'cursor-update':\n        handleCursorUpdate(message)\n        break\n\n      case 'edit-update':\n        handleEditUpdate(message)\n        break\n\n      case 'users-list':\n        handleUsersList(message)\n        break\n    }\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [],
+          "side_effects": [],
+          "parameters": [
+            {
+              "name": "message",
+              "type_annotation": ": any"
+            }
+          ],
+          "has_conditionals": true,
+          "has_early_return": false
+        },
+        {
+          "name": "handleUserJoined",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(message: any) => {\n    const { userId: joinedUserId, userName: joinedUserName, color } = message\n\n    if (joinedUserId === userId) return\n\n    setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      newMap.set(joinedUserId, {\n        id: joinedUserId,\n        name: joinedUserName,\n        color,\n        cursor: null,\n        selection: null,\n        active: true,\n      })\n      return newMap\n    })\n\n    console.log(`[Collab] ${joinedUserName} joined`)\n  }",
+          "state_mutations": [
+            "setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      newMap.set(joinedUserId, {\n        id: joinedUserId,\n        name: joinedUserName,\n        color,\n        cursor: null,\n        selection: null,\n        active: true,\n      })\n      return newMap\n    })"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setActiveUsers",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "activeUsers"
+              },
+              "arguments": [
+                "(prev) => {\n      const newMap = new Map(prev)\n      newMap.set(joinedUserId, {\n        id: joinedUserId,\n        name: joinedUserName,\n        color,\n        cursor: null,\n        selection: null,\n        active: true,\n      })\n      return newMap\n    }"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "newMap.set",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "joinedUserId",
+                "{\n        id: joinedUserId,\n        name: joinedUserName,\n        color,\n        cursor: null,\n        selection: null,\n        active: true,\n      }"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "console.log",
+              "source": {
+                "type": "Global"
+              },
+              "arguments": [
+                "`[Collab] ${joinedUserName} joined`"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setActiveUsers"
+            },
+            {
+              "kind": "ConsoleLog"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "message",
+              "type_annotation": ": any"
+            }
+          ],
+          "has_conditionals": true,
+          "has_early_return": false
+        },
+        {
+          "name": "handleUserLeft",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(message: any) => {\n    const { userId: leftUserId } = message\n\n    setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      newMap.delete(leftUserId)\n      return newMap\n    })\n\n    removeCursorDecoration(leftUserId)\n  }",
+          "state_mutations": [
+            "setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      newMap.delete(leftUserId)\n      return newMap\n    })"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setActiveUsers",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "activeUsers"
+              },
+              "arguments": [
+                "(prev) => {\n      const newMap = new Map(prev)\n      newMap.delete(leftUserId)\n      return newMap\n    }"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "newMap.delete",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "leftUserId"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "removeCursorDecoration",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "leftUserId"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setActiveUsers"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "message",
+              "type_annotation": ": any"
+            }
+          ],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handleCursorUpdate",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(message: CursorUpdate) => {\n    if (!editor || message.userId === userId) return\n\n    setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      const user = newMap.get(message.userId)\n\n      if (user) {\n        newMap.set(message.userId, {\n          ...user,\n          cursor: message.position,\n          selection: message.selection || null,\n          active: true,\n        })\n      }\n\n      return newMap\n    })\n\n    updateCursorDecoration(message)\n  }",
+          "state_mutations": [
+            "setActiveUsers((prev) => {\n      const newMap = new Map(prev)\n      const user = newMap.get(message.userId)\n\n      if (user) {\n        newMap.set(message.userId, {\n          ...user,\n          cursor: message.position,\n          selection: message.selection || null,\n          active: true,\n        })\n      }\n\n      return newMap\n    })"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setActiveUsers",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "activeUsers"
+              },
+              "arguments": [
+                "(prev) => {\n      const newMap = new Map(prev)\n      const user = newMap.get(message.userId)\n\n      if (user) {\n        newMap.set(message.userId, {\n          ...user,\n          cursor: message.position,\n          selection: message.selection || null,\n          active: true,\n        })\n      }\n\n      return newMap\n    }"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "newMap.get",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "message.userId"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "newMap.set",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "message.userId",
+                "{\n          ...user,\n          cursor: message.position,\n          selection: message.selection || null,\n          active: true,\n        }"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "updateCursorDecoration",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "message"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setActiveUsers"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "message",
+              "type_annotation": ": CursorUpdate"
+            }
+          ],
+          "has_conditionals": true,
+          "has_early_return": false
+        },
+        {
+          "name": "handleEditUpdate",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(message: EditUpdate) => {\n    if (!editor || message.userId === userId) return\n\n    const model = editor.getModel()\n    if (!model) return\n\n    suppressLocalUpdatesRef.current = true\n\n    model.pushEditOperations(\n      [],\n      message.changes.map((change) => ({\n        range: change.range,\n        text: change.text,\n        forceMoveMarkers: true,\n      })),\n      () => null\n    )\n\n    suppressLocalUpdatesRef.current = false\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "editor.getModel",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [],
+              "is_async": false
+            },
+            {
+              "name": "model.pushEditOperations",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "[]",
+                "message.changes.map((change) => ({\n        range: change.range,\n        text: change.text,\n        forceMoveMarkers: true,\n      }))",
+                "() => null"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "map",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "(change) => ({\n        range: change.range,\n        text: change.text,\n        forceMoveMarkers: true,\n      })"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [],
+          "parameters": [
+            {
+              "name": "message",
+              "type_annotation": ": EditUpdate"
+            }
+          ],
+          "has_conditionals": true,
+          "has_early_return": false
+        },
+        {
+          "name": "handleUsersList",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "(message: any) => {\n    const { users } = message\n\n    const usersMap = new Map<string, User>()\n    users.forEach((user: any) => {\n      if (user.userId !== userId) {\n        usersMap.set(user.userId, {\n          id: user.userId,\n          name: user.userName,\n          color: user.color,\n          cursor: null,\n          selection: null,\n          active: true,\n        })\n      }\n    })\n\n    setActiveUsers(usersMap)\n  }",
+          "state_mutations": [
+            "setActiveUsers(usersMap)"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "users.forEach",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "(user: any) => {\n      if (user.userId !== userId) {\n        usersMap.set(user.userId, {\n          id: user.userId,\n          name: user.userName,\n          color: user.color,\n          cursor: null,\n          selection: null,\n          active: true,\n        })\n      }\n    }"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "usersMap.set",
+              "source": {
+                "type": "Unknown"
+              },
+              "arguments": [
+                "user.userId",
+                "{\n          id: user.userId,\n          name: user.userName,\n          color: user.color,\n          cursor: null,\n          selection: null,\n          active: true,\n        }"
+              ],
+              "is_async": false
+            },
+            {
+              "name": "setActiveUsers",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "activeUsers"
+              },
+              "arguments": [
+                "usersMap"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setActiveUsers"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "message",
+              "type_annotation": ": any"
+            }
+          ],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Avatar",
+        "User"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "activeUsers",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showUsersPanel",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/collaborative_editor.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:activeUsers",
+        "to_field": "activeUsers",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'activeUsers' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showUsersPanel",
+        "to_field": "showUsersPanel",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showUsersPanel' maps to actor state field"
+      },
+      {
+        "from_hook": "useRef:wsRef",
+        "to_field": "wsRef",
+        "field_type": "Option<Any>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'wsRef' becomes non-reactive state (no re-render on change)"
+      },
+      {
+        "from_hook": "useRef:cursorDecorationsRef",
+        "to_field": "cursorDecorationsRef",
+        "field_type": "Option<Map>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'cursorDecorationsRef' becomes non-reactive state (no re-render on change)"
+      },
+      {
+        "from_hook": "useRef:suppressLocalUpdatesRef",
+        "to_field": "suppressLocalUpdatesRef",
+        "field_type": "Option<Element>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'suppressLocalUpdatesRef' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateActiveUsers",
+        "from_handler": "setActiveUsers",
+        "payload": null,
+        "state_changes": [
+          "self.activeUsers = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowUsersPanel",
+        "from_handler": "setShowUsersPanel",
+        "payload": null,
+        "state_changes": [
+          "self.showUsersPanel = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "CollabMessage",
+        "from_handler": "handleCollabMessage",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UserJoined",
+        "from_handler": "handleUserJoined",
+        "payload": null,
+        "state_changes": [
+          "self.activeUsers = (prev) => {\n      const newMap = new Map(prev)\n      newMap.set(joinedUserId, {\n        id: joinedUserId,\n        name: joinedUserName,\n        color,\n        cursor: null,\n        selection: null,\n        active: true,\n      })\n      return newMap\n    }"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UserLeft",
+        "from_handler": "handleUserLeft",
+        "payload": null,
+        "state_changes": [
+          "self.activeUsers = (prev) => {\n      const newMap = new Map(prev)\n      newMap.delete(leftUserId)\n      return newMap\n    }"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "CursorUpdate",
+        "from_handler": "handleCursorUpdate",
+        "payload": null,
+        "state_changes": [
+          "self.activeUsers = (prev) => {\n      const newMap = new Map(prev)\n      const user = newMap.get(message.userId)\n\n      if (user) {\n        newMap.set(message.userId, {\n          ...user,\n          cursor: message.position,\n          selection: message.selection || null,\n          active: true,\n        })\n      }\n\n      return newMap\n    }"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "EditUpdate",
+        "from_handler": "handleEditUpdate",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UsersList",
+        "from_handler": "handleUsersList",
+        "payload": null,
+        "state_changes": [
+          "self.activeUsers = usersMap"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[editor,enabled,filePath,userId,userName]",
+        "strategy": "inline",
+        "reasoning": "Deps [editor, enabled, filePath, userId, userName] → inline in handlers that change these",
+        "inline_in": "editor_enabled_filePath_userId_userName",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "editor",
+          "field_type": "Any",
+          "from_prop": "editor"
+        },
+        {
+          "name": "file_path",
+          "field_type": "Any",
+          "from_prop": "filePath"
+        },
+        {
+          "name": "user_id",
+          "field_type": "Any",
+          "from_prop": "userId"
+        },
+        {
+          "name": "user_name",
+          "field_type": "Any",
+          "from_prop": "userName"
+        },
+        {
+          "name": "enabled",
+          "field_type": "Any",
+          "from_prop": "enabled"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_5",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [editor, enabled, filePath, userId, userName] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Avatar",
+      "User"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "6 event handlers"
+  ],
+  "status": "pending"
+}

@@ -1,0 +1,173 @@
+invoke qliphoth·prelude·*;
+ᛈ PromptTestPanelMsg {
+    UpdateSelectedModel,
+    UpdateTestInput,
+    UpdateOutput,
+    UpdateIsRunning,
+    UpdateMetadata,
+}
+actor PromptTestPanel {
+    state selectedModel: String! = "claude-3-sonnet",
+    state testInput: String! = "",
+    state output: String! = "",
+    state isRunning: bool! = false,
+    state metadata: Option<Any>~ = None,
+
+    rite new(prompt_content: Any, variables: Any) -> This! {
+        self.prompt_content = prompt_content;
+        self.variables = variables;
+        This
+    }
+
+    on UpdateSelectedModel {
+        self.selectedModel = msg.0;
+    }
+
+    on UpdateTestInput {
+        self.testInput = msg.0;
+    }
+
+    on UpdateOutput {
+        self.output = msg.0;
+    }
+
+    on UpdateIsRunning {
+        self.isRunning = msg.0;
+    }
+
+    on UpdateMetadata {
+        self.metadata = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col gap-3 h-full")
+            ·child(
+            Label·view()
+                ·class("font-semibold")
+                ·text_child("Test Prompt")
+            )
+            ·child(
+            VNode·div()
+                ·class("flex items-end flex-wrap gap-2")
+                ·child(
+                VNode·div()
+                    ·class("flex-1 min-w-[200px]")
+                    ·child(
+                    Label·view()
+                        ·class("text-sm")
+                        ·text_child("Model")
+                    )
+                    ·child(
+                    Select·view()
+                        ·attr("value", self.selected_model)
+                        ·on_valuechange(ValueChange)
+                        ·child(
+                        SelectTrigger·view()
+                            ·child(
+                            SelectValue·view()
+                            )
+                        )
+                        ·child(
+                        SelectContent·view()
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "qwen2.5-coder:7b-instruct-q4_0")
+                                ·text_child("Qwen 2.5 Coder 7B")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "llama3.1:8b")
+                                ·text_child("Llama 3.1 8B")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "llama3.2:1b")
+                                ·text_child("Llama 3.2 1B")
+                            )
+                        )
+                    )
+                )
+                ·child(
+                Button·view()
+                    ·when(is_running ∨ ¬prompt_content, |n| n·attr("disabled", "true"))
+                    ·on_click(Click)
+                    ·child(
+                    Play·view()
+                        ·class("mr-2 h-4 w-4")
+                    )
+                    ·text_child("Run Test")
+                )
+            )
+            ·child(
+            VNode·div()
+                ·child(
+                Label·view()
+                    ·class("text-sm")
+                    ·text_child("Test Input")
+                )
+                ·child(
+                Textarea·view()
+                    ·on_change(Change)
+                    ·attr("placeholder", "Enter test input...")
+                    ·attr("rows", 3)
+                    ·attr("value", self.test_input)
+                    ·class("resize-y")
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 min-h-[200px]")
+                ·child(
+                Label·view()
+                    ·class("text-sm")
+                    ·text_child("Output")
+                )
+                ·child(
+                Card·view()
+                    ·class("flex-1 overflow-auto p-3")
+                    ·when(self.is_running, VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        Spinner·view()
+                            ·attr("size", "sm")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-muted-foreground")
+                            ·text_child("Running test...")
+                        ))
+                    ·when(¬is_running ∧ ¬output, VNode·div()
+                        ·class("text-muted-foreground")
+                        ·text_child("Configure your prompt and click \"Run Test\" to see results."))
+                    ·when(¬is_running ∧ output, VNode·fragment()
+                        ·child(
+                        VNode·div()
+                            ·class("whitespace-pre-wrap")
+                            ·text_child(self.output·to_string())
+                        )
+                        ·when(self.metadata, VNode·div()
+                            ·class("flex flex-wrap gap-4 text-sm text-muted-foreground mt-2")
+                            ·child(
+                            VNode·span()
+                                ·text_child("Tokens:")
+                                ·text_child(" "·to_string())
+                                ·child(
+                                VNode·strong()
+                                    ·text_child(self.metadata.tokens_used·to_string())
+                                )
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child("Duration:")
+                                ·text_child(" "·to_string())
+                                ·child(
+                                VNode·strong()
+                                    ·text_child(self.metadata.duration·to_string())
+                                    ·text_child("ms")
+                                )
+                            )))
+                )
+            )
+    }
+}

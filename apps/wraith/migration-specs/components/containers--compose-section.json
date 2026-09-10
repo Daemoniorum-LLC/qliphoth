@@ -1,0 +1,220 @@
+{
+  "id": "domains/devops/components/containers/ComposeSection.tsx:ComposeSection",
+  "name": "ComposeSection",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/containers/ComposeSection.tsx",
+    "code": "import { useState } from 'react'\nimport { Layers, Play, Square, RotateCcw, Trash2, ChevronDown, ChevronRight, FileCode } from 'lucide-react'\nimport { IconButton } from '@ui/components/atoms'\nimport { StatusBadge, SectionHeader, ResourceCard, ActionMenu, ActionItem } from '../shared'\nimport { mockComposeProjects } from '../../mock-data'\nimport type { ComposeProject, ComposeService } from '../../types'\n\nfunction formatRelativeTime(dateStr: string): string {\n  const diff = Date.now() - new Date(dateStr).getTime()\n  const hours = Math.floor(diff / 3600000)\n  const days = Math.floor(diff / 86400000)\n  if (days > 0) return `${days}d ago`\n  if (hours > 0) return `${hours}h ago`\n  return 'Just now'\n}\n\nfunction ServiceRow({ service }: { service: ComposeService }) {\n  return (\n    <div className=\"flex items-center justify-between py-2 px-3 hover:bg-[var(--bg-hover)] rounded\">\n      <div className=\"flex items-center gap-2\">\n        <div className={`w-2 h-2 rounded-full ${service.status === 'running' ? 'bg-[var(--accent-success)]' : 'bg-[var(--text-muted)]'}`} />\n        <span className=\"text-sm text-[var(--text-primary)]\">{service.name}</span>\n        <span className=\"text-xs text-[var(--text-muted)]\">{service.image}</span>\n      </div>\n      <div className=\"flex items-center gap-3\">\n        <span className=\"text-xs text-[var(--text-secondary)]\">\n          {service.replicas.running}/{service.replicas.desired}\n        </span>\n        {service.ports.length > 0 && (\n          <span className=\"text-xs font-mono text-[var(--text-muted)]\">\n            {service.ports.join(', ')}\n          </span>\n        )}\n        <StatusBadge status={service.status} size=\"sm\" />\n      </div>\n    </div>\n  )\n}\n\nfunction ProjectCard({ project }: { project: ComposeProject }) {\n  const [expanded, setExpanded] = useState(true)\n  const runningCount = project.services.filter((s) => s.status === 'running').length\n\n  return (\n    <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden\">\n      <div\n        className=\"flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--bg-hover)]\"\n        onClick={() => setExpanded(!expanded)}\n      >\n        <div className=\"flex items-center gap-3\">\n          <button className=\"text-[var(--text-secondary)]\">\n            {expanded ? <ChevronDown className=\"h-4 w-4\" /> : <ChevronRight className=\"h-4 w-4\" />}\n          </button>\n          <Layers className=\"h-5 w-5 text-[var(--accent-primary)]\" />\n          <div>\n            <div className=\"flex items-center gap-2\">\n              <span className=\"font-medium text-[var(--text-primary)]\">{project.name}</span>\n              <StatusBadge status={project.status} />\n            </div>\n            <div className=\"text-xs text-[var(--text-muted)] flex items-center gap-2 mt-0.5\">\n              <FileCode className=\"h-3 w-3\" />\n              {project.configFiles.join(', ')}\n            </div>\n          </div>\n        </div>\n        <div className=\"flex items-center gap-3\" onClick={(e) => e.stopPropagation()}>\n          <span className=\"text-xs text-[var(--text-secondary)]\">\n            {runningCount}/{project.services.length} services\n          </span>\n          <div className=\"flex items-center gap-1\">\n            <IconButton icon={<Play className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Start all\" onClick={() => {}} />\n            <IconButton icon={<Square className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Stop all\" onClick={() => {}} />\n            <IconButton icon={<RotateCcw className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Restart all\" onClick={() => {}} />\n            <ActionMenu>\n              <ActionItem icon={<Play className=\"h-3 w-3\" />} label=\"Up\" onClick={() => {}} />\n              <ActionItem icon={<Square className=\"h-3 w-3\" />} label=\"Down\" onClick={() => {}} />\n              <ActionItem icon={<RotateCcw className=\"h-3 w-3\" />} label=\"Rebuild\" onClick={() => {}} />\n              <ActionItem icon={<Trash2 className=\"h-3 w-3\" />} label=\"Remove\" onClick={() => {}} variant=\"danger\" />\n            </ActionMenu>\n          </div>\n        </div>\n      </div>\n\n      {expanded && (\n        <div className=\"border-t border-[var(--border-subtle)] bg-[var(--bg-primary)]\">\n          {project.services.map((service) => (\n            <ServiceRow key={service.name} service={service} />\n          ))}\n        </div>\n      )}\n    </div>\n  )\n}\n\nexport function ComposeSection() {\n  return (\n    <div className=\"h-full flex flex-col\">\n      <SectionHeader\n        title=\"Compose Projects\"\n        subtitle={`${mockComposeProjects.length} project${mockComposeProjects.length !== 1 ? 's' : ''}`}\n        icon={<Layers className=\"h-5 w-5\" />}\n        onRefresh={() => {}}\n      />\n\n      <div className=\"flex-1 overflow-auto space-y-3 pr-1\">\n        {mockComposeProjects.map((project) => (\n          <ProjectCard key={project.name} project={project} />\n        ))}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "ComposeSection",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 95,
+        "start_col": 7,
+        "end_line": 112,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "h-full flex flex-col"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "SectionHeader",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "title",
+                      "value": {
+                        "type": "String",
+                        "value": "Compose Projects"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "subtitle",
+                      "value": {
+                        "type": "Expression",
+                        "code": "`${mockComposeProjects.length} project${mockComposeProjects.length !== 1 ? 's' : ''}`"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "icon",
+                      "value": {
+                        "type": "Expression",
+                        "code": "<Layers className=\"h-5 w-5\" />"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onRefresh",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => {}"
+                      },
+                      "is_event_handler": true
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 98,
+                  "start_col": 6,
+                  "end_line": 103,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto space-y-3 pr-1"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Map",
+                        "iterable": "mockComposeProjects",
+                        "item_name": "project",
+                        "key_expr": "project.name",
+                        "body": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "ProjectCard",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "key",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "project.name"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "project",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "project"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 107,
+                            "start_col": 10,
+                            "end_line": 107,
+                            "end_col": 62
+                          }
+                        }
+                      },
+                      "location": {
+                        "start_line": 106,
+                        "start_col": 8,
+                        "end_line": 108,
+                        "end_col": 11
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 105,
+                  "start_col": 6,
+                  "end_line": 109,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 97,
+            "start_col": 4,
+            "end_line": 110,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "ProjectCard",
+        "SectionHeader"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/compose_section.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "ProjectCard",
+      "SectionHeader"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

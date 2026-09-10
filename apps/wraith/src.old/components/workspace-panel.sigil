@@ -1,0 +1,495 @@
+invoke qliphoth·prelude·*;
+ᛈ WorkspacePanelMsg {
+    UpdateProjects,
+    UpdateProjectTrees,
+    UpdateLoading,
+    UpdateError,
+    UpdateExpanded,
+    UpdateTreeCollapsed,
+    UpdateSearchQuery,
+    UpdateAddDialogOpen,
+    UpdateNewProjectPath,
+    UpdateNewProjectName,
+    UpdateAdding,
+    UpdateAddError,
+    UpdateRemoveConfirmOpen,
+    UpdateClearConfirmOpen,
+    UpdateProjectToRemove,
+    AddProject,
+    RemoveProject,
+    ClearWorkspace,
+    ToggleTreeCollapse,
+}
+actor WorkspacePanel {
+    state projects: Vec<Any>! = [],
+    state projectTrees: Option<Any>~ = ∅,
+    state loading: bool! = True,
+    state error: Option<Any>~ = None,
+    state expanded: Option<Any>~ = ∅,
+    state treeCollapsed: Any~ = None,
+    state searchQuery: String! = "",
+    state addDialogOpen: bool! = False,
+    state newProjectPath: String! = "",
+    state newProjectName: String! = "",
+    state adding: bool! = False,
+    state addError: Option<Any>~ = None,
+    state removeConfirmOpen: bool! = False,
+    state clearConfirmOpen: bool! = False,
+    state projectToRemove: Option<Any>~ = None,
+
+    on UpdateProjects {
+        self.projects = msg.0;
+    }
+
+    on UpdateProjectTrees {
+        self.projectTrees = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateExpanded {
+        self.expanded = msg.0;
+    }
+
+    on UpdateTreeCollapsed {
+        self.treeCollapsed = msg.0;
+    }
+
+    on UpdateSearchQuery {
+        self.searchQuery = msg.0;
+    }
+
+    on UpdateAddDialogOpen {
+        self.addDialogOpen = msg.0;
+    }
+
+    on UpdateNewProjectPath {
+        self.newProjectPath = msg.0;
+    }
+
+    on UpdateNewProjectName {
+        self.newProjectName = msg.0;
+    }
+
+    on UpdateAdding {
+        self.adding = msg.0;
+    }
+
+    on UpdateAddError {
+        self.addError = msg.0;
+    }
+
+    on UpdateRemoveConfirmOpen {
+        self.removeConfirmOpen = msg.0;
+    }
+
+    on UpdateClearConfirmOpen {
+        self.clearConfirmOpen = msg.0;
+    }
+
+    on UpdateProjectToRemove {
+        self.projectToRemove = msg.0;
+    }
+
+    on AddProject {
+        self.addError = "Please enter a project path";
+        self.adding = True;
+        self.addError = null;
+    }
+
+    on RemoveProject {
+        // TODO: implement
+    }
+
+    on ClearWorkspace {
+        // TODO: implement
+    }
+
+    on ToggleTreeCollapse {
+        self.treeCollapsed = newCollapsed;
+        // TODO: localStorage call
+    }
+
+    on Mount {
+        // Empty deps → Mount lifecycle
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold")
+                ·text_child("Workspace")
+            )
+            ·when(self.projects.len() > 0 ∧ ¬tree_collapsed, VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c]")
+                ·child(
+                VNode·div()
+                    ·class("relative")
+                    ·child(
+                    Search·view()
+                        ·class("absolute left-2 top-1/2 -translate-y-1/2 text-[#858585]")
+                        ·attr("size", 14)
+                    )
+                    ·child(
+                    Input·view()
+                        ·class("h-7 pl-7 pr-7 text-xs bg-[#252526] border-[#3c3c3c]")
+                        ·attr("value", self.search_query)
+                        ·on_change(Change)
+                        ·attr("placeholder", "Search files...")
+                    )
+                    ·when(self.search_query, VNode·button()
+                        ·class("absolute right-2 top-1/2 -translate-y-1/2 text-[#858585] hover:text-white")
+                        ·on_click(Click)
+                        ·child(
+                        XCircle·view()
+                            ·attr("size", 14)
+                        ))
+                ))
+            ·child(
+            VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c] flex flex-wrap gap-1.5")
+                ·child(
+                Button·view()
+                    ·attr("size", "sm")
+                    ·class("h-7 text-xs")
+                    ·on_click(Click)
+                    ·child(
+                    Plus·view()
+                        ·attr("size", 14)
+                        ·class("mr-1")
+                    )
+                    ·text_child("Add Project")
+                )
+                ·child(
+                Button·view()
+                    ·attr("size", "sm")
+                    ·attr("variant", "outline")
+                    ·class("h-7 text-xs")
+                    ·on_click(Click)
+                    ·when(self.loading, |n| n·attr("disabled", "True"))
+                    ·text_child("Refresh")
+                )
+                ·when(self.projects.len() > 0, VNode·fragment()
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "outline")
+                        ·class("h-7 text-xs")
+                        ·on_click(Click)
+                        ·text_child("Clear All")
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·attr("variant", "outline")
+                        ·class("h-7 text-xs")
+                        ·on_click(Click)
+                        ·attr("title", "Expand file tree")
+                        ·when_else(self.tree_collapsed, ChevronDown·view()
+                            ·attr("size", 14)
+                            ·class("mr-1"), ChevronUp·view()
+                            ·attr("size", 14)
+                            ·class("mr-1"))
+                        ·text_child("Expand Tree"·to_string())
+                    ))
+            )
+            ·when(self.error, VNode·div()
+                ·class("mx-2 my-2 p-3 bg-[#2b2b2b] border border-[#5a1d1d] rounded text-xs")
+                ·child(
+                VNode·div()
+                    ·class("flex items-start gap-2")
+                    ·child(
+                    XCircle·view()
+                        ·attr("size", 14)
+                        ·class("text-[#f48771] flex-shrink-0 mt-0.5")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex-1")
+                        ·child(
+                        VNode·div()
+                            ·class("text-[#f48771] font-medium mb-1")
+                            ·text_child("Error")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-[#cccccc] mb-2")
+                            ·text_child(self.error·to_string())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex gap-2")
+                            ·child(
+                            Button·view()
+                                ·attr("size", "sm")
+                                ·attr("variant", "outline")
+                                ·class("h-6 text-xs")
+                                ·on_click(Click)
+                                ·text_child("Retry")
+                            )
+                            ·child(
+                            Button·view()
+                                ·attr("size", "sm")
+                                ·attr("variant", "ghost")
+                                ·class("h-6 text-xs")
+                                ·on_click(Click)
+                                ·text_child("Dismiss")
+                            )
+                        )
+                    )
+                ))
+            ·when(self.projects.len() > 0, VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c] max-h-[200px] overflow-y-auto")
+                ·child(
+                VNode·div()
+                    ·class("text-[11px] text-[#858585] font-semibold mb-1.5")
+                    ·text_child("PROJECTS (")
+                    ·text_child(self.projects.len()·to_string())
+                    ·text_child(")")
+                )
+                // Map: ∀ project ∈ projects
+                ·children(self.projects.iter().map(|project| VNode·div()
+                        ·attr("key", project.id)
+                        ·class("mb-1.5 p-2 bg-[#2b2b2b] border border-[#3c3c3c] rounded flex justify-between items-center cursor-pointer hover:bg-[#323232] hover:border-[#007acc]")
+                        ·child(
+                        VNode·div()
+                            ·class("flex-1 min-w-0")
+                            ·child(
+                            VNode·div()
+                                ·class("text-[13px] font-semibold text-[#cccccc] flex items-center gap-2")
+                                ·child(
+                                VNode·span()
+                                    ·class("truncate")
+                                    ·attr("title", project.name)
+                                    ·text_child(project.name·to_string())
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·class("text-[10px] px-1.5 py-0.5 rounded ")
+                                    ·text_child("EXISTS"·to_string())
+                                )
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("text-[11px] text-[#858585] truncate")
+                                ·attr("title", project.path)
+                                ·text_child(project.path·to_string())
+                            )
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·class("h-6 w-6 p-0 ml-2 flex-shrink-0")
+                            ·on_click(Click)
+                            ·attr("title", "Remove from workspace")
+                            ·child(
+                            Trash2·view()
+                                ·attr("size", 14)
+                            )
+                        )).collect()))
+            ·when_else(¬tree_collapsed, VNode·div()
+                ·class("flex-1 overflow-y-auto p-2")
+                ·when(self.projects.len() == 0, VNode·div()
+                    ·class("py-8 px-5 text-center text-[#858585] text-[13px]")
+                    ·child(
+                    VNode·div()
+                        ·class("text-4xl mb-4")
+                        ·child(
+                        Folder·view()
+                            ·class("w-12 h-12 mx-auto text-[#858585]")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("mb-2 font-semibold text-[#cccccc]")
+                        ·text_child("No projects yet")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[11px] text-[#858585] mb-4")
+                        ·text_child("Add a project directory to get started")
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·class("h-8")
+                        ·child(
+                        Plus·view()
+                            ·attr("size", 14)
+                            ·class("mr-1.5")
+                        )
+                        ·text_child("Add Project")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#666] mt-4 space-y-1")
+                        ·child(
+                        VNode·div()
+                            ·text_child("Quick tip: Enter the full path like")
+                        )
+                        ·child(
+                        VNode·code()
+                            ·class("px-1.5 py-0.5 bg-[#2b2b2b] rounded text-[#4fc3f7]")
+                            ·text_child("/home/user/my-project")
+                        )
+                    )), VNode·div()
+                ·class("flex-1 flex items-center justify-center text-center text-[#858585]")
+                ·child(
+                VNode·div()
+                    ·child(
+                    VNode·div()
+                        ·class("text-3xl mb-2")
+                        ·text_child("📁")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[11px]")
+                        ·text_child("File tree collapsed")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("text-[10px] text-[#666] mt-1")
+                        ·text_child("Click \"Expand Tree\" to view files")
+                    )
+                ))
+            ·child(
+            Dialog·view()
+                ·attr("open", self.add_dialog_open)
+                ·on_openchange(OpenChange)
+                ·child(
+                DialogContent·view()
+                    ·class("max-w-[500px] bg-[#2b2b2b] border-[#3c3c3c]")
+                    ·child(
+                    DialogHeader·view()
+                        ·child(
+                        DialogTitle·view()
+                            ·text_child("Add Project to Workspace")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex flex-col gap-3 py-4")
+                        ·child(
+                        VNode·div()
+                            ·child(
+                            Label·view()
+                                ·class("text-xs text-[#cccccc] mb-1.5 block")
+                                ·text_child("Project Path")
+                                ·child(
+                                VNode·span()
+                                    ·class("text-red-500")
+                                    ·text_child("*")
+                                )
+                            )
+                            ·child(
+                            Input·view()
+                                ·class("bg-[#1e1e1e] border-[#3c3c3c] text-[#cccccc]")
+                                ·attr("value", self.new_project_path)
+                                ·on_change(Change)
+                                ·attr("placeholder", "/home/user/my-project")
+                                ·when(self.adding, |n| n·attr("disabled", "True"))
+                                ·attr("autoFocus", "True")
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("text-[11px] text-[#858585] mt-1")
+                                ·text_child("Enter the absolute path to the project directory")
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·child(
+                            Label·view()
+                                ·class("text-xs text-[#cccccc] mb-1.5 block")
+                                ·text_child("Project Name (optional)")
+                            )
+                            ·child(
+                            Input·view()
+                                ·class("bg-[#1e1e1e] border-[#3c3c3c] text-[#cccccc]")
+                                ·attr("value", self.new_project_name)
+                                ·on_change(Change)
+                                ·attr("placeholder", "My Project")
+                                ·when(self.adding, |n| n·attr("disabled", "True"))
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("text-[11px] text-[#858585] mt-1")
+                                ·text_child("If not provided, will use directory name")
+                            )
+                        )
+                        ·when(self.add_error, VNode·div()
+                            ·class("p-2 bg-[#2b2b2b] text-[#f48771] rounded text-xs")
+                            ·text_child("⚠️")
+                            ·text_child(self.add_error·to_string()))
+                        ·child(
+                        VNode·div()
+                            ·class("text-[11px] text-[#007acc] p-2 bg-[#0e1f2b] rounded")
+                            ·child(
+                            VNode·div()
+                                ·class("font-semibold mb-1")
+                                ·text_child("Examples:")
+                            )
+                            ·child(
+                            VNode·div()
+                                ·text_child("• /home/user/persona-framework")
+                            )
+                            ·child(
+                            VNode·div()
+                                ·text_child("• /tmp/my-project")
+                            )
+                            ·child(
+                            VNode·div()
+                                ·text_child("• /home/user/workspace/app")
+                            )
+                        )
+                    )
+                    ·child(
+                    DialogFooter·view()
+                        ·child(
+                        Button·view()
+                            ·on_click(Click)
+                            ·when(adding ∨ ¬new_project_path.trim(), |n| n·attr("disabled", "True"))
+                            ·text_child("Adding..."·to_string())
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("variant", "outline")
+                            ·on_click(Click)
+                            ·when(self.adding, |n| n·attr("disabled", "True"))
+                            ·text_child("Cancel")
+                        )
+                    )
+                )
+            )
+            ·child(
+            ConfirmDialog·view()
+                ·attr("open", self.remove_confirm_open)
+                ·on_openchange(OpenChange)
+                ·attr("title", "Remove Project")
+                ·attr("description", "Remove "" from workspace? This will not delete the project files.")
+                ·attr("confirmLabel", "Remove")
+                ·on_confirm(Confirm)
+                ·attr("variant", "destructive")
+            )
+            ·child(
+            ConfirmDialog·view()
+                ·attr("open", self.clear_confirm_open)
+                ·on_openchange(OpenChange)
+                ·attr("title", "Clear Workspace")
+                ·attr("description", "Remove all projects from workspace? This will not delete any project files.")
+                ·attr("confirmLabel", "Clear All")
+                ·on_confirm(Confirm)
+                ·attr("variant", "destructive")
+            )
+    }
+}

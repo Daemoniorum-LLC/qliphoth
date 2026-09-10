@@ -1,0 +1,2322 @@
+{
+  "id": "Wraith.tsx:Wraith",
+  "name": "Wraith",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/Wraith.tsx",
+    "code": "import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'\nimport { FolderOpen, MessageSquare, GitBranch, AlertTriangle, Command as CommandIcon, FileCode } from 'lucide-react'\nimport '@ui/styles/theme.css'\nimport {\n  Toolbar, IconTray, TabBar, StatusBar, WelcomeScreen, PanelContainer,\n  type PanelConfig, type Tab\n} from '@ui/components/organisms'\nimport { ResizeHandle } from '@ui/components/molecules'\nimport { CodeEditor } from '@ui/components/CodeEditor'\nimport { CommandPalette, Command } from '@ui/components/CommandPalette'\nimport { Breadcrumbs } from '@ui/components/Breadcrumbs'\nimport { GoToLineDialog } from '@ui/components/GoToLineDialog'\nimport { MarkdownPreview } from '@ui/components/MarkdownPreview'\nimport { GitDiffViewer } from '@ui/components/GitDiffViewer'\nimport { GitBlameView } from '@ui/components/GitBlameView'\nimport { WorkspaceSymbolsDialog } from '@ui/components/WorkspaceSymbolsDialog'\nimport { makeHttpClient } from './data/https'\nimport {\n  type PanelType, type ExtensionPanelType, type OpenTab,\n  usePreferences, useTabManagement, useKeyboardShortcuts,\n  createPanelRegistry\n} from './wraith'\n\nconst http = makeHttpClient('/api')\n\nexport function Wraith() {\n  const [conversationId, setConversationId] = useState<string | null>(null)\n  const [isGenerating, setIsGenerating] = useState(false)\n  const { preferences, updatePreferences, setPreferences, savePreferences } = usePreferences()\n\n  const [isNarrow, setIsNarrow] = useState<boolean>(() => {\n    if (typeof window === 'undefined') return false\n    return window.innerWidth < 1024\n  })\n\n  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)\n  const [recentFilesOpen, setRecentFilesOpen] = useState(false)\n  const [goToLineOpen, setGoToLineOpen] = useState(false)\n  const [symbolsDialogOpen, setSymbolsDialogOpen] = useState(false)\n\n  // Responsive handling\n  useEffect(() => {\n    let resizeTimer: NodeJS.Timeout\n    const handleResize = () => {\n      clearTimeout(resizeTimer)\n      resizeTimer = setTimeout(() => {\n        const nowNarrow = window.innerWidth < 1024\n        setIsNarrow(nowNarrow)\n        if (nowNarrow && (preferences.leftExpanded || preferences.rightExpanded)) {\n          updatePreferences({\n            leftExpanded: false,\n            rightExpanded: false,\n            activeLeftPanel: null,\n            activeRightPanel: null,\n          })\n        }\n      }, 150)\n    }\n    window.addEventListener('resize', handleResize)\n    return () => {\n      clearTimeout(resizeTimer)\n      window.removeEventListener('resize', handleResize)\n    }\n  }, [preferences.leftExpanded, preferences.rightExpanded, updatePreferences])\n\n  // Chat message handler\n  const handleSendMessage = useCallback(async (\n    message: string,\n    context: any[],\n    onStreamUpdate?: (text: string) => void,\n    options?: { executionMode?: 'plan' | 'execute'; strictMode?: boolean; braveMode?: boolean }\n  ) => {\n    setIsGenerating(true)\n    let sprintContext: any = null\n\n    try {\n      const projectId = 1\n      const sprintResponse = await http.get(`/nexus/sprints/project/${projectId}/active`)\n      if (sprintResponse.ok) {\n        const sprint = await sprintResponse.json()\n        const statsResponse = await http.get(`/nexus/sprints/${sprint.id}/stats`)\n        const stats = statsResponse.ok ? await statsResponse.json() : null\n        const tasksResponse = await http.get(`/nexus/sprints/${sprint.id}/tasks`)\n        const tasks = tasksResponse.ok ? await tasksResponse.json() : []\n        sprintContext = { type: 'sprint', sprint, stats, tasks: tasks.slice(0, 10) }\n      }\n    } catch (e) {\n      console.warn('Failed to fetch sprint context:', e)\n    }\n\n    const enhancedContext = sprintContext ? [sprintContext, ...context] : context\n\n    return new Promise((resolve, reject) => {\n      let accumulatedResponse = ''\n      let metadata: any = null\n      const url = `${window.location.origin}/api/chat/conversational-stream`\n\n      fetch(url, {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({\n          message,\n          conversationId,\n          projectPath: \"/workspace/persona-framework\",\n          personaCode: \"PAIMON\",\n          context: enhancedContext,\n          executionMode: options?.executionMode || 'execute',\n          strictMode: options?.strictMode || false,\n          braveMode: options?.braveMode || false\n        })\n      }).then(response => {\n        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)\n        const reader = response.body?.getReader()\n        const decoder = new TextDecoder()\n        if (!reader) throw new Error('No reader available')\n\n        const readChunk = () => {\n          reader.read().then(({ done, value }) => {\n            if (done) {\n              setIsGenerating(false)\n              resolve({\n                response: accumulatedResponse,\n                conversationId: metadata?.conversationId || conversationId,\n                taskSubmitted: metadata?.taskSubmitted || false,\n                taskId: metadata?.taskId,\n                usage: metadata?.usage\n              })\n              return\n            }\n\n            const chunk = decoder.decode(value, { stream: true })\n            for (const line of chunk.split('\\n')) {\n              if (line.startsWith('data: ')) {\n                const data = line.substring(6)\n                if (data === '[DONE]') continue\n                if (data.startsWith('[METADATA]')) {\n                  try {\n                    metadata = JSON.parse(data.substring(10))\n                    if (metadata.conversationId) setConversationId(metadata.conversationId)\n                  } catch (e) { console.error('Failed to parse metadata:', e) }\n                  continue\n                }\n                if (data.startsWith('ERROR: ')) {\n                  setIsGenerating(false)\n                  reject(new Error(data.substring(7)))\n                  return\n                }\n                accumulatedResponse += data\n                onStreamUpdate?.(accumulatedResponse)\n              }\n            }\n            readChunk()\n          }).catch(err => { setIsGenerating(false); reject(err) })\n        }\n        readChunk()\n      }).catch(err => { setIsGenerating(false); reject(err) })\n    })\n  }, [conversationId])\n\n  // Tab management\n  const {\n    handleFileClick, closeTab, togglePinTab, openInSplit, closeSplit,\n    closeSplitTab, openGitDiff, openGitBlame, navigateToNextTab, navigateToPrevTab\n  } = useTabManagement({ preferences, updatePreferences })\n\n  // Extension toggle\n  const toggleExtension = useCallback((extId: ExtensionPanelType) => {\n    const isEnabled = preferences.enabledExtensions.includes(extId)\n    if (isEnabled) {\n      updatePreferences({\n        enabledExtensions: preferences.enabledExtensions.filter(e => e !== extId),\n        leftPanels: preferences.leftPanels.filter(p => p !== extId),\n        rightPanels: preferences.rightPanels.filter(p => p !== extId),\n        activeLeftPanel: preferences.activeLeftPanel === extId ? null : preferences.activeLeftPanel,\n        activeRightPanel: preferences.activeRightPanel === extId ? null : preferences.activeRightPanel,\n      })\n    } else {\n      updatePreferences({ enabledExtensions: [...preferences.enabledExtensions, extId] })\n    }\n  }, [preferences, updatePreferences])\n\n  // Panel registry\n  const availablePanels = useMemo(() => createPanelRegistry({\n    onFileClick: handleFileClick,\n    onSendMessage: handleSendMessage,\n    isGenerating,\n    editorSettings: preferences.editorSettings,\n    onSaveSettings: (settings) => updatePreferences({ editorSettings: settings }),\n    enabledExtensions: preferences.enabledExtensions,\n    onToggleExtension: toggleExtension,\n  }), [handleFileClick, handleSendMessage, isGenerating, preferences.editorSettings, preferences.enabledExtensions, toggleExtension, updatePreferences])\n\n  // Panel click handler\n  const handleIconClick = useCallback((panel: PanelType, side: 'left' | 'right') => {\n    setPreferences(prev => {\n      const key = side === 'left' ? 'activeLeftPanel' : 'activeRightPanel'\n      const expandKey = side === 'left' ? 'leftExpanded' : 'rightExpanded'\n      const activePanel = prev[key]\n      const isExpanded = prev[expandKey]\n\n      if (activePanel === panel && isExpanded) {\n        const newPrefs = { ...prev, [expandKey]: false, [key]: null }\n        savePreferences(newPrefs)\n        return newPrefs\n      } else {\n        const newPrefs = { ...prev, [expandKey]: true, [key]: panel }\n        savePreferences(newPrefs)\n        return newPrefs\n      }\n    })\n  }, [setPreferences, savePreferences])\n\n  // Keyboard shortcuts\n  useKeyboardShortcuts({\n    preferences,\n    updatePreferences,\n    onCommandPalette: () => setCommandPaletteOpen(true),\n    onRecentFiles: () => setRecentFilesOpen(true),\n    onSymbolsDialog: () => setSymbolsDialogOpen(true),\n    onGoToLine: () => setGoToLineOpen(true),\n    onIconClick: handleIconClick,\n    closeTab,\n    openGitDiff,\n    navigateToNextTab,\n    navigateToPrevTab,\n  })\n\n  // Panel management helpers\n  const addPanelToSide = useCallback((panel: PanelType, side: 'left' | 'right') => {\n    const key = side === 'left' ? 'leftPanels' : 'rightPanels'\n    if (!preferences[key].includes(panel)) {\n      updatePreferences({ [key]: [...preferences[key], panel] })\n    }\n  }, [preferences, updatePreferences])\n\n  const collapsePanel = useCallback((side: 'left' | 'right') => {\n    const key = side === 'left' ? 'activeLeftPanel' : 'activeRightPanel'\n    const expandKey = side === 'left' ? 'leftExpanded' : 'rightExpanded'\n    updatePreferences({ [expandKey]: false, [key]: null })\n  }, [updatePreferences])\n\n  // Resize handlers\n  const handleLeftResize = useCallback((delta: number) => {\n    updatePreferences({ leftWidth: Math.min(500, Math.max(200, preferences.leftWidth + delta)) })\n  }, [preferences.leftWidth, updatePreferences])\n\n  const handleRightResize = useCallback((delta: number) => {\n    updatePreferences({ rightWidth: Math.min(500, Math.max(200, preferences.rightWidth + delta)) })\n  }, [preferences.rightWidth, updatePreferences])\n\n  // Tab content renderer\n  const getTabContent = useCallback((tab: OpenTab): React.ReactNode => {\n    switch (tab.type) {\n      case 'file':\n        return tab.filePath?.toLowerCase().endsWith('.md')\n          ? <MarkdownPreview filePath={tab.filePath} />\n          : <CodeEditor filePath={tab.filePath || null} settings={preferences.editorSettings} />\n      case 'git-diff':\n        return <GitDiffViewer filePath={tab.filePath || null} onClose={() => closeTab(tab.id)} />\n      case 'git-blame':\n        return <GitBlameView filePath={tab.filePath || null} onClose={() => closeTab(tab.id)} />\n      default:\n        return null\n    }\n  }, [preferences.editorSettings, closeTab])\n\n  // Derived data for components\n  const usedPanels = [...preferences.leftPanels, ...preferences.rightPanels]\n  const availableToAdd = (Object.keys(availablePanels) as PanelType[]).filter(p => !usedPanels.includes(p))\n\n  const leftPanelConfigs: PanelConfig[] = useMemo(() =>\n    preferences.leftPanels.filter(p => availablePanels[p]).map(id => ({\n      id, name: availablePanels[id]?.name || id, icon: availablePanels[id]?.icon || null,\n    })), [preferences.leftPanels, availablePanels])\n\n  const rightPanelConfigs: PanelConfig[] = useMemo(() =>\n    preferences.rightPanels.filter(p => availablePanels[p]).map(id => ({\n      id, name: availablePanels[id]?.name || id, icon: availablePanels[id]?.icon || null,\n    })), [preferences.rightPanels, availablePanels])\n\n  const tabsForBar: Tab[] = useMemo(() =>\n    preferences.openTabs.map(tab => ({\n      id: tab.id, title: tab.title, pinned: preferences.pinnedTabs.includes(tab.id),\n    })), [preferences.openTabs, preferences.pinnedTabs])\n\n  const welcomeActions = useMemo(() => [\n    {\n      id: 'open-workspace',\n      icon: <FolderOpen className=\"h-6 w-6\" />,\n      title: 'Open Workspace',\n      description: 'Browse project files',\n      onClick: () => {\n        if (!preferences.leftPanels.includes('workspace')) {\n          updatePreferences({ leftPanels: [...preferences.leftPanels, 'workspace'] })\n        }\n        updatePreferences({ leftExpanded: true, activeLeftPanel: 'workspace' })\n      },\n    },\n    {\n      id: 'command-palette',\n      icon: <CommandIcon className=\"h-6 w-6\" />,\n      title: 'Command Palette',\n      description: 'Ctrl/Cmd + Shift + P',\n      onClick: () => setCommandPaletteOpen(true),\n    },\n    {\n      id: 'hydra-chat',\n      icon: <MessageSquare className=\"h-6 w-6\" />,\n      title: 'Hydra Chat',\n      description: 'AI-powered assistance',\n      onClick: () => {\n        if (!preferences.rightPanels.includes('chat')) {\n          updatePreferences({ rightPanels: [...preferences.rightPanels, 'chat'] })\n        }\n        updatePreferences({ rightExpanded: true, activeRightPanel: 'chat' })\n      },\n    },\n  ], [preferences.leftPanels, preferences.rightPanels, updatePreferences])\n\n  // Command palette commands\n  const commands: Command[] = useMemo(() => {\n    const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0\n    const mod = isMac ? 'Cmd' : 'Ctrl'\n    const cmds: Command[] = []\n\n    preferences.leftPanels.forEach((panel, idx) => {\n      cmds.push({\n        id: `toggle-left-${panel}`,\n        title: `Toggle ${availablePanels[panel]?.name}`,\n        category: 'Panels',\n        shortcut: `${mod}+${idx + 1}`,\n        action: () => handleIconClick(panel, 'left'),\n      })\n    })\n\n    preferences.rightPanels.forEach((panel, idx) => {\n      cmds.push({\n        id: `toggle-right-${panel}`,\n        title: `Toggle ${availablePanels[panel]?.name}`,\n        category: 'Panels',\n        shortcut: `${mod}+Shift+${idx + 1}`,\n        action: () => handleIconClick(panel, 'right'),\n      })\n    })\n\n    cmds.push(\n      { id: 'toggle-left-sidebar', title: 'Toggle Left Sidebar', category: 'View', shortcut: `${mod}+B`,\n        action: () => preferences.leftPanels.length > 0 && handleIconClick(preferences.activeLeftPanel || preferences.leftPanels[0], 'left') },\n      { id: 'toggle-right-sidebar', title: 'Toggle Right Sidebar', category: 'View', shortcut: `${mod}+Shift+B`,\n        action: () => preferences.rightPanels.length > 0 && handleIconClick(preferences.activeRightPanel || preferences.rightPanels[0], 'right') },\n      { id: 'open-settings', title: 'Open Settings', category: 'View', shortcut: `${mod}+,`,\n        action: () => { updatePreferences({ rightExpanded: true, activeRightPanel: 'settings' }) } },\n      { id: 'open-search', title: 'Search in Files', category: 'Search', shortcut: `${mod}+Shift+F`,\n        action: () => { updatePreferences({ leftExpanded: true, activeLeftPanel: 'search' }) } },\n      { id: 'recent-files', title: 'View Recent Files', category: 'File', shortcut: `${mod}+E`,\n        action: () => setRecentFilesOpen(true) },\n      { id: 'workspace-symbols', title: 'Go to Symbol in Workspace', category: 'Navigation', shortcut: `${mod}+T`,\n        action: () => setSymbolsDialogOpen(true) },\n    )\n\n    if (preferences.activeTabId) {\n      cmds.push(\n        { id: 'close-tab', title: 'Close Active Tab', category: 'Tabs', shortcut: `${mod}+W`,\n          action: () => closeTab(preferences.activeTabId!) },\n        { id: 'pin-tab', title: preferences.pinnedTabs.includes(preferences.activeTabId) ? 'Unpin Active Tab' : 'Pin Active Tab',\n          category: 'Tabs', action: () => togglePinTab(preferences.activeTabId!) },\n      )\n\n      const activeTab = preferences.openTabs.find(t => t.id === preferences.activeTabId)\n      if (activeTab?.type === 'file') {\n        cmds.push({ id: 'go-to-line', title: 'Go to Line', category: 'Navigation', shortcut: `${mod}+G`,\n          action: () => setGoToLineOpen(true) })\n        if (activeTab.filePath) {\n          cmds.push(\n            { id: 'show-git-diff', title: 'Show Git Diff', category: 'Git', shortcut: `${mod}+Shift+D`,\n              action: () => openGitDiff(activeTab.filePath!) },\n            { id: 'show-git-blame', title: 'Show Git Blame', category: 'Git', shortcut: `${mod}+Alt+G`,\n              action: () => openGitBlame(activeTab.filePath!) },\n          )\n        }\n      }\n\n      if (preferences.splitMode === 'none') {\n        cmds.push(\n          { id: 'split-vertical', title: 'Split Editor Vertically', category: 'View', action: () => openInSplit('vertical') },\n          { id: 'split-horizontal', title: 'Split Editor Horizontally', category: 'View', action: () => openInSplit('horizontal') },\n        )\n      } else {\n        cmds.push({ id: 'close-split', title: 'Close Split Editor', category: 'View', action: closeSplit })\n      }\n    }\n\n    if (preferences.openTabs.length > 1) {\n      cmds.push(\n        { id: 'next-tab', title: 'Next Tab', category: 'Tabs', shortcut: `${mod}+Tab`, action: navigateToNextTab },\n        { id: 'previous-tab', title: 'Previous Tab', category: 'Tabs', shortcut: `${mod}+Shift+Tab`, action: navigateToPrevTab },\n      )\n    }\n\n    availableToAdd.forEach(panel => {\n      cmds.push(\n        { id: `add-left-${panel}`, title: `Add ${availablePanels[panel]?.name} to Left`, category: 'Panels',\n          action: () => addPanelToSide(panel, 'left') },\n        { id: `add-right-${panel}`, title: `Add ${availablePanels[panel]?.name} to Right`, category: 'Panels',\n          action: () => addPanelToSide(panel, 'right') },\n      )\n    })\n\n    return cmds\n  }, [preferences, availablePanels, availableToAdd, handleIconClick, updatePreferences, closeTab, togglePinTab,\n      openGitDiff, openGitBlame, openInSplit, closeSplit, navigateToNextTab, navigateToPrevTab, addPanelToSide])\n\n  const recentFilesCommands: Command[] = useMemo(() =>\n    preferences.recentFiles.map(file => ({\n      id: `recent-${file.path}`,\n      title: file.name,\n      category: 'Recent Files',\n      shortcut: file.path,\n      action: () => handleFileClick(file.path),\n    })), [preferences.recentFiles, handleFileClick])\n\n  // Render\n  return (\n    <div className=\"flex flex-col h-full w-full max-w-[100vw] bg-[var(--bg-primary)] overflow-hidden\">\n      <Toolbar\n        collapsed={preferences.toolbarCollapsed}\n        onToggleCollapse={() => updatePreferences({ toolbarCollapsed: !preferences.toolbarCollapsed })}\n        onCommandPalette={() => setCommandPaletteOpen(true)}\n        availablePanels={availableToAdd.map(p => ({ id: p, name: availablePanels[p]?.name || p }))}\n        onAddToLeft={(id) => addPanelToSide(id as PanelType, 'left')}\n        onAddToRight={(id) => addPanelToSide(id as PanelType, 'right')}\n        panelCount={usedPanels.length}\n        tabCount={preferences.openTabs.length}\n      />\n\n      <div className={`flex flex-1 min-h-0 w-full max-w-[100vw] overflow-hidden ${isNarrow ? 'flex-col' : ''}`}>\n        {preferences.leftPanels.length > 0 && (\n          <IconTray panels={leftPanelConfigs} activePanel={preferences.activeLeftPanel} side=\"left\" isNarrow={isNarrow}\n            onPanelClick={(id) => handleIconClick(id as PanelType, 'left')} />\n        )}\n\n        {preferences.leftExpanded && preferences.activeLeftPanel && availablePanels[preferences.activeLeftPanel] && (\n          <PanelContainer\n            title={availablePanels[preferences.activeLeftPanel]?.name || ''}\n            icon={availablePanels[preferences.activeLeftPanel]?.icon}\n            side=\"left\" width={preferences.leftWidth} isNarrow={isNarrow}\n            onClose={() => collapsePanel('left')} onCollapse={() => collapsePanel('left')} onResize={handleLeftResize}\n          >\n            {availablePanels[preferences.activeLeftPanel]?.component}\n          </PanelContainer>\n        )}\n\n        <div className=\"flex flex-col flex-1 min-w-0\">\n          {preferences.openTabs.length > 0 && (\n            <TabBar tabs={tabsForBar} activeTabId={preferences.activeTabId}\n              onTabClick={(id) => updatePreferences({ activeTabId: id })} onTabClose={closeTab} onTabPin={togglePinTab} />\n          )}\n\n          {preferences.activeTabId && (() => {\n            const activeTab = preferences.openTabs.find(t => t.id === preferences.activeTabId)\n            return activeTab?.type === 'file' && activeTab.filePath ? <Breadcrumbs filePath={activeTab.filePath} /> : null\n          })()}\n\n          {preferences.splitMode === 'none' ? (\n            <div className=\"flex-1 overflow-auto bg-[var(--bg-primary)] transition-opacity duration-200\">\n              {preferences.activeTabId ? getTabContent(preferences.openTabs.find(t => t.id === preferences.activeTabId)!) : <WelcomeScreen actions={welcomeActions} />}\n            </div>\n          ) : (\n            <div className={`flex flex-1 overflow-hidden ${preferences.splitMode === 'vertical' ? 'flex-row' : 'flex-col'}`}>\n              <div className=\"flex flex-col flex-1 min-w-0 min-h-0\">\n                {preferences.splitTabs.length > 0 && (\n                  <TabBar\n                    tabs={preferences.splitTabs.map(t => ({ id: t.id, title: t.title, pinned: false }))}\n                    activeTabId={preferences.activeSplitTabId}\n                    onTabClick={(id) => updatePreferences({ activeSplitTabId: id })}\n                    onTabClose={closeSplitTab} onTabPin={() => {}}\n                  />\n                )}\n                <div className=\"flex-1 overflow-auto bg-[var(--bg-primary)]\">\n                  {preferences.activeSplitTabId && getTabContent(preferences.splitTabs.find(t => t.id === preferences.activeSplitTabId)!)}\n                </div>\n              </div>\n\n              <ResizeHandle direction={preferences.splitMode === 'vertical' ? 'horizontal' : 'vertical'}\n                onResize={(delta) => updatePreferences({ splitRatio: Math.min(80, Math.max(20, preferences.splitRatio + delta / 5)) })} />\n\n              <div className=\"flex flex-col flex-1 min-w-0 min-h-0\">\n                {preferences.openTabs.length > 0 && (\n                  <TabBar tabs={tabsForBar} activeTabId={preferences.activeTabId}\n                    onTabClick={(id) => updatePreferences({ activeTabId: id })} onTabClose={closeTab} onTabPin={togglePinTab} />\n                )}\n                <div className=\"flex-1 overflow-auto bg-[var(--bg-primary)]\">\n                  {preferences.activeTabId ? getTabContent(preferences.openTabs.find(t => t.id === preferences.activeTabId)!) : (\n                    <div className=\"flex items-center justify-center h-full text-[var(--text-muted)]\"><FileCode className=\"h-8 w-8\" /></div>\n                  )}\n                </div>\n              </div>\n            </div>\n          )}\n        </div>\n\n        {preferences.rightExpanded && preferences.activeRightPanel && availablePanels[preferences.activeRightPanel] && (\n          <PanelContainer\n            title={availablePanels[preferences.activeRightPanel]?.name || ''}\n            icon={availablePanels[preferences.activeRightPanel]?.icon}\n            side=\"right\" width={preferences.rightWidth} isNarrow={isNarrow}\n            onClose={() => collapsePanel('right')} onCollapse={() => collapsePanel('right')} onResize={handleRightResize}\n          >\n            {availablePanels[preferences.activeRightPanel]?.component}\n          </PanelContainer>\n        )}\n\n        {preferences.rightPanels.length > 0 && (\n          <IconTray panels={rightPanelConfigs} activePanel={preferences.activeRightPanel} side=\"right\" isNarrow={isNarrow}\n            onPanelClick={(id) => handleIconClick(id as PanelType, 'right')} />\n        )}\n      </div>\n\n      <StatusBar\n        leftItems={[\n          { id: 'source-control', icon: <GitBranch className=\"h-3.5 w-3.5\" />,\n            onClick: () => updatePreferences({ leftExpanded: true, activeLeftPanel: 'source-control' }), title: 'Source Control' },\n          { id: 'problems', icon: <AlertTriangle className=\"h-3.5 w-3.5\" />,\n            onClick: () => updatePreferences({ rightExpanded: true, activeRightPanel: 'problems' }), title: 'Problems' },\n          ...(() => {\n            const activeTab = preferences.openTabs.find(t => t.id === preferences.activeTabId)\n            return activeTab?.type === 'file' && activeTab.filePath\n              ? [{ id: 'file-path', label: activeTab.filePath, title: activeTab.filePath }] : []\n          })(),\n        ]}\n        rightItems={[\n          { id: 'indentation', label: `${preferences.editorSettings.insertSpaces ? 'Spaces' : 'Tabs'}: ${preferences.editorSettings.tabSize}` },\n          { id: 'encoding', label: 'UTF-8' },\n        ]}\n      />\n\n      <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} commands={commands} />\n      <CommandPalette open={recentFilesOpen} onClose={() => setRecentFilesOpen(false)} commands={recentFilesCommands} />\n      <GoToLineDialog open={goToLineOpen} onClose={() => setGoToLineOpen(false)} onGoToLine={(line) => console.log('Go to line:', line)} />\n      <WorkspaceSymbolsDialog open={symbolsDialogOpen} onClose={() => setSymbolsDialogOpen(false)} onNavigate={handleFileClick} />\n    </div>\n  )\n}\n\nexport default Wraith\n",
+    "extraction": {
+      "name": "Wraith",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 26,
+        "start_col": 7,
+        "end_line": 543,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 27,
+            "start_col": 46,
+            "end_line": 27,
+            "end_col": 75
+          },
+          "state_name": "conversationId",
+          "setter_name": "setConversationId",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 28,
+            "start_col": 42,
+            "end_line": 28,
+            "end_col": 57
+          },
+          "state_name": "isGenerating",
+          "setter_name": "setIsGenerating",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 31,
+            "start_col": 34,
+            "end_line": 34,
+            "end_col": 4
+          },
+          "state_name": "isNarrow",
+          "setter_name": "setIsNarrow",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 36,
+            "start_col": 54,
+            "end_line": 36,
+            "end_col": 69
+          },
+          "state_name": "commandPaletteOpen",
+          "setter_name": "setCommandPaletteOpen",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 37,
+            "start_col": 48,
+            "end_line": 37,
+            "end_col": 63
+          },
+          "state_name": "recentFilesOpen",
+          "setter_name": "setRecentFilesOpen",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 38,
+            "start_col": 42,
+            "end_line": 38,
+            "end_col": 57
+          },
+          "state_name": "goToLineOpen",
+          "setter_name": "setGoToLineOpen",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 39,
+            "start_col": 52,
+            "end_line": 39,
+            "end_col": 67
+          },
+          "state_name": "symbolsDialogOpen",
+          "setter_name": "setSymbolsDialogOpen",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 42,
+            "start_col": 2,
+            "end_line": 64,
+            "end_col": 78
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "None",
+            "None",
+            "updatePreferences"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 67,
+            "start_col": 28,
+            "end_line": 158,
+            "end_col": 22
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "conversationId"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 167,
+            "start_col": 26,
+            "end_line": 180,
+            "end_col": 38
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "preferences",
+            "updatePreferences"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 183,
+            "start_col": 26,
+            "end_line": 191,
+            "end_col": 152
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "handleFileClick",
+            "handleSendMessage",
+            "isGenerating",
+            "None",
+            "None",
+            "toggleExtension",
+            "updatePreferences"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 194,
+            "start_col": 26,
+            "end_line": 211,
+            "end_col": 39
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "setPreferences",
+            "savePreferences"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 229,
+            "start_col": 25,
+            "end_line": 234,
+            "end_col": 38
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "preferences",
+            "updatePreferences"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 236,
+            "start_col": 24,
+            "end_line": 240,
+            "end_col": 25
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "updatePreferences"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 243,
+            "start_col": 27,
+            "end_line": 245,
+            "end_col": 48
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "None",
+            "updatePreferences"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 247,
+            "start_col": 28,
+            "end_line": 249,
+            "end_col": 49
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "None",
+            "updatePreferences"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 252,
+            "start_col": 24,
+            "end_line": 265,
+            "end_col": 44
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "None",
+            "closeTab"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 271,
+            "start_col": 42,
+            "end_line": 274,
+            "end_col": 51
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "None",
+            "availablePanels"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 276,
+            "start_col": 43,
+            "end_line": 279,
+            "end_col": 52
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "None",
+            "availablePanels"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 281,
+            "start_col": 28,
+            "end_line": 284,
+            "end_col": 56
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "None",
+            "None"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 286,
+            "start_col": 25,
+            "end_line": 318,
+            "end_col": 74
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "None",
+            "None",
+            "updatePreferences"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 321,
+            "start_col": 30,
+            "end_line": 411,
+            "end_col": 112
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "preferences",
+            "availablePanels",
+            "availableToAdd",
+            "handleIconClick",
+            "updatePreferences",
+            "closeTab",
+            "togglePinTab",
+            "openGitDiff",
+            "openGitBlame",
+            "openInSplit",
+            "closeSplit",
+            "navigateToNextTab",
+            "navigateToPrevTab",
+            "addPanelToSide"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useMemo",
+          "location": {
+            "start_line": 413,
+            "start_col": 41,
+            "end_line": 420,
+            "end_col": 52
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "None",
+            "handleFileClick"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [
+        {
+          "name": "usePreferences",
+          "location": {
+            "start_line": 29,
+            "start_col": 78,
+            "end_line": 29,
+            "end_col": 94
+          },
+          "arguments": [],
+          "expanded_arguments": [],
+          "returned_values": [
+            {
+              "name": "preferences",
+              "is_function": false,
+              "original_name": null
+            },
+            {
+              "name": "updatePreferences",
+              "is_function": true,
+              "original_name": null
+            },
+            {
+              "name": "setPreferences",
+              "is_function": true,
+              "original_name": null
+            },
+            {
+              "name": "savePreferences",
+              "is_function": true,
+              "original_name": null
+            }
+          ],
+          "is_zustand": false
+        },
+        {
+          "name": "useTabManagement",
+          "location": {
+            "start_line": 164,
+            "start_col": 6,
+            "end_line": 164,
+            "end_col": 58
+          },
+          "arguments": [
+            "∅"
+          ],
+          "expanded_arguments": [
+            {
+              "kind": "Object",
+              "properties": [
+                {
+                  "name": "preferences",
+                  "value_kind": {
+                    "kind": "Simple",
+                    "value": "preferences"
+                  }
+                },
+                {
+                  "name": "updatePreferences",
+                  "value_kind": {
+                    "kind": "Simple",
+                    "value": "updatePreferences"
+                  }
+                }
+              ]
+            }
+          ],
+          "returned_values": [
+            {
+              "name": "handleFileClick",
+              "is_function": true,
+              "original_name": null
+            },
+            {
+              "name": "closeTab",
+              "is_function": false,
+              "original_name": null
+            },
+            {
+              "name": "togglePinTab",
+              "is_function": true,
+              "original_name": null
+            },
+            {
+              "name": "openInSplit",
+              "is_function": false,
+              "original_name": null
+            },
+            {
+              "name": "closeSplit",
+              "is_function": false,
+              "original_name": null
+            },
+            {
+              "name": "closeSplitTab",
+              "is_function": false,
+              "original_name": null
+            },
+            {
+              "name": "openGitDiff",
+              "is_function": false,
+              "original_name": null
+            },
+            {
+              "name": "openGitBlame",
+              "is_function": false,
+              "original_name": null
+            },
+            {
+              "name": "navigateToNextTab",
+              "is_function": false,
+              "original_name": null
+            },
+            {
+              "name": "navigateToPrevTab",
+              "is_function": false,
+              "original_name": null
+            }
+          ],
+          "is_zustand": false
+        }
+      ],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full w-full max-w-[100vw] bg-[var(--bg-primary)] overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Toolbar",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "collapsed",
+                      "value": {
+                        "type": "Expression",
+                        "code": "preferences.toolbarCollapsed"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onToggleCollapse",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => updatePreferences({ toolbarCollapsed: !preferences.toolbarCollapsed })"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "onCommandPalette",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => setCommandPaletteOpen(true)"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "availablePanels",
+                      "value": {
+                        "type": "Expression",
+                        "code": "availableToAdd.map(p => ({ id: p, name: availablePanels[p]?.name || p }))"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onAddToLeft",
+                      "value": {
+                        "type": "Expression",
+                        "code": "(id) => addPanelToSide(id as PanelType, 'left')"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "onAddToRight",
+                      "value": {
+                        "type": "Expression",
+                        "code": "(id) => addPanelToSide(id as PanelType, 'right')"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "panelCount",
+                      "value": {
+                        "type": "Expression",
+                        "code": "usedPanels.length"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "tabCount",
+                      "value": {
+                        "type": "Expression",
+                        "code": "preferences.openTabs.length"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 425,
+                  "start_col": 6,
+                  "end_line": 434,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "Expression",
+                        "code": "`flex flex-1 min-h-0 w-full max-w-[100vw] overflow-hidden ${isNarrow ? 'flex-col' : ''}`"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "preferences.leftPanels.length > 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "IconTray",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "panels",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "leftPanelConfigs"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "activePanel",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "preferences.activeLeftPanel"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "side",
+                                "value": {
+                                  "type": "String",
+                                  "value": "left"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "isNarrow",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "isNarrow"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onPanelClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "(id) => handleIconClick(id as PanelType, 'left')"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 438,
+                            "start_col": 10,
+                            "end_line": 439,
+                            "end_col": 78
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 437,
+                        "start_col": 8,
+                        "end_line": 440,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "preferences.leftExpanded && preferences.activeLeftPanel && availablePanels[preferences.activeLeftPanel]",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "PanelContainer",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "title",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "availablePanels[preferences.activeLeftPanel]?.name || ''"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "icon",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "availablePanels[preferences.activeLeftPanel]?.icon"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "side",
+                                "value": {
+                                  "type": "String",
+                                  "value": "left"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "width",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "preferences.leftWidth"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "isNarrow",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "isNarrow"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClose",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "() => collapsePanel('left')"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "onCollapse",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "() => collapsePanel('left')"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "onResize",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "handleLeftResize"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "availablePanels[preferences.activeLeftPanel]?.component"
+                                },
+                                "location": {
+                                  "start_line": 449,
+                                  "start_col": 12,
+                                  "end_line": 449,
+                                  "end_col": 69
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 443,
+                            "start_col": 10,
+                            "end_line": 450,
+                            "end_col": 27
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 442,
+                        "start_col": 8,
+                        "end_line": 451,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex flex-col flex-1 min-w-0"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "preferences.openTabs.length > 0",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "TabBar",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "tabs",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "tabsForBar"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "activeTabId",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "preferences.activeTabId"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onTabClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "(id) => updatePreferences({ activeTabId: id })"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "onTabClose",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "closeTab"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "onTabPin",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "togglePinTab"
+                                      },
+                                      "is_event_handler": true
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 455,
+                                  "start_col": 12,
+                                  "end_line": 456,
+                                  "end_col": 122
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 454,
+                              "start_col": 10,
+                              "end_line": 457,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "preferences.activeTabId && (() => {\n            const activeTab = preferences.openTabs.find(t => t.id === preferences.activeTabId)\n            return activeTab?.type === 'file' && activeTab.filePath ? <Breadcrumbs filePath={activeTab.filePath} /> : null\n          })()"
+                            },
+                            "location": {
+                              "start_line": 459,
+                              "start_col": 10,
+                              "end_line": 462,
+                              "end_col": 15
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "preferences.splitMode === 'none'",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex-1 overflow-auto bg-[var(--bg-primary)] transition-opacity duration-200"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "preferences.activeTabId ? getTabContent(preferences.openTabs.find(t => t.id === preferences.activeTabId)!) : <WelcomeScreen actions={welcomeActions} />"
+                                      },
+                                      "location": {
+                                        "start_line": 466,
+                                        "start_col": 14,
+                                        "end_line": 466,
+                                        "end_col": 167
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 465,
+                                  "start_col": 12,
+                                  "end_line": 467,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "`flex flex-1 overflow-hidden ${preferences.splitMode === 'vertical' ? 'flex-row' : 'flex-col'}`"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex flex-col flex-1 min-w-0 min-h-0"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Conditional",
+                                              "condition": "preferences.splitTabs.length > 0",
+                                              "consequent": {
+                                                "node_type": {
+                                                  "type": "Element",
+                                                  "tag": "TabBar",
+                                                  "is_component": true,
+                                                  "attributes": [
+                                                    {
+                                                      "name": "tabs",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "preferences.splitTabs.map(t => ({ id: t.id, title: t.title, pinned: false }))"
+                                                      },
+                                                      "is_event_handler": false
+                                                    },
+                                                    {
+                                                      "name": "activeTabId",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "preferences.activeSplitTabId"
+                                                      },
+                                                      "is_event_handler": false
+                                                    },
+                                                    {
+                                                      "name": "onTabClick",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "(id) => updatePreferences({ activeSplitTabId: id })"
+                                                      },
+                                                      "is_event_handler": true
+                                                    },
+                                                    {
+                                                      "name": "onTabClose",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "closeSplitTab"
+                                                      },
+                                                      "is_event_handler": true
+                                                    },
+                                                    {
+                                                      "name": "onTabPin",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "() => {}"
+                                                      },
+                                                      "is_event_handler": true
+                                                    }
+                                                  ],
+                                                  "children": []
+                                                },
+                                                "location": {
+                                                  "start_line": 472,
+                                                  "start_col": 18,
+                                                  "end_line": 477,
+                                                  "end_col": 20
+                                                }
+                                              },
+                                              "alternate": null
+                                            },
+                                            "location": {
+                                              "start_line": 471,
+                                              "start_col": 16,
+                                              "end_line": 478,
+                                              "end_col": 18
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "div",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "flex-1 overflow-auto bg-[var(--bg-primary)]"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "preferences.activeSplitTabId && getTabContent(preferences.splitTabs.find(t => t.id === preferences.activeSplitTabId)!)"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 480,
+                                                    "start_col": 18,
+                                                    "end_line": 480,
+                                                    "end_col": 138
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 479,
+                                              "start_col": 16,
+                                              "end_line": 481,
+                                              "end_col": 22
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 470,
+                                        "start_col": 14,
+                                        "end_line": 482,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "ResizeHandle",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "direction",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "preferences.splitMode === 'vertical' ? 'horizontal' : 'vertical'"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "onResize",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(delta) => updatePreferences({ splitRatio: Math.min(80, Math.max(20, preferences.splitRatio + delta / 5)) })"
+                                            },
+                                            "is_event_handler": true
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 484,
+                                        "start_col": 14,
+                                        "end_line": 485,
+                                        "end_col": 138
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "div",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "flex flex-col flex-1 min-w-0 min-h-0"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Conditional",
+                                              "condition": "preferences.openTabs.length > 0",
+                                              "consequent": {
+                                                "node_type": {
+                                                  "type": "Element",
+                                                  "tag": "TabBar",
+                                                  "is_component": true,
+                                                  "attributes": [
+                                                    {
+                                                      "name": "tabs",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "tabsForBar"
+                                                      },
+                                                      "is_event_handler": false
+                                                    },
+                                                    {
+                                                      "name": "activeTabId",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "preferences.activeTabId"
+                                                      },
+                                                      "is_event_handler": false
+                                                    },
+                                                    {
+                                                      "name": "onTabClick",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "(id) => updatePreferences({ activeTabId: id })"
+                                                      },
+                                                      "is_event_handler": true
+                                                    },
+                                                    {
+                                                      "name": "onTabClose",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "closeTab"
+                                                      },
+                                                      "is_event_handler": true
+                                                    },
+                                                    {
+                                                      "name": "onTabPin",
+                                                      "value": {
+                                                        "type": "Expression",
+                                                        "code": "togglePinTab"
+                                                      },
+                                                      "is_event_handler": true
+                                                    }
+                                                  ],
+                                                  "children": []
+                                                },
+                                                "location": {
+                                                  "start_line": 489,
+                                                  "start_col": 18,
+                                                  "end_line": 490,
+                                                  "end_col": 128
+                                                }
+                                              },
+                                              "alternate": null
+                                            },
+                                            "location": {
+                                              "start_line": 488,
+                                              "start_col": 16,
+                                              "end_line": 491,
+                                              "end_col": 18
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "div",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "flex-1 overflow-auto bg-[var(--bg-primary)]"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "preferences.activeTabId ? getTabContent(preferences.openTabs.find(t => t.id === preferences.activeTabId)!) : (\n                    <div className=\"flex items-center justify-center h-full text-[var(--text-muted)]\"><FileCode className=\"h-8 w-8\" /></div>\n                  )"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 493,
+                                                    "start_col": 18,
+                                                    "end_line": 495,
+                                                    "end_col": 20
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 492,
+                                              "start_col": 16,
+                                              "end_line": 496,
+                                              "end_col": 22
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 487,
+                                        "start_col": 14,
+                                        "end_line": 497,
+                                        "end_col": 20
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 469,
+                                  "start_col": 12,
+                                  "end_line": 498,
+                                  "end_col": 18
+                                }
+                              }
+                            },
+                            "location": {
+                              "start_line": 464,
+                              "start_col": 10,
+                              "end_line": 499,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 453,
+                        "start_col": 8,
+                        "end_line": 500,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "preferences.rightExpanded && preferences.activeRightPanel && availablePanels[preferences.activeRightPanel]",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "PanelContainer",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "title",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "availablePanels[preferences.activeRightPanel]?.name || ''"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "icon",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "availablePanels[preferences.activeRightPanel]?.icon"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "side",
+                                "value": {
+                                  "type": "String",
+                                  "value": "right"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "width",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "preferences.rightWidth"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "isNarrow",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "isNarrow"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClose",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "() => collapsePanel('right')"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "onCollapse",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "() => collapsePanel('right')"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "onResize",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "handleRightResize"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "availablePanels[preferences.activeRightPanel]?.component"
+                                },
+                                "location": {
+                                  "start_line": 509,
+                                  "start_col": 12,
+                                  "end_line": 509,
+                                  "end_col": 70
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 503,
+                            "start_col": 10,
+                            "end_line": 510,
+                            "end_col": 27
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 502,
+                        "start_col": 8,
+                        "end_line": 511,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "preferences.rightPanels.length > 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "IconTray",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "panels",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "rightPanelConfigs"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "activePanel",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "preferences.activeRightPanel"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "side",
+                                "value": {
+                                  "type": "String",
+                                  "value": "right"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "isNarrow",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "isNarrow"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onPanelClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "(id) => handleIconClick(id as PanelType, 'right')"
+                                },
+                                "is_event_handler": true
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 514,
+                            "start_col": 10,
+                            "end_line": 515,
+                            "end_col": 79
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 513,
+                        "start_col": 8,
+                        "end_line": 516,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 436,
+                  "start_col": 6,
+                  "end_line": 517,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "StatusBar",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "leftItems",
+                      "value": {
+                        "type": "Expression",
+                        "code": "[\n          { id: 'source-control', icon: <GitBranch className=\"h-3.5 w-3.5\" />,\n            onClick: () => updatePreferences({ leftExpanded: true, activeLeftPanel: 'source-control' }), title: 'Source Control' },\n          { id: 'problems', icon: <AlertTriangle className=\"h-3.5 w-3.5\" />,\n            onClick: () => updatePreferences({ rightExpanded: true, activeRightPanel: 'problems' }), title: 'Problems' },\n          ...(() => {\n            const activeTab = preferences.openTabs.find(t => t.id === preferences.activeTabId)\n            return activeTab?.type === 'file' && activeTab.filePath\n              ? [{ id: 'file-path', label: activeTab.filePath, title: activeTab.filePath }] : []\n          })(),\n        ]"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "rightItems",
+                      "value": {
+                        "type": "Expression",
+                        "code": "[\n          { id: 'indentation', label: `${preferences.editorSettings.insertSpaces ? 'Spaces' : 'Tabs'}: ${preferences.editorSettings.tabSize}` },\n          { id: 'encoding', label: 'UTF-8' },\n        ]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 519,
+                  "start_col": 6,
+                  "end_line": 535,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "CommandPalette",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "open",
+                      "value": {
+                        "type": "Expression",
+                        "code": "commandPaletteOpen"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onClose",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => setCommandPaletteOpen(false)"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "commands",
+                      "value": {
+                        "type": "Expression",
+                        "code": "commands"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 537,
+                  "start_col": 6,
+                  "end_line": 537,
+                  "end_col": 115
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "CommandPalette",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "open",
+                      "value": {
+                        "type": "Expression",
+                        "code": "recentFilesOpen"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onClose",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => setRecentFilesOpen(false)"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "commands",
+                      "value": {
+                        "type": "Expression",
+                        "code": "recentFilesCommands"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 538,
+                  "start_col": 6,
+                  "end_line": 538,
+                  "end_col": 120
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "GoToLineDialog",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "open",
+                      "value": {
+                        "type": "Expression",
+                        "code": "goToLineOpen"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onClose",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => setGoToLineOpen(false)"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "onGoToLine",
+                      "value": {
+                        "type": "Expression",
+                        "code": "(line) => console.log('Go to line:', line)"
+                      },
+                      "is_event_handler": true
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 539,
+                  "start_col": 6,
+                  "end_line": 539,
+                  "end_col": 139
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "WorkspaceSymbolsDialog",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "open",
+                      "value": {
+                        "type": "Expression",
+                        "code": "symbolsDialogOpen"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onClose",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => setSymbolsDialogOpen(false)"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "onNavigate",
+                      "value": {
+                        "type": "Expression",
+                        "code": "handleFileClick"
+                      },
+                      "is_event_handler": true
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 540,
+                  "start_col": 6,
+                  "end_line": 540,
+                  "end_col": 130
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 424,
+            "start_col": 4,
+            "end_line": 541,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "CommandPalette",
+        "GoToLineDialog",
+        "IconTray",
+        "PanelContainer",
+        "ResizeHandle",
+        "StatusBar",
+        "TabBar",
+        "Toolbar",
+        "WorkspaceSymbolsDialog"
+      ],
+      "architecture": {
+        "service_actors": [
+          {
+            "name": "TabManagementService",
+            "derived_from": [
+              "useTabManagement"
+            ],
+            "responsibilities": [],
+            "owned_state": [
+              "closeTab",
+              "openInSplit",
+              "closeSplit",
+              "closeSplitTab",
+              "openGitDiff",
+              "openGitBlame",
+              "navigateToNextTab",
+              "navigateToPrevTab"
+            ],
+            "messages": [
+              {
+                "name": "HandleFileClick",
+                "message_type": "command",
+                "payload": [],
+                "is_async": true
+              },
+              {
+                "name": "TogglePinTab",
+                "message_type": "command",
+                "payload": [],
+                "is_async": true
+              }
+            ]
+          },
+          {
+            "name": "PreferencesService",
+            "derived_from": [
+              "usePreferences"
+            ],
+            "responsibilities": [],
+            "owned_state": [
+              "preferences"
+            ],
+            "messages": [
+              {
+                "name": "UpdatePreferences",
+                "message_type": "command",
+                "payload": [],
+                "is_async": true
+              },
+              {
+                "name": "SetPreferences",
+                "message_type": "command",
+                "payload": [],
+                "is_async": true
+              },
+              {
+                "name": "SavePreferences",
+                "message_type": "command",
+                "payload": [],
+                "is_async": true
+              }
+            ]
+          }
+        ],
+        "state_ownership": [
+          {
+            "state_name": "preferences",
+            "owner": "PreferencesService",
+            "access_pattern": "shared",
+            "source": "usePreferences"
+          },
+          {
+            "state_name": "closeTab",
+            "owner": "TabManagementService",
+            "access_pattern": "shared",
+            "source": "useTabManagement"
+          },
+          {
+            "state_name": "openInSplit",
+            "owner": "TabManagementService",
+            "access_pattern": "shared",
+            "source": "useTabManagement"
+          },
+          {
+            "state_name": "closeSplit",
+            "owner": "TabManagementService",
+            "access_pattern": "shared",
+            "source": "useTabManagement"
+          },
+          {
+            "state_name": "closeSplitTab",
+            "owner": "TabManagementService",
+            "access_pattern": "shared",
+            "source": "useTabManagement"
+          },
+          {
+            "state_name": "openGitDiff",
+            "owner": "TabManagementService",
+            "access_pattern": "shared",
+            "source": "useTabManagement"
+          },
+          {
+            "state_name": "openGitBlame",
+            "owner": "TabManagementService",
+            "access_pattern": "shared",
+            "source": "useTabManagement"
+          },
+          {
+            "state_name": "navigateToNextTab",
+            "owner": "TabManagementService",
+            "access_pattern": "shared",
+            "source": "useTabManagement"
+          },
+          {
+            "state_name": "navigateToPrevTab",
+            "owner": "TabManagementService",
+            "access_pattern": "shared",
+            "source": "useTabManagement"
+          },
+          {
+            "state_name": "conversationId",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "isGenerating",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "isNarrow",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "commandPaletteOpen",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "recentFilesOpen",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "goToLineOpen",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "symbolsDialogOpen",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/wraith.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:conversationId",
+        "to_field": "conversationId",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'conversationId' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:isGenerating",
+        "to_field": "isGenerating",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'isGenerating' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:isNarrow",
+        "to_field": "isNarrow",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'isNarrow' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:commandPaletteOpen",
+        "to_field": "commandPaletteOpen",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'commandPaletteOpen' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:recentFilesOpen",
+        "to_field": "recentFilesOpen",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'recentFilesOpen' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:goToLineOpen",
+        "to_field": "goToLineOpen",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'goToLineOpen' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:symbolsDialogOpen",
+        "to_field": "symbolsDialogOpen",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'symbolsDialogOpen' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateConversationId",
+        "from_handler": "setConversationId",
+        "payload": null,
+        "state_changes": [
+          "self.conversationId = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIsGenerating",
+        "from_handler": "setIsGenerating",
+        "payload": null,
+        "state_changes": [
+          "self.isGenerating = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateIsNarrow",
+        "from_handler": "setIsNarrow",
+        "payload": null,
+        "state_changes": [
+          "self.isNarrow = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateCommandPaletteOpen",
+        "from_handler": "setCommandPaletteOpen",
+        "payload": null,
+        "state_changes": [
+          "self.commandPaletteOpen = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateRecentFilesOpen",
+        "from_handler": "setRecentFilesOpen",
+        "payload": null,
+        "state_changes": [
+          "self.recentFilesOpen = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateGoToLineOpen",
+        "from_handler": "setGoToLineOpen",
+        "payload": null,
+        "state_changes": [
+          "self.goToLineOpen = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateSymbolsDialogOpen",
+        "from_handler": "setSymbolsDialogOpen",
+        "payload": null,
+        "state_changes": [
+          "self.symbolsDialogOpen = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[None,None,updatePreferences]",
+        "strategy": "inline",
+        "reasoning": "Deps [None, None, updatePreferences] → inline in handlers that change these",
+        "inline_in": "None_None_updatePreferences",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseMemo",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "useCallback_remove",
+      "description": "useCallback is not needed in actors",
+      "react": "const handleClick = useCallback(() => { ... }, [dep]);",
+      "sigil": "// No equivalent needed - actors don't re-render like React"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_7",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [None, None, updatePreferences] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "CommandPalette",
+      "GoToLineDialog",
+      "IconTray",
+      "PanelContainer",
+      "ResizeHandle",
+      "StatusBar",
+      "TabBar",
+      "Toolbar",
+      "WorkspaceSymbolsDialog"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "7 state variables"
+  ],
+  "status": "pending"
+}

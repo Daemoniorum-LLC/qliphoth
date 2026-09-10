@@ -1,0 +1,228 @@
+{
+  "id": "domains/devops/components/providers/ProvidersSection.tsx:ProvidersSection",
+  "name": "ProvidersSection",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/providers/ProvidersSection.tsx",
+    "code": "import { useState } from 'react'\nimport {\n  Cloud, Server, Database, Globe, Cpu, HardDrive,\n  Plus, Settings, RefreshCw, Trash2, ChevronDown, ChevronRight\n} from 'lucide-react'\nimport { IconButton } from '@ui/components/atoms'\nimport { StatusBadge, SectionHeader, ProviderIcon, DataTable, ResourceCard, ActionMenu, ActionItem } from '../shared'\nimport { mockProviders, mockEC2Instances, mockDroplets } from '../../mock-data'\nimport type { CloudProviderConfig, EC2Instance, Droplet } from '../../types'\n\nfunction formatRelativeTime(dateStr?: string): string {\n  if (!dateStr) return '-'\n  const diff = Date.now() - new Date(dateStr).getTime()\n  const mins = Math.floor(diff / 60000)\n  const hours = Math.floor(diff / 3600000)\n  if (hours > 0) return `${hours}h ago`\n  if (mins > 0) return `${mins}m ago`\n  return 'Just now'\n}\n\nfunction ProviderCard({ provider }: { provider: CloudProviderConfig }) {\n  const [expanded, setExpanded] = useState(false)\n\n  const getProviderResources = () => {\n    switch (provider.provider) {\n      case 'aws':\n        return (\n          <div className=\"space-y-4\">\n            <div>\n              <h4 className=\"text-xs font-medium text-[var(--text-secondary)] mb-2 flex items-center gap-2\">\n                <Server className=\"h-3 w-3\" /> EC2 Instances\n              </h4>\n              <DataTable\n                data={mockEC2Instances}\n                columns={[\n                  {\n                    key: 'name',\n                    header: 'Name',\n                    render: (i: EC2Instance) => (\n                      <span className=\"text-[var(--text-primary)]\">{i.tags.Name || i.instanceId}</span>\n                    ),\n                  },\n                  {\n                    key: 'type',\n                    header: 'Type',\n                    render: (i: EC2Instance) => (\n                      <span className=\"text-xs font-mono text-[var(--text-secondary)]\">{i.instanceType}</span>\n                    ),\n                  },\n                  {\n                    key: 'state',\n                    header: 'State',\n                    width: '100px',\n                    render: (i: EC2Instance) => <StatusBadge status={i.state} />,\n                  },\n                  {\n                    key: 'ip',\n                    header: 'IP',\n                    render: (i: EC2Instance) => (\n                      <span className=\"text-xs font-mono text-[var(--text-muted)]\">\n                        {i.publicIp || i.privateIp}\n                      </span>\n                    ),\n                  },\n                ]}\n                keyExtractor={(i) => i.instanceId}\n                compact\n              />\n            </div>\n          </div>\n        )\n      case 'digitalocean':\n        return (\n          <div className=\"space-y-4\">\n            <div>\n              <h4 className=\"text-xs font-medium text-[var(--text-secondary)] mb-2 flex items-center gap-2\">\n                <HardDrive className=\"h-3 w-3\" /> Droplets\n              </h4>\n              <DataTable\n                data={mockDroplets}\n                columns={[\n                  {\n                    key: 'name',\n                    header: 'Name',\n                    render: (d: Droplet) => (\n                      <span className=\"text-[var(--text-primary)]\">{d.name}</span>\n                    ),\n                  },\n                  {\n                    key: 'specs',\n                    header: 'Specs',\n                    render: (d: Droplet) => (\n                      <span className=\"text-xs text-[var(--text-secondary)]\">\n                        {d.vcpus} vCPU / {d.memory / 1024}GB RAM / {d.disk}GB\n                      </span>\n                    ),\n                  },\n                  {\n                    key: 'state',\n                    header: 'Status',\n                    width: '100px',\n                    render: (d: Droplet) => <StatusBadge status={d.status} />,\n                  },\n                  {\n                    key: 'ip',\n                    header: 'IP',\n                    render: (d: Droplet) => (\n                      <span className=\"text-xs font-mono text-[var(--text-muted)]\">{d.ipAddress}</span>\n                    ),\n                  },\n                ]}\n                keyExtractor={(d) => String(d.id)}\n                compact\n              />\n            </div>\n          </div>\n        )\n      default:\n        return (\n          <div className=\"text-center py-8 text-[var(--text-muted)] text-sm\">\n            Resources view not yet implemented for {provider.provider}\n          </div>\n        )\n    }\n  }\n\n  return (\n    <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden\">\n      <div\n        className=\"flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--bg-hover)]\"\n        onClick={() => setExpanded(!expanded)}\n      >\n        <div className=\"flex items-center gap-3\">\n          <button className=\"text-[var(--text-secondary)]\">\n            {expanded ? <ChevronDown className=\"h-4 w-4\" /> : <ChevronRight className=\"h-4 w-4\" />}\n          </button>\n          <ProviderIcon provider={provider.provider} size=\"lg\" />\n          <div>\n            <div className=\"flex items-center gap-2\">\n              <span className=\"font-medium text-[var(--text-primary)]\">{provider.name}</span>\n              <StatusBadge status={provider.status} />\n            </div>\n            <div className=\"flex items-center gap-2 text-xs text-[var(--text-muted)] mt-0.5\">\n              {provider.region && (\n                <>\n                  <Globe className=\"h-3 w-3\" />\n                  <span>{provider.region}</span>\n                  <span className=\"text-[var(--border-primary)]\">•</span>\n                </>\n              )}\n              <span>Synced {formatRelativeTime(provider.lastSync)}</span>\n            </div>\n          </div>\n        </div>\n        <div className=\"flex items-center gap-1\" onClick={(e) => e.stopPropagation()}>\n          <IconButton icon={<RefreshCw className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Sync\" onClick={() => {}} />\n          <IconButton icon={<Settings className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Settings\" onClick={() => {}} />\n          <ActionMenu>\n            <ActionItem icon={<RefreshCw className=\"h-3 w-3\" />} label=\"Sync\" onClick={() => {}} />\n            <ActionItem icon={<Settings className=\"h-3 w-3\" />} label=\"Configure\" onClick={() => {}} />\n            <ActionItem icon={<Trash2 className=\"h-3 w-3\" />} label=\"Disconnect\" onClick={() => {}} variant=\"danger\" />\n          </ActionMenu>\n        </div>\n      </div>\n\n      {expanded && (\n        <div className=\"border-t border-[var(--border-subtle)] bg-[var(--bg-primary)] p-4\">\n          {getProviderResources()}\n        </div>\n      )}\n    </div>\n  )\n}\n\nexport function ProvidersSection() {\n  return (\n    <div className=\"h-full flex flex-col\">\n      <SectionHeader\n        title=\"Cloud Providers\"\n        subtitle={`${mockProviders.length} provider${mockProviders.length !== 1 ? 's' : ''} connected`}\n        icon={<Cloud className=\"h-5 w-5\" />}\n        onRefresh={() => {}}\n        actions={\n          <IconButton\n            icon={<Plus className=\"h-3.5 w-3.5\" />}\n            size=\"sm\"\n            tooltip=\"Add provider\"\n            onClick={() => {}}\n          />\n        }\n      />\n\n      <div className=\"flex-1 overflow-auto space-y-3 pr-1\">\n        {mockProviders.map((provider) => (\n          <ProviderCard key={provider.id} provider={provider} />\n        ))}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "ProvidersSection",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 175,
+        "start_col": 7,
+        "end_line": 200,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "h-full flex flex-col"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "SectionHeader",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "title",
+                      "value": {
+                        "type": "String",
+                        "value": "Cloud Providers"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "subtitle",
+                      "value": {
+                        "type": "Expression",
+                        "code": "`${mockProviders.length} provider${mockProviders.length !== 1 ? 's' : ''} connected`"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "icon",
+                      "value": {
+                        "type": "Expression",
+                        "code": "<Cloud className=\"h-5 w-5\" />"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onRefresh",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => {}"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "actions",
+                      "value": {
+                        "type": "Expression",
+                        "code": "<IconButton\n            icon={<Plus className=\"h-3.5 w-3.5\" />}\n            size=\"sm\"\n            tooltip=\"Add provider\"\n            onClick={() => {}}\n          />"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 178,
+                  "start_col": 6,
+                  "end_line": 191,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto space-y-3 pr-1"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Map",
+                        "iterable": "mockProviders",
+                        "item_name": "provider",
+                        "key_expr": "provider.id",
+                        "body": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "ProviderCard",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "key",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "provider.id"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "provider",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "provider"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": []
+                          },
+                          "location": {
+                            "start_line": 195,
+                            "start_col": 10,
+                            "end_line": 195,
+                            "end_col": 64
+                          }
+                        }
+                      },
+                      "location": {
+                        "start_line": 194,
+                        "start_col": 8,
+                        "end_line": 196,
+                        "end_col": 11
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 193,
+                  "start_col": 6,
+                  "end_line": 197,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 177,
+            "start_col": 4,
+            "end_line": 198,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "ProviderCard",
+        "SectionHeader"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/providers_section.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "ProviderCard",
+      "SectionHeader"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

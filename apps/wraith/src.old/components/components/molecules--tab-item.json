@@ -1,0 +1,761 @@
+{
+  "id": "ui/components/molecules/TabItem.tsx:TabItem",
+  "name": "TabItem",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/molecules/TabItem.tsx",
+    "code": "import React, { useState } from 'react'\nimport { X, Pin } from 'lucide-react'\n\nexport interface TabItemProps {\n  id: string\n  title: string\n  icon?: React.ReactNode\n  active?: boolean\n  pinned?: boolean\n  modified?: boolean\n  onClick?: () => void\n  onClose?: () => void\n  onPin?: () => void\n  onContextMenu?: (e: React.MouseEvent) => void\n}\n\nexport const TabItem: React.FC<TabItemProps> = ({\n  title,\n  icon,\n  active = false,\n  pinned = false,\n  modified = false,\n  onClick,\n  onClose,\n  onPin,\n  onContextMenu,\n}) => {\n  const [isHovered, setIsHovered] = useState(false)\n\n  const showActions = isHovered || active\n\n  return (\n    <div\n      role=\"tab\"\n      aria-selected={active}\n      tabIndex={active ? 0 : -1}\n      onClick={onClick}\n      onContextMenu={onContextMenu}\n      onMouseEnter={() => setIsHovered(true)}\n      onMouseLeave={() => setIsHovered(false)}\n      className={`group relative flex items-center gap-2 px-3 h-[var(--tab-height)] cursor-pointer select-none border-r border-[var(--border-primary)] transition-colors ${\n        active\n          ? 'bg-[var(--bg-primary)] text-[var(--text-primary)]'\n          : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'\n      }`}\n    >\n      {icon && <span className=\"flex-shrink-0 [&>svg]:h-4 [&>svg]:w-4\">{icon}</span>}\n\n      <span className=\"text-xs truncate max-w-[120px]\">{title}</span>\n\n      {modified && !showActions && (\n        <span className=\"w-2 h-2 rounded-full bg-[var(--text-secondary)]\" />\n      )}\n\n      {/* Action buttons - shown on hover or when active */}\n      <div\n        className={`flex items-center gap-0.5 ml-1 transition-opacity ${\n          showActions ? 'opacity-100' : 'opacity-0'\n        }`}\n      >\n        {onPin && (\n          <button\n            type=\"button\"\n            onClick={(e) => {\n              e.stopPropagation()\n              onPin()\n            }}\n            className={`p-0.5 rounded hover:bg-[var(--bg-hover)] transition-colors ${\n              pinned ? 'text-[var(--accent-primary)]' : 'text-[var(--text-secondary)]'\n            }`}\n            title={pinned ? 'Unpin tab' : 'Pin tab'}\n          >\n            <Pin className=\"h-3 w-3\" />\n          </button>\n        )}\n        {onClose && !pinned && (\n          <button\n            type=\"button\"\n            onClick={(e) => {\n              e.stopPropagation()\n              onClose()\n            }}\n            className=\"p-0.5 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors\"\n            title=\"Close tab\"\n          >\n            <X className=\"h-3 w-3\" />\n          </button>\n        )}\n      </div>\n\n      {/* Active indicator */}\n      {active && (\n        <div className=\"absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent-primary)]\" />\n      )}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "TabItem",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 17,
+        "start_col": 47,
+        "end_line": 97,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "title",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "icon",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "active",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "false",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "pinned",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "false",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "modified",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "false",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onClick",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onClose",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onPin",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onContextMenu",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 28,
+            "start_col": 36,
+            "end_line": 28,
+            "end_col": 51
+          },
+          "state_name": "isHovered",
+          "setter_name": "setIsHovered",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "role",
+                "value": {
+                  "type": "String",
+                  "value": "tab"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "aria-selected",
+                "value": {
+                  "type": "Expression",
+                  "code": "active"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "tabIndex",
+                "value": {
+                  "type": "Expression",
+                  "code": "active ? 0 : -1"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "onClick",
+                "value": {
+                  "type": "Expression",
+                  "code": "onClick"
+                },
+                "is_event_handler": true
+              },
+              {
+                "name": "onContextMenu",
+                "value": {
+                  "type": "Expression",
+                  "code": "onContextMenu"
+                },
+                "is_event_handler": true
+              },
+              {
+                "name": "onMouseEnter",
+                "value": {
+                  "type": "Expression",
+                  "code": "() => setIsHovered(true)"
+                },
+                "is_event_handler": true
+              },
+              {
+                "name": "onMouseLeave",
+                "value": {
+                  "type": "Expression",
+                  "code": "() => setIsHovered(false)"
+                },
+                "is_event_handler": true
+              },
+              {
+                "name": "className",
+                "value": {
+                  "type": "Expression",
+                  "code": "`group relative flex items-center gap-2 px-3 h-[var(--tab-height)] cursor-pointer select-none border-r border-[var(--border-primary)] transition-colors ${\n        active\n          ? 'bg-[var(--bg-primary)] text-[var(--text-primary)]'\n          : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'\n      }`"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "icon",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "span",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "flex-shrink-0 [&>svg]:h-4 [&>svg]:w-4"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Expression",
+                            "code": "icon"
+                          },
+                          "location": {
+                            "start_line": 47,
+                            "start_col": 71,
+                            "end_line": 47,
+                            "end_col": 77
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 47,
+                      "start_col": 15,
+                      "end_line": 47,
+                      "end_col": 84
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 47,
+                  "start_col": 6,
+                  "end_line": 47,
+                  "end_col": 85
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "span",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "text-xs truncate max-w-[120px]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "title"
+                      },
+                      "location": {
+                        "start_line": 49,
+                        "start_col": 55,
+                        "end_line": 49,
+                        "end_col": 62
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 49,
+                  "start_col": 6,
+                  "end_line": 49,
+                  "end_col": 69
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "modified && !showActions",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "span",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "w-2 h-2 rounded-full bg-[var(--text-secondary)]"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": []
+                    },
+                    "location": {
+                      "start_line": 52,
+                      "start_col": 8,
+                      "end_line": 52,
+                      "end_col": 76
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 51,
+                  "start_col": 6,
+                  "end_line": 53,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "Expression",
+                        "code": "`flex items-center gap-0.5 ml-1 transition-opacity ${\n          showActions ? 'opacity-100' : 'opacity-0'\n        }`"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "onPin",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "button",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "type",
+                                "value": {
+                                  "type": "String",
+                                  "value": "button"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "(e) => {\n              e.stopPropagation()\n              onPin()\n            }"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "`p-0.5 rounded hover:bg-[var(--bg-hover)] transition-colors ${\n              pinned ? 'text-[var(--accent-primary)]' : 'text-[var(--text-secondary)]'\n            }`"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "title",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "pinned ? 'Unpin tab' : 'Pin tab'"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Pin",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "h-3 w-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 73,
+                                  "start_col": 12,
+                                  "end_line": 73,
+                                  "end_col": 39
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 62,
+                            "start_col": 10,
+                            "end_line": 74,
+                            "end_col": 19
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 61,
+                        "start_col": 8,
+                        "end_line": 75,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "onClose && !pinned",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "button",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "type",
+                                "value": {
+                                  "type": "String",
+                                  "value": "button"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "(e) => {\n              e.stopPropagation()\n              onClose()\n            }"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-0.5 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "title",
+                                "value": {
+                                  "type": "String",
+                                  "value": "Close tab"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "X",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "h-3 w-3"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 86,
+                                  "start_col": 12,
+                                  "end_line": 86,
+                                  "end_col": 37
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 77,
+                            "start_col": 10,
+                            "end_line": 87,
+                            "end_col": 19
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 76,
+                        "start_col": 8,
+                        "end_line": 88,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 56,
+                  "start_col": 6,
+                  "end_line": 89,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "active",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent-primary)]"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": []
+                    },
+                    "location": {
+                      "start_line": 93,
+                      "start_col": 8,
+                      "end_line": 93,
+                      "end_col": 95
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 92,
+                  "start_col": 6,
+                  "end_line": 94,
+                  "end_col": 8
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 33,
+            "start_col": 4,
+            "end_line": 95,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Pin",
+        "X"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "isHovered",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/tab_item.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:isHovered",
+        "to_field": "isHovered",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'isHovered' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateIsHovered",
+        "from_handler": "setIsHovered",
+        "payload": null,
+        "state_changes": [
+          "self.isHovered = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "title",
+          "field_type": "Any",
+          "from_prop": "title"
+        },
+        {
+          "name": "icon",
+          "field_type": "Any",
+          "from_prop": "icon"
+        },
+        {
+          "name": "active",
+          "field_type": "Any",
+          "from_prop": "active"
+        },
+        {
+          "name": "pinned",
+          "field_type": "Any",
+          "from_prop": "pinned"
+        },
+        {
+          "name": "modified",
+          "field_type": "Any",
+          "from_prop": "modified"
+        },
+        {
+          "name": "on_click",
+          "field_type": "Any",
+          "from_prop": "onClick"
+        },
+        {
+          "name": "on_close",
+          "field_type": "Any",
+          "from_prop": "onClose"
+        },
+        {
+          "name": "on_pin",
+          "field_type": "Any",
+          "from_prop": "onPin"
+        },
+        {
+          "name": "on_context_menu",
+          "field_type": "Any",
+          "from_prop": "onContextMenu"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onClick",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onClick' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onClose",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onClose' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onPin",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onPin' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onContextMenu",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onContextMenu' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Pin",
+      "X"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

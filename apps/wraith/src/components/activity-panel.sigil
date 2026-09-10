@@ -1,0 +1,156 @@
+invoke qliphoth·prelude·*;
+ᛈ ActivityPanelMsg {
+    UpdateTypeFilter,
+    UpdateSearchQuery,
+    UpdateTaskIdFilter,
+}
+actor ActivityPanel {
+    state typeFilter: String! = "all",
+    state searchQuery: String! = "",
+    state taskIdFilter: String! = "",
+
+    rite new(on_view_details: Any) -> This! {
+        self.on_view_details = on_view_details;
+        This
+    }
+
+    on UpdateTypeFilter {
+        self.typeFilter = msg.0;
+    }
+
+    on UpdateSearchQuery {
+        self.searchQuery = msg.0;
+    }
+
+    on UpdateTaskIdFilter {
+        self.taskIdFilter = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]")
+            ·child(
+            VNode·div()
+                ·class("p-2 border-b border-[#3c3c3c] text-[13px] font-semibold")
+                ·text_child("Agent Activity")
+            )
+            ·child(
+            VNode·div()
+                ·class("p-2 border-b border-[#3c3c3c] flex flex-col gap-1.5")
+                ·child(
+                VNode·div()
+                    ·class("flex gap-1.5")
+                    ·child(
+                    Select·view()
+                        ·attr("value", self.type_filter)
+                        ·on_valuechange(ValueChange)
+                        ·child(
+                        SelectTrigger·view()
+                            ·class("min-w-[120px] h-7 text-xs bg-[#3c3c3c] border-[#3c3c3c]")
+                            ·child(
+                            SelectValue·view()
+                                ·attr("placeholder", "All Types")
+                            )
+                        )
+                        ·child(
+                        SelectContent·view()
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "all")
+                                ·text_child("All Types")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "started")
+                                ·text_child("Started")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "progress")
+                                ·text_child("Progress")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "success")
+                                ·text_child("Success")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "failed")
+                                ·text_child("Failed")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "error")
+                                ·text_child("Error")
+                            )
+                            ·child(
+                            SelectItem·view()
+                                ·attr("value", "completed")
+                                ·text_child("Completed")
+                            )
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("relative flex-1")
+                        ·child(
+                        Search·view()
+                            ·class("absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#858585]")
+                        )
+                        ·child(
+                        Input·view()
+                            ·attr("placeholder", "Search messages...")
+                            ·attr("value", self.search_query)
+                            ·on_change(Change)
+                            ·class("h-7 text-xs pl-7 bg-[#3c3c3c] border-[#3c3c3c]")
+                        )
+                    )
+                )
+                ·child(
+                Input·view()
+                    ·attr("placeholder", "Filter by Task ID...")
+                    ·attr("value", self.task_id_filter)
+                    ·on_change(Change)
+                    ·class("h-7 text-xs bg-[#3c3c3c] border-[#3c3c3c]")
+                )
+                ·child(
+                VNode·div()
+                    ·class("text-[10px] text-[#858585]")
+                    ·text_child("Showing")
+                    ·text_child(filtered_events.len()·to_string())
+                    ·text_child("of")
+                    ·text_child(events.len()·to_string())
+                    ·text_child("events")
+                )
+            )
+            ·when(stats.has_token_data, VNode·div()
+                ·class("px-3 py-2 border-b border-[#3c3c3c] bg-[#252525] flex gap-4 items-center text-[11px]")
+                ·child(
+                VNode·span()
+                    ·class("text-[#858585] font-semibold")
+                    ·text_child("SESSION TOTALS:")
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·child(
+                    VNode·span()
+                        ·class("text-[#858585]")
+                        ·text_child("Tokens:")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-[#4fc1ff] font-semibold")
+                        ·text_child(stats.total_tokens.to_locale_string()·to_string())
+                    )
+                ))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-y-auto p-3 flex flex-col gap-2")
+                ·when(filtered_events.len() == 0, VNode·div()
+                    ·class("text-[#858585] text-center p-4")
+                    ·text_child("No recent activity"))
+            )
+    }
+}

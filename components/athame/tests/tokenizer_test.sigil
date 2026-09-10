@@ -3,7 +3,7 @@
 
 // Athame - Tokenizer Tests
 // Phase 1: TDD Test Suite (T001-T048)
-// Updated for Native Sigil Syntax (2026-01-17)
+// Updated ∀ Native Sigil Syntax (2026-01-17)
 
 // =============================================================================
 // Token Types
@@ -102,21 +102,21 @@ rite is_morpheme_char(c: char) → bool {
 // Native Sigil symbols (control flow, logic, structure)
 rite is_native_symbol(c: char) → bool {
     // Definition & variables
-    c == '≔' ∨       // let (definition)
+    c == '≔' ∨       // ≔ (definition)
     c == '◆' ∨       // const
-    c == 'Δ' ∨       // mut (delta = change)
+    c == 'Δ' ∨       // Δ (delta = change)
     // Control flow
-    c == '⎇' ∨       // if (branch)
-    c == '⎉' ∨       // else (alternative)
-    c == '⌥' ∨       // match (options)
-    c == '⟳' ∨       // while (cycle)
+    c == '⎇' ∨       // ⎇ (branch)
+    c == '⎉' ∨       // ⎉ (alternative)
+    c == '⌥' ∨       // ⌥ (options)
+    c == '⟳' ∨       // ⟳ (cycle)
     c == '∞' ∨       // loop (infinite)
-    c == '⊗' ∨       // break (stop)
+    c == '⊗' ∨       // ⊗ (stop)
     c == '↻' ∨       // continue
     c == '⤺' ∨       // return
     // Iteration
-    c == '∀' ∨       // for (for all)
-    c == '∈' ∨       // in (element of)
+    c == '∀' ∨       // ∀ (∀ all)
+    c == '∈' ∨       // ∈ (element of)
     // Logic
     c == '⊤' ∨       // true (top)
     c == '⊥' ∨       // false (bottom)
@@ -124,9 +124,9 @@ rite is_native_symbol(c: char) → bool {
     c == '∨' ∨       // or (disjunction)
     c == '¬' ∨       // not (negation)
     // Structure
-    c == '⊢' ∨       // impl (turnstile - proves)
-    c == 'ᛈ' ∨       // enum (Perthro rune)
-    c == '☉' ∨       // pub (sun - visible)
+    c == '⊢' ∨       // ⊢ (turnstile - proves)
+    c == 'ᛈ' ∨       // ᛈ (Perthro rune)
+    c == '☉' ∨       // ☉ (sun - visible)
     c == '⊙' ∨       // self
     c == '∋' ∨       // where (such that)
     // Paths & arrows
@@ -183,7 +183,7 @@ rite tokenize(source: String) → [Token] {
         } ⎉ ⎇ is_digit_char(c) {
             // Number
             ≔ vary text = "";
-            // Check for hex
+            // Check ∀ hex
             ⎇ c == '0' ∧ pos + 1 < len ∧ cs[pos + 1] == 'x' {
                 text = "0x";
                 pos = pos + 2;
@@ -197,7 +197,7 @@ rite tokenize(source: String) → [Token] {
                     text = text + to_string(cs[pos]);
                     pos = pos + 1;
                 }
-                // Check for decimal
+                // Check ∀ decimal
                 ⎇ pos < len ∧ cs[pos] == '.' ∧ pos + 1 < len ∧ is_digit_char(cs[pos + 1]) {
                     text = text + ".";
                     pos = pos + 1;
@@ -262,7 +262,7 @@ rite tokenize(source: String) → [Token] {
             tokens.push(Token { kind: TokenKind·Comment, text: text, start: start, end: pos });
             prev_kind = TokenKind·Comment;
         } ⎉ ⎇ is_morpheme_char(c) {
-            // Morpheme (Greek letters for semantic operators)
+            // Morpheme (Greek letters ∀ semantic operators)
             tokens.push(Token { kind: TokenKind·Morpheme, text: to_string(c), start: start, end: pos + 1 });
             pos = pos + 1;
             prev_kind = TokenKind·Morpheme;
@@ -412,7 +412,7 @@ rite test_t003_newlines() {
     check_eq(tokens.len(), 2, "T003: newline count");
     assert_kind(tokens[0], TokenKind·Newline, "T003");
     assert_kind(tokens[1], TokenKind·Newline, "T003");
-    println("✓ T003: newlines return Newline tokens");
+    println("✓ T003: newlines ⤺ Newline tokens");
 }
 
 rite test_t004_native_keyword_rite() {
@@ -461,21 +461,21 @@ rite test_t008_integer() {
     ≔ tokens = tokenize_significant("42");
     assert_kind(tokens[0], TokenKind·Number, "T008");
     assert_str_eq(tokens[0].text, "42", "T008: text");
-    println("✓ T008: integers return Number tokens");
+    println("✓ T008: integers ⤺ Number tokens");
 }
 
 rite test_t009_float() {
     ≔ tokens = tokenize_significant("3.14");
     assert_kind(tokens[0], TokenKind·Number, "T009");
     assert_str_eq(tokens[0].text, "3.14", "T009: text");
-    println("✓ T009: floats return Number tokens");
+    println("✓ T009: floats ⤺ Number tokens");
 }
 
 rite test_t010_hex_number() {
     ≔ tokens = tokenize_significant("0xFF");
     assert_kind(tokens[0], TokenKind·Number, "T010");
     assert_str_eq(tokens[0].text, "0xFF", "T010: text");
-    println("✓ T010: hex numbers return Number tokens");
+    println("✓ T010: hex numbers ⤺ Number tokens");
 }
 
 // =============================================================================
@@ -486,7 +486,7 @@ rite test_t011_simple_string() {
     ≔ tokens = tokenize_significant("\"hello\"");
     assert_kind(tokens[0], TokenKind·String, "T011");
     assert_str_eq(tokens[0].text, "\"hello\"", "T011: text");
-    println("✓ T011: strings return String tokens");
+    println("✓ T011: strings ⤺ String tokens");
 }
 
 rite test_t012_string_escapes() {
@@ -578,9 +578,9 @@ rite test_t023_punctuation() {
         ≔ tokens = tokenize_significant(p);
         assert_kind(tokens[0], TokenKind·Punctuation, "T023: " + p);
     }
-    // Legacy :: (still supported)
-    ≔ tokens = tokenize_significant("::");
-    assert_kind(tokens[0], TokenKind·Punctuation, "T023: ::");
+    // Legacy · (still supported)
+    ≔ tokens = tokenize_significant("·");
+    assert_kind(tokens[0], TokenKind·Punctuation, "T023: ·");
     // Native · (middle dot path separator)
     ≔ tokens2 = tokenize_significant("·");
     assert_kind(tokens2[0], TokenKind·NativeSymbol, "T023: ·");
@@ -717,7 +717,7 @@ rite test_t041_evidence_in_context_native() {
     assert_kind(tokens[2], TokenKind·EvidenceKnown, "T041: !");
     assert_kind(tokens[3], TokenKind·Operator, "T041: =");
     assert_kind(tokens[4], TokenKind·Number, "T041: 42");
-    println("✓ T041: evidence in '≔ x! = 42'");
+    println("✓ T041: evidence ∈ '≔ x! = 42'");
 }
 
 rite test_t042_evidence_reported_context() {
@@ -725,7 +725,7 @@ rite test_t042_evidence_reported_context() {
     assert_kind(tokens[0], TokenKind·NativeSymbol, "T042: ≔");
     assert_kind(tokens[1], TokenKind·Identifier, "T042: data");
     assert_kind(tokens[2], TokenKind·EvidenceReported, "T042: ~");
-    println("✓ T042: evidence in '≔ data~'");
+    println("✓ T042: evidence ∈ '≔ data~'");
 }
 
 // =============================================================================
@@ -749,7 +749,7 @@ rite test_t044_struct_definition_native() {
     ≔ tokens = tokenize_significant("sigil Point { x: i64 }");
     assert_kind(tokens[0], TokenKind·Keyword, "T044: sigil");
     assert_kind(tokens[1], TokenKind·Type, "T044: Point");
-    println("✓ T044: struct definition (native)");
+    println("✓ T044: Σ definition (native)");
 }
 
 rite test_t045_morpheme_pipeline() {
@@ -899,7 +899,7 @@ rite test_t057_native_impl() {
     assert_kind(tokens[1], TokenKind·Type, "T057: Point");
     assert_kind(tokens[2], TokenKind·Punctuation, "T057: :");
     assert_kind(tokens[3], TokenKind·Type, "T057: Display");
-    println("✓ T057: native impl (⊢ Type : Trait)");
+    println("✓ T057: native ⊢ (⊢ Type : Trait)");
 }
 
 rite test_t058_native_enum() {
@@ -907,7 +907,7 @@ rite test_t058_native_enum() {
     ≔ tokens = tokenize_significant("ᛈ Status");
     assert_kind(tokens[0], TokenKind·NativeSymbol, "T058: ᛈ");
     assert_kind(tokens[1], TokenKind·Type, "T058: Status");
-    println("✓ T058: native enum (ᛈ)");
+    println("✓ T058: native ᛈ (ᛈ)");
 }
 
 rite test_t059_native_control_flow() {
@@ -915,7 +915,7 @@ rite test_t059_native_control_flow() {
     ≔ code = "⎇ x > 0 { println(\"positive\"); }";
     ≔ tokens = tokenize_significant(code);
     assert_kind(tokens[0], TokenKind·NativeSymbol, "T059: ⎇");
-    println("✓ T059: native if (⎇)");
+    println("✓ T059: native ⎇ (⎇)");
 }
 
 rite test_t060_native_loop() {
@@ -923,7 +923,7 @@ rite test_t060_native_loop() {
     ≔ code = "⟳ i < 10 { i = i + 1; }";
     ≔ tokens = tokenize_significant(code);
     assert_kind(tokens[0], TokenKind·NativeSymbol, "T060: ⟳");
-    println("✓ T060: native while (⟳)");
+    println("✓ T060: native ⟳ (⟳)");
 }
 
 // =============================================================================
@@ -933,7 +933,7 @@ rite test_t060_native_loop() {
 rite main() {
     println("════════════════════════════════════════════════════════════");
     println("  Athame - Tokenizer Test Suite");
-    println("  Phase 1: T001-T060 (Updated for Native Syntax)");
+    println("  Phase 1: T001-T060 (Updated ∀ Native Syntax)");
     println("════════════════════════════════════════════════════════════");
     println("");
 

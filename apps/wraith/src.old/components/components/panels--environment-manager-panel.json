@@ -1,0 +1,1184 @@
+{
+  "id": "ui/components/panels/EnvironmentManagerPanel.tsx:EnvironmentManagerPanel",
+  "name": "EnvironmentManagerPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/EnvironmentManagerPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button } from '@persona-framework/ui'\nimport {\n  Settings, Plus, Trash2, Eye, EyeOff, Copy, Check, ChevronDown, ChevronRight,\n  Shield, AlertTriangle, Download, Upload\n} from 'lucide-react'\n\nconst STORAGE_KEY = 'wraith_environments'\n\ntype EnvironmentType = 'development' | 'staging' | 'production' | 'custom'\n\ninterface EnvVariable {\n  key: string\n  value: string\n  isSecret: boolean\n}\n\ninterface Environment {\n  id: string\n  name: string\n  type: EnvironmentType\n  variables: EnvVariable[]\n  isActive: boolean\n}\n\nconst ENV_TYPE_STYLES: Record<EnvironmentType, { bg: string; border: string; text: string }> = {\n  development: {\n    bg: 'bg-[rgba(0,255,127,0.2)]',\n    border: 'border-[#00ff7f]',\n    text: 'text-[#00ff7f]',\n  },\n  staging: {\n    bg: 'bg-[rgba(255,215,0,0.2)]',\n    border: 'border-[#ffd700]',\n    text: 'text-[#ffd700]',\n  },\n  production: {\n    bg: 'bg-[rgba(244,135,113,0.2)]',\n    border: 'border-[#f48771]',\n    text: 'text-[#f48771]',\n  },\n  custom: {\n    bg: 'bg-[rgba(157,0,255,0.2)]',\n    border: 'border-[#9d00ff]',\n    text: 'text-[#9d00ff]',\n  },\n}\n\nfunction loadEnvironments(): Environment[] {\n  try {\n    const stored = localStorage.getItem(STORAGE_KEY)\n    if (stored) {\n      const parsed = JSON.parse(stored)\n      if (Array.isArray(parsed)) return parsed\n    }\n  } catch {\n    // Invalid storage\n  }\n  return getDefaultEnvironments()\n}\n\nfunction saveEnvironments(envs: Environment[]) {\n  try {\n    localStorage.setItem(STORAGE_KEY, JSON.stringify(envs))\n  } catch {\n    // Storage unavailable\n  }\n}\n\nfunction getDefaultEnvironments(): Environment[] {\n  return [\n    {\n      id: 'dev',\n      name: 'Development',\n      type: 'development',\n      isActive: true,\n      variables: [\n        { key: 'API_URL', value: 'http://localhost:3000', isSecret: false },\n        { key: 'DEBUG', value: 'true', isSecret: false },\n      ],\n    },\n    {\n      id: 'staging',\n      name: 'Staging',\n      type: 'staging',\n      isActive: false,\n      variables: [\n        { key: 'API_URL', value: 'https://staging.example.com', isSecret: false },\n        { key: 'DEBUG', value: 'false', isSecret: false },\n      ],\n    },\n    {\n      id: 'prod',\n      name: 'Production',\n      type: 'production',\n      isActive: false,\n      variables: [\n        { key: 'API_URL', value: 'https://api.example.com', isSecret: false },\n        { key: 'API_KEY', value: 'sk-prod-xxxxx', isSecret: true },\n      ],\n    },\n  ]\n}\n\nexport function EnvironmentManagerPanel() {\n  const [environments, setEnvironments] = useState<Environment[]>(() => loadEnvironments())\n  const [expandedEnvs, setExpandedEnvs] = useState<Set<string>>(new Set(['dev']))\n  const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(new Set())\n  const [copiedKey, setCopiedKey] = useState<string | null>(null)\n  const [showAddEnv, setShowAddEnv] = useState(false)\n  const [newEnv, setNewEnv] = useState({ name: '', type: 'custom' as EnvironmentType })\n\n  useEffect(() => {\n    saveEnvironments(environments)\n  }, [environments])\n\n  const toggleExpanded = (envId: string) => {\n    setExpandedEnvs(prev => {\n      const next = new Set(prev)\n      if (next.has(envId)) {\n        next.delete(envId)\n      } else {\n        next.add(envId)\n      }\n      return next\n    })\n  }\n\n  const toggleSecret = (key: string) => {\n    setRevealedSecrets(prev => {\n      const next = new Set(prev)\n      if (next.has(key)) {\n        next.delete(key)\n      } else {\n        next.add(key)\n      }\n      return next\n    })\n  }\n\n  const copyValue = (key: string, value: string) => {\n    navigator.clipboard.writeText(value)\n    setCopiedKey(key)\n    setTimeout(() => setCopiedKey(null), 2000)\n  }\n\n  const setActiveEnv = (envId: string) => {\n    setEnvironments(environments.map(env => ({\n      ...env,\n      isActive: env.id === envId,\n    })))\n  }\n\n  const addEnvironment = () => {\n    if (!newEnv.name.trim()) return\n\n    const env: Environment = {\n      id: crypto.randomUUID(),\n      name: newEnv.name.trim(),\n      type: newEnv.type,\n      isActive: false,\n      variables: [],\n    }\n\n    setEnvironments([...environments, env])\n    setNewEnv({ name: '', type: 'custom' })\n    setShowAddEnv(false)\n    setExpandedEnvs(prev => new Set([...prev, env.id]))\n  }\n\n  const deleteEnvironment = (envId: string) => {\n    setEnvironments(environments.filter(e => e.id !== envId))\n  }\n\n  const addVariable = (envId: string) => {\n    setEnvironments(environments.map(env => {\n      if (env.id !== envId) return env\n      return {\n        ...env,\n        variables: [...env.variables, { key: '', value: '', isSecret: false }],\n      }\n    }))\n  }\n\n  const updateVariable = (envId: string, index: number, updates: Partial<EnvVariable>) => {\n    setEnvironments(environments.map(env => {\n      if (env.id !== envId) return env\n      const newVars = [...env.variables]\n      newVars[index] = { ...newVars[index], ...updates }\n      return { ...env, variables: newVars }\n    }))\n  }\n\n  const deleteVariable = (envId: string, index: number) => {\n    setEnvironments(environments.map(env => {\n      if (env.id !== envId) return env\n      return {\n        ...env,\n        variables: env.variables.filter((_, i) => i !== index),\n      }\n    }))\n  }\n\n  const exportEnv = (env: Environment) => {\n    const content = env.variables\n      .map(v => `${v.key}=${v.value}`)\n      .join('\\n')\n    const blob = new Blob([content], { type: 'text/plain' })\n    const url = URL.createObjectURL(blob)\n    const a = document.createElement('a')\n    a.href = url\n    a.download = `.env.${env.name.toLowerCase().replace(/\\s+/g, '-')}`\n    a.click()\n    URL.revokeObjectURL(url)\n  }\n\n  const activeEnv = environments.find(e => e.isActive)\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n      <div className=\"p-3 border-b border-[#3c3c3c] bg-[#252526]\">\n        <div className=\"flex items-center justify-between mb-2\">\n          <div className=\"flex items-center gap-2\">\n            <Settings className=\"w-4 h-4 text-[#5bcefa]\" />\n            <span className=\"text-sm font-medium text-white\">Environments</span>\n          </div>\n          <Button\n            size=\"sm\"\n            variant=\"ghost\"\n            onClick={() => setShowAddEnv(!showAddEnv)}\n            className=\"h-7 w-7 p-0\"\n            aria-label=\"Add environment\"\n          >\n            <Plus className=\"w-4 h-4\" />\n          </Button>\n        </div>\n\n        {activeEnv && (\n          <div className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${ENV_TYPE_STYLES[activeEnv.type].bg}`}>\n            <div className={`w-2 h-2 rounded-full ${ENV_TYPE_STYLES[activeEnv.type].bg} ${ENV_TYPE_STYLES[activeEnv.type].border} border-2`} />\n            <span className={ENV_TYPE_STYLES[activeEnv.type].text}>Active: {activeEnv.name}</span>\n          </div>\n        )}\n      </div>\n\n      {showAddEnv && (\n        <div className=\"p-3 border-b border-[#3c3c3c] bg-[#2d2d30]\">\n          <div className=\"flex flex-col gap-2\">\n            <input\n              type=\"text\"\n              placeholder=\"Environment name\"\n              value={newEnv.name}\n              onChange={(e) => setNewEnv({ ...newEnv, name: e.target.value })}\n              className=\"w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n            />\n            <select\n              value={newEnv.type}\n              onChange={(e) => setNewEnv({ ...newEnv, type: e.target.value as EnvironmentType })}\n              className=\"w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]\"\n            >\n              <option value=\"development\">Development</option>\n              <option value=\"staging\">Staging</option>\n              <option value=\"production\">Production</option>\n              <option value=\"custom\">Custom</option>\n            </select>\n            <Button size=\"sm\" onClick={addEnvironment} disabled={!newEnv.name.trim()}>\n              <Plus className=\"w-3.5 h-3.5 mr-1.5\" />\n              Add Environment\n            </Button>\n          </div>\n        </div>\n      )}\n\n      <div className=\"flex-1 overflow-auto p-2\">\n        {environments.map(env => {\n          const style = ENV_TYPE_STYLES[env.type]\n          const isExpanded = expandedEnvs.has(env.id)\n\n          return (\n            <div key={env.id} className=\"mb-2\">\n              <div\n                className={`flex items-center gap-2 p-2 rounded-md cursor-pointer transition-all hover:bg-[#2d2d30] ${\n                  env.isActive ? `${style.bg} border ${style.border}` : ''\n                }`}\n                onClick={() => toggleExpanded(env.id)}\n              >\n                {isExpanded ? (\n                  <ChevronDown className=\"w-4 h-4 text-[#808080]\" />\n                ) : (\n                  <ChevronRight className=\"w-4 h-4 text-[#808080]\" />\n                )}\n                <span className={`text-sm font-medium ${env.isActive ? style.text : 'text-white'}`}>\n                  {env.name}\n                </span>\n                <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>\n                  {env.type}\n                </span>\n                <span className=\"text-xs text-[#808080]\">({env.variables.length})</span>\n                <div className=\"flex-1\" />\n                {!env.isActive && (\n                  <button\n                    onClick={(e) => {\n                      e.stopPropagation()\n                      setActiveEnv(env.id)\n                    }}\n                    className=\"px-2 py-0.5 text-[10px] bg-[#3c3c3c] text-[#b0b0b0] rounded hover:bg-[#4c4c4c] transition-colors\"\n                  >\n                    Activate\n                  </button>\n                )}\n                <button\n                  onClick={(e) => {\n                    e.stopPropagation()\n                    exportEnv(env)\n                  }}\n                  className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                  aria-label=\"Export environment\"\n                >\n                  <Download className=\"w-3.5 h-3.5 text-[#808080]\" />\n                </button>\n                <button\n                  onClick={(e) => {\n                    e.stopPropagation()\n                    deleteEnvironment(env.id)\n                  }}\n                  className=\"p-1 rounded hover:bg-[#5a1d1d] transition-colors\"\n                  aria-label=\"Delete environment\"\n                >\n                  <Trash2 className=\"w-3.5 h-3.5 text-[#f48771]\" />\n                </button>\n              </div>\n\n              {isExpanded && (\n                <div className=\"ml-6 mt-1 border-l-2 border-[#3c3c3c] pl-3\">\n                  {env.variables.map((variable, idx) => (\n                    <div key={idx} className=\"flex items-center gap-2 py-1.5\">\n                      <input\n                        type=\"text\"\n                        placeholder=\"KEY\"\n                        value={variable.key}\n                        onChange={(e) => updateVariable(env.id, idx, { key: e.target.value })}\n                        className=\"w-32 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n                      />\n                      <span className=\"text-[#606060]\">=</span>\n                      <div className=\"flex-1 flex items-center gap-1\">\n                        <input\n                          type={variable.isSecret && !revealedSecrets.has(`${env.id}-${idx}`) ? 'password' : 'text'}\n                          placeholder=\"value\"\n                          value={variable.value}\n                          onChange={(e) => updateVariable(env.id, idx, { value: e.target.value })}\n                          className=\"flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n                        />\n                      </div>\n                      <button\n                        onClick={() => updateVariable(env.id, idx, { isSecret: !variable.isSecret })}\n                        className={`p-1 rounded transition-colors ${\n                          variable.isSecret ? 'bg-[rgba(244,135,113,0.2)] text-[#f48771]' : 'hover:bg-[#3c3c3c] text-[#808080]'\n                        }`}\n                        aria-label={variable.isSecret ? 'Mark as non-secret' : 'Mark as secret'}\n                        title={variable.isSecret ? 'Secret' : 'Not secret'}\n                      >\n                        <Shield className=\"w-3.5 h-3.5\" />\n                      </button>\n                      {variable.isSecret && (\n                        <button\n                          onClick={() => toggleSecret(`${env.id}-${idx}`)}\n                          className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                          aria-label={revealedSecrets.has(`${env.id}-${idx}`) ? 'Hide value' : 'Show value'}\n                        >\n                          {revealedSecrets.has(`${env.id}-${idx}`) ? (\n                            <EyeOff className=\"w-3.5 h-3.5 text-[#808080]\" />\n                          ) : (\n                            <Eye className=\"w-3.5 h-3.5 text-[#808080]\" />\n                          )}\n                        </button>\n                      )}\n                      <button\n                        onClick={() => copyValue(`${env.id}-${idx}`, variable.value)}\n                        className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                        aria-label=\"Copy value\"\n                      >\n                        {copiedKey === `${env.id}-${idx}` ? (\n                          <Check className=\"w-3.5 h-3.5 text-[#00ff7f]\" />\n                        ) : (\n                          <Copy className=\"w-3.5 h-3.5 text-[#808080]\" />\n                        )}\n                      </button>\n                      <button\n                        onClick={() => deleteVariable(env.id, idx)}\n                        className=\"p-1 rounded hover:bg-[#5a1d1d] transition-colors\"\n                        aria-label=\"Delete variable\"\n                      >\n                        <Trash2 className=\"w-3.5 h-3.5 text-[#f48771]\" />\n                      </button>\n                    </div>\n                  ))}\n                  <button\n                    onClick={() => addVariable(env.id)}\n                    className=\"flex items-center gap-1.5 text-xs text-[#5bcefa] hover:text-[#7dd3fc] py-1.5 transition-colors\"\n                  >\n                    <Plus className=\"w-3.5 h-3.5\" />\n                    Add Variable\n                  </button>\n                </div>\n              )}\n            </div>\n          )\n        })}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "EnvironmentManagerPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 105,
+        "start_col": 7,
+        "end_line": 412,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 106,
+            "start_col": 42,
+            "end_line": 106,
+            "end_col": 91
+          },
+          "state_name": "environments",
+          "setter_name": "setEnvironments",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 107,
+            "start_col": 42,
+            "end_line": 107,
+            "end_col": 81
+          },
+          "state_name": "expandedEnvs",
+          "setter_name": "setExpandedEnvs",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 108,
+            "start_col": 48,
+            "end_line": 108,
+            "end_col": 80
+          },
+          "state_name": "revealedSecrets",
+          "setter_name": "setRevealedSecrets",
+          "initial_value": "None",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 109,
+            "start_col": 36,
+            "end_line": 109,
+            "end_col": 65
+          },
+          "state_name": "copiedKey",
+          "setter_name": "setCopiedKey",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 110,
+            "start_col": 38,
+            "end_line": 110,
+            "end_col": 53
+          },
+          "state_name": "showAddEnv",
+          "setter_name": "setShowAddEnv",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 111,
+            "start_col": 30,
+            "end_line": 111,
+            "end_col": 87
+          },
+          "state_name": "newEnv",
+          "setter_name": "setNewEnv",
+          "initial_value": "∅",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 113,
+            "start_col": 2,
+            "end_line": 115,
+            "end_col": 20
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "environments"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-3 border-b border-[#3c3c3c] bg-[#252526]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center justify-between mb-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center gap-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Settings",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4 text-[#5bcefa]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 224,
+                                    "start_col": 12,
+                                    "end_line": 224,
+                                    "end_col": 59
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-sm font-medium text-white"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Environments"
+                                        },
+                                        "location": {
+                                          "start_line": 225,
+                                          "start_col": 61,
+                                          "end_line": 225,
+                                          "end_col": 73
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 225,
+                                    "start_col": 12,
+                                    "end_line": 225,
+                                    "end_col": 80
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 223,
+                              "start_col": 10,
+                              "end_line": 226,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setShowAddEnv(!showAddEnv)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-7 w-7 p-0"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "aria-label",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Add environment"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Plus",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 234,
+                                    "start_col": 12,
+                                    "end_line": 234,
+                                    "end_col": 40
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 227,
+                              "start_col": 10,
+                              "end_line": 235,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 222,
+                        "start_col": 8,
+                        "end_line": 236,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "activeEnv",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "`flex items-center gap-2 px-2 py-1 rounded text-xs ${ENV_TYPE_STYLES[activeEnv.type].bg}`"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "`w-2 h-2 rounded-full ${ENV_TYPE_STYLES[activeEnv.type].bg} ${ENV_TYPE_STYLES[activeEnv.type].border} border-2`"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 240,
+                                  "start_col": 12,
+                                  "end_line": 240,
+                                  "end_col": 143
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "span",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "ENV_TYPE_STYLES[activeEnv.type].text"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Active:"
+                                      },
+                                      "location": {
+                                        "start_line": 241,
+                                        "start_col": 67,
+                                        "end_line": 241,
+                                        "end_col": 75
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "activeEnv.name"
+                                      },
+                                      "location": {
+                                        "start_line": 241,
+                                        "start_col": 75,
+                                        "end_line": 241,
+                                        "end_col": 91
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 241,
+                                  "start_col": 12,
+                                  "end_line": 241,
+                                  "end_col": 98
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 239,
+                            "start_col": 10,
+                            "end_line": 242,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 238,
+                        "start_col": 8,
+                        "end_line": 243,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 221,
+                  "start_col": 6,
+                  "end_line": 244,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "showAddEnv",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "p-3 border-b border-[#3c3c3c] bg-[#2d2d30]"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col gap-2"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "input",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "type",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "placeholder",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Environment name"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "value",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "newEnv.name"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onChange",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "(e) => setNewEnv({ ...newEnv, name: e.target.value })"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 249,
+                                  "start_col": 12,
+                                  "end_line": 255,
+                                  "end_col": 14
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "select",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "value",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "newEnv.type"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onChange",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "(e) => setNewEnv({ ...newEnv, type: e.target.value as EnvironmentType })"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white focus:outline-none focus:border-[#5bcefa]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "option",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "development"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Development"
+                                            },
+                                            "location": {
+                                              "start_line": 261,
+                                              "start_col": 42,
+                                              "end_line": 261,
+                                              "end_col": 53
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 261,
+                                        "start_col": 14,
+                                        "end_line": 261,
+                                        "end_col": 62
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "option",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "staging"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Staging"
+                                            },
+                                            "location": {
+                                              "start_line": 262,
+                                              "start_col": 38,
+                                              "end_line": 262,
+                                              "end_col": 45
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 262,
+                                        "start_col": 14,
+                                        "end_line": 262,
+                                        "end_col": 54
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "option",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "production"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Production"
+                                            },
+                                            "location": {
+                                              "start_line": 263,
+                                              "start_col": 41,
+                                              "end_line": 263,
+                                              "end_col": 51
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 263,
+                                        "start_col": 14,
+                                        "end_line": 263,
+                                        "end_col": 60
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "option",
+                                        "is_component": false,
+                                        "attributes": [
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "custom"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Custom"
+                                            },
+                                            "location": {
+                                              "start_line": 264,
+                                              "start_col": 37,
+                                              "end_line": 264,
+                                              "end_col": 43
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 264,
+                                        "start_col": 14,
+                                        "end_line": 264,
+                                        "end_col": 52
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 256,
+                                  "start_col": 12,
+                                  "end_line": 265,
+                                  "end_col": 21
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "addEnvironment"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "disabled",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "!newEnv.name.trim()"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Plus",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-3.5 h-3.5 mr-1.5"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 267,
+                                        "start_col": 14,
+                                        "end_line": 267,
+                                        "end_col": 53
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "Add Environment"
+                                      },
+                                      "location": {
+                                        "start_line": 267,
+                                        "start_col": 53,
+                                        "end_line": 269,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 266,
+                                  "start_col": 12,
+                                  "end_line": 269,
+                                  "end_col": 21
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 248,
+                            "start_col": 10,
+                            "end_line": 270,
+                            "end_col": 16
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 247,
+                      "start_col": 8,
+                      "end_line": 271,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 246,
+                  "start_col": 6,
+                  "end_line": 272,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto p-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "environments.map(env => {\n          const style = ENV_TYPE_STYLES[env.type]\n          const isExpanded = expandedEnvs.has(env.id)\n\n          return (\n            <div key={env.id} className=\"mb-2\">\n              <div\n                className={`flex items-center gap-2 p-2 rounded-md cursor-pointer transition-all hover:bg-[#2d2d30] ${\n                  env.isActive ? `${style.bg} border ${style.border}` : ''\n                }`}\n                onClick={() => toggleExpanded(env.id)}\n              >\n                {isExpanded ? (\n                  <ChevronDown className=\"w-4 h-4 text-[#808080]\" />\n                ) : (\n                  <ChevronRight className=\"w-4 h-4 text-[#808080]\" />\n                )}\n                <span className={`text-sm font-medium ${env.isActive ? style.text : 'text-white'}`}>\n                  {env.name}\n                </span>\n                <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>\n                  {env.type}\n                </span>\n                <span className=\"text-xs text-[#808080]\">({env.variables.length})</span>\n                <div className=\"flex-1\" />\n                {!env.isActive && (\n                  <button\n                    onClick={(e) => {\n                      e.stopPropagation()\n                      setActiveEnv(env.id)\n                    }}\n                    className=\"px-2 py-0.5 text-[10px] bg-[#3c3c3c] text-[#b0b0b0] rounded hover:bg-[#4c4c4c] transition-colors\"\n                  >\n                    Activate\n                  </button>\n                )}\n                <button\n                  onClick={(e) => {\n                    e.stopPropagation()\n                    exportEnv(env)\n                  }}\n                  className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                  aria-label=\"Export environment\"\n                >\n                  <Download className=\"w-3.5 h-3.5 text-[#808080]\" />\n                </button>\n                <button\n                  onClick={(e) => {\n                    e.stopPropagation()\n                    deleteEnvironment(env.id)\n                  }}\n                  className=\"p-1 rounded hover:bg-[#5a1d1d] transition-colors\"\n                  aria-label=\"Delete environment\"\n                >\n                  <Trash2 className=\"w-3.5 h-3.5 text-[#f48771]\" />\n                </button>\n              </div>\n\n              {isExpanded && (\n                <div className=\"ml-6 mt-1 border-l-2 border-[#3c3c3c] pl-3\">\n                  {env.variables.map((variable, idx) => (\n                    <div key={idx} className=\"flex items-center gap-2 py-1.5\">\n                      <input\n                        type=\"text\"\n                        placeholder=\"KEY\"\n                        value={variable.key}\n                        onChange={(e) => updateVariable(env.id, idx, { key: e.target.value })}\n                        className=\"w-32 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n                      />\n                      <span className=\"text-[#606060]\">=</span>\n                      <div className=\"flex-1 flex items-center gap-1\">\n                        <input\n                          type={variable.isSecret && !revealedSecrets.has(`${env.id}-${idx}`) ? 'password' : 'text'}\n                          placeholder=\"value\"\n                          value={variable.value}\n                          onChange={(e) => updateVariable(env.id, idx, { value: e.target.value })}\n                          className=\"flex-1 px-2 py-1 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono placeholder-[#808080] focus:outline-none focus:border-[#5bcefa]\"\n                        />\n                      </div>\n                      <button\n                        onClick={() => updateVariable(env.id, idx, { isSecret: !variable.isSecret })}\n                        className={`p-1 rounded transition-colors ${\n                          variable.isSecret ? 'bg-[rgba(244,135,113,0.2)] text-[#f48771]' : 'hover:bg-[#3c3c3c] text-[#808080]'\n                        }`}\n                        aria-label={variable.isSecret ? 'Mark as non-secret' : 'Mark as secret'}\n                        title={variable.isSecret ? 'Secret' : 'Not secret'}\n                      >\n                        <Shield className=\"w-3.5 h-3.5\" />\n                      </button>\n                      {variable.isSecret && (\n                        <button\n                          onClick={() => toggleSecret(`${env.id}-${idx}`)}\n                          className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                          aria-label={revealedSecrets.has(`${env.id}-${idx}`) ? 'Hide value' : 'Show value'}\n                        >\n                          {revealedSecrets.has(`${env.id}-${idx}`) ? (\n                            <EyeOff className=\"w-3.5 h-3.5 text-[#808080]\" />\n                          ) : (\n                            <Eye className=\"w-3.5 h-3.5 text-[#808080]\" />\n                          )}\n                        </button>\n                      )}\n                      <button\n                        onClick={() => copyValue(`${env.id}-${idx}`, variable.value)}\n                        className=\"p-1 rounded hover:bg-[#3c3c3c] transition-colors\"\n                        aria-label=\"Copy value\"\n                      >\n                        {copiedKey === `${env.id}-${idx}` ? (\n                          <Check className=\"w-3.5 h-3.5 text-[#00ff7f]\" />\n                        ) : (\n                          <Copy className=\"w-3.5 h-3.5 text-[#808080]\" />\n                        )}\n                      </button>\n                      <button\n                        onClick={() => deleteVariable(env.id, idx)}\n                        className=\"p-1 rounded hover:bg-[#5a1d1d] transition-colors\"\n                        aria-label=\"Delete variable\"\n                      >\n                        <Trash2 className=\"w-3.5 h-3.5 text-[#f48771]\" />\n                      </button>\n                    </div>\n                  ))}\n                  <button\n                    onClick={() => addVariable(env.id)}\n                    className=\"flex items-center gap-1.5 text-xs text-[#5bcefa] hover:text-[#7dd3fc] py-1.5 transition-colors\"\n                  >\n                    <Plus className=\"w-3.5 h-3.5\" />\n                    Add Variable\n                  </button>\n                </div>\n              )}\n            </div>\n          )\n        })"
+                      },
+                      "location": {
+                        "start_line": 275,
+                        "start_col": 8,
+                        "end_line": 408,
+                        "end_col": 11
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 274,
+                  "start_col": 6,
+                  "end_line": 409,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 220,
+            "start_col": 4,
+            "end_line": 410,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "Plus",
+        "Settings"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "environments",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "expandedEnvs",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "revealedSecrets",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "copiedKey",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "showAddEnv",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "newEnv",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/environment_manager_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:environments",
+        "to_field": "environments",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'environments' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:expandedEnvs",
+        "to_field": "expandedEnvs",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'expandedEnvs' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:revealedSecrets",
+        "to_field": "revealedSecrets",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "None",
+        "reasoning": "useState hook 'revealedSecrets' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:copiedKey",
+        "to_field": "copiedKey",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'copiedKey' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:showAddEnv",
+        "to_field": "showAddEnv",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'showAddEnv' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:newEnv",
+        "to_field": "newEnv",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "∅",
+        "reasoning": "useState hook 'newEnv' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateEnvironments",
+        "from_handler": "setEnvironments",
+        "payload": null,
+        "state_changes": [
+          "self.environments = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateExpandedEnvs",
+        "from_handler": "setExpandedEnvs",
+        "payload": null,
+        "state_changes": [
+          "self.expandedEnvs = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateRevealedSecrets",
+        "from_handler": "setRevealedSecrets",
+        "payload": null,
+        "state_changes": [
+          "self.revealedSecrets = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateCopiedKey",
+        "from_handler": "setCopiedKey",
+        "payload": null,
+        "state_changes": [
+          "self.copiedKey = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateShowAddEnv",
+        "from_handler": "setShowAddEnv",
+        "payload": null,
+        "state_changes": [
+          "self.showAddEnv = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateNewEnv",
+        "from_handler": "setNewEnv",
+        "payload": null,
+        "state_changes": [
+          "self.newEnv = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[environments]",
+        "strategy": "inline",
+        "reasoning": "Deps [environments] → inline in handlers that change these",
+        "inline_in": "environments",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_6",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [environments] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Plus",
+      "Settings"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "6 state variables"
+  ],
+  "status": "pending"
+}

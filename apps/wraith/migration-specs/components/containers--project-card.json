@@ -1,0 +1,1057 @@
+{
+  "id": "domains/devops/components/containers/ComposeSection.tsx:ProjectCard",
+  "name": "ProjectCard",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/containers/ComposeSection.tsx",
+    "code": "import { useState } from 'react'\nimport { Layers, Play, Square, RotateCcw, Trash2, ChevronDown, ChevronRight, FileCode } from 'lucide-react'\nimport { IconButton } from '@ui/components/atoms'\nimport { StatusBadge, SectionHeader, ResourceCard, ActionMenu, ActionItem } from '../shared'\nimport { mockComposeProjects } from '../../mock-data'\nimport type { ComposeProject, ComposeService } from '../../types'\n\nfunction formatRelativeTime(dateStr: string): string {\n  const diff = Date.now() - new Date(dateStr).getTime()\n  const hours = Math.floor(diff / 3600000)\n  const days = Math.floor(diff / 86400000)\n  if (days > 0) return `${days}d ago`\n  if (hours > 0) return `${hours}h ago`\n  return 'Just now'\n}\n\nfunction ServiceRow({ service }: { service: ComposeService }) {\n  return (\n    <div className=\"flex items-center justify-between py-2 px-3 hover:bg-[var(--bg-hover)] rounded\">\n      <div className=\"flex items-center gap-2\">\n        <div className={`w-2 h-2 rounded-full ${service.status === 'running' ? 'bg-[var(--accent-success)]' : 'bg-[var(--text-muted)]'}`} />\n        <span className=\"text-sm text-[var(--text-primary)]\">{service.name}</span>\n        <span className=\"text-xs text-[var(--text-muted)]\">{service.image}</span>\n      </div>\n      <div className=\"flex items-center gap-3\">\n        <span className=\"text-xs text-[var(--text-secondary)]\">\n          {service.replicas.running}/{service.replicas.desired}\n        </span>\n        {service.ports.length > 0 && (\n          <span className=\"text-xs font-mono text-[var(--text-muted)]\">\n            {service.ports.join(', ')}\n          </span>\n        )}\n        <StatusBadge status={service.status} size=\"sm\" />\n      </div>\n    </div>\n  )\n}\n\nfunction ProjectCard({ project }: { project: ComposeProject }) {\n  const [expanded, setExpanded] = useState(true)\n  const runningCount = project.services.filter((s) => s.status === 'running').length\n\n  return (\n    <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden\">\n      <div\n        className=\"flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--bg-hover)]\"\n        onClick={() => setExpanded(!expanded)}\n      >\n        <div className=\"flex items-center gap-3\">\n          <button className=\"text-[var(--text-secondary)]\">\n            {expanded ? <ChevronDown className=\"h-4 w-4\" /> : <ChevronRight className=\"h-4 w-4\" />}\n          </button>\n          <Layers className=\"h-5 w-5 text-[var(--accent-primary)]\" />\n          <div>\n            <div className=\"flex items-center gap-2\">\n              <span className=\"font-medium text-[var(--text-primary)]\">{project.name}</span>\n              <StatusBadge status={project.status} />\n            </div>\n            <div className=\"text-xs text-[var(--text-muted)] flex items-center gap-2 mt-0.5\">\n              <FileCode className=\"h-3 w-3\" />\n              {project.configFiles.join(', ')}\n            </div>\n          </div>\n        </div>\n        <div className=\"flex items-center gap-3\" onClick={(e) => e.stopPropagation()}>\n          <span className=\"text-xs text-[var(--text-secondary)]\">\n            {runningCount}/{project.services.length} services\n          </span>\n          <div className=\"flex items-center gap-1\">\n            <IconButton icon={<Play className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Start all\" onClick={() => {}} />\n            <IconButton icon={<Square className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Stop all\" onClick={() => {}} />\n            <IconButton icon={<RotateCcw className=\"h-3 w-3\" />} size=\"sm\" tooltip=\"Restart all\" onClick={() => {}} />\n            <ActionMenu>\n              <ActionItem icon={<Play className=\"h-3 w-3\" />} label=\"Up\" onClick={() => {}} />\n              <ActionItem icon={<Square className=\"h-3 w-3\" />} label=\"Down\" onClick={() => {}} />\n              <ActionItem icon={<RotateCcw className=\"h-3 w-3\" />} label=\"Rebuild\" onClick={() => {}} />\n              <ActionItem icon={<Trash2 className=\"h-3 w-3\" />} label=\"Remove\" onClick={() => {}} variant=\"danger\" />\n            </ActionMenu>\n          </div>\n        </div>\n      </div>\n\n      {expanded && (\n        <div className=\"border-t border-[var(--border-subtle)] bg-[var(--bg-primary)]\">\n          {project.services.map((service) => (\n            <ServiceRow key={service.name} service={service} />\n          ))}\n        </div>\n      )}\n    </div>\n  )\n}\n\nexport function ComposeSection() {\n  return (\n    <div className=\"h-full flex flex-col\">\n      <SectionHeader\n        title=\"Compose Projects\"\n        subtitle={`${mockComposeProjects.length} project${mockComposeProjects.length !== 1 ? 's' : ''}`}\n        icon={<Layers className=\"h-5 w-5\" />}\n        onRefresh={() => {}}\n      />\n\n      <div className=\"flex-1 overflow-auto space-y-3 pr-1\">\n        {mockComposeProjects.map((project) => (\n          <ProjectCard key={project.name} project={project} />\n        ))}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "ProjectCard",
+      "component_type": "functional",
+      "exported": false,
+      "export_type": null,
+      "location": {
+        "start_line": 40,
+        "start_col": 0,
+        "end_line": 93,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "project",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 41,
+            "start_col": 34,
+            "end_line": 41,
+            "end_col": 48
+          },
+          "state_name": "expanded",
+          "setter_name": "setExpanded",
+          "initial_value": "true",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--bg-hover)]"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onClick",
+                      "value": {
+                        "type": "Expression",
+                        "code": "() => setExpanded(!expanded)"
+                      },
+                      "is_event_handler": true
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "button",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-[var(--text-secondary)]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Conditional",
+                                    "condition": "expanded",
+                                    "consequent": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "ChevronDown",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "h-4 w-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 52,
+                                        "start_col": 24,
+                                        "end_line": 52,
+                                        "end_col": 59
+                                      }
+                                    },
+                                    "alternate": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "ChevronRight",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "h-4 w-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 52,
+                                        "start_col": 62,
+                                        "end_line": 52,
+                                        "end_col": 98
+                                      }
+                                    }
+                                  },
+                                  "location": {
+                                    "start_line": 52,
+                                    "start_col": 12,
+                                    "end_line": 52,
+                                    "end_col": 99
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 51,
+                              "start_col": 10,
+                              "end_line": 53,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Layers",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-5 w-5 text-[var(--accent-primary)]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 54,
+                              "start_col": 10,
+                              "end_line": 54,
+                              "end_col": 69
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "flex items-center gap-2"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "span",
+                                          "is_component": false,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "font-medium text-[var(--text-primary)]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Expression",
+                                                "code": "project.name"
+                                              },
+                                              "location": {
+                                                "start_line": 57,
+                                                "start_col": 71,
+                                                "end_line": 57,
+                                                "end_col": 85
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 57,
+                                          "start_col": 14,
+                                          "end_line": 57,
+                                          "end_col": 92
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "StatusBadge",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "status",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "project.status"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 58,
+                                          "start_col": 14,
+                                          "end_line": 58,
+                                          "end_col": 53
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 56,
+                                    "start_col": 12,
+                                    "end_line": 59,
+                                    "end_col": 18
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-[var(--text-muted)] flex items-center gap-2 mt-0.5"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "FileCode",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "h-3 w-3"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 61,
+                                          "start_col": 14,
+                                          "end_line": 61,
+                                          "end_col": 46
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "project.configFiles.join(', ')"
+                                        },
+                                        "location": {
+                                          "start_line": 62,
+                                          "start_col": 14,
+                                          "end_line": 62,
+                                          "end_col": 46
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 60,
+                                    "start_col": 12,
+                                    "end_line": 63,
+                                    "end_col": 18
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 55,
+                              "start_col": 10,
+                              "end_line": 64,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 50,
+                        "start_col": 8,
+                        "end_line": 65,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center gap-3"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(e) => e.stopPropagation()"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "span",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "text-xs text-[var(--text-secondary)]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "runningCount"
+                                  },
+                                  "location": {
+                                    "start_line": 68,
+                                    "start_col": 12,
+                                    "end_line": 68,
+                                    "end_col": 26
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "/"
+                                  },
+                                  "location": {
+                                    "start_line": 68,
+                                    "start_col": 26,
+                                    "end_line": 68,
+                                    "end_col": 27
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "project.services.length"
+                                  },
+                                  "location": {
+                                    "start_line": 68,
+                                    "start_col": 27,
+                                    "end_line": 68,
+                                    "end_col": 52
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "services"
+                                  },
+                                  "location": {
+                                    "start_line": 68,
+                                    "start_col": 52,
+                                    "end_line": 69,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 67,
+                              "start_col": 10,
+                              "end_line": 69,
+                              "end_col": 17
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center gap-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "IconButton",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "icon",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "<Play className=\"h-3 w-3\" />"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "tooltip",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Start all"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => {}"
+                                        },
+                                        "is_event_handler": true
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 71,
+                                    "start_col": 12,
+                                    "end_line": 71,
+                                    "end_col": 111
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "IconButton",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "icon",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "<Square className=\"h-3 w-3\" />"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "tooltip",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Stop all"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => {}"
+                                        },
+                                        "is_event_handler": true
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 72,
+                                    "start_col": 12,
+                                    "end_line": 72,
+                                    "end_col": 112
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "IconButton",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "icon",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "<RotateCcw className=\"h-3 w-3\" />"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "size",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "sm"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "tooltip",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "Restart all"
+                                        },
+                                        "is_event_handler": false
+                                      },
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => {}"
+                                        },
+                                        "is_event_handler": true
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 73,
+                                    "start_col": 12,
+                                    "end_line": 73,
+                                    "end_col": 118
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "ActionMenu",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "ActionItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "icon",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "<Play className=\"h-3 w-3\" />"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "label",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "Up"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => {}"
+                                              },
+                                              "is_event_handler": true
+                                            }
+                                          ],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 75,
+                                          "start_col": 14,
+                                          "end_line": 75,
+                                          "end_col": 94
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "ActionItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "icon",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "<Square className=\"h-3 w-3\" />"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "label",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "Down"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => {}"
+                                              },
+                                              "is_event_handler": true
+                                            }
+                                          ],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 76,
+                                          "start_col": 14,
+                                          "end_line": 76,
+                                          "end_col": 98
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "ActionItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "icon",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "<RotateCcw className=\"h-3 w-3\" />"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "label",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "Rebuild"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => {}"
+                                              },
+                                              "is_event_handler": true
+                                            }
+                                          ],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 77,
+                                          "start_col": 14,
+                                          "end_line": 77,
+                                          "end_col": 104
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "ActionItem",
+                                          "is_component": true,
+                                          "attributes": [
+                                            {
+                                              "name": "icon",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "<Trash2 className=\"h-3 w-3\" />"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "label",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "Remove"
+                                              },
+                                              "is_event_handler": false
+                                            },
+                                            {
+                                              "name": "onClick",
+                                              "value": {
+                                                "type": "Expression",
+                                                "code": "() => {}"
+                                              },
+                                              "is_event_handler": true
+                                            },
+                                            {
+                                              "name": "variant",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "danger"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": []
+                                        },
+                                        "location": {
+                                          "start_line": 78,
+                                          "start_col": 14,
+                                          "end_line": 78,
+                                          "end_col": 117
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 74,
+                                    "start_col": 12,
+                                    "end_line": 79,
+                                    "end_col": 25
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 70,
+                              "start_col": 10,
+                              "end_line": 80,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 66,
+                        "start_col": 8,
+                        "end_line": 81,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 46,
+                  "start_col": 6,
+                  "end_line": 82,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "expanded",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "border-t border-[var(--border-subtle)] bg-[var(--bg-primary)]"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Map",
+                            "iterable": "project.services",
+                            "item_name": "service",
+                            "key_expr": "service.name",
+                            "body": {
+                              "node_type": {
+                                "type": "Element",
+                                "tag": "ServiceRow",
+                                "is_component": true,
+                                "attributes": [
+                                  {
+                                    "name": "key",
+                                    "value": {
+                                      "type": "Expression",
+                                      "code": "service.name"
+                                    },
+                                    "is_event_handler": false
+                                  },
+                                  {
+                                    "name": "service",
+                                    "value": {
+                                      "type": "Expression",
+                                      "code": "service"
+                                    },
+                                    "is_event_handler": false
+                                  }
+                                ],
+                                "children": []
+                              },
+                              "location": {
+                                "start_line": 87,
+                                "start_col": 12,
+                                "end_line": 87,
+                                "end_col": 63
+                              }
+                            }
+                          },
+                          "location": {
+                            "start_line": 86,
+                            "start_col": 10,
+                            "end_line": 88,
+                            "end_col": 13
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 85,
+                      "start_col": 8,
+                      "end_line": 89,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 84,
+                  "start_col": 6,
+                  "end_line": 90,
+                  "end_col": 8
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 45,
+            "start_col": 4,
+            "end_line": 91,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "ActionItem",
+        "ActionMenu",
+        "ChevronDown",
+        "ChevronRight",
+        "FileCode",
+        "IconButton",
+        "Layers",
+        "ServiceRow",
+        "StatusBadge"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "expanded",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/project_card.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:expanded",
+        "to_field": "expanded",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "true",
+        "reasoning": "useState hook 'expanded' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateExpanded",
+        "from_handler": "setExpanded",
+        "payload": null,
+        "state_changes": [
+          "self.expanded = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "project",
+          "field_type": "Any",
+          "from_prop": "project"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "ActionItem",
+      "ActionMenu",
+      "ChevronDown",
+      "ChevronRight",
+      "FileCode",
+      "IconButton",
+      "Layers",
+      "ServiceRow",
+      "StatusBadge"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

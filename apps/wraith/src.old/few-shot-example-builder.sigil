@@ -1,0 +1,89 @@
+invoke sigil_web·prelude·*;
+rite few_shot_example_builder(examples: Any, on_change: Any) -> VNode! {
+    VNode·div()
+        ·class("flex flex-col gap-3")
+        ·child(
+        VNode·div()
+            ·class("flex items-center justify-between gap-2")
+            ·child(
+            Label·view()
+                ·class("font-semibold")
+                ·text_child("Few-Shot Examples")
+            )
+            ·child(
+            Button·view()
+                ·on_click(Click)
+                ·attr("size", "sm")
+                ·child(
+                Plus·view()
+                    ·class("mr-2 h-4 w-4")
+                )
+                ·text_child("Add Example")
+            )
+        )
+        ·child(
+        VNode·div()
+            ·class("flex flex-col gap-2 max-h-[400px] overflow-auto")
+            // Map: ∀ example ∈ examples
+            ·children(examples.iter().map(|example| Card·view()
+                    ·class("p-3")
+                    ·attr("key", example.id)
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center justify-between gap-2 mb-2")
+                        ·child(
+                        Label·view()
+                            ·class("font-semibold")
+                            ·text_child("Example")
+                            ·text_child(" "·to_string())
+                            ·text_child(index + 1·to_string())
+                        )
+                        ·child(
+                        Button·view()
+                            ·on_click(Click)
+                            ·attr("size", "sm")
+                            ·attr("variant", "ghost")
+                            ·child(
+                            Trash2·view()
+                                ·class("h-4 w-4")
+                            )
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("mb-2")
+                        ·child(
+                        Label·view()
+                            ·class("text-sm")
+                            ·text_child("Input")
+                        )
+                        ·child(
+                        Textarea·view()
+                            ·on_change(Change)
+                            ·attr("placeholder", "Example input...")
+                            ·attr("rows", 2)
+                            ·attr("value", example.input)
+                            ·class("resize-y")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·child(
+                        Label·view()
+                            ·class("text-sm")
+                            ·text_child("Expected Output")
+                        )
+                        ·child(
+                        Textarea·view()
+                            ·on_change(Change)
+                            ·attr("placeholder", "Example output...")
+                            ·attr("rows", 2)
+                            ·attr("value", example.output)
+                            ·class("resize-y")
+                        )
+                    )).collect())
+            ·when(examples.len() = 0, VNode·div()
+                ·class("text-muted-foreground p-4 text-center")
+                ·text_child("No examples defined. Click \"Add Example\" to create one."))
+        )
+}

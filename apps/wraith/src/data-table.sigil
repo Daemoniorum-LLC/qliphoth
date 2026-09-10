@@ -1,0 +1,36 @@
+invoke qliphoth·prelude·*;
+rite data_table(data: Any, columns: Any, key_extractor: Any, on_row_click: Any, empty_message: Any, compact: Any) -> VNode! {
+    VNode·div()
+        ·class("overflow-auto")
+        ·child(
+        VNode·table()
+            ·class("w-full text-sm")
+            ·child(
+            VNode·thead()
+                ·child(
+                VNode·tr()
+                    ·class("border-b border-[var(--border-primary)]")
+                    // Map: ∀ col ∈ columns
+                    ·children(columns.iter().map(|col| VNode·th()
+                            ·attr("key", col.key)
+                            ·class(cell_padding.to_string() + " text-left text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider")
+                            ·style(∅)
+                            ·text_child(col.header·to_string())).collect())
+                )
+            )
+            ·child(
+            VNode·tbody()
+                ·class("divide-y divide-[var(--border-subtle)]")
+                // Map: ∀ item ∈ data
+                ·children(data.iter().map(|item| VNode·tr()
+                        ·attr("key", key_extractor(item))
+                        ·on_click(Click)
+                        ·class("\n                " + ⎇ on_row_click { "cursor-pointer hover:bg-[var(--bg-hover)]" } ⎉ { "" }.to_string() + "\n                transition-colors\n              ")
+                        // Map: ∀ col ∈ columns
+                        ·children(columns.iter().map(|col| VNode·td()
+                                ·attr("key", col.key)
+                                ·class(cell_padding.to_string() + " text-[var(--text-primary)]")
+                                ·text_child(None·to_string())).collect())).collect())
+            )
+        )
+}

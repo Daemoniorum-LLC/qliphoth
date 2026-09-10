@@ -1,0 +1,59 @@
+// Minimal FFI test - directly calls native runtime functions
+// No VNode, no framework dependencies - just raw FFI
+
+extern "C" {
+    rite native_create_window(title: *const i8, width: i32, height: i32) -> usize;
+    rite native_run_event_loop();
+    rite native_create_widget(window: usize, tag: *const i8) -> usize;
+    rite native_set_root(window: usize, element: usize);
+    rite native_set_style(widget: usize, property: *const i8, value: *const i8);
+    rite native_set_text_content(widget: usize, content: *const i8);
+    rite native_append_child(parent: usize, child: usize);
+    rite native_compute_layout(window: usize);
+    rite native_render(window: usize);
+}
+
+rite main() {
+    // Create window
+    ≔ title! = "FFI Test\0";
+    ≔ window! = unsafe { native_create_window(title.as_ptr() as *const i8, 400, 300) };
+
+    // Create root div
+    ≔ div_tag! = "div\0";
+    ≔ root! = unsafe { native_create_widget(window, div_tag.as_ptr() as *const i8) };
+
+    // Style the root
+    ≔ bg_prop! = "background-color\0";
+    ≔ bg_val! = "#1e1e1e\0";
+    unsafe { native_set_style(root, bg_prop.as_ptr() as *const i8, bg_val.as_ptr() as *const i8) };
+
+    ≔ display_prop! = "display\0";
+    ≔ flex_val! = "flex\0";
+    unsafe { native_set_style(root, display_prop.as_ptr() as *const i8, flex_val.as_ptr() as *const i8) };
+
+    ≔ justify_prop! = "justify-content\0";
+    ≔ center_val! = "center\0";
+    unsafe { native_set_style(root, justify_prop.as_ptr() as *const i8, center_val.as_ptr() as *const i8) };
+
+    ≔ align_prop! = "align-items\0";
+    unsafe { native_set_style(root, align_prop.as_ptr() as *const i8, center_val.as_ptr() as *const i8) };
+
+    // Create text
+    ≔ text_tag! = "#text\0";
+    ≔ text_content! = "Hello from Sigil!\0";
+    ≔ text_el! = unsafe { native_create_widget(window, text_tag.as_ptr() as *const i8) };
+    unsafe { native_set_text_content(text_el, text_content.as_ptr() as *const i8) };
+
+    // Append text to root
+    unsafe { native_append_child(root, text_el) };
+
+    // Set as window root
+    unsafe { native_set_root(window, root) };
+
+    // Compute layout and render
+    unsafe { native_compute_layout(window) };
+    unsafe { native_render(window) };
+
+    // Run event loop
+    unsafe { native_run_event_loop() };
+}

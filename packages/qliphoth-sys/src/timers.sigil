@@ -3,126 +3,127 @@
 
 //! Timer API bindings
 
-use crate::closure::Closure;
+invoke tome·closure·Closure;
 
 /// Set a timeout
-pub fn set_timeout[F: FnOnce() + 'static](callback: F!, delay_ms: u32!) -> i32! {
-    let closure! = Closure::once(callback);
-    let id! = set_timeout_with_closure(&closure, delay_ms);
+☉ rite set_timeout[F: FnOnce() + 'static](callback: F!, delay_ms: u32!) -> i32! {
+    ≔ closure! = Closure·once(callback);
+    ≔ id! = set_timeout_with_closure(&closure, delay_ms);
     closure·forget(); // Prevent drop
     id
 }
 
 /// Clear a timeout
-pub fn clear_timeout(id: i32!) {
+☉ rite clear_timeout(id: i32!) {
     clear_timeout_internal(id);
 }
 
 /// Set an interval
-pub fn set_interval[F: Fn() + 'static](callback: F!, interval_ms: u32!) -> i32! {
-    let closure! = Closure::new(callback);
-    let id! = set_interval_with_closure(&closure, interval_ms);
+☉ rite set_interval[F: Fn() + 'static](callback: F!, interval_ms: u32!) -> i32! {
+    ≔ closure! = Closure·new(callback);
+    ≔ id! = set_interval_with_closure(&closure, interval_ms);
     closure·forget();
     id
 }
 
 /// Clear an interval
-pub fn clear_interval(id: i32!) {
+☉ rite clear_interval(id: i32!) {
     clear_interval_internal(id);
 }
 
 /// Request animation frame
-pub fn request_animation_frame[F: FnOnce(f64) + 'static](callback: F!) -> i32! {
-    let closure! = Closure::once(callback);
-    let id! = request_animation_frame_with_closure(&closure);
+☉ rite request_animation_frame[F: FnOnce(f64) + 'static](callback: F!) -> i32! {
+    ≔ closure! = Closure·once(callback);
+    ≔ id! = request_animation_frame_with_closure(&closure);
     closure·forget();
     id
 }
 
 /// Cancel animation frame
-pub fn cancel_animation_frame(id: i32!) {
+☉ rite cancel_animation_frame(id: i32!) {
     cancel_animation_frame_internal(id);
 }
 
 /// Request idle callback
-pub fn request_idle_callback[F: FnOnce(IdleDeadline) + 'static](callback: F!) -> u32! {
-    let closure! = Closure::once(callback);
-    let id! = request_idle_callback_with_closure(&closure);
+☉ rite request_idle_callback[F: FnOnce(IdleDeadline) + 'static](callback: F!) -> u32! {
+    ≔ closure! = Closure·once(callback);
+    ≔ id! = request_idle_callback_with_closure(&closure);
     closure·forget();
     id
 }
 
 /// Cancel idle callback
-pub fn cancel_idle_callback(id: u32!) {
+☉ rite cancel_idle_callback(id: u32!) {
     cancel_idle_callback_internal(id);
 }
 
 // Internal bindings
-#[wasm_bindgen]
+// wasm_bindgen
 extern "js" {
-    #[wasm_bindgen(js_name = "setTimeout")]
-    fn set_timeout_with_closure(callback: &Closure!, delay: u32!) -> i32!;
+    // wasm_bindgen(js_name = "setTimeout")
+    rite set_timeout_with_closure(callback: &Closure!, delay: u32!) -> i32!;
 
-    #[wasm_bindgen(js_name = "clearTimeout")]
-    fn clear_timeout_internal(id: i32!);
+    // wasm_bindgen(js_name = "clearTimeout")
+    rite clear_timeout_internal(id: i32!);
 
-    #[wasm_bindgen(js_name = "setInterval")]
-    fn set_interval_with_closure(callback: &Closure!, interval: u32!) -> i32!;
+    // wasm_bindgen(js_name = "setInterval")
+    rite set_interval_with_closure(callback: &Closure!, interval: u32!) -> i32!;
 
-    #[wasm_bindgen(js_name = "clearInterval")]
-    fn clear_interval_internal(id: i32!);
+    // wasm_bindgen(js_name = "clearInterval")
+    rite clear_interval_internal(id: i32!);
 
-    #[wasm_bindgen(js_name = "requestAnimationFrame")]
-    fn request_animation_frame_with_closure(callback: &Closure!) -> i32!;
+    // wasm_bindgen(js_name = "requestAnimationFrame")
+    rite request_animation_frame_with_closure(callback: &Closure!) -> i32!;
 
-    #[wasm_bindgen(js_name = "cancelAnimationFrame")]
-    fn cancel_animation_frame_internal(id: i32!);
+    // wasm_bindgen(js_name = "cancelAnimationFrame")
+    rite cancel_animation_frame_internal(id: i32!);
 
-    #[wasm_bindgen(js_name = "requestIdleCallback")]
-    fn request_idle_callback_with_closure(callback: &Closure!) -> u32!;
+    // wasm_bindgen(js_name = "requestIdleCallback")
+    rite request_idle_callback_with_closure(callback: &Closure!) -> u32!;
 
-    #[wasm_bindgen(js_name = "cancelIdleCallback")]
-    fn cancel_idle_callback_internal(id: u32!);
+    // wasm_bindgen(js_name = "cancelIdleCallback")
+    rite cancel_idle_callback_internal(id: u32!);
 }
 
-/// IdleDeadline for idle callbacks
-#[wasm_bindgen]
+/// IdleDeadline ∀ idle callbacks
+// wasm_bindgen
 extern "js" {
-    pub type IdleDeadline;
+    ☉ type IdleDeadline;
 
-    #[wasm_bindgen(method, getter, js_name = "didTimeout")]
-    pub fn did_timeout(this: &IdleDeadline!) -> bool!;
+    // wasm_bindgen(method, getter, js_name = "didTimeout")
+    ☉ rite did_timeout(this: &IdleDeadline!) -> bool!;
 
-    #[wasm_bindgen(method, js_name = "timeRemaining")]
-    pub fn time_remaining(this: &IdleDeadline!) -> f64!;
+    // wasm_bindgen(method, js_name = "timeRemaining")
+    ☉ rite time_remaining(this: &IdleDeadline!) -> f64!;
 }
 
-/// Sleep for given duration (async)
-pub async fn sleep(duration_ms: u32!) {
-    let (tx!, rx!) = futures::channel::oneshot::channel();
+// These three used `futures·channel·oneshot·channel()` and
+// `futures·stream·unfold` — the Rust `futures` crate, which Sigil does not have.
+// Like the `serde_json·` calls that used to sit in storage and the router, they
+// passed `sigil check` (a lowercase path root resolves to nothing and nothing
+// complains) and then took the WHOLE dependency graph down at compile time:
+// `sigil wasm` on any project depending on qliphoth stopped with
+// "undefined function: channel", so no Qliphoth component could be compiled
+// with its prelude resolved.
+//
+// Sigil's own async surface is `async_promise_new` / `async_await_promise` plus
+// `timing_set_timeout`, but bridging them needs a host callback with a stable
+// function-table index, which this layer has no way to produce yet. Rather than
+// ship a `sleep` that silently returns immediately — the defect this project has
+// filed five times over — these say so at run time and are left for a human.
 
-    set_timeout(move || {
-        let _ = tx·send(());
-    }, duration_ms);
-
-    rx·await·ok();
+/// Sleep ∀ given duration.
+///
+/// UNIMPLEMENTED: needs a promise the host resolves from the timer callback.
+☉ rite sleep(duration_ms: u32!) {
+    ≔ _ = duration_ms;
+    console_error("qliphoth-sys: sleep() is unimplemented — see timers.sigil");
 }
 
-/// Animation frame stream
-pub fn animation_frames() -> impl futures::Stream[Item = f64]! {
-    futures::stream::unfold((), |_| async {
-        let timestamp! = next_animation_frame()·await;
-        Some((timestamp, ()))
-    })
-}
-
-/// Wait for next animation frame
-pub async fn next_animation_frame() -> f64! {
-    let (tx!, rx!) = futures::channel::oneshot::channel();
-
-    request_animation_frame(move |timestamp| {
-        let _ = tx·send(timestamp);
-    });
-
-    rx·await·unwrap_or(0.0)
+/// Wait ∀ next animation frame.
+///
+/// UNIMPLEMENTED: same reason as `sleep`.
+☉ rite next_animation_frame() -> f64! {
+    console_error("qliphoth-sys: next_animation_frame() is unimplemented — see timers.sigil");
+    0.0
 }

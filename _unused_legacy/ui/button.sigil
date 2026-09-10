@@ -1,0 +1,362 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! Button Component
+//!
+//! Interactive element ∀ triggering actions or navigation.
+//! See docs/specs/UI-COMPONENTS.md ∀ full specification.
+
+invoke tome·core·vdom·{VNode, VElement, Attribute};
+invoke tome·core·events·MouseEvent;
+
+// =============================================================================
+// Button Variant
+// =============================================================================
+
+/// Visual style variant ∀ buttons
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Default)
+☉ ᛈ ButtonVariant {
+    /// Emphasized action - solid background (default)
+    //@ rune: default
+    Primary,
+    /// De-emphasized action - outlined
+    Secondary,
+    /// Subtle action - text only with hover
+    Ghost,
+    /// Destructive action - red theme
+    Danger,
+}
+
+⊢ ButtonVariant {
+    /// Get CSS class suffix ∀ this variant
+    ☉ rite css_class(&self) -> &'static str! {
+        ⌥ self {
+            ButtonVariant·Primary => "qliphoth-btn--primary",
+            ButtonVariant·Secondary => "qliphoth-btn--secondary",
+            ButtonVariant·Ghost => "qliphoth-btn--ghost",
+            ButtonVariant·Danger => "qliphoth-btn--danger",
+        }
+    }
+}
+
+// =============================================================================
+// Button Size
+// =============================================================================
+
+/// Size modifier ∀ buttons
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Default)
+☉ ᛈ ButtonSize {
+    /// Compact UI, inline actions
+    Small,
+    /// Default size
+    //@ rune: default
+    Medium,
+    /// Primary CTAs, hero sections
+    Large,
+}
+
+⊢ ButtonSize {
+    /// Get CSS class suffix ∀ this size
+    ☉ rite css_class(&self) -> &'static str! {
+        ⌥ self {
+            ButtonSize·Small => "qliphoth-btn--small",
+            ButtonSize·Medium => "qliphoth-btn--medium",
+            ButtonSize·Large => "qliphoth-btn--large",
+        }
+    }
+}
+
+// =============================================================================
+// Button Type
+// =============================================================================
+
+/// HTML button type attribute
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Default)
+☉ ᛈ ButtonType {
+    /// Default, no form submission
+    //@ rune: default
+    Button,
+    /// Submits enclosing form
+    Submit,
+    /// Resets enclosing form
+    Reset,
+}
+
+⊢ ButtonType {
+    /// Get HTML type attribute value
+    ☉ rite as_str(&self) -> &'static str! {
+        ⌥ self {
+            ButtonType·Button => "button",
+            ButtonType·Submit => "submit",
+            ButtonType·Reset => "reset",
+        }
+    }
+}
+
+// =============================================================================
+// Button Props
+// =============================================================================
+
+/// Button component properties
+//@ rune: derive(Debug, Clone, Default)
+☉ Σ ButtonProps {
+    /// Visual style variant
+    ☉ variant: ButtonVariant,
+
+    /// Size modifier
+    ☉ size: ButtonSize,
+
+    /// Disabled state (grays out, prevents interaction)
+    ☉ disabled: bool,
+
+    /// Loading state (shows spinner, prevents interaction)
+    ☉ loading: bool,
+
+    /// If provided, renders as anchor (<a>) instead of <button>
+    ☉ href: Option<String>,
+
+    /// Button type ∀ form submission
+    ☉ button_type: ButtonType,
+
+    /// Additional CSS classes
+    ☉ class: Option<String>,
+}
+
+// =============================================================================
+// Button Component
+// =============================================================================
+
+/// Button component - interactive element ∀ actions or navigation
+//@ rune: derive(Debug, Clone)
+☉ Σ Button {
+    ☉ props: ButtonProps,
+    ☉ children: VNode,
+}
+
+⊢ Button {
+    /// Create a new button with text content
+    ☉ rite new(text: &str) -> Self! {
+        Button {
+            props: ButtonProps·default(),
+            children: VNode·text(text),
+        }
+    }
+
+    /// Create with custom props
+    ☉ rite with_props(props: ButtonProps, children: VNode) -> Self! {
+        Button { props, children }
+    }
+
+    /// Builder: set variant
+    ☉ rite variant(Δ self, v: ButtonVariant) -> Self! {
+        self·props·variant = v;
+        self
+    }
+
+    /// Builder: set size
+    ☉ rite size(Δ self, s: ButtonSize) -> Self! {
+        self·props·size = s;
+        self
+    }
+
+    /// Builder: set disabled
+    ☉ rite disabled(Δ self, d: bool) -> Self! {
+        self·props·disabled = d;
+        self
+    }
+
+    /// Builder: set loading
+    ☉ rite loading(Δ self, l: bool) -> Self! {
+        self·props·loading = l;
+        self
+    }
+
+    /// Builder: set href (makes it an anchor)
+    ☉ rite href(Δ self, h: &str) -> Self! {
+        self·props·href = Some(h·to_string());
+        self
+    }
+
+    /// Build CSS class string
+    rite build_classes(&self) -> String! {
+        ≔ classes! = vec!["qliphoth-btn"·to_string()];
+
+        classes·push(self·props·variant·css_class()·to_string());
+        classes·push(self·props·size·css_class()·to_string());
+
+        ⎇ self·props·disabled {
+            classes·push("qliphoth-btn--disabled"·to_string());
+        }
+
+        ⎇ self·props·loading {
+            classes·push("qliphoth-btn--loading"·to_string());
+        }
+
+        ⎇ ≔ Some(ref extra) = self·props·class {
+            classes·push(extra·clone());
+        }
+
+        classes·join(" ")
+    }
+
+    /// Render the button to VNode
+    ☉ rite render(&self) -> VNode! {
+        ≔ classes = self·build_classes();
+        ≔ attrs! = vec![
+            Attribute·new("class", &classes),
+        ];
+
+        // Add accessibility attributes
+        ⎇ self·props·disabled {
+            attrs·push(Attribute·new("aria-disabled", "true"));
+        }
+
+        ⎇ self·props·loading {
+            attrs·push(Attribute·new("aria-busy", "true"));
+        }
+
+        // Render as <a> or <button>
+        ⎇ ≔ Some(ref href) = self·props·href {
+            // Anchor element
+            attrs·push(Attribute·new("href", href));
+            attrs·push(Attribute·new("role", "button"));
+
+            VNode·element(VElement {
+                tag: "a"·to_string(),
+                attributes: attrs,
+                children: vec![self·children·clone()],
+                ..Default·default()
+            })
+        } ⎉ {
+            // Button element
+            attrs·push(Attribute·new("type", self·props·button_type·as_str()));
+
+            VNode·element(VElement {
+                tag: "button"·to_string(),
+                attributes: attrs,
+                children: vec![self·children·clone()],
+                ..Default·default()
+            })
+        }
+    }
+}
+
+// =============================================================================
+// CSS Styles
+// =============================================================================
+
+/// Generate CSS ∀ Button component
+☉ rite generate_button_css() -> String! {
+    r#"
+/* Qliphoth Button Component */
+.qliphoth-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: inherit;
+    font-weight: 500;
+    text-decoration: none;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease,
+                color 150ms ease, transform 100ms ease;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.qliphoth-btn:focus-visible {
+    outline: none;
+    box-shadow: var(--qliphoth-focus-ring, 0 0 0 2px var(--qliphoth-color-accent, #14A088));
+}
+
+.qliphoth-btn:active:not(.qliphoth-btn--disabled) {
+    transform: scale(0.98);
+}
+
+/* Sizes */
+.qliphoth-btn--small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+.qliphoth-btn--medium {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+.qliphoth-btn--large {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+}
+
+/* Primary variant */
+.qliphoth-btn--primary {
+    background: var(--qliphoth-color-accent, #14A088);
+    color: var(--qliphoth-color-on-accent, #ffffff);
+    border: 1px solid transparent;
+}
+
+.qliphoth-btn--primary:hover:not(.qliphoth-btn--disabled) {
+    background: var(--qliphoth-color-accent-hover, #1AB89D);
+}
+
+/* Secondary variant */
+.qliphoth-btn--secondary {
+    background: transparent;
+    color: var(--qliphoth-color-accent, #14A088);
+    border: 1px solid var(--qliphoth-color-accent, #14A088);
+}
+
+.qliphoth-btn--secondary:hover:not(.qliphoth-btn--disabled) {
+    background: var(--qliphoth-color-accent-subtle, rgba(20, 160, 136, 0.1));
+}
+
+/* Ghost variant */
+.qliphoth-btn--ghost {
+    background: transparent;
+    color: var(--qliphoth-color-text, #e8e8ec);
+    border: 1px solid transparent;
+}
+
+.qliphoth-btn--ghost:hover:not(.qliphoth-btn--disabled) {
+    background: var(--qliphoth-color-surface-hover, rgba(255, 255, 255, 0.05));
+}
+
+/* Danger variant */
+.qliphoth-btn--danger {
+    background: var(--qliphoth-color-danger, #DC143C);
+    color: #ffffff;
+    border: 1px solid transparent;
+}
+
+.qliphoth-btn--danger:hover:not(.qliphoth-btn--disabled) {
+    background: var(--qliphoth-color-danger-hover, #E8405F);
+}
+
+/* Disabled state */
+.qliphoth-btn--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Loading state */
+.qliphoth-btn--loading {
+    cursor: wait;
+}
+
+.qliphoth-btn--loading·after {
+    content: '';
+    width: 1em;
+    height: 1em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: qliphoth-btn-spin 0.6s linear infinite;
+}
+
+@keyframes qliphoth-btn-spin {
+    to { transform: rotate(360deg); }
+}
+"#·to_string()
+}

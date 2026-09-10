@@ -1,0 +1,173 @@
+invoke qliphoth·prelude·*;
+ᛈ CollaborativeEditorMsg {
+    UpdateActiveUsers,
+    UpdateShowUsersPanel,
+    CollabMessage,
+    UserJoined,
+    UserLeft,
+    CursorUpdate,
+    EditUpdate,
+    UsersList,
+}
+☉ actor CollaborativeEditor {
+    state activeUsers: Any~ = None,
+    state showUsersPanel: bool! = false,
+    state wsRef: Option<Any>! = ∅,
+    state cursorDecorationsRef: Option<Map>! = ∅,
+    state suppressLocalUpdatesRef: Option<Element>! = ∅,
+
+    rite new(editor: Any, file_path: Any, user_id: Any, user_name: Any, enabled: Any) -> This! {
+        self.editor = editor;
+        self.file_path = file_path;
+        self.user_id = user_id;
+        self.user_name = user_name;
+        self.enabled = enabled;
+        This
+    }
+
+    on UpdateActiveUsers {
+        self.activeUsers = msg.0;
+    }
+
+    on UpdateShowUsersPanel {
+        self.showUsersPanel = msg.0;
+    }
+
+    on CollabMessage {
+        // TODO: implement
+    }
+
+    on UserJoined {
+        // TODO: Add user to activeUsers map
+        // self.activeUsers.insert(msg.user_id, UserState { ... });
+    }
+
+    on UserLeft {
+        // TODO: Remove user from activeUsers map
+        // self.activeUsers.remove(msg.user_id);
+    }
+
+    on CursorUpdate {
+        // TODO: Update user cursor position in activeUsers map
+        // ⎇ self.activeUsers.contains(msg.user_id) {
+        //     self.activeUsers[msg.user_id].cursor = msg.position;
+        // }
+    }
+
+    on EditUpdate {
+        // TODO: implement
+    }
+
+    on UsersList {
+        self.activeUsers = usersMap;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("relative w-full h-full")
+            ·when(self.users_array.len() > 0, VNode·div()
+                ·class("absolute top-2 left-2 flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border border-[#3c3c3c] rounded-2xl z-[1000] text-[11px] text-[#cccccc] shadow-md")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1 text-[#4fc3f7] font-medium")
+                    ·child(
+                    User·view()
+                        ·class("w-3.5 h-3.5")
+                    )
+                    ·child(
+                    VNode·span()
+                        ·text_child(self.users_array.len() + 1·to_string())
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1 cursor-pointer")
+                    ·on_click(Click)
+                    ·child(
+                    Avatar·view()
+                        ·class("w-6 h-6")
+                        ·style(∅)
+                        ·text_child(self.user_name·substring(0, 2)·to_uppercase()·to_string())
+                    )
+                    // Map: ∀ user ∈ usersArray.slice(0, 5)
+                    ·children(self.users_array·slice(0, 5).iter().map(|user| Avatar·view()
+                            ·attr("key", user.id)
+                            ·class("w-6 h-6")
+                            ·style(∅)
+                            ·text_child(user.name·substring(0, 2)·to_uppercase()·to_string())).collect())
+                    ·when(self.users_array.len() > 5, Avatar·view()
+                        ·class("w-6 h-6 bg-[#3c3c3c]")
+                        ·text_child("+")
+                        ·text_child(self.users_array.len() - 5·to_string()))
+                ))
+            ·when(self.show_users_panel, VNode·div()
+                ·class("absolute top-14 left-3 w-[280px] bg-[#1e1e1e] border border-[#3c3c3c] rounded p-3 z-[1000] shadow-lg")
+                ·child(
+                VNode·div()
+                    ·class("text-sm font-semibold text-white mb-3 flex items-center")
+                    ·child(
+                    User·view()
+                        ·class("w-4 h-4 mr-2")
+                    )
+                    ·text_child("Active Users (")
+                    ·text_child(self.users_array.len() + 1·to_string())
+                    ·text_child(")")
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3 p-2 rounded mb-1")
+                    ·child(
+                    Avatar·view()
+                        ·class("w-8 h-8")
+                        ·text_child(self.user_name·substring(0, 2)·to_uppercase()·to_string())
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex-1")
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-[#cccccc]")
+                            ·text_child(self.user_name·to_string())
+                            ·text_child("(You)")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-[10px] text-[#858585]")
+                            ·text_child("Editing")
+                        )
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("w-2 h-2 rounded-full bg-[#4ec9b0]")
+                    )
+                )
+                // Map: ∀ user ∈ usersArray
+                ·children(self.users_array.iter().map(|user| VNode·div()
+                        ·attr("key", user.id)
+                        ·class("flex items-center gap-3 p-2 rounded mb-1")
+                        ·child(
+                        Avatar·view()
+                            ·class("w-8 h-8")
+                            ·text_child(user.name·substring(0, 2)·to_uppercase()·to_string())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex-1")
+                            ·child(
+                            VNode·div()
+                                ·class("text-xs text-[#cccccc]")
+                                ·text_child(user.name·to_string())
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("text-[10px] text-[#858585]")
+                                ·text_child(⎇ user.active { "Editing" } ⎉ { "Viewing" }·to_string())
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("w-2 h-2 rounded-full")
+                            ·style(∅)
+                        )).collect()))
+    }
+}

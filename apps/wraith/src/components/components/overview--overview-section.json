@@ -1,0 +1,1003 @@
+{
+  "id": "domains/devops/components/overview/OverviewSection.tsx:OverviewSection",
+  "name": "OverviewSection",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/devops/components/overview/OverviewSection.tsx",
+    "code": "import {\n  Box, Layers, GitBranch, Cloud, Boxes, Key,\n  Activity, CheckCircle2, XCircle, AlertTriangle, Clock\n} from 'lucide-react'\nimport { StatusBadge, ResourceCard, ProviderIcon } from '../shared'\nimport { mockContainers, mockPipelines, mockProviders, mockInfraStacks, mockAlerts } from '../../mock-data'\nimport type { DevOpsSection } from '../../types'\n\ninterface OverviewSectionProps {\n  onNavigate: (section: DevOpsSection) => void\n}\n\nfunction StatCard({\n  title,\n  value,\n  icon,\n  items,\n  onClick,\n}: {\n  title: string\n  value: number\n  icon: React.ReactNode\n  items?: { label: string; value: number; variant?: 'success' | 'warning' | 'error' }[]\n  onClick?: () => void\n}) {\n  return (\n    <div\n      onClick={onClick}\n      className={`\n        bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4\n        ${onClick ? 'cursor-pointer hover:border-[var(--accent-primary)] transition-colors' : ''}\n      `}\n    >\n      <div className=\"flex items-center gap-3 mb-3\">\n        <div className=\"p-2 bg-[var(--accent-primary)]/10 rounded-lg text-[var(--accent-primary)]\">\n          {icon}\n        </div>\n        <div>\n          <div className=\"text-2xl font-semibold text-[var(--text-primary)]\">{value}</div>\n          <div className=\"text-xs text-[var(--text-secondary)]\">{title}</div>\n        </div>\n      </div>\n      {items && items.length > 0 && (\n        <div className=\"flex items-center gap-3 pt-3 border-t border-[var(--border-subtle)]\">\n          {items.map((item, idx) => (\n            <div key={idx} className=\"flex items-center gap-1.5\">\n              <div\n                className={`w-2 h-2 rounded-full ${\n                  item.variant === 'success' ? 'bg-[var(--accent-success)]' :\n                  item.variant === 'warning' ? 'bg-[var(--accent-warning)]' :\n                  item.variant === 'error' ? 'bg-[var(--accent-error)]' :\n                  'bg-[var(--text-muted)]'\n                }`}\n              />\n              <span className=\"text-xs text-[var(--text-muted)]\">{item.value} {item.label}</span>\n            </div>\n          ))}\n        </div>\n      )}\n    </div>\n  )\n}\n\nfunction RecentPipelineRun({ pipeline }: { pipeline: typeof mockPipelines[0] }) {\n  const run = pipeline.lastRun\n  if (!run) return null\n\n  const StatusIcon = run.status === 'success' ? CheckCircle2 :\n                     run.status === 'failure' ? XCircle :\n                     run.status === 'running' ? Clock : AlertTriangle\n\n  const statusColor = run.status === 'success' ? 'text-[var(--accent-success)]' :\n                      run.status === 'failure' ? 'text-[var(--accent-error)]' :\n                      run.status === 'running' ? 'text-[var(--accent-primary)]' :\n                      'text-[var(--text-muted)]'\n\n  return (\n    <div className=\"flex items-center justify-between py-2 px-3 hover:bg-[var(--bg-hover)] rounded transition-colors\">\n      <div className=\"flex items-center gap-3\">\n        <ProviderIcon provider={pipeline.provider} size=\"sm\" />\n        <div>\n          <div className=\"text-sm text-[var(--text-primary)]\">{pipeline.name}</div>\n          <div className=\"text-xs text-[var(--text-muted)]\">{run.commitMessage.slice(0, 50)}</div>\n        </div>\n      </div>\n      <div className=\"flex items-center gap-2\">\n        <StatusIcon className={`h-4 w-4 ${statusColor}`} />\n        <span className=\"text-xs font-mono text-[var(--text-muted)]\">#{run.number}</span>\n      </div>\n    </div>\n  )\n}\n\nfunction ActiveAlert({ alert }: { alert: typeof mockAlerts[0] }) {\n  const severityColor = alert.severity === 'critical' ? 'border-l-[var(--accent-error)]' :\n                        alert.severity === 'warning' ? 'border-l-[var(--accent-warning)]' :\n                        'border-l-[var(--accent-primary)]'\n\n  return (\n    <div className={`py-2 px-3 border-l-2 ${severityColor} hover:bg-[var(--bg-hover)] rounded-r transition-colors`}>\n      <div className=\"flex items-center justify-between\">\n        <span className=\"text-sm text-[var(--text-primary)]\">{alert.name}</span>\n        <StatusBadge status={alert.status} size=\"sm\" />\n      </div>\n      <p className=\"text-xs text-[var(--text-muted)] mt-0.5\">{alert.message}</p>\n    </div>\n  )\n}\n\nexport function OverviewSection({ onNavigate }: OverviewSectionProps) {\n  const runningContainers = mockContainers.filter((c) => c.state === 'running').length\n  const stoppedContainers = mockContainers.filter((c) => c.state !== 'running').length\n\n  const successPipelines = mockPipelines.filter((p) => p.lastRun?.status === 'success').length\n  const failedPipelines = mockPipelines.filter((p) => p.lastRun?.status === 'failure').length\n  const runningPipelines = mockPipelines.filter((p) => p.lastRun?.status === 'running').length\n\n  const connectedProviders = mockProviders.filter((p) => p.status === 'connected').length\n  const errorProviders = mockProviders.filter((p) => p.status === 'error').length\n\n  const firingAlerts = mockAlerts.filter((a) => a.status === 'firing').length\n\n  return (\n    <div className=\"h-full overflow-auto pr-1\">\n      <div className=\"mb-6\">\n        <h2 className=\"text-lg font-semibold text-[var(--text-primary)] mb-1\">DevOps Overview</h2>\n        <p className=\"text-sm text-[var(--text-secondary)]\">\n          Monitor your infrastructure, pipelines, and deployments\n        </p>\n      </div>\n\n      {/* Quick Stats */}\n      <div className=\"grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6\">\n        <StatCard\n          title=\"Containers\"\n          value={mockContainers.length}\n          icon={<Box className=\"h-5 w-5\" />}\n          items={[\n            { label: 'running', value: runningContainers, variant: 'success' },\n            { label: 'stopped', value: stoppedContainers },\n          ]}\n          onClick={() => onNavigate('containers')}\n        />\n        <StatCard\n          title=\"Pipelines\"\n          value={mockPipelines.length}\n          icon={<GitBranch className=\"h-5 w-5\" />}\n          items={[\n            { label: 'success', value: successPipelines, variant: 'success' },\n            { label: 'failed', value: failedPipelines, variant: 'error' },\n            { label: 'running', value: runningPipelines, variant: 'warning' },\n          ]}\n          onClick={() => onNavigate('pipelines')}\n        />\n        <StatCard\n          title=\"Cloud Providers\"\n          value={mockProviders.length}\n          icon={<Cloud className=\"h-5 w-5\" />}\n          items={[\n            { label: 'connected', value: connectedProviders, variant: 'success' },\n            { label: 'error', value: errorProviders, variant: 'error' },\n          ]}\n          onClick={() => onNavigate('providers')}\n        />\n        <StatCard\n          title=\"Infra Stacks\"\n          value={mockInfraStacks.length}\n          icon={<Boxes className=\"h-5 w-5\" />}\n          items={[\n            { label: 'active', value: mockInfraStacks.filter((s) => s.status === 'active').length, variant: 'success' },\n          ]}\n          onClick={() => onNavigate('infrastructure')}\n        />\n      </div>\n\n      {/* Two Column Layout */}\n      <div className=\"grid grid-cols-1 lg:grid-cols-2 gap-6\">\n        {/* Recent Pipeline Runs */}\n        <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden\">\n          <div className=\"flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]\">\n            <h3 className=\"text-sm font-medium text-[var(--text-primary)]\">Recent Pipeline Runs</h3>\n            <button\n              onClick={() => onNavigate('pipelines')}\n              className=\"text-xs text-[var(--accent-primary)] hover:underline\"\n            >\n              View all\n            </button>\n          </div>\n          <div className=\"p-2\">\n            {mockPipelines.slice(0, 4).map((pipeline) => (\n              <RecentPipelineRun key={pipeline.id} pipeline={pipeline} />\n            ))}\n          </div>\n        </div>\n\n        {/* Active Alerts */}\n        <div className=\"bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden\">\n          <div className=\"flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]\">\n            <div className=\"flex items-center gap-2\">\n              <h3 className=\"text-sm font-medium text-[var(--text-primary)]\">Active Alerts</h3>\n              {firingAlerts > 0 && (\n                <span className=\"px-1.5 py-0.5 text-xs bg-[var(--accent-error)]/20 text-[var(--accent-error)] rounded\">\n                  {firingAlerts} firing\n                </span>\n              )}\n            </div>\n            <button\n              onClick={() => onNavigate('monitoring')}\n              className=\"text-xs text-[var(--accent-primary)] hover:underline\"\n            >\n              View all\n            </button>\n          </div>\n          <div className=\"p-2 space-y-1\">\n            {mockAlerts.slice(0, 4).map((alert) => (\n              <ActiveAlert key={alert.id} alert={alert} />\n            ))}\n          </div>\n        </div>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "OverviewSection",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 110,
+        "start_col": 7,
+        "end_line": 223,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "onNavigate",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "h-full overflow-auto pr-1"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "mb-6"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "h2",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-lg font-semibold text-[var(--text-primary)] mb-1"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "DevOps Overview"
+                            },
+                            "location": {
+                              "start_line": 126,
+                              "start_col": 78,
+                              "end_line": 126,
+                              "end_col": 93
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 126,
+                        "start_col": 8,
+                        "end_line": 126,
+                        "end_col": 98
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "p",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-sm text-[var(--text-secondary)]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Monitor your infrastructure, pipelines, and deployments"
+                            },
+                            "location": {
+                              "start_line": 127,
+                              "start_col": 60,
+                              "end_line": 129,
+                              "end_col": 8
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 127,
+                        "start_col": 8,
+                        "end_line": 129,
+                        "end_col": 12
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 125,
+                  "start_col": 6,
+                  "end_line": 130,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "StatCard",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "title",
+                            "value": {
+                              "type": "String",
+                              "value": "Containers"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "mockContainers.length"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "icon",
+                            "value": {
+                              "type": "Expression",
+                              "code": "<Box className=\"h-5 w-5\" />"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "items",
+                            "value": {
+                              "type": "Expression",
+                              "code": "[\n            { label: 'running', value: runningContainers, variant: 'success' },\n            { label: 'stopped', value: stoppedContainers },\n          ]"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "() => onNavigate('containers')"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 134,
+                        "start_col": 8,
+                        "end_line": 143,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "StatCard",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "title",
+                            "value": {
+                              "type": "String",
+                              "value": "Pipelines"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "mockPipelines.length"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "icon",
+                            "value": {
+                              "type": "Expression",
+                              "code": "<GitBranch className=\"h-5 w-5\" />"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "items",
+                            "value": {
+                              "type": "Expression",
+                              "code": "[\n            { label: 'success', value: successPipelines, variant: 'success' },\n            { label: 'failed', value: failedPipelines, variant: 'error' },\n            { label: 'running', value: runningPipelines, variant: 'warning' },\n          ]"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "() => onNavigate('pipelines')"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 144,
+                        "start_col": 8,
+                        "end_line": 154,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "StatCard",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "title",
+                            "value": {
+                              "type": "String",
+                              "value": "Cloud Providers"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "mockProviders.length"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "icon",
+                            "value": {
+                              "type": "Expression",
+                              "code": "<Cloud className=\"h-5 w-5\" />"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "items",
+                            "value": {
+                              "type": "Expression",
+                              "code": "[\n            { label: 'connected', value: connectedProviders, variant: 'success' },\n            { label: 'error', value: errorProviders, variant: 'error' },\n          ]"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "() => onNavigate('providers')"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 155,
+                        "start_col": 8,
+                        "end_line": 164,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "StatCard",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "title",
+                            "value": {
+                              "type": "String",
+                              "value": "Infra Stacks"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "mockInfraStacks.length"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "icon",
+                            "value": {
+                              "type": "Expression",
+                              "code": "<Boxes className=\"h-5 w-5\" />"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "items",
+                            "value": {
+                              "type": "Expression",
+                              "code": "[\n            { label: 'active', value: mockInfraStacks.filter((s) => s.status === 'active').length, variant: 'success' },\n          ]"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "() => onNavigate('infrastructure')"
+                            },
+                            "is_event_handler": true
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 165,
+                        "start_col": 8,
+                        "end_line": 173,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 133,
+                  "start_col": 6,
+                  "end_line": 174,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "grid grid-cols-1 lg:grid-cols-2 gap-6"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "h3",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-sm font-medium text-[var(--text-primary)]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Recent Pipeline Runs"
+                                        },
+                                        "location": {
+                                          "start_line": 181,
+                                          "start_col": 75,
+                                          "end_line": 181,
+                                          "end_col": 95
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 181,
+                                    "start_col": 12,
+                                    "end_line": 181,
+                                    "end_col": 100
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "button",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => onNavigate('pipelines')"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-[var(--accent-primary)] hover:underline"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "View all"
+                                        },
+                                        "location": {
+                                          "start_line": 185,
+                                          "start_col": 13,
+                                          "end_line": 187,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 182,
+                                    "start_col": 12,
+                                    "end_line": 187,
+                                    "end_col": 21
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 180,
+                              "start_col": 10,
+                              "end_line": 188,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "p-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Map",
+                                    "iterable": "mockPipelines.slice(0, 4)",
+                                    "item_name": "pipeline",
+                                    "key_expr": "pipeline.id",
+                                    "body": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "RecentPipelineRun",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "key",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "pipeline.id"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "pipeline",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "pipeline"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 191,
+                                        "start_col": 14,
+                                        "end_line": 191,
+                                        "end_col": 73
+                                      }
+                                    }
+                                  },
+                                  "location": {
+                                    "start_line": 190,
+                                    "start_col": 12,
+                                    "end_line": 192,
+                                    "end_col": 15
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 189,
+                              "start_col": 10,
+                              "end_line": 193,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 179,
+                        "start_col": 8,
+                        "end_line": 194,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "div",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "flex items-center gap-2"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "h3",
+                                          "is_component": false,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "text-sm font-medium text-[var(--text-primary)]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Text",
+                                                "value": "Active Alerts"
+                                              },
+                                              "location": {
+                                                "start_line": 200,
+                                                "start_col": 77,
+                                                "end_line": 200,
+                                                "end_col": 90
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 200,
+                                          "start_col": 14,
+                                          "end_line": 200,
+                                          "end_col": 95
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Conditional",
+                                          "condition": "firingAlerts > 0",
+                                          "consequent": {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "span",
+                                              "is_component": false,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "px-1.5 py-0.5 text-xs bg-[var(--accent-error)]/20 text-[var(--accent-error)] rounded"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": [
+                                                {
+                                                  "node_type": {
+                                                    "type": "Expression",
+                                                    "code": "firingAlerts"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 203,
+                                                    "start_col": 18,
+                                                    "end_line": 203,
+                                                    "end_col": 32
+                                                  }
+                                                },
+                                                {
+                                                  "node_type": {
+                                                    "type": "Text",
+                                                    "value": "firing"
+                                                  },
+                                                  "location": {
+                                                    "start_line": 203,
+                                                    "start_col": 32,
+                                                    "end_line": 204,
+                                                    "end_col": 16
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "location": {
+                                              "start_line": 202,
+                                              "start_col": 16,
+                                              "end_line": 204,
+                                              "end_col": 23
+                                            }
+                                          },
+                                          "alternate": null
+                                        },
+                                        "location": {
+                                          "start_line": 201,
+                                          "start_col": 14,
+                                          "end_line": 205,
+                                          "end_col": 16
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 199,
+                                    "start_col": 12,
+                                    "end_line": 206,
+                                    "end_col": 18
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "button",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "onClick",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "() => onNavigate('monitoring')"
+                                        },
+                                        "is_event_handler": true
+                                      },
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-[var(--accent-primary)] hover:underline"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "View all"
+                                        },
+                                        "location": {
+                                          "start_line": 210,
+                                          "start_col": 13,
+                                          "end_line": 212,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 207,
+                                    "start_col": 12,
+                                    "end_line": 212,
+                                    "end_col": 21
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 198,
+                              "start_col": 10,
+                              "end_line": 213,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "p-2 space-y-1"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Map",
+                                    "iterable": "mockAlerts.slice(0, 4)",
+                                    "item_name": "alert",
+                                    "key_expr": "alert.id",
+                                    "body": {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "ActiveAlert",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "key",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "alert.id"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "alert",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "alert"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 216,
+                                        "start_col": 14,
+                                        "end_line": 216,
+                                        "end_col": 58
+                                      }
+                                    }
+                                  },
+                                  "location": {
+                                    "start_line": 215,
+                                    "start_col": 12,
+                                    "end_line": 217,
+                                    "end_col": 15
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 214,
+                              "start_col": 10,
+                              "end_line": 218,
+                              "end_col": 16
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 197,
+                        "start_col": 8,
+                        "end_line": 219,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 177,
+                  "start_col": 6,
+                  "end_line": 220,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 124,
+            "start_col": 4,
+            "end_line": 221,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "ActiveAlert",
+        "RecentPipelineRun",
+        "StatCard"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/overview_section.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "on_navigate",
+          "field_type": "Any",
+          "from_prop": "onNavigate"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onNavigate",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onNavigate' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "ActiveAlert",
+      "RecentPipelineRun",
+      "StatCard"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

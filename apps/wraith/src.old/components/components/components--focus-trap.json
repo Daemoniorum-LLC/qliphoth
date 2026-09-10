@@ -1,0 +1,473 @@
+{
+  "id": "ui/components/FocusTrap.tsx:FocusTrap",
+  "name": "FocusTrap",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/FocusTrap.tsx",
+    "code": "import React, { useRef, useEffect, useCallback, ReactNode } from 'react'\n\ninterface FocusTrapProps {\n  children: ReactNode\n  active?: boolean\n  returnFocusOnDeactivate?: boolean\n  autoFocus?: boolean\n}\n\nconst FOCUSABLE_SELECTORS = [\n  'a[href]:not([disabled])',\n  'button:not([disabled])',\n  'textarea:not([disabled])',\n  'input:not([disabled])',\n  'select:not([disabled])',\n  '[tabindex]:not([tabindex=\"-1\"])',\n].join(', ')\n\nexport function FocusTrap({\n  children,\n  active = true,\n  returnFocusOnDeactivate = true,\n  autoFocus = true,\n}: FocusTrapProps) {\n  const containerRef = useRef<HTMLDivElement>(null)\n  const previouslyFocusedRef = useRef<Element | null>(null)\n\n  const getFocusableElements = useCallback(() => {\n    if (!containerRef.current) return []\n    return Array.from(containerRef.current.querySelectorAll(FOCUSABLE_SELECTORS))\n  }, [])\n\n  const focusFirst = useCallback(() => {\n    const elements = getFocusableElements()\n    if (elements.length > 0) {\n      (elements[0] as HTMLElement).focus()\n    }\n  }, [getFocusableElements])\n\n  const handleKeyDown = useCallback((e: KeyboardEvent) => {\n    if (!active || e.key !== 'Tab') return\n\n    const elements = getFocusableElements()\n    if (elements.length === 0) return\n\n    const firstElement = elements[0] as HTMLElement\n    const lastElement = elements[elements.length - 1] as HTMLElement\n\n    if (e.shiftKey) {\n      // Shift+Tab: if on first element, move to last\n      if (document.activeElement === firstElement) {\n        e.preventDefault()\n        lastElement.focus()\n      }\n    } else {\n      // Tab: if on last element, move to first\n      if (document.activeElement === lastElement) {\n        e.preventDefault()\n        firstElement.focus()\n      }\n    }\n  }, [active, getFocusableElements])\n\n  useEffect(() => {\n    if (!active) return\n\n    // Store the currently focused element\n    previouslyFocusedRef.current = document.activeElement\n\n    // Auto-focus the first focusable element\n    if (autoFocus) {\n      // Use a small delay to ensure the DOM is ready\n      const timeoutId = setTimeout(() => {\n        focusFirst()\n      }, 50)\n      return () => clearTimeout(timeoutId)\n    }\n  }, [active, autoFocus, focusFirst])\n\n  useEffect(() => {\n    if (!active) return\n\n    document.addEventListener('keydown', handleKeyDown)\n    return () => {\n      document.removeEventListener('keydown', handleKeyDown)\n\n      // Return focus to previously focused element\n      if (returnFocusOnDeactivate && previouslyFocusedRef.current) {\n        (previouslyFocusedRef.current as HTMLElement).focus?.()\n      }\n    }\n  }, [active, handleKeyDown, returnFocusOnDeactivate])\n\n  // Handle focus escaping the trap\n  useEffect(() => {\n    if (!active) return\n\n    const handleFocusIn = (e: FocusEvent) => {\n      if (!containerRef.current) return\n\n      // If focus moved outside the trap, bring it back\n      if (!containerRef.current.contains(e.target as Node)) {\n        focusFirst()\n      }\n    }\n\n    document.addEventListener('focusin', handleFocusIn)\n    return () => document.removeEventListener('focusin', handleFocusIn)\n  }, [active, focusFirst])\n\n  return (\n    <div ref={containerRef} className=\"contents\">\n      {children}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "FocusTrap",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 19,
+        "start_col": 7,
+        "end_line": 116,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "children",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": true
+        },
+        {
+          "name": "active",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "true",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "returnFocusOnDeactivate",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "true",
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "autoFocus",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "true",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 25,
+            "start_col": 23,
+            "end_line": 25,
+            "end_col": 51
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "containerRef",
+          "ref_type": "HTMLDivElement",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useRef",
+          "location": {
+            "start_line": 26,
+            "start_col": 31,
+            "end_line": 26,
+            "end_col": 59
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": "previouslyFocusedRef",
+          "ref_type": "Any",
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 28,
+            "start_col": 31,
+            "end_line": 31,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 33,
+            "start_col": 21,
+            "end_line": 38,
+            "end_col": 28
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "getFocusableElements"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useCallback",
+          "location": {
+            "start_line": 40,
+            "start_col": 24,
+            "end_line": 62,
+            "end_col": 36
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": [
+            "active",
+            "getFocusableElements"
+          ],
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 64,
+            "start_col": 2,
+            "end_line": 78,
+            "end_col": 37
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "active",
+            "autoFocus",
+            "focusFirst"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 80,
+            "start_col": 2,
+            "end_line": 92,
+            "end_col": 54
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "active",
+            "handleKeyDown",
+            "returnFocusOnDeactivate"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 95,
+            "start_col": 2,
+            "end_line": 109,
+            "end_col": 26
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "active",
+            "focusFirst"
+          ],
+          "has_cleanup": true,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "ref",
+                "value": {
+                  "type": "Expression",
+                  "code": "containerRef"
+                },
+                "is_event_handler": false
+              },
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "contents"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "children"
+                },
+                "location": {
+                  "start_line": 113,
+                  "start_col": 6,
+                  "end_line": 113,
+                  "end_col": 16
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 112,
+            "start_col": 4,
+            "end_line": 114,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/focus_trap.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useRef:containerRef",
+        "to_field": "containerRef",
+        "field_type": "Option<HTMLDivElement>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'containerRef' becomes non-reactive state (no re-render on change)"
+      },
+      {
+        "from_hook": "useRef:previouslyFocusedRef",
+        "to_field": "previouslyFocusedRef",
+        "field_type": "Option<Any>",
+        "evidentiality": "!",
+        "initial_value": "∅",
+        "reasoning": "useRef 'previouslyFocusedRef' becomes non-reactive state (no re-render on change)"
+      }
+    ],
+    "messages": [],
+    "effects": [
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "UseCallback",
+        "strategy": "remove",
+        "reasoning": "useCallback/useMemo not needed in actors - no re-render optimization needed",
+        "inline_in": null,
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[active,autoFocus,focusFirst]",
+        "strategy": "inline",
+        "reasoning": "Deps [active, autoFocus, focusFirst] → inline in handlers that change these",
+        "inline_in": "active_autoFocus_focusFirst",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[active,handleKeyDown,returnFocusOnDeactivate]",
+        "strategy": "inline",
+        "reasoning": "Deps [active, handleKeyDown, returnFocusOnDeactivate] → inline in handlers that change these",
+        "inline_in": "active_handleKeyDown_returnFocusOnDeactivate",
+        "lifecycle_event": null
+      },
+      {
+        "from_hook": "useEffect[active,focusFirst]",
+        "strategy": "inline",
+        "reasoning": "Deps [active, focusFirst] → inline in handlers that change these",
+        "inline_in": "active_focusFirst",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "children",
+          "field_type": "Any",
+          "from_prop": "children"
+        },
+        {
+          "name": "active",
+          "field_type": "Any",
+          "from_prop": "active"
+        },
+        {
+          "name": "return_focus_on_deactivate",
+          "field_type": "Any",
+          "from_prop": "returnFocusOnDeactivate"
+        },
+        {
+          "name": "auto_focus",
+          "field_type": "Any",
+          "from_prop": "autoFocus"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useRef_to_state",
+      "description": "Convert useRef to non-reactive state field",
+      "react": "const inputRef = useRef<HTMLInputElement>(null);",
+      "sigil": "state input_ref: Option<Element>! = ∅,"
+    },
+    {
+      "name": "useCallback_remove",
+      "description": "useCallback is not needed in actors",
+      "react": "const handleClick = useCallback(() => { ... }, [dep]);",
+      "sigil": "// No equivalent needed - actors don't re-render like React"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_5",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [active, autoFocus, focusFirst] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_6",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [active, handleKeyDown, returnFocusOnDeactivate] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "effect_7",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [active, focusFirst] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

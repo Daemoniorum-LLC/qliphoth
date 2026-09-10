@@ -1,0 +1,1208 @@
+{
+  "id": "ui/components/panels/TodoTrackerPanel.tsx:TodoTrackerPanel",
+  "name": "TodoTrackerPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/TodoTrackerPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Spinner } from '@persona-framework/ui'\nimport { CheckSquare, AlertTriangle, Wrench, Bug, RefreshCw, FileCode, Filter } from 'lucide-react'\nimport { makeHttpClient } from '../../../data/https'\n\nconst http = makeHttpClient('/api')\n\ntype TodoType = 'TODO' | 'FIXME' | 'HACK' | 'BUG' | 'NOTE'\n\ninterface TodoItem {\n  id: string\n  type: TodoType\n  text: string\n  filePath: string\n  line: number\n  author?: string\n}\n\nconst TODO_STYLES: Record<TodoType, { icon: React.ReactNode; bg: string; border: string; text: string }> = {\n  TODO: {\n    icon: <CheckSquare className=\"w-3.5 h-3.5\" />,\n    bg: 'bg-[rgba(91,206,250,0.2)]',\n    border: 'border-[#5bcefa]',\n    text: 'text-[#5bcefa]',\n  },\n  FIXME: {\n    icon: <Wrench className=\"w-3.5 h-3.5\" />,\n    bg: 'bg-[rgba(255,215,0,0.2)]',\n    border: 'border-[#ffd700]',\n    text: 'text-[#ffd700]',\n  },\n  HACK: {\n    icon: <AlertTriangle className=\"w-3.5 h-3.5\" />,\n    bg: 'bg-[rgba(244,135,113,0.2)]',\n    border: 'border-[#f48771]',\n    text: 'text-[#f48771]',\n  },\n  BUG: {\n    icon: <Bug className=\"w-3.5 h-3.5\" />,\n    bg: 'bg-[rgba(244,135,113,0.2)]',\n    border: 'border-[#f48771]',\n    text: 'text-[#f48771]',\n  },\n  NOTE: {\n    icon: <FileCode className=\"w-3.5 h-3.5\" />,\n    bg: 'bg-[rgba(157,0,255,0.2)]',\n    border: 'border-[#9d00ff]',\n    text: 'text-[#9d00ff]',\n  },\n}\n\ninterface TodoTrackerPanelProps {\n  onFileClick?: (filePath: string, line?: number) => void\n}\n\nexport function TodoTrackerPanel({ onFileClick }: TodoTrackerPanelProps) {\n  const [todos, setTodos] = useState<TodoItem[]>([])\n  const [loading, setLoading] = useState(true)\n  const [error, setError] = useState<string | null>(null)\n  const [filter, setFilter] = useState('')\n  const [typeFilter, setTypeFilter] = useState<TodoType | 'ALL'>('ALL')\n  const [scanning, setScanning] = useState(false)\n\n  const fetchTodos = async () => {\n    try {\n      setLoading(true)\n      setError(null)\n      const response = await http.get('/nexus/todos')\n      if (response.ok) {\n        const data = await response.json()\n        setTodos(data)\n      } else if (response.status === 404) {\n        // No todos endpoint yet, show demo data\n        setTodos(getDemoTodos())\n      } else {\n        setError('Failed to fetch TODOs')\n      }\n    } catch {\n      // API not available, show demo data\n      setTodos(getDemoTodos())\n    } finally {\n      setLoading(false)\n    }\n  }\n\n  const scanWorkspace = async () => {\n    try {\n      setScanning(true)\n      const response = await http.post('/nexus/todos/scan', {})\n      if (response.ok) {\n        await fetchTodos()\n      }\n    } catch {\n      // Scan failed silently\n    } finally {\n      setScanning(false)\n    }\n  }\n\n  useEffect(() => {\n    fetchTodos()\n  }, [])\n\n  const getDemoTodos = (): TodoItem[] => [\n    { id: '1', type: 'TODO', text: 'Add error handling for edge cases', filePath: 'src/services/api.ts', line: 45 },\n    { id: '2', type: 'FIXME', text: 'Memory leak in useEffect cleanup', filePath: 'src/hooks/useSubscription.ts', line: 23 },\n    { id: '3', type: 'HACK', text: 'Temporary workaround for Safari bug', filePath: 'src/utils/browser.ts', line: 12 },\n    { id: '4', type: 'BUG', text: 'Race condition in concurrent requests', filePath: 'src/data/https.ts', line: 89 },\n    { id: '5', type: 'NOTE', text: 'Consider refactoring this module', filePath: 'src/legacy/parser.ts', line: 1 },\n    { id: '6', type: 'TODO', text: 'Implement pagination for large datasets', filePath: 'src/components/DataGrid.tsx', line: 156 },\n  ]\n\n  const filteredTodos = todos.filter(todo => {\n    const matchesText =\n      todo.text.toLowerCase().includes(filter.toLowerCase()) ||\n      todo.filePath.toLowerCase().includes(filter.toLowerCase())\n    const matchesType = typeFilter === 'ALL' || todo.type === typeFilter\n    return matchesText && matchesType\n  })\n\n  const groupedByFile = filteredTodos.reduce<Record<string, TodoItem[]>>((acc, todo) => {\n    if (!acc[todo.filePath]) acc[todo.filePath] = []\n    acc[todo.filePath].push(todo)\n    return acc\n  }, {})\n\n  const counts = todos.reduce<Record<TodoType, number>>(\n    (acc, todo) => {\n      acc[todo.type] = (acc[todo.type] || 0) + 1\n      return acc\n    },\n    { TODO: 0, FIXME: 0, HACK: 0, BUG: 0, NOTE: 0 }\n  )\n\n  const getFileName = (path: string) => path.split('/').pop() || path\n\n  if (loading) {\n    return (\n      <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n        <div className=\"flex flex-col items-center justify-center h-full gap-3\">\n          <Spinner size=\"lg\" />\n          <div className=\"text-sm text-[#b0b0b0]\">Scanning for TODOs...</div>\n        </div>\n      </div>\n    )\n  }\n\n  if (error) {\n    return (\n      <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n        <div className=\"flex flex-col items-center justify-center h-full p-6\">\n          <div className=\"p-3 bg-[#5a1d1d] rounded-full mb-4\">\n            <AlertTriangle className=\"w-8 h-8 text-[#f48771]\" />\n          </div>\n          <div className=\"text-sm text-[#f48771] font-medium mb-2\">Failed to load TODOs</div>\n          <div className=\"text-xs text-[#858585] text-center mb-4\">{error}</div>\n          <Button size=\"sm\" variant=\"outline\" onClick={fetchTodos}>\n            <RefreshCw className=\"w-3.5 h-3.5 mr-1.5\" />\n            Retry\n          </Button>\n        </div>\n      </div>\n    )\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden\">\n      <div className=\"p-3 border-b border-[#3c3c3c] bg-[#252526]\">\n        <div className=\"flex items-center justify-between mb-3\">\n          <div className=\"flex items-center gap-2\">\n            <CheckSquare className=\"w-4 h-4 text-[#5bcefa]\" />\n            <span className=\"text-sm font-medium text-white\">TODO Tracker</span>\n            <span className=\"text-xs text-[#808080]\">({todos.length})</span>\n          </div>\n          <Button\n            size=\"sm\"\n            variant=\"ghost\"\n            onClick={scanWorkspace}\n            disabled={scanning}\n            className=\"h-7 px-2\"\n            aria-label=\"Rescan workspace\"\n          >\n            <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />\n          </Button>\n        </div>\n\n        <input\n          type=\"text\"\n          placeholder=\"Filter TODOs...\"\n          value={filter}\n          onChange={(e) => setFilter(e.target.value)}\n          className=\"w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] mb-2\"\n        />\n\n        <div className=\"flex gap-1 flex-wrap\">\n          <button\n            onClick={() => setTypeFilter('ALL')}\n            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${\n              typeFilter === 'ALL'\n                ? 'bg-[#5bcefa] text-[#1e1e1e]'\n                : 'bg-[#3c3c3c] text-[#b0b0b0] hover:bg-[#4c4c4c]'\n            }`}\n          >\n            ALL ({todos.length})\n          </button>\n          {(Object.keys(TODO_STYLES) as TodoType[]).map(type => (\n            <button\n              key={type}\n              onClick={() => setTypeFilter(type)}\n              className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${\n                typeFilter === type\n                  ? `${TODO_STYLES[type].bg} ${TODO_STYLES[type].text} ${TODO_STYLES[type].border} border`\n                  : 'bg-[#3c3c3c] text-[#b0b0b0] hover:bg-[#4c4c4c]'\n              }`}\n            >\n              {type} ({counts[type]})\n            </button>\n          ))}\n        </div>\n      </div>\n\n      <div className=\"flex-1 overflow-auto\">\n        {filteredTodos.length === 0 ? (\n          <div className=\"flex flex-col items-center justify-center h-full p-6 text-center\">\n            <div className=\"p-3 bg-[#252526] rounded-full mb-4\">\n              <CheckSquare className=\"w-8 h-8 text-[#858585]\" />\n            </div>\n            <div className=\"text-sm text-[#cccccc] font-medium mb-1\">\n              {todos.length === 0 ? 'No TODOs found' : 'No matching TODOs'}\n            </div>\n            <div className=\"text-xs text-[#858585]\">\n              {todos.length === 0\n                ? 'Your codebase is clean!'\n                : 'Try a different filter'}\n            </div>\n          </div>\n        ) : (\n          <div className=\"p-2\">\n            {Object.entries(groupedByFile).map(([filePath, items]) => (\n              <div key={filePath} className=\"mb-3\">\n                <div className=\"flex items-center gap-2 px-2 py-1 text-xs text-[#808080]\">\n                  <FileCode className=\"w-3.5 h-3.5\" />\n                  <span className=\"font-medium text-[#b0b0b0]\">{getFileName(filePath)}</span>\n                  <span className=\"text-[#606060]\">({items.length})</span>\n                </div>\n                {items.map(todo => {\n                  const style = TODO_STYLES[todo.type]\n                  return (\n                    <div\n                      key={todo.id}\n                      className=\"flex items-start gap-2 p-2 ml-2 rounded-md cursor-pointer transition-all hover:bg-[#2d2d30] border-l-2 mb-1\"\n                      style={{ borderLeftColor: style.border.replace('border-[', '').replace(']', '') }}\n                      onClick={() => onFileClick?.(filePath, todo.line)}\n                    >\n                      <span className={`flex-shrink-0 mt-0.5 ${style.text}`}>{style.icon}</span>\n                      <div className=\"flex-1 min-w-0\">\n                        <div className=\"flex items-center gap-2 mb-0.5\">\n                          <span className={`text-[10px] font-bold uppercase ${style.text}`}>\n                            {todo.type}\n                          </span>\n                          <span className=\"text-[10px] text-[#606060]\">Line {todo.line}</span>\n                        </div>\n                        <div className=\"text-sm text-[#cccccc]\">{todo.text}</div>\n                      </div>\n                    </div>\n                  )\n                })}\n              </div>\n            ))}\n          </div>\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "TodoTrackerPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 56,
+        "start_col": 7,
+        "end_line": 275,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "onFileClick",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 57,
+            "start_col": 28,
+            "end_line": 57,
+            "end_col": 52
+          },
+          "state_name": "todos",
+          "setter_name": "setTodos",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 58,
+            "start_col": 32,
+            "end_line": 58,
+            "end_col": 46
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "true",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 59,
+            "start_col": 28,
+            "end_line": 59,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 60,
+            "start_col": 30,
+            "end_line": 60,
+            "end_col": 42
+          },
+          "state_name": "filter",
+          "setter_name": "setFilter",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 61,
+            "start_col": 38,
+            "end_line": 61,
+            "end_col": 71
+          },
+          "state_name": "typeFilter",
+          "setter_name": "setTypeFilter",
+          "initial_value": "\"ALL\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 62,
+            "start_col": 34,
+            "end_line": 62,
+            "end_col": 49
+          },
+          "state_name": "scanning",
+          "setter_name": "setScanning",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 100,
+            "start_col": 2,
+            "end_line": 102,
+            "end_col": 8
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc] overflow-hidden"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "p-3 border-b border-[#3c3c3c] bg-[#252526]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex items-center justify-between mb-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "div",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "flex items-center gap-2"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "CheckSquare",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4 text-[#5bcefa]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 171,
+                                    "start_col": 12,
+                                    "end_line": 171,
+                                    "end_col": 62
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-sm font-medium text-white"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "TODO Tracker"
+                                        },
+                                        "location": {
+                                          "start_line": 172,
+                                          "start_col": 61,
+                                          "end_line": 172,
+                                          "end_col": 73
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 172,
+                                    "start_col": 12,
+                                    "end_line": 172,
+                                    "end_col": 80
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "span",
+                                    "is_component": false,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "text-xs text-[#808080]"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "("
+                                        },
+                                        "location": {
+                                          "start_line": 173,
+                                          "start_col": 53,
+                                          "end_line": 173,
+                                          "end_col": 54
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "todos.length"
+                                        },
+                                        "location": {
+                                          "start_line": 173,
+                                          "start_col": 54,
+                                          "end_line": 173,
+                                          "end_col": 68
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": ")"
+                                        },
+                                        "location": {
+                                          "start_line": 173,
+                                          "start_col": 68,
+                                          "end_line": 173,
+                                          "end_col": 69
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 173,
+                                    "start_col": 12,
+                                    "end_line": 173,
+                                    "end_col": 76
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 170,
+                              "start_col": 10,
+                              "end_line": 174,
+                              "end_col": 16
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "ghost"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "scanWorkspace"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "disabled",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "scanning"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "h-7 px-2"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "aria-label",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Rescan workspace"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "RefreshCw",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "Expression",
+                                          "code": "`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 183,
+                                    "start_col": 12,
+                                    "end_line": 183,
+                                    "end_col": 85
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 175,
+                              "start_col": 10,
+                              "end_line": 184,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 169,
+                        "start_col": 8,
+                        "end_line": 185,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "input",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "type",
+                            "value": {
+                              "type": "String",
+                              "value": "text"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "placeholder",
+                            "value": {
+                              "type": "String",
+                              "value": "Filter TODOs..."
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "filter"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "onChange",
+                            "value": {
+                              "type": "Expression",
+                              "code": "(e) => setFilter(e.target.value)"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "w-full px-3 py-1.5 text-sm bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white placeholder-[#808080] focus:outline-none focus:border-[#5bcefa] mb-2"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 187,
+                        "start_col": 8,
+                        "end_line": 193,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-1 flex-wrap"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "button",
+                              "is_component": false,
+                              "attributes": [
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setTypeFilter('ALL')"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "`px-2 py-1 text-[10px] font-medium rounded transition-colors ${\n              typeFilter === 'ALL'\n                ? 'bg-[#5bcefa] text-[#1e1e1e]'\n                : 'bg-[#3c3c3c] text-[#b0b0b0] hover:bg-[#4c4c4c]'\n            }`"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": "ALL ("
+                                  },
+                                  "location": {
+                                    "start_line": 203,
+                                    "start_col": 11,
+                                    "end_line": 204,
+                                    "end_col": 17
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Expression",
+                                    "code": "todos.length"
+                                  },
+                                  "location": {
+                                    "start_line": 204,
+                                    "start_col": 17,
+                                    "end_line": 204,
+                                    "end_col": 31
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Text",
+                                    "value": ")"
+                                  },
+                                  "location": {
+                                    "start_line": 204,
+                                    "start_col": 31,
+                                    "end_line": 205,
+                                    "end_col": 10
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 196,
+                              "start_col": 10,
+                              "end_line": 205,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Map",
+                              "iterable": "(Object.keys(TODO_STYLES) as TodoType[])",
+                              "item_name": "type",
+                              "key_expr": "type",
+                              "body": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "button",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "key",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "type"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "() => setTypeFilter(type)"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "`px-2 py-1 text-[10px] font-medium rounded transition-colors ${\n                typeFilter === type\n                  ? `${TODO_STYLES[type].bg} ${TODO_STYLES[type].text} ${TODO_STYLES[type].border} border`\n                  : 'bg-[#3c3c3c] text-[#b0b0b0] hover:bg-[#4c4c4c]'\n              }`"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "type"
+                                      },
+                                      "location": {
+                                        "start_line": 216,
+                                        "start_col": 14,
+                                        "end_line": 216,
+                                        "end_col": 20
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": "("
+                                      },
+                                      "location": {
+                                        "start_line": 216,
+                                        "start_col": 20,
+                                        "end_line": 216,
+                                        "end_col": 22
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "counts[type]"
+                                      },
+                                      "location": {
+                                        "start_line": 216,
+                                        "start_col": 22,
+                                        "end_line": 216,
+                                        "end_col": 36
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Text",
+                                        "value": ")"
+                                      },
+                                      "location": {
+                                        "start_line": 216,
+                                        "start_col": 36,
+                                        "end_line": 217,
+                                        "end_col": 12
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 207,
+                                  "start_col": 12,
+                                  "end_line": 217,
+                                  "end_col": 21
+                                }
+                              }
+                            },
+                            "location": {
+                              "start_line": 206,
+                              "start_col": 10,
+                              "end_line": 218,
+                              "end_col": 13
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 195,
+                        "start_col": 8,
+                        "end_line": 219,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 168,
+                  "start_col": 6,
+                  "end_line": 220,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "filteredTodos.length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "flex flex-col items-center justify-center h-full p-6 text-center"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "p-3 bg-[#252526] rounded-full mb-4"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "CheckSquare",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-8 h-8 text-[#858585]"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 226,
+                                        "start_col": 14,
+                                        "end_line": 226,
+                                        "end_col": 64
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 225,
+                                  "start_col": 12,
+                                  "end_line": 227,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-sm text-[#cccccc] font-medium mb-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "todos.length === 0 ? 'No TODOs found' : 'No matching TODOs'"
+                                      },
+                                      "location": {
+                                        "start_line": 229,
+                                        "start_col": 14,
+                                        "end_line": 229,
+                                        "end_col": 75
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 228,
+                                  "start_col": 12,
+                                  "end_line": 230,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "text-xs text-[#858585]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "todos.length === 0\n                ? 'Your codebase is clean!'\n                : 'Try a different filter'"
+                                      },
+                                      "location": {
+                                        "start_line": 232,
+                                        "start_col": 14,
+                                        "end_line": 234,
+                                        "end_col": 43
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 231,
+                                  "start_col": 12,
+                                  "end_line": 235,
+                                  "end_col": 18
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 224,
+                            "start_col": 10,
+                            "end_line": 236,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-2"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Expression",
+                                  "code": "Object.entries(groupedByFile).map(([filePath, items]) => (\n              <div key={filePath} className=\"mb-3\">\n                <div className=\"flex items-center gap-2 px-2 py-1 text-xs text-[#808080]\">\n                  <FileCode className=\"w-3.5 h-3.5\" />\n                  <span className=\"font-medium text-[#b0b0b0]\">{getFileName(filePath)}</span>\n                  <span className=\"text-[#606060]\">({items.length})</span>\n                </div>\n                {items.map(todo => {\n                  const style = TODO_STYLES[todo.type]\n                  return (\n                    <div\n                      key={todo.id}\n                      className=\"flex items-start gap-2 p-2 ml-2 rounded-md cursor-pointer transition-all hover:bg-[#2d2d30] border-l-2 mb-1\"\n                      style={{ borderLeftColor: style.border.replace('border-[', '').replace(']', '') }}\n                      onClick={() => onFileClick?.(filePath, todo.line)}\n                    >\n                      <span className={`flex-shrink-0 mt-0.5 ${style.text}`}>{style.icon}</span>\n                      <div className=\"flex-1 min-w-0\">\n                        <div className=\"flex items-center gap-2 mb-0.5\">\n                          <span className={`text-[10px] font-bold uppercase ${style.text}`}>\n                            {todo.type}\n                          </span>\n                          <span className=\"text-[10px] text-[#606060]\">Line {todo.line}</span>\n                        </div>\n                        <div className=\"text-sm text-[#cccccc]\">{todo.text}</div>\n                      </div>\n                    </div>\n                  )\n                })}\n              </div>\n            ))"
+                                },
+                                "location": {
+                                  "start_line": 239,
+                                  "start_col": 12,
+                                  "end_line": 269,
+                                  "end_col": 15
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 238,
+                            "start_col": 10,
+                            "end_line": 270,
+                            "end_col": 16
+                          }
+                        }
+                      },
+                      "location": {
+                        "start_line": 223,
+                        "start_col": 8,
+                        "end_line": 271,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 222,
+                  "start_col": 6,
+                  "end_line": 272,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 167,
+            "start_col": 4,
+            "end_line": 273,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "CheckSquare",
+        "RefreshCw"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "todos",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "filter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "typeFilter",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "scanning",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/todo_tracker_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:todos",
+        "to_field": "todos",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'todos' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "true",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:filter",
+        "to_field": "filter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'filter' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:typeFilter",
+        "to_field": "typeFilter",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"ALL\"",
+        "reasoning": "useState hook 'typeFilter' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:scanning",
+        "to_field": "scanning",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'scanning' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateTodos",
+        "from_handler": "setTodos",
+        "payload": null,
+        "state_changes": [
+          "self.todos = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateFilter",
+        "from_handler": "setFilter",
+        "payload": null,
+        "state_changes": [
+          "self.filter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateTypeFilter",
+        "from_handler": "setTypeFilter",
+        "payload": null,
+        "state_changes": [
+          "self.typeFilter = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateScanning",
+        "from_handler": "setScanning",
+        "payload": null,
+        "state_changes": [
+          "self.scanning = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[]",
+        "strategy": "lifecycle",
+        "reasoning": "Empty deps → Mount lifecycle",
+        "inline_in": null,
+        "lifecycle_event": "Mount"
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "on_file_click",
+          "field_type": "Any",
+          "from_prop": "onFileClick"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_mount",
+      "description": "Convert mount-only useEffect to lifecycle",
+      "react": "useEffect(() => { init(); }, []);",
+      "sigil": "on Mount { self.init(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onFileClick",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onFileClick' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "CheckSquare",
+      "RefreshCw"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "6 state variables"
+  ],
+  "status": "pending"
+}

@@ -1,0 +1,160 @@
+invoke qliphoth·prelude·*;
+ᛈ FormDataEditorMsg {
+    Update,
+    Delete,
+    Add,
+    TypeChange,
+    FileSelect,
+}
+actor FormDataEditor {
+    state fileInputRefs: Option<Record>! = ∅,
+
+    rite new(items: Any, on_change: Any) -> This! {
+        self.items = items;
+        self.on_change = on_change;
+        This
+    }
+
+    on Update {
+        // TODO: implement
+    }
+
+    on Delete {
+        // TODO: implement
+    }
+
+    on Add {
+        // TODO: implement
+    }
+
+    on TypeChange {
+        // TODO: implement
+    }
+
+    on FileSelect {
+        // TODO: implement
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("space-y-2")
+            ·child(
+            VNode·div()
+                ·class("text-xs text-[#808080] mb-2")
+                ·text_child("Form Data (multipart/form-data)")
+            )
+            // Map: ∀ item ∈ items
+            ·children(self.items.iter().map(|item| VNode·div()
+                    ·attr("key", item.id)
+                    ·class("flex items-center gap-2")
+                    ·child(
+                    VNode·input()
+                        ·attr("type", "checkbox")
+                        ·when(item.enabled, |n| n·attr("checked", "true"))
+                        ·on_change(Change)
+                        ·class("w-4 h-4")
+                        ·attr("aria-label", "Enable field ")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("flex bg-[#3c3c3c] rounded overflow-hidden")
+                        ·child(
+                        VNode·button()
+                            ·on_click(Click)
+                            ·class("p-1.5 ")
+                            ·attr("aria-label", "Text field")
+                            ·attr("title", "Text")
+                            ·child(
+                            Type·view()
+                                ·class("w-3 h-3")
+                            )
+                        )
+                        ·child(
+                        VNode·button()
+                            ·on_click(Click)
+                            ·class("p-1.5 ")
+                            ·attr("aria-label", "File field")
+                            ·attr("title", "File")
+                            ·child(
+                            File·view()
+                                ·class("w-3 h-3")
+                            )
+                        )
+                    )
+                    ·child(
+                    VNode·input()
+                        ·attr("type", "text")
+                        ·attr("placeholder", "Field name")
+                        ·attr("value", item.key)
+                        ·on_change(Change)
+                        ·class("w-32 px-2 py-1.5 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                        ·attr("aria-label", "Field name")
+                    )
+                    ·when_else(item.type == "text", VNode·input()
+                        ·attr("type", "text")
+                        ·attr("placeholder", "Value")
+                        ·attr("value", item.value)
+                        ·on_change(Change)
+                        ·class("flex-1 px-2 py-1.5 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-white font-mono focus:border-[#5bcefa] focus:outline-none")
+                        ·attr("aria-label", "Field value"), VNode·div()
+                        ·class("flex-1 flex items-center gap-2")
+                        ·child(
+                        VNode·input()
+                            ·attr("ref", |el| { file_input_refs.current[item.id] = el })
+                            ·attr("type", "file")
+                            ·on_change(Change)
+                            ·class("hidden")
+                            ·attr("aria-label", "Select file")
+                        )
+                        ·child(
+                        VNode·button()
+                            ·on_click(Click)
+                            ·class("px-3 py-1.5 text-xs bg-[#3c3c3c] border border-[#3c3c3c] rounded text-[#5bcefa] hover:bg-[#4c4c4c] flex items-center gap-1.5")
+                            ·child(
+                            Upload·view()
+                                ·class("w-3 h-3")
+                            )
+                            ·text_child("Choose File")
+                        )
+                        ·when_else(item.file, VNode·div()
+                            ·class("flex-1 flex items-center gap-2 text-xs text-[#b0b0b0] truncate")
+                            ·child(
+                            File·view()
+                                ·class("w-3.5 h-3.5 text-[#5bcefa]")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("truncate")
+                                ·text_child(item.file.name·to_string())
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-[#808080]")
+                                ·text_child("(")
+                                ·text_child(format_file_size(item.file.size)·to_string())
+                                ·text_child(")")
+                            ), VNode·span()
+                            ·class("text-xs text-[#808080]")
+                            ·text_child("No file selected")))
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("p-1.5 hover:bg-[#5a1d1d] rounded")
+                        ·attr("aria-label", "Delete field ")
+                        ·child(
+                        Trash2·view()
+                            ·class("w-3.5 h-3.5 text-[#f48771]")
+                        )
+                    )).collect())
+            ·child(
+            VNode·button()
+                ·on_click(Click)
+                ·class("text-xs text-[#5bcefa] hover:text-[#7dd3fc] flex items-center gap-1")
+                ·child(
+                Plus·view()
+                    ·class("w-3.5 h-3.5")
+                )
+                ·text_child("Add Field")
+            )
+    }
+}

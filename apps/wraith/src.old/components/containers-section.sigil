@@ -1,0 +1,59 @@
+invoke qliphoth·prelude·*;
+ᛈ ContainersSectionMsg {
+    UpdateViewMode,
+    UpdateFilter,
+    UpdateShowAll,
+}
+actor ContainersSection {
+    state viewMode: String! = "table",
+    state filter: String! = "",
+    state showAll: bool! = False,
+
+    on UpdateViewMode {
+        self.viewMode = msg.0;
+    }
+
+    on UpdateFilter {
+        self.filter = msg.0;
+    }
+
+    on UpdateShowAll {
+        self.showAll = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("h-full flex flex-col")
+            ·child(
+            SectionHeader·view()
+                ·attr("title", "Containers")
+                ·attr("subtitle", " container")
+                ·attr("icon", None)
+                ·on_refresh(Refresh)
+                ·attr("actions", None)
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto")
+                ·when_else(view_mode == "table", DataTable·view()
+                    ·attr("data", self.filtered_containers)
+                    ·attr("columns", self.columns)
+                    ·attr("keyExtractor", |c| c.id)
+                    ·attr("emptyMessage", "No containers found")
+                    ·attr("compact", "True"), VNode·div()
+                    ·class("grid grid-cols-1 lg:grid-cols-2 gap-3 p-1")
+                    // Map: ∀ container ∈ filteredContainers
+                    ·children(self.filtered_containers.iter().map(|container| ResourceCard·view()
+                            ·attr("key", container.id)
+                            ·attr("title", container.names[0].replace("/", ""))
+                            ·attr("subtitle", container.image)
+                            ·attr("icon", None)
+                            ·attr("status", None)
+                            ·attr("stats", [
+                  ∅,
+                  ∅,
+                ])
+                            ·attr("actions", None)).collect()))
+            )
+    }
+}

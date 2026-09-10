@@ -1,0 +1,24 @@
+invoke qliphoth·prelude·*;
+rite stages_timeline(stages: Any) -> VNode! {
+    VNode·div()
+        ·class("flex items-center gap-1")
+        // Map: ∀ stage ∈ stages
+        ·children(stages.iter().map(|stage| VNode·div()
+                ·attr("key", stage.name)
+                ·class("flex items-center")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1 px-2 py-1 bg-[var(--bg-tertiary)] rounded")
+                    ·child(
+                    StageStatusIcon·view()
+                        ·attr("status", stage.status)
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-xs text-[var(--text-secondary)]")
+                        ·text_child(stage.name·to_string())
+                    )
+                )
+                ·when(idx < stages.len() - 1, VNode·div()
+                    ·class("w-4 h-px bg-[var(--border-primary)]"))).collect())
+}

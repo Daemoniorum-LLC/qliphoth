@@ -1,0 +1,64 @@
+{
+  "id": "ui/components/ErrorBoundary.tsx:ErrorBoundary",
+  "name": "ErrorBoundary",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/ErrorBoundary.tsx",
+    "code": "import React, { Component, ErrorInfo, ReactNode } from 'react'\nimport { AlertTriangle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'\nimport { Button } from '@persona-framework/ui'\n\ninterface Props {\n  children: ReactNode\n  fallback?: ReactNode\n  onError?: (error: Error, errorInfo: ErrorInfo) => void\n}\n\ninterface State {\n  hasError: boolean\n  error: Error | null\n  errorInfo: ErrorInfo | null\n  showDetails: boolean\n}\n\nexport class ErrorBoundary extends Component<Props, State> {\n  public state: State = {\n    hasError: false,\n    error: null,\n    errorInfo: null,\n    showDetails: false,\n  }\n\n  public static getDerivedStateFromError(error: Error): Partial<State> {\n    return { hasError: true, error }\n  }\n\n  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {\n    this.setState({ errorInfo })\n    this.props.onError?.(error, errorInfo)\n  }\n\n  private handleReset = () => {\n    this.setState({\n      hasError: false,\n      error: null,\n      errorInfo: null,\n      showDetails: false,\n    })\n  }\n\n  private handleReload = () => {\n    window.location.reload()\n  }\n\n  private toggleDetails = () => {\n    this.setState(prev => ({ showDetails: !prev.showDetails }))\n  }\n\n  public render() {\n    if (this.state.hasError) {\n      if (this.props.fallback) {\n        return this.props.fallback\n      }\n\n      return (\n        <div className=\"flex items-center justify-center min-h-[200px] p-6 bg-[#1e1e1e]\">\n          <div className=\"max-w-lg w-full bg-[#252526] border border-[#3c3c3c] rounded-lg p-6\">\n            <div className=\"flex items-start gap-4\">\n              <div className=\"p-2 bg-[#5a1d1d] rounded-lg\">\n                <AlertTriangle className=\"w-6 h-6 text-[#f48771]\" />\n              </div>\n              <div className=\"flex-1\">\n                <h2 className=\"text-lg font-semibold text-[#cccccc] mb-2\">\n                  Something went wrong\n                </h2>\n                <p className=\"text-sm text-[#858585] mb-4\">\n                  An unexpected error occurred while rendering this component.\n                  You can try to recover by clicking the button below.\n                </p>\n\n                <div className=\"flex flex-wrap gap-2 mb-4\">\n                  <Button\n                    onClick={this.handleReset}\n                    size=\"sm\"\n                    className=\"h-8\"\n                  >\n                    <RefreshCw className=\"w-4 h-4 mr-1.5\" />\n                    Try Again\n                  </Button>\n                  <Button\n                    onClick={this.handleReload}\n                    variant=\"outline\"\n                    size=\"sm\"\n                    className=\"h-8\"\n                  >\n                    Reload Page\n                  </Button>\n                </div>\n\n                <button\n                  onClick={this.toggleDetails}\n                  className=\"flex items-center gap-1 text-xs text-[#4fc3f7] hover:text-[#81d4fa]\"\n                >\n                  {this.state.showDetails ? (\n                    <ChevronUp className=\"w-3 h-3\" />\n                  ) : (\n                    <ChevronDown className=\"w-3 h-3\" />\n                  )}\n                  {this.state.showDetails ? 'Hide' : 'Show'} error details\n                </button>\n\n                {this.state.showDetails && (\n                  <div className=\"mt-3 p-3 bg-[#1e1e1e] rounded border border-[#3c3c3c] overflow-auto max-h-[200px]\">\n                    <div className=\"text-xs font-mono\">\n                      <div className=\"text-[#f48771] font-semibold mb-2\">\n                        {this.state.error?.name}: {this.state.error?.message}\n                      </div>\n                      {this.state.errorInfo?.componentStack && (\n                        <pre className=\"text-[#858585] whitespace-pre-wrap text-[11px] leading-relaxed\">\n                          {this.state.errorInfo.componentStack}\n                        </pre>\n                      )}\n                    </div>\n                  </div>\n                )}\n              </div>\n            </div>\n          </div>\n        </div>\n      )\n    }\n\n    return this.props.children\n  }\n}\n\ninterface ErrorBoundaryWrapperProps {\n  children: ReactNode\n  name?: string\n}\n\nexport function withErrorBoundary<P extends object>(\n  WrappedComponent: React.ComponentType<P>,\n  name?: string\n) {\n  return function WithErrorBoundary(props: P) {\n    return (\n      <ErrorBoundary>\n        <WrappedComponent {...props} />\n      </ErrorBoundary>\n    )\n  }\n}\n",
+    "extraction": {
+      "name": "ErrorBoundary",
+      "component_type": "class",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 18,
+        "start_col": 7,
+        "end_line": 128,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": {
+        "state_type": null,
+        "state_initializer": null,
+        "lifecycle_methods": []
+      },
+      "jsx": {
+        "root": null
+      },
+      "handlers": [],
+      "child_components": [],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/error_boundary.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "Class component (lifecycle methods)"
+  ],
+  "status": "pending"
+}

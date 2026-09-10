@@ -1,0 +1,36 @@
+invoke qliphoth·prelude·*;
+ᛈ ImagesSectionMsg {
+    UpdateFilter,
+}
+☉ actor ImagesSection {
+    state filter: String! = "",
+
+    on UpdateFilter {
+        self.filter = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("h-full flex flex-col")
+            ·child(
+            SectionHeader·view()
+                ·attr("title", "Images")
+                ·attr("subtitle", self.filtered_images.len().to_string() + " image" + ⎇ self.filtered_images.len() != 1 { "s" } ⎉ { "" }.to_string())
+                ·attr("icon", None)
+                ·on_refresh(Refresh)
+                ·attr("actions", None)
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto")
+                ·child(
+                DataTable·view()
+                    ·attr("data", self.filtered_images)
+                    ·attr("columns", self.columns)
+                    ·attr("keyExtractor", |img| self.img.id)
+                    ·attr("emptyMessage", "No images found")
+                    ·attr("compact", "true")
+                )
+            )
+    }
+}

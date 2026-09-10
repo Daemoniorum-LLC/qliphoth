@@ -1,0 +1,38 @@
+invoke qliphoth·prelude·*;
+ᛈ PipelinesSectionMsg {
+    UpdateFilter,
+    UpdateStatusFilter,
+}
+actor PipelinesSection {
+    state filter: String! = "",
+    state statusFilter: String! = "all",
+
+    on UpdateFilter {
+        self.filter = msg.0;
+    }
+
+    on UpdateStatusFilter {
+        self.statusFilter = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("h-full flex flex-col")
+            ·child(
+            SectionHeader·view()
+                ·attr("title", "CI/CD Pipelines")
+                ·attr("subtitle", " pipeline")
+                ·attr("icon", None)
+                ·on_refresh(Refresh)
+                ·attr("actions", None)
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto space-y-3 pr-1")
+                // Map: ∀ pipeline ∈ filteredPipelines
+                ·children(self.filtered_pipelines.iter().map(|pipeline| PipelineCard·view()
+                        ·attr("key", pipeline.id)
+                        ·attr("pipeline", pipeline)).collect())
+            )
+    }
+}

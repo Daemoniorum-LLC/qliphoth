@@ -1,0 +1,91 @@
+invoke qliphoth·prelude·*;
+ᛈ MarkdownPreviewMsg {
+    UpdateContent,
+    UpdateLoading,
+    UpdateError,
+    UpdateViewMode,
+}
+actor MarkdownPreview {
+    state content: Any~ = None,
+    state loading: bool! = False,
+    state error: Option<Any>~ = None,
+    state viewMode: String! = "preview",
+
+    rite new(file_path: Any, content: Any) -> This! {
+        self.file_path = file_path;
+        self.content = content;
+        This
+    }
+
+    on UpdateContent {
+        self.content = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateViewMode {
+        self.viewMode = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("w-full h-full flex flex-col bg-[#1e1e1e]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs")
+                ·child(
+                VNode·span()
+                    ·text_child(file_path ∨ "Markdown Preview"·to_string())
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex gap-1")
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "default")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Preview")
+                        ·child(
+                        FileText·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "default")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Split View")
+                        ·child(
+                        SplitSquareVertical·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "default")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·attr("title", "Source")
+                        ·child(
+                        Code·view()
+                            ·class("w-4 h-4")
+                        )
+                    )
+                )
+            )
+            ·text_child(view_mode == "preview" ∧ render_preview()·to_string())
+            ·text_child(view_mode == "source" ∧ render_source()·to_string())
+            ·when(view_mode == "split", VNode·div()
+                ·class("flex flex-1 overflow-hidden")
+                ·text_child(render_source()·to_string())
+                ·text_child(render_preview()·to_string()))
+    }
+}

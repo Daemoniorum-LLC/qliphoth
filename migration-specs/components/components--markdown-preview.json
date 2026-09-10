@@ -1,0 +1,758 @@
+{
+  "id": "ui/components/MarkdownPreview.tsx:MarkdownPreview",
+  "name": "MarkdownPreview",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/MarkdownPreview.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Toggle } from '@persona-framework/ui'\nimport { FileText, Code, SplitSquareVertical } from 'lucide-react'\nimport ReactMarkdown from 'react-markdown'\nimport remarkGfm from 'remark-gfm'\nimport { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'\nimport { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'\n\ninterface MarkdownPreviewProps {\n  filePath: string | null\n  content?: string\n}\n\ntype ViewMode = 'preview' | 'source' | 'split'\n\nexport function MarkdownPreview({ filePath, content: propContent }: MarkdownPreviewProps) {\n  const [content, setContent] = useState<string>(propContent || '')\n  const [loading, setLoading] = useState(false)\n  const [error, setError] = useState<string | null>(null)\n  const [viewMode, setViewMode] = useState<ViewMode>('preview')\n\n  useEffect(() => {\n    if (propContent !== undefined) {\n      setContent(propContent)\n      return\n    }\n\n    if (!filePath) {\n      setContent('')\n      setError(null)\n      return\n    }\n\n    setLoading(true)\n    setError(null)\n\n    const absolutePath = filePath.startsWith('/') ? filePath : `/workspace/persona-framework/${filePath}`\n\n    fetch(`/api/project/read?path=${encodeURIComponent(absolutePath)}`)\n      .then(response => {\n        if (!response.ok) {\n          if (response.status === 404) {\n            throw new Error('API endpoint /api/project/read not found. Backend support needed.')\n          }\n          throw new Error(`Failed to read file: ${response.statusText}`)\n        }\n        return response.json()\n      })\n      .then(data => {\n        setContent(data.content || '')\n        setLoading(false)\n      })\n      .catch(err => {\n        setError(err.message)\n        setLoading(false)\n      })\n  }, [filePath, propContent])\n\n  if (!filePath && !propContent) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"p-10 text-center text-[#858585]\">\n          Select a markdown file to preview\n        </div>\n      </div>\n    )\n  }\n\n  if (loading) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">{filePath}</div>\n        <div className=\"p-10 text-center text-[#858585]\">Loading markdown...</div>\n      </div>\n    )\n  }\n\n  if (error) {\n    return (\n      <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n        <div className=\"flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">{filePath}</div>\n        <div className=\"p-5 text-[#f48771]\">{error}</div>\n      </div>\n    )\n  }\n\n  const renderPreview = () => (\n    <div className=\"flex-1 overflow-auto bg-[#1e1e1e] px-10 py-5 text-[#d4d4d4] text-sm leading-relaxed border-l border-[#3c3c3c]\">\n      <ReactMarkdown\n        remarkPlugins={[remarkGfm]}\n        components={{\n          h1: ({ children }) => <h1 className=\"text-[32px] font-bold text-white mt-6 mb-4 pb-2 border-b border-[#3c3c3c]\">{children}</h1>,\n          h2: ({ children }) => <h2 className=\"text-2xl font-semibold text-white mt-5 mb-3 pb-1.5 border-b border-[#3c3c3c]\">{children}</h2>,\n          h3: ({ children }) => <h3 className=\"text-xl font-semibold text-white mt-4 mb-2.5\">{children}</h3>,\n          h4: ({ children }) => <h4 className=\"text-base font-semibold text-[#cccccc] mt-3 mb-2\">{children}</h4>,\n          h5: ({ children }) => <h5 className=\"text-sm font-semibold text-[#cccccc] mt-2.5 mb-1.5\">{children}</h5>,\n          h6: ({ children }) => <h6 className=\"text-sm font-semibold text-[#cccccc] mt-2.5 mb-1.5\">{children}</h6>,\n          p: ({ children }) => <p className=\"mb-4 text-[#d4d4d4]\">{children}</p>,\n          ul: ({ children }) => <ul className=\"ml-6 mb-4 text-[#d4d4d4]\">{children}</ul>,\n          ol: ({ children }) => <ol className=\"ml-6 mb-4 text-[#d4d4d4]\">{children}</ol>,\n          li: ({ children }) => <li className=\"mb-2\">{children}</li>,\n          a: ({ href, children }) => (\n            <a href={href} className=\"text-[#4fc3f7] no-underline hover:underline\" target=\"_blank\" rel=\"noopener noreferrer\">\n              {children}\n            </a>\n          ),\n          code({ node, inline, className, children, ...props }) {\n            const match = /language-(\\w+)/.exec(className || '')\n            const language = match ? match[1] : ''\n\n            return !inline && language ? (\n              <SyntaxHighlighter\n                style={vscDarkPlus}\n                language={language}\n                PreTag=\"div\"\n                customStyle={{\n                  margin: 0,\n                  borderRadius: '6px',\n                  fontSize: '13px',\n                }}\n                {...props}\n              >\n                {String(children).replace(/\\n$/, '')}\n              </SyntaxHighlighter>\n            ) : (\n              <code className=\"bg-[#3c3c3c] px-1.5 py-0.5 rounded font-mono text-[13px] text-[#f59e0b]\" {...props}>\n                {children}\n              </code>\n            )\n          },\n          pre: ({ children }) => <pre className=\"mb-4 rounded-md overflow-auto\">{children}</pre>,\n          blockquote: ({ children }) => (\n            <blockquote className=\"ml-0 mb-4 pl-4 border-l-4 border-[#4fc3f7] text-[#b0b0b0] italic\">\n              {children}\n            </blockquote>\n          ),\n          table: ({ children }) => (\n            <table className=\"w-full mb-4 border-collapse border border-[#3c3c3c]\">\n              {children}\n            </table>\n          ),\n          th: ({ children }) => (\n            <th className=\"bg-[#2b2b2b] text-white font-semibold p-3 text-left border border-[#3c3c3c]\">\n              {children}\n            </th>\n          ),\n          td: ({ children }) => (\n            <td className=\"p-3 border border-[#3c3c3c] text-[#d4d4d4]\">\n              {children}\n            </td>\n          ),\n          tr: ({ children }) => <tr className=\"even:bg-[#252526]\">{children}</tr>,\n          hr: () => <hr className=\"border-none border-t border-[#3c3c3c] my-6\" />,\n          img: ({ src, alt }) => (\n            <img src={src} alt={alt} className=\"max-w-full h-auto rounded-md mt-2 mb-4\" />\n          ),\n        }}\n      >\n        {content}\n      </ReactMarkdown>\n    </div>\n  )\n\n  const renderSource = () => (\n    <div className=\"flex-1 overflow-auto bg-[#1e1e1e] p-5 font-mono text-sm text-[#d4d4d4] leading-relaxed whitespace-pre-wrap break-words\">\n      {content}\n    </div>\n  )\n\n  return (\n    <div className=\"w-full h-full flex flex-col bg-[#1e1e1e]\">\n      <div className=\"flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs\">\n        <span>{filePath || 'Markdown Preview'}</span>\n        <div className=\"flex gap-1\">\n          <Button\n            variant={viewMode === 'preview' ? 'default' : 'ghost'}\n            size=\"sm\"\n            onClick={() => setViewMode('preview')}\n            title=\"Preview\"\n          >\n            <FileText className=\"w-4 h-4\" />\n          </Button>\n          <Button\n            variant={viewMode === 'split' ? 'default' : 'ghost'}\n            size=\"sm\"\n            onClick={() => setViewMode('split')}\n            title=\"Split View\"\n          >\n            <SplitSquareVertical className=\"w-4 h-4\" />\n          </Button>\n          <Button\n            variant={viewMode === 'source' ? 'default' : 'ghost'}\n            size=\"sm\"\n            onClick={() => setViewMode('source')}\n            title=\"Source\"\n          >\n            <Code className=\"w-4 h-4\" />\n          </Button>\n        </div>\n      </div>\n\n      {viewMode === 'preview' && renderPreview()}\n      {viewMode === 'source' && renderSource()}\n      {viewMode === 'split' && (\n        <div className=\"flex flex-1 overflow-hidden\">\n          {renderSource()}\n          {renderPreview()}\n        </div>\n      )}\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "MarkdownPreview",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 16,
+        "start_col": 7,
+        "end_line": 212,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "filePath",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "content",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 17,
+            "start_col": 32,
+            "end_line": 17,
+            "end_col": 67
+          },
+          "state_name": "content",
+          "setter_name": "setContent",
+          "initial_value": "/* expr */",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 18,
+            "start_col": 32,
+            "end_line": 18,
+            "end_col": 47
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 19,
+            "start_col": 28,
+            "end_line": 19,
+            "end_col": 57
+          },
+          "state_name": "error",
+          "setter_name": "setError",
+          "initial_value": "null",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 20,
+            "start_col": 34,
+            "end_line": 20,
+            "end_col": 63
+          },
+          "state_name": "viewMode",
+          "setter_name": "setViewMode",
+          "initial_value": "\"preview\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 22,
+            "start_col": 2,
+            "end_line": 57,
+            "end_col": 29
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "filePath",
+            "propContent"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "w-full h-full flex flex-col bg-[#1e1e1e]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "span",
+                        "is_component": false,
+                        "attributes": [],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "filePath || 'Markdown Preview'"
+                            },
+                            "location": {
+                              "start_line": 173,
+                              "start_col": 14,
+                              "end_line": 173,
+                              "end_col": 46
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 173,
+                        "start_col": 8,
+                        "end_line": 173,
+                        "end_col": 53
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex gap-1"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "viewMode === 'preview' ? 'default' : 'ghost'"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setViewMode('preview')"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Preview"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "FileText",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 181,
+                                    "start_col": 12,
+                                    "end_line": 181,
+                                    "end_col": 44
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 175,
+                              "start_col": 10,
+                              "end_line": 182,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "viewMode === 'split' ? 'default' : 'ghost'"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setViewMode('split')"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Split View"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "SplitSquareVertical",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 189,
+                                    "start_col": 12,
+                                    "end_line": 189,
+                                    "end_col": 55
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 183,
+                              "start_col": 10,
+                              "end_line": 190,
+                              "end_col": 19
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Button",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "variant",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "viewMode === 'source' ? 'default' : 'ghost'"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "size",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "sm"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onClick",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "() => setViewMode('source')"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Source"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "Code",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "w-4 h-4"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": []
+                                  },
+                                  "location": {
+                                    "start_line": 197,
+                                    "start_col": 12,
+                                    "end_line": 197,
+                                    "end_col": 40
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 191,
+                              "start_col": 10,
+                              "end_line": 198,
+                              "end_col": 19
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 174,
+                        "start_col": 8,
+                        "end_line": 199,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 172,
+                  "start_col": 6,
+                  "end_line": 200,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "viewMode === 'preview' && renderPreview()"
+                },
+                "location": {
+                  "start_line": 202,
+                  "start_col": 6,
+                  "end_line": 202,
+                  "end_col": 49
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Expression",
+                  "code": "viewMode === 'source' && renderSource()"
+                },
+                "location": {
+                  "start_line": 203,
+                  "start_col": 6,
+                  "end_line": 203,
+                  "end_col": 47
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "viewMode === 'split'",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Element",
+                      "tag": "div",
+                      "is_component": false,
+                      "attributes": [
+                        {
+                          "name": "className",
+                          "value": {
+                            "type": "String",
+                            "value": "flex flex-1 overflow-hidden"
+                          },
+                          "is_event_handler": false
+                        }
+                      ],
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Expression",
+                            "code": "renderSource()"
+                          },
+                          "location": {
+                            "start_line": 206,
+                            "start_col": 10,
+                            "end_line": 206,
+                            "end_col": 26
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Expression",
+                            "code": "renderPreview()"
+                          },
+                          "location": {
+                            "start_line": 207,
+                            "start_col": 10,
+                            "end_line": 207,
+                            "end_col": 27
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 205,
+                      "start_col": 8,
+                      "end_line": 208,
+                      "end_col": 14
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 204,
+                  "start_col": 6,
+                  "end_line": 209,
+                  "end_col": 8
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 171,
+            "start_col": 4,
+            "end_line": 210,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "Code",
+        "FileText",
+        "SplitSquareVertical"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "content",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "error",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "viewMode",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/markdown_preview.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:content",
+        "to_field": "content",
+        "field_type": "Any",
+        "evidentiality": "~",
+        "initial_value": "/* expr */",
+        "reasoning": "useState hook 'content' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:error",
+        "to_field": "error",
+        "field_type": "Option<Any>",
+        "evidentiality": "~",
+        "initial_value": "null",
+        "reasoning": "useState hook 'error' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:viewMode",
+        "to_field": "viewMode",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"preview\"",
+        "reasoning": "useState hook 'viewMode' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateContent",
+        "from_handler": "setContent",
+        "payload": null,
+        "state_changes": [
+          "self.content = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateError",
+        "from_handler": "setError",
+        "payload": null,
+        "state_changes": [
+          "self.error = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateViewMode",
+        "from_handler": "setViewMode",
+        "payload": null,
+        "state_changes": [
+          "self.viewMode = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[filePath,propContent]",
+        "strategy": "inline",
+        "reasoning": "Deps [filePath, propContent] → inline in handlers that change these",
+        "inline_in": "filePath_propContent",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "file_path",
+          "field_type": "Any",
+          "from_prop": "filePath"
+        },
+        {
+          "name": "content",
+          "field_type": "Any",
+          "from_prop": "content"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_4",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [filePath, propContent] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Code",
+      "FileText",
+      "SplitSquareVertical"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

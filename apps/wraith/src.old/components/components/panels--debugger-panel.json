@@ -1,0 +1,2077 @@
+{
+  "id": "ui/components/panels/DebuggerPanel.tsx:DebuggerPanel",
+  "name": "DebuggerPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/DebuggerPanel.tsx",
+    "code": "import React, { useState } from 'react'\nimport { Button, Input, Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@persona-framework/ui'\nimport {\n  Play,\n  Pause,\n  Square,\n  ArrowRightToLine,\n  ArrowDownToLine,\n  ArrowUpFromLine,\n  RotateCcw,\n  Trash2,\n  Plus,\n  Circle,\n  ChevronRight,\n  ChevronDown,\n} from 'lucide-react'\n\ninterface Breakpoint {\n  id: string\n  file: string\n  line: number\n  enabled: boolean\n}\n\ninterface Variable {\n  name: string\n  value: string\n  type: string\n  children?: Variable[]\n}\n\ninterface StackFrame {\n  id: string\n  name: string\n  file: string\n  line: number\n  column: number\n}\n\ninterface WatchExpression {\n  id: string\n  expression: string\n  value?: string\n  error?: string\n}\n\ntype DebugState = 'stopped' | 'running' | 'paused'\n\nexport function DebuggerPanel() {\n  const [debugState, setDebugState] = useState<DebugState>('stopped')\n  const [breakpoints, setBreakpoints] = useState<Breakpoint[]>([\n    { id: '1', file: 'src/App.tsx', line: 42, enabled: true },\n    { id: '2', file: 'src/utils/api.ts', line: 18, enabled: true },\n  ])\n  const [variables, setVariables] = useState<Variable[]>([\n    { name: 'user', value: '{ id: 1, name: \"Alice\" }', type: 'Object' },\n    { name: 'count', value: '42', type: 'number' },\n    { name: 'isActive', value: 'true', type: 'boolean' },\n  ])\n  const [callStack, setCallStack] = useState<StackFrame[]>([\n    { id: '1', name: 'handleClick', file: 'src/App.tsx', line: 42, column: 8 },\n    { id: '2', name: 'onClick', file: 'src/Button.tsx', line: 15, column: 12 },\n    { id: '3', name: 'dispatchEvent', file: 'react-dom.js', line: 2834, column: 5 },\n  ])\n  const [watchExpressions, setWatchExpressions] = useState<WatchExpression[]>([\n    { id: '1', expression: 'user.name', value: '\"Alice\"' },\n    { id: '2', expression: 'count * 2', value: '84' },\n  ])\n  const [newWatchExpression, setNewWatchExpression] = useState('')\n  const [activeStackFrame, setActiveStackFrame] = useState('1')\n\n  const handleStart = () => {\n    setDebugState('running')\n  }\n\n  const handlePause = () => {\n    setDebugState('paused')\n  }\n\n  const handleStop = () => {\n    setDebugState('stopped')\n  }\n\n  const handleStepOver = () => {\n  }\n\n  const handleStepInto = () => {\n  }\n\n  const handleStepOut = () => {\n  }\n\n  const handleRestart = () => {\n    setDebugState('running')\n  }\n\n  const toggleBreakpoint = (id: string) => {\n    setBreakpoints(prev =>\n      prev.map(bp => bp.id === id ? { ...bp, enabled: !bp.enabled } : bp)\n    )\n  }\n\n  const removeBreakpoint = (id: string) => {\n    setBreakpoints(prev => prev.filter(bp => bp.id !== id))\n  }\n\n  const addWatchExpression = () => {\n    if (!newWatchExpression.trim()) return\n\n    const newWatch: WatchExpression = {\n      id: Date.now().toString(),\n      expression: newWatchExpression,\n      value: 'Evaluating...',\n    }\n    setWatchExpressions(prev => [...prev, newWatch])\n    setNewWatchExpression('')\n  }\n\n  const removeWatchExpression = (id: string) => {\n    setWatchExpressions(prev => prev.filter(w => w.id !== id))\n  }\n\n  const getStatusText = () => {\n    switch (debugState) {\n      case 'running':\n        return 'Debugging...'\n      case 'paused':\n        return 'Paused at breakpoint'\n      case 'stopped':\n        return 'Not debugging'\n    }\n  }\n\n  const getStatusClass = () => {\n    switch (debugState) {\n      case 'running':\n        return 'text-[#4fc3f7]'\n      case 'paused':\n        return 'text-[#f59e0b]'\n      case 'stopped':\n        return 'text-[#858585]'\n    }\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n      <div className=\"px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold text-white\">\n        Debugger\n      </div>\n\n      <div className={`flex items-center gap-2 px-3 py-2 bg-[#252526] border-b border-[#3c3c3c] text-[11px] ${getStatusClass()}`}>\n        <Circle className=\"w-2 h-2 fill-current\" />\n        <span>{getStatusText()}</span>\n      </div>\n\n      <div className=\"flex gap-1 px-3 py-2 border-b border-[#3c3c3c] bg-[#252526]\">\n        {debugState === 'stopped' && (\n          <Button\n            size=\"sm\"\n            onClick={handleStart}\n            title=\"Start Debugging (F5)\"\n          >\n            <Play className=\"w-4 h-4\" />\n          </Button>\n        )}\n        {debugState === 'running' && (\n          <Button\n            size=\"sm\"\n            variant=\"ghost\"\n            onClick={handlePause}\n            title=\"Pause\"\n          >\n            <Pause className=\"w-4 h-4\" />\n          </Button>\n        )}\n        {debugState !== 'stopped' && (\n          <>\n            <Button\n              size=\"sm\"\n              variant=\"ghost\"\n              onClick={handleStop}\n              title=\"Stop (Shift+F5)\"\n            >\n              <Square className=\"w-4 h-4\" />\n            </Button>\n            <Button\n              size=\"sm\"\n              variant=\"ghost\"\n              onClick={handleRestart}\n              title=\"Restart (Ctrl+Shift+F5)\"\n            >\n              <RotateCcw className=\"w-4 h-4\" />\n            </Button>\n          </>\n        )}\n        {debugState === 'paused' && (\n          <>\n            <div className=\"w-px h-6 bg-[#3c3c3c] mx-1\" />\n            <Button\n              size=\"sm\"\n              variant=\"ghost\"\n              onClick={handleStepOver}\n              title=\"Step Over (F10)\"\n            >\n              <ArrowRightToLine className=\"w-4 h-4\" />\n            </Button>\n            <Button\n              size=\"sm\"\n              variant=\"ghost\"\n              onClick={handleStepInto}\n              title=\"Step Into (F11)\"\n            >\n              <ArrowDownToLine className=\"w-4 h-4\" />\n            </Button>\n            <Button\n              size=\"sm\"\n              variant=\"ghost\"\n              onClick={handleStepOut}\n              title=\"Step Out (Shift+F11)\"\n            >\n              <ArrowUpFromLine className=\"w-4 h-4\" />\n            </Button>\n          </>\n        )}\n      </div>\n\n      <div className=\"flex-1 overflow-auto\">\n        <Accordion type=\"multiple\" defaultValue={['variables', 'breakpoints', 'callstack', 'watch']} className=\"w-full\">\n          <AccordionItem value=\"variables\">\n            <AccordionTrigger className=\"px-3 py-2 text-[11px] font-semibold uppercase\">\n              Variables\n            </AccordionTrigger>\n            <AccordionContent>\n              {debugState === 'paused' ? (\n                variables.length > 0 ? (\n                  variables.map((variable, index) => (\n                    <div key={index} className=\"flex gap-2 px-3 py-1 text-xs\">\n                      <span className=\"text-[#9cdcfe] min-w-[100px]\">{variable.name}</span>\n                      <span className=\"text-[#ce9178] flex-1\">{variable.value}</span>\n                      <span className=\"text-[#4ec9b0] text-[10px]\">{variable.type}</span>\n                    </div>\n                  ))\n                ) : (\n                  <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">No variables in current scope</div>\n                )\n              ) : (\n                <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">\n                  Pause debugging to inspect variables\n                </div>\n              )}\n            </AccordionContent>\n          </AccordionItem>\n\n          <AccordionItem value=\"callstack\">\n            <AccordionTrigger className=\"px-3 py-2 text-[11px] font-semibold uppercase\">\n              Call Stack\n            </AccordionTrigger>\n            <AccordionContent>\n              {debugState === 'paused' ? (\n                callStack.length > 0 ? (\n                  callStack.map(frame => (\n                    <div\n                      key={frame.id}\n                      className={`px-3 py-1.5 text-xs flex flex-col gap-0.5 cursor-pointer border-l-[3px] hover:bg-[#2b2b2b] hover:border-l-[#4fc3f7] ${\n                        frame.id === activeStackFrame ? 'bg-[#2b2b2b] border-l-[#4fc3f7]' : 'border-l-transparent'\n                      }`}\n                      onClick={() => setActiveStackFrame(frame.id)}\n                    >\n                      <div className=\"text-[#dcdcaa] font-medium\">{frame.name}</div>\n                      <div className=\"text-[#858585] text-[11px]\">\n                        {frame.file}:{frame.line}:{frame.column}\n                      </div>\n                    </div>\n                  ))\n                ) : (\n                  <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">No call stack available</div>\n                )\n              ) : (\n                <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">\n                  Pause debugging to view call stack\n                </div>\n              )}\n            </AccordionContent>\n          </AccordionItem>\n\n          <AccordionItem value=\"breakpoints\">\n            <AccordionTrigger className=\"px-3 py-2 text-[11px] font-semibold uppercase\">\n              Breakpoints ({breakpoints.length})\n            </AccordionTrigger>\n            <AccordionContent>\n              {breakpoints.length > 0 ? (\n                breakpoints.map(breakpoint => (\n                  <div key={breakpoint.id} className=\"flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-[#2b2b2b]\">\n                    <Circle\n                      className={`w-2.5 h-2.5 cursor-pointer ${breakpoint.enabled ? 'text-[#f48771] fill-[#f48771]' : 'text-[#858585] fill-[#858585]'}`}\n                      onClick={() => toggleBreakpoint(breakpoint.id)}\n                    />\n                    <div className=\"flex-1\">\n                      <div className=\"text-[#cccccc]\">\n                        Line {breakpoint.line}\n                      </div>\n                      <div className=\"text-[#858585] text-[11px]\">{breakpoint.file}</div>\n                    </div>\n                    <Button\n                      size=\"sm\"\n                      variant=\"ghost\"\n                      onClick={() => removeBreakpoint(breakpoint.id)}\n                    >\n                      <Trash2 className=\"w-3 h-3\" />\n                    </Button>\n                  </div>\n                ))\n              ) : (\n                <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">\n                  No breakpoints set. Click in the gutter to add one.\n                </div>\n              )}\n            </AccordionContent>\n          </AccordionItem>\n\n          <AccordionItem value=\"watch\">\n            <AccordionTrigger className=\"px-3 py-2 text-[11px] font-semibold uppercase\">\n              Watch ({watchExpressions.length})\n            </AccordionTrigger>\n            <AccordionContent>\n              <div className=\"px-3 py-2 border-b border-[#3c3c3c]\">\n                <div className=\"flex gap-1\">\n                  <Input\n                    size=\"sm\"\n                    placeholder=\"Add expression to watch\"\n                    value={newWatchExpression}\n                    onChange={(e) => setNewWatchExpression(e.target.value)}\n                    onKeyDown={(e) => e.key === 'Enter' && addWatchExpression()}\n                    className=\"flex-1\"\n                  />\n                  <Button\n                    size=\"sm\"\n                    variant=\"ghost\"\n                    onClick={addWatchExpression}\n                  >\n                    <Plus className=\"w-3 h-3\" />\n                  </Button>\n                </div>\n              </div>\n              {watchExpressions.length > 0 ? (\n                watchExpressions.map(watch => (\n                  <div key={watch.id} className=\"flex gap-2 px-3 py-1 text-xs items-center\">\n                    <span className=\"text-[#9cdcfe] min-w-[100px]\">{watch.expression}</span>\n                    <span className=\"text-[#ce9178] flex-1\">\n                      {watch.error ? `Error: ${watch.error}` : watch.value}\n                    </span>\n                    <Button\n                      size=\"sm\"\n                      variant=\"ghost\"\n                      onClick={() => removeWatchExpression(watch.id)}\n                    >\n                      <Trash2 className=\"w-3 h-3\" />\n                    </Button>\n                  </div>\n                ))\n              ) : (\n                <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">\n                  Add expressions to watch their values\n                </div>\n              )}\n            </AccordionContent>\n          </AccordionItem>\n        </Accordion>\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "DebuggerPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 49,
+        "start_col": 7,
+        "end_line": 372,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 50,
+            "start_col": 38,
+            "end_line": 50,
+            "end_col": 69
+          },
+          "state_name": "debugState",
+          "setter_name": "setDebugState",
+          "initial_value": "\"stopped\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 51,
+            "start_col": 40,
+            "end_line": 54,
+            "end_col": 4
+          },
+          "state_name": "breakpoints",
+          "setter_name": "setBreakpoints",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 55,
+            "start_col": 36,
+            "end_line": 59,
+            "end_col": 4
+          },
+          "state_name": "variables",
+          "setter_name": "setVariables",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 60,
+            "start_col": 36,
+            "end_line": 64,
+            "end_col": 4
+          },
+          "state_name": "callStack",
+          "setter_name": "setCallStack",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 65,
+            "start_col": 50,
+            "end_line": 68,
+            "end_col": 4
+          },
+          "state_name": "watchExpressions",
+          "setter_name": "setWatchExpressions",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 69,
+            "start_col": 54,
+            "end_line": 69,
+            "end_col": 66
+          },
+          "state_name": "newWatchExpression",
+          "setter_name": "setNewWatchExpression",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 70,
+            "start_col": 50,
+            "end_line": 70,
+            "end_col": 63
+          },
+          "state_name": "activeStackFrame",
+          "setter_name": "setActiveStackFrame",
+          "initial_value": "\"1\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "px-3 py-2 border-b border-[#3c3c3c] text-[13px] font-semibold text-white"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "Debugger"
+                      },
+                      "location": {
+                        "start_line": 147,
+                        "start_col": 96,
+                        "end_line": 149,
+                        "end_col": 6
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 147,
+                  "start_col": 6,
+                  "end_line": 149,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "Expression",
+                        "code": "`flex items-center gap-2 px-3 py-2 bg-[#252526] border-b border-[#3c3c3c] text-[11px] ${getStatusClass()}`"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Circle",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "w-2 h-2 fill-current"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 152,
+                        "start_col": 8,
+                        "end_line": 152,
+                        "end_col": 51
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "span",
+                        "is_component": false,
+                        "attributes": [],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "getStatusText()"
+                            },
+                            "location": {
+                              "start_line": 153,
+                              "start_col": 14,
+                              "end_line": 153,
+                              "end_col": 31
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 153,
+                        "start_col": 8,
+                        "end_line": 153,
+                        "end_col": 38
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 151,
+                  "start_col": 6,
+                  "end_line": 154,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex gap-1 px-3 py-2 border-b border-[#3c3c3c] bg-[#252526]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "debugState === 'stopped'",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "size",
+                                "value": {
+                                  "type": "String",
+                                  "value": "sm"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "handleStart"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "title",
+                                "value": {
+                                  "type": "String",
+                                  "value": "Start Debugging (F5)"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Play",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-4 h-4"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 163,
+                                  "start_col": 12,
+                                  "end_line": 163,
+                                  "end_col": 40
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 158,
+                            "start_col": 10,
+                            "end_line": 164,
+                            "end_col": 19
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 157,
+                        "start_col": 8,
+                        "end_line": 165,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "debugState === 'running'",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Button",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "size",
+                                "value": {
+                                  "type": "String",
+                                  "value": "sm"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "variant",
+                                "value": {
+                                  "type": "String",
+                                  "value": "ghost"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "onClick",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "handlePause"
+                                },
+                                "is_event_handler": true
+                              },
+                              {
+                                "name": "title",
+                                "value": {
+                                  "type": "String",
+                                  "value": "Pause"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Pause",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-4 h-4"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 173,
+                                  "start_col": 12,
+                                  "end_line": 173,
+                                  "end_col": 41
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 167,
+                            "start_col": 10,
+                            "end_line": 174,
+                            "end_col": 19
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 166,
+                        "start_col": 8,
+                        "end_line": 175,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "debugState !== 'stopped'",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Fragment",
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "variant",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "ghost"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "handleStop"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "title",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Stop (Shift+F5)"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Square",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 184,
+                                        "start_col": 14,
+                                        "end_line": 184,
+                                        "end_col": 44
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 178,
+                                  "start_col": 12,
+                                  "end_line": 185,
+                                  "end_col": 21
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "variant",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "ghost"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "handleRestart"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "title",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Restart (Ctrl+Shift+F5)"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "RotateCcw",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 192,
+                                        "start_col": 14,
+                                        "end_line": 192,
+                                        "end_col": 47
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 186,
+                                  "start_col": 12,
+                                  "end_line": 193,
+                                  "end_col": 21
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 177,
+                            "start_col": 10,
+                            "end_line": 194,
+                            "end_col": 13
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 176,
+                        "start_col": 8,
+                        "end_line": 195,
+                        "end_col": 10
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "debugState === 'paused'",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Fragment",
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "w-px h-6 bg-[#3c3c3c] mx-1"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": []
+                                },
+                                "location": {
+                                  "start_line": 198,
+                                  "start_col": 12,
+                                  "end_line": 198,
+                                  "end_col": 58
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "variant",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "ghost"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "handleStepOver"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "title",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Step Over (F10)"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "ArrowRightToLine",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 205,
+                                        "start_col": 14,
+                                        "end_line": 205,
+                                        "end_col": 54
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 199,
+                                  "start_col": 12,
+                                  "end_line": 206,
+                                  "end_col": 21
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "variant",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "ghost"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "handleStepInto"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "title",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Step Into (F11)"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "ArrowDownToLine",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 213,
+                                        "start_col": 14,
+                                        "end_line": 213,
+                                        "end_col": 53
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 207,
+                                  "start_col": 12,
+                                  "end_line": 214,
+                                  "end_col": 21
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "Button",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "size",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "sm"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "variant",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "ghost"
+                                      },
+                                      "is_event_handler": false
+                                    },
+                                    {
+                                      "name": "onClick",
+                                      "value": {
+                                        "type": "Expression",
+                                        "code": "handleStepOut"
+                                      },
+                                      "is_event_handler": true
+                                    },
+                                    {
+                                      "name": "title",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "Step Out (Shift+F11)"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "ArrowUpFromLine",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "w-4 h-4"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 221,
+                                        "start_col": 14,
+                                        "end_line": 221,
+                                        "end_col": 53
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 215,
+                                  "start_col": 12,
+                                  "end_line": 222,
+                                  "end_col": 21
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 197,
+                            "start_col": 10,
+                            "end_line": 223,
+                            "end_col": 13
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 196,
+                        "start_col": 8,
+                        "end_line": 224,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 156,
+                  "start_col": 6,
+                  "end_line": 225,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1 overflow-auto"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Accordion",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "type",
+                            "value": {
+                              "type": "String",
+                              "value": "multiple"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "defaultValue",
+                            "value": {
+                              "type": "Expression",
+                              "code": "['variables', 'breakpoints', 'callstack', 'watch']"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "w-full"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "AccordionItem",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "variables"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "AccordionTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "px-3 py-2 text-[11px] font-semibold uppercase"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Variables"
+                                        },
+                                        "location": {
+                                          "start_line": 230,
+                                          "start_col": 88,
+                                          "end_line": 232,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 230,
+                                    "start_col": 12,
+                                    "end_line": 232,
+                                    "end_col": 31
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "AccordionContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "debugState === 'paused' ? (\n                variables.length > 0 ? (\n                  variables.map((variable, index) => (\n                    <div key={index} className=\"flex gap-2 px-3 py-1 text-xs\">\n                      <span className=\"text-[#9cdcfe] min-w-[100px]\">{variable.name}</span>\n                      <span className=\"text-[#ce9178] flex-1\">{variable.value}</span>\n                      <span className=\"text-[#4ec9b0] text-[10px]\">{variable.type}</span>\n                    </div>\n                  ))\n                ) : (\n                  <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">No variables in current scope</div>\n                )\n              ) : (\n                <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">\n                  Pause debugging to inspect variables\n                </div>\n              )"
+                                        },
+                                        "location": {
+                                          "start_line": 234,
+                                          "start_col": 14,
+                                          "end_line": 250,
+                                          "end_col": 16
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 233,
+                                    "start_col": 12,
+                                    "end_line": 251,
+                                    "end_col": 31
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 229,
+                              "start_col": 10,
+                              "end_line": 252,
+                              "end_col": 26
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "AccordionItem",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "callstack"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "AccordionTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "px-3 py-2 text-[11px] font-semibold uppercase"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Call Stack"
+                                        },
+                                        "location": {
+                                          "start_line": 255,
+                                          "start_col": 88,
+                                          "end_line": 257,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 255,
+                                    "start_col": 12,
+                                    "end_line": 257,
+                                    "end_col": 31
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "AccordionContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "debugState === 'paused' ? (\n                callStack.length > 0 ? (\n                  callStack.map(frame => (\n                    <div\n                      key={frame.id}\n                      className={`px-3 py-1.5 text-xs flex flex-col gap-0.5 cursor-pointer border-l-[3px] hover:bg-[#2b2b2b] hover:border-l-[#4fc3f7] ${\n                        frame.id === activeStackFrame ? 'bg-[#2b2b2b] border-l-[#4fc3f7]' : 'border-l-transparent'\n                      }`}\n                      onClick={() => setActiveStackFrame(frame.id)}\n                    >\n                      <div className=\"text-[#dcdcaa] font-medium\">{frame.name}</div>\n                      <div className=\"text-[#858585] text-[11px]\">\n                        {frame.file}:{frame.line}:{frame.column}\n                      </div>\n                    </div>\n                  ))\n                ) : (\n                  <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">No call stack available</div>\n                )\n              ) : (\n                <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">\n                  Pause debugging to view call stack\n                </div>\n              )"
+                                        },
+                                        "location": {
+                                          "start_line": 259,
+                                          "start_col": 14,
+                                          "end_line": 282,
+                                          "end_col": 16
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 258,
+                                    "start_col": 12,
+                                    "end_line": 283,
+                                    "end_col": 31
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 254,
+                              "start_col": 10,
+                              "end_line": 284,
+                              "end_col": 26
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "AccordionItem",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "breakpoints"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "AccordionTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "px-3 py-2 text-[11px] font-semibold uppercase"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Breakpoints ("
+                                        },
+                                        "location": {
+                                          "start_line": 287,
+                                          "start_col": 88,
+                                          "end_line": 288,
+                                          "end_col": 27
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "breakpoints.length"
+                                        },
+                                        "location": {
+                                          "start_line": 288,
+                                          "start_col": 27,
+                                          "end_line": 288,
+                                          "end_col": 47
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": ")"
+                                        },
+                                        "location": {
+                                          "start_line": 288,
+                                          "start_col": 47,
+                                          "end_line": 289,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 287,
+                                    "start_col": 12,
+                                    "end_line": 289,
+                                    "end_col": 31
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "AccordionContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "breakpoints.length > 0 ? (\n                breakpoints.map(breakpoint => (\n                  <div key={breakpoint.id} className=\"flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-[#2b2b2b]\">\n                    <Circle\n                      className={`w-2.5 h-2.5 cursor-pointer ${breakpoint.enabled ? 'text-[#f48771] fill-[#f48771]' : 'text-[#858585] fill-[#858585]'}`}\n                      onClick={() => toggleBreakpoint(breakpoint.id)}\n                    />\n                    <div className=\"flex-1\">\n                      <div className=\"text-[#cccccc]\">\n                        Line {breakpoint.line}\n                      </div>\n                      <div className=\"text-[#858585] text-[11px]\">{breakpoint.file}</div>\n                    </div>\n                    <Button\n                      size=\"sm\"\n                      variant=\"ghost\"\n                      onClick={() => removeBreakpoint(breakpoint.id)}\n                    >\n                      <Trash2 className=\"w-3 h-3\" />\n                    </Button>\n                  </div>\n                ))\n              ) : (\n                <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">\n                  No breakpoints set. Click in the gutter to add one.\n                </div>\n              )"
+                                        },
+                                        "location": {
+                                          "start_line": 291,
+                                          "start_col": 14,
+                                          "end_line": 317,
+                                          "end_col": 16
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 290,
+                                    "start_col": 12,
+                                    "end_line": 318,
+                                    "end_col": 31
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 286,
+                              "start_col": 10,
+                              "end_line": 319,
+                              "end_col": 26
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "AccordionItem",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "watch"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "AccordionTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "className",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "px-3 py-2 text-[11px] font-semibold uppercase"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Watch ("
+                                        },
+                                        "location": {
+                                          "start_line": 322,
+                                          "start_col": 88,
+                                          "end_line": 323,
+                                          "end_col": 21
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "watchExpressions.length"
+                                        },
+                                        "location": {
+                                          "start_line": 323,
+                                          "start_col": 21,
+                                          "end_line": 323,
+                                          "end_col": 46
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": ")"
+                                        },
+                                        "location": {
+                                          "start_line": 323,
+                                          "start_col": 46,
+                                          "end_line": 324,
+                                          "end_col": 12
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 322,
+                                    "start_col": 12,
+                                    "end_line": 324,
+                                    "end_col": 31
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "AccordionContent",
+                                    "is_component": true,
+                                    "attributes": [],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Element",
+                                          "tag": "div",
+                                          "is_component": false,
+                                          "attributes": [
+                                            {
+                                              "name": "className",
+                                              "value": {
+                                                "type": "String",
+                                                "value": "px-3 py-2 border-b border-[#3c3c3c]"
+                                              },
+                                              "is_event_handler": false
+                                            }
+                                          ],
+                                          "children": [
+                                            {
+                                              "node_type": {
+                                                "type": "Element",
+                                                "tag": "div",
+                                                "is_component": false,
+                                                "attributes": [
+                                                  {
+                                                    "name": "className",
+                                                    "value": {
+                                                      "type": "String",
+                                                      "value": "flex gap-1"
+                                                    },
+                                                    "is_event_handler": false
+                                                  }
+                                                ],
+                                                "children": [
+                                                  {
+                                                    "node_type": {
+                                                      "type": "Element",
+                                                      "tag": "Input",
+                                                      "is_component": true,
+                                                      "attributes": [
+                                                        {
+                                                          "name": "size",
+                                                          "value": {
+                                                            "type": "String",
+                                                            "value": "sm"
+                                                          },
+                                                          "is_event_handler": false
+                                                        },
+                                                        {
+                                                          "name": "placeholder",
+                                                          "value": {
+                                                            "type": "String",
+                                                            "value": "Add expression to watch"
+                                                          },
+                                                          "is_event_handler": false
+                                                        },
+                                                        {
+                                                          "name": "value",
+                                                          "value": {
+                                                            "type": "Expression",
+                                                            "code": "newWatchExpression"
+                                                          },
+                                                          "is_event_handler": false
+                                                        },
+                                                        {
+                                                          "name": "onChange",
+                                                          "value": {
+                                                            "type": "Expression",
+                                                            "code": "(e) => setNewWatchExpression(e.target.value)"
+                                                          },
+                                                          "is_event_handler": true
+                                                        },
+                                                        {
+                                                          "name": "onKeyDown",
+                                                          "value": {
+                                                            "type": "Expression",
+                                                            "code": "(e) => e.key === 'Enter' && addWatchExpression()"
+                                                          },
+                                                          "is_event_handler": true
+                                                        },
+                                                        {
+                                                          "name": "className",
+                                                          "value": {
+                                                            "type": "String",
+                                                            "value": "flex-1"
+                                                          },
+                                                          "is_event_handler": false
+                                                        }
+                                                      ],
+                                                      "children": []
+                                                    },
+                                                    "location": {
+                                                      "start_line": 328,
+                                                      "start_col": 18,
+                                                      "end_line": 335,
+                                                      "end_col": 20
+                                                    }
+                                                  },
+                                                  {
+                                                    "node_type": {
+                                                      "type": "Element",
+                                                      "tag": "Button",
+                                                      "is_component": true,
+                                                      "attributes": [
+                                                        {
+                                                          "name": "size",
+                                                          "value": {
+                                                            "type": "String",
+                                                            "value": "sm"
+                                                          },
+                                                          "is_event_handler": false
+                                                        },
+                                                        {
+                                                          "name": "variant",
+                                                          "value": {
+                                                            "type": "String",
+                                                            "value": "ghost"
+                                                          },
+                                                          "is_event_handler": false
+                                                        },
+                                                        {
+                                                          "name": "onClick",
+                                                          "value": {
+                                                            "type": "Expression",
+                                                            "code": "addWatchExpression"
+                                                          },
+                                                          "is_event_handler": true
+                                                        }
+                                                      ],
+                                                      "children": [
+                                                        {
+                                                          "node_type": {
+                                                            "type": "Element",
+                                                            "tag": "Plus",
+                                                            "is_component": true,
+                                                            "attributes": [
+                                                              {
+                                                                "name": "className",
+                                                                "value": {
+                                                                  "type": "String",
+                                                                  "value": "w-3 h-3"
+                                                                },
+                                                                "is_event_handler": false
+                                                              }
+                                                            ],
+                                                            "children": []
+                                                          },
+                                                          "location": {
+                                                            "start_line": 341,
+                                                            "start_col": 20,
+                                                            "end_line": 341,
+                                                            "end_col": 48
+                                                          }
+                                                        }
+                                                      ]
+                                                    },
+                                                    "location": {
+                                                      "start_line": 336,
+                                                      "start_col": 18,
+                                                      "end_line": 342,
+                                                      "end_col": 27
+                                                    }
+                                                  }
+                                                ]
+                                              },
+                                              "location": {
+                                                "start_line": 327,
+                                                "start_col": 16,
+                                                "end_line": 343,
+                                                "end_col": 22
+                                              }
+                                            }
+                                          ]
+                                        },
+                                        "location": {
+                                          "start_line": 326,
+                                          "start_col": 14,
+                                          "end_line": 344,
+                                          "end_col": 20
+                                        }
+                                      },
+                                      {
+                                        "node_type": {
+                                          "type": "Expression",
+                                          "code": "watchExpressions.length > 0 ? (\n                watchExpressions.map(watch => (\n                  <div key={watch.id} className=\"flex gap-2 px-3 py-1 text-xs items-center\">\n                    <span className=\"text-[#9cdcfe] min-w-[100px]\">{watch.expression}</span>\n                    <span className=\"text-[#ce9178] flex-1\">\n                      {watch.error ? `Error: ${watch.error}` : watch.value}\n                    </span>\n                    <Button\n                      size=\"sm\"\n                      variant=\"ghost\"\n                      onClick={() => removeWatchExpression(watch.id)}\n                    >\n                      <Trash2 className=\"w-3 h-3\" />\n                    </Button>\n                  </div>\n                ))\n              ) : (\n                <div className=\"px-5 py-5 text-center text-[#858585] text-xs\">\n                  Add expressions to watch their values\n                </div>\n              )"
+                                        },
+                                        "location": {
+                                          "start_line": 345,
+                                          "start_col": 14,
+                                          "end_line": 365,
+                                          "end_col": 16
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 325,
+                                    "start_col": 12,
+                                    "end_line": 366,
+                                    "end_col": 31
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 321,
+                              "start_col": 10,
+                              "end_line": 367,
+                              "end_col": 26
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 228,
+                        "start_col": 8,
+                        "end_line": 368,
+                        "end_col": 20
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 227,
+                  "start_col": 6,
+                  "end_line": 369,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 146,
+            "start_col": 4,
+            "end_line": 370,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [
+        {
+          "name": "handleStart",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    setDebugState('running')\n  }",
+          "state_mutations": [
+            "setDebugState('running')"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setDebugState",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "debugState"
+              },
+              "arguments": [
+                "'running'"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setDebugState"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handlePause",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    setDebugState('paused')\n  }",
+          "state_mutations": [
+            "setDebugState('paused')"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setDebugState",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "debugState"
+              },
+              "arguments": [
+                "'paused'"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setDebugState"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handleStop",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    setDebugState('stopped')\n  }",
+          "state_mutations": [
+            "setDebugState('stopped')"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setDebugState",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "debugState"
+              },
+              "arguments": [
+                "'stopped'"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setDebugState"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handleStepOver",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [],
+          "side_effects": [],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handleStepInto",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [],
+          "side_effects": [],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handleStepOut",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n  }",
+          "state_mutations": [],
+          "api_calls": [],
+          "calls": [],
+          "side_effects": [],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        },
+        {
+          "name": "handleRestart",
+          "event_type": null,
+          "is_async": false,
+          "body_summary": "() => {\n    setDebugState('running')\n  }",
+          "state_mutations": [
+            "setDebugState('running')"
+          ],
+          "api_calls": [],
+          "calls": [
+            {
+              "name": "setDebugState",
+              "source": {
+                "type": "StateSetter",
+                "state_name": "debugState"
+              },
+              "arguments": [
+                "'running'"
+              ],
+              "is_async": false
+            }
+          ],
+          "side_effects": [
+            {
+              "kind": "StateMutation",
+              "target": "setDebugState"
+            }
+          ],
+          "parameters": [],
+          "has_conditionals": false,
+          "has_early_return": false
+        }
+      ],
+      "child_components": [
+        "Accordion",
+        "AccordionContent",
+        "AccordionItem",
+        "AccordionTrigger",
+        "ArrowDownToLine",
+        "ArrowRightToLine",
+        "ArrowUpFromLine",
+        "Button",
+        "Circle",
+        "Input",
+        "Pause",
+        "Play",
+        "Plus",
+        "RotateCcw",
+        "Square"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "debugState",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "breakpoints",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "variables",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "callStack",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "watchExpressions",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "newWatchExpression",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "activeStackFrame",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/debugger_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:debugState",
+        "to_field": "debugState",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"stopped\"",
+        "reasoning": "useState hook 'debugState' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:breakpoints",
+        "to_field": "breakpoints",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'breakpoints' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:variables",
+        "to_field": "variables",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'variables' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:callStack",
+        "to_field": "callStack",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'callStack' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:watchExpressions",
+        "to_field": "watchExpressions",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'watchExpressions' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:newWatchExpression",
+        "to_field": "newWatchExpression",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'newWatchExpression' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:activeStackFrame",
+        "to_field": "activeStackFrame",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"1\"",
+        "reasoning": "useState hook 'activeStackFrame' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateDebugState",
+        "from_handler": "setDebugState",
+        "payload": null,
+        "state_changes": [
+          "self.debugState = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateBreakpoints",
+        "from_handler": "setBreakpoints",
+        "payload": null,
+        "state_changes": [
+          "self.breakpoints = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateVariables",
+        "from_handler": "setVariables",
+        "payload": null,
+        "state_changes": [
+          "self.variables = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateCallStack",
+        "from_handler": "setCallStack",
+        "payload": null,
+        "state_changes": [
+          "self.callStack = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateWatchExpressions",
+        "from_handler": "setWatchExpressions",
+        "payload": null,
+        "state_changes": [
+          "self.watchExpressions = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateNewWatchExpression",
+        "from_handler": "setNewWatchExpression",
+        "payload": null,
+        "state_changes": [
+          "self.newWatchExpression = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateActiveStackFrame",
+        "from_handler": "setActiveStackFrame",
+        "payload": null,
+        "state_changes": [
+          "self.activeStackFrame = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Start",
+        "from_handler": "handleStart",
+        "payload": null,
+        "state_changes": [
+          "self.debugState = 'running'"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Pause",
+        "from_handler": "handlePause",
+        "payload": null,
+        "state_changes": [
+          "self.debugState = 'paused'"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Stop",
+        "from_handler": "handleStop",
+        "payload": null,
+        "state_changes": [
+          "self.debugState = 'stopped'"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "StepOver",
+        "from_handler": "handleStepOver",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "StepInto",
+        "from_handler": "handleStepInto",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "StepOut",
+        "from_handler": "handleStepOut",
+        "payload": null,
+        "state_changes": [],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "Restart",
+        "from_handler": "handleRestart",
+        "payload": null,
+        "state_changes": [
+          "self.debugState = 'running'"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [],
+  "dependencies": {
+    "components": [
+      "Accordion",
+      "AccordionContent",
+      "AccordionItem",
+      "AccordionTrigger",
+      "ArrowDownToLine",
+      "ArrowRightToLine",
+      "ArrowUpFromLine",
+      "Button",
+      "Circle",
+      "Input",
+      "Pause",
+      "Play",
+      "Plus",
+      "RotateCcw",
+      "Square"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [
+    "7 state variables",
+    "7 event handlers"
+  ],
+  "status": "pending"
+}

@@ -1,0 +1,74 @@
+invoke qliphoth·prelude·*;
+rite welcome_screen(title: Any, subtitle: Any, actions: Any, shortcuts: Any, class_name: Any) -> VNode! {
+    VNode·div()
+        ·class("flex flex-col items-center justify-center h-full p-8 text-[var(--text-secondary)] " + class_name.to_string())
+        ·child(
+        FileCode·view()
+            ·class("h-16 w-16 mb-6 text-[var(--bg-tertiary)]")
+        )
+        ·child(
+        VNode·h2()
+            ·class("text-xl font-semibold text-[var(--text-primary)] mb-2")
+            ·text_child(title·to_string())
+        )
+        ·child(
+        VNode·p()
+            ·class("text-sm mb-8 max-w-md text-center")
+            ·text_child(subtitle·to_string())
+        )
+        ·when(actions.len() > 0, VNode·div()
+            ·class("grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mb-8")
+            // Map: ∀ action ∈ actions
+            ·children(actions.iter().map(|action| VNode·button()
+                    ·attr("key", action.id)
+                    ·on_click(Click)
+                    ·class("flex flex-col items-center gap-2 p-4 rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] transition-colors border border-[var(--border-primary)] hover:border-[var(--accent-primary)]")
+                    ·child(
+                    VNode·span()
+                        ·class("text-[var(--accent-primary)] [&>svg]:h-6 [&>svg]:w-6")
+                        ·text_child(action.icon·to_string())
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-sm text-[var(--text-primary)]")
+                        ·text_child(action.title·to_string())
+                    )
+                    ·child(
+                    VNode·span()
+                        ·class("text-xs text-[var(--text-secondary)]")
+                        ·text_child(action.description·to_string())
+                    )).collect()))
+        ·child(
+        VNode·div()
+            ·class("space-y-2")
+            ·child(
+            VNode·div()
+                ·class("flex items-center gap-2 text-xs text-[var(--text-muted)]")
+                ·child(
+                Keyboard·view()
+                    ·class("h-4 w-4")
+                )
+                ·child(
+                VNode·span()
+                    ·text_child("Keyboard Shortcuts")
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex flex-wrap gap-4 justify-center")
+                // Map: ∀ shortcut ∈ shortcuts
+                ·children(shortcuts.iter().map(|shortcut| VNode·div()
+                        ·attr("key", index)
+                        ·class("flex items-center gap-2 text-xs")
+                        ·child(
+                        VNode·span()
+                            ·class("text-[var(--text-secondary)]")
+                            ·text_child(shortcut.label·to_string())
+                        )
+                        ·child(
+                        KeyboardShortcut·view()
+                            ·attr("keys", shortcut.keys)
+                        )).collect())
+            )
+        )
+}

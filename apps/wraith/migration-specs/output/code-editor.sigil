@@ -1,0 +1,123 @@
+invoke qliphoth·prelude·*;
+ᛈ CodeEditorMsg {
+    UpdateContent,
+    UpdateLoading,
+    UpdateSaving,
+    UpdateSaveStatus,
+    UpdateError,
+    UpdateIsDirty,
+    Save,
+}
+actor CodeEditor {
+    state content: String! = "",
+    state loading: bool! = false,
+    state saving: bool! = false,
+    state saveStatus: String! = "idle",
+    state error: Option<Any>~ = None,
+    state isDirty: bool! = false,
+    state editorRef: Option<Any>! = ∅,
+
+    rite new(file_path: Any, settings: Any) -> This! {
+        self.file_path = file_path;
+        self.settings = settings;
+        This
+    }
+
+    on UpdateContent {
+        self.content = msg.0;
+    }
+
+    on UpdateLoading {
+        self.loading = msg.0;
+    }
+
+    on UpdateSaving {
+        self.saving = msg.0;
+    }
+
+    on UpdateSaveStatus {
+        self.saveStatus = msg.0;
+    }
+
+    on UpdateError {
+        self.error = msg.0;
+    }
+
+    on UpdateIsDirty {
+        self.isDirty = msg.0;
+    }
+
+    on Save {
+        self.saving = true;
+        self.saveStatus = 'idle';
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("w-full h-full flex flex-col bg-[#1e1e1e]")
+            ·child(
+            VNode·div()
+                ·class("flex items-center gap-2 px-3 py-2 bg-[#2b2b2b] border-b border-[#3c3c3c] text-[#cccccc] text-xs font-mono")
+                ·child(
+                VNode·span()
+                    ·text_child(self.file_path·to_string())
+                )
+                ·when(self.is_dirty, VNode·span()
+                    ·class("text-[#f59e0b] ml-2")
+                    ·attr("title", "Unsaved changes")
+                    ·text_child("●"))
+                ·child(
+                VNode·div()
+                    ·class("ml-auto flex items-center gap-2")
+                    ·when(save_status == "saved", VNode·span()
+                        ·class("flex items-center gap-1 text-[#4ade80] text-xs animate-in fade-in duration-200")
+                        ·child(
+                        Check·view()
+                            ·class("w-3 h-3")
+                        )
+                        ·text_child("Saved"))
+                    ·when(save_status == "error", VNode·span()
+                        ·class("text-[#f48771] text-xs")
+                        ·text_child("Save failed"))
+                    ·child(
+                    Button·view()
+                        ·attr("variant", "ghost")
+                        ·attr("size", "sm")
+                        ·on_click(Click)
+                        ·when(¬is_dirty ∨ saving, |n| n·attr("disabled", "true"))
+                        ·attr("title", "Save (Ctrl+S)")
+                        ·when_else(self.saving, Loader2·view()
+                            ·class("w-4 h-4 animate-spin"), Save·view()
+                            ·class("w-4 h-4"))
+                    )
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 min-h-0 relative")
+                ·child(
+                Editor·view()
+                    ·attr("height", "100%")
+                    ·attr("language", get_language(file_path))
+                    ·attr("value", self.content)
+                    ·attr("theme", .theme == "light" ? "vs-light")
+                    ·on_change(Change)
+                    ·on_mount(Mount)
+                    ·attr("options", ∅)
+                )
+                ·child(
+                AICodeAssistant·view()
+                    ·attr("editor", editor_ref.current)
+                    ·attr("enabled", True)
+                )
+                ·child(
+                CollaborativeEditor·view()
+                    ·attr("editor", editor_ref.current)
+                    ·attr("filePath", self.file_path)
+                    ·attr("userId", local_storage.get_item("wraith_user_id") ∨ "user-")
+                    ·attr("userName", local_storage.get_item("wraith_user_name") ∨ "Anonymous")
+                    ·attr("enabled", True)
+                )
+            )
+    }
+}

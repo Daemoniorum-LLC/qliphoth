@@ -1,0 +1,1074 @@
+{
+  "id": "ui/components/organisms/Toolbar.tsx:Toolbar",
+  "name": "Toolbar",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/organisms/Toolbar.tsx",
+    "code": "import React from 'react'\nimport { Plus, ChevronUp, ChevronDown, Command } from 'lucide-react'\nimport { Button } from '@persona-framework/ui/button'\nimport { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@persona-framework/ui/dropdown-menu'\nimport { KeyboardShortcut } from '../atoms'\n\nexport interface ToolbarPanel {\n  id: string\n  name: string\n}\n\nexport interface ToolbarProps {\n  collapsed: boolean\n  onToggleCollapse: () => void\n  onCommandPalette: () => void\n  availablePanels: ToolbarPanel[]\n  onAddToLeft: (panelId: string) => void\n  onAddToRight: (panelId: string) => void\n  panelCount: number\n  tabCount: number\n  className?: string\n}\n\nexport const Toolbar: React.FC<ToolbarProps> = ({\n  collapsed,\n  onToggleCollapse,\n  onCommandPalette,\n  availablePanels,\n  onAddToLeft,\n  onAddToRight,\n  panelCount,\n  tabCount,\n  className = '',\n}) => {\n  if (collapsed) {\n    return (\n      <div className={`py-0.5 px-2 bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] flex justify-center ${className}`}>\n        <Button\n          variant=\"ghost\"\n          size=\"sm\"\n          onClick={onToggleCollapse}\n          title=\"Expand toolbar\"\n        >\n          <ChevronDown className=\"h-4 w-4\" />\n        </Button>\n      </div>\n    )\n  }\n\n  return (\n    <div className={`flex gap-2 px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] items-center text-xs text-[var(--text-primary)] ${className}`}>\n      <span className=\"font-semibold text-[var(--accent-primary)]\">Wraith</span>\n      <span className=\"text-[var(--text-muted)]\">|</span>\n\n      <button\n        onClick={onCommandPalette}\n        className=\"flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors\"\n        title=\"Open Command Palette\"\n      >\n        <Command className=\"h-3.5 w-3.5\" />\n        <KeyboardShortcut keys={['Ctrl', 'Shift', 'P']} />\n      </button>\n\n      <div className=\"flex-1\" />\n\n      {availablePanels.length > 0 && (\n        <>\n          <DropdownMenu>\n            <DropdownMenuTrigger asChild>\n              <Button variant=\"ghost\" size=\"sm\" className=\"gap-1\" title=\"Add panel to left sidebar\">\n                <Plus className=\"h-4 w-4\" />\n                Add to Left\n              </Button>\n            </DropdownMenuTrigger>\n            <DropdownMenuContent>\n              {availablePanels.map((panel) => (\n                <DropdownMenuItem key={panel.id} onClick={() => onAddToLeft(panel.id)}>\n                  {panel.name}\n                </DropdownMenuItem>\n              ))}\n            </DropdownMenuContent>\n          </DropdownMenu>\n\n          <DropdownMenu>\n            <DropdownMenuTrigger asChild>\n              <Button variant=\"ghost\" size=\"sm\" className=\"gap-1\" title=\"Add panel to right sidebar\">\n                <Plus className=\"h-4 w-4\" />\n                Add to Right\n              </Button>\n            </DropdownMenuTrigger>\n            <DropdownMenuContent>\n              {availablePanels.map((panel) => (\n                <DropdownMenuItem key={panel.id} onClick={() => onAddToRight(panel.id)}>\n                  {panel.name}\n                </DropdownMenuItem>\n              ))}\n            </DropdownMenuContent>\n          </DropdownMenu>\n        </>\n      )}\n\n      <span className=\"text-[11px] text-[var(--text-secondary)]\">\n        {panelCount} panels | {tabCount} tabs\n      </span>\n\n      <Button\n        variant=\"ghost\"\n        size=\"sm\"\n        onClick={onToggleCollapse}\n        className=\"ml-2\"\n        title=\"Collapse toolbar\"\n      >\n        <ChevronUp className=\"h-4 w-4\" />\n      </Button>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "Toolbar",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 24,
+        "start_col": 47,
+        "end_line": 117,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "collapsed",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onToggleCollapse",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onCommandPalette",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "availablePanels",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onAddToLeft",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "onAddToRight",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        },
+        {
+          "name": "panelCount",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "tabCount",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "className",
+          "type_annotation": null,
+          "required": false,
+          "default_value": "''",
+          "is_callback": false,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "Expression",
+                  "code": "`flex gap-2 px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border-primary)] items-center text-xs text-[var(--text-primary)] ${className}`"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "span",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "font-semibold text-[var(--accent-primary)]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "Wraith"
+                      },
+                      "location": {
+                        "start_line": 52,
+                        "start_col": 67,
+                        "end_line": 52,
+                        "end_col": 73
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 52,
+                  "start_col": 6,
+                  "end_line": 52,
+                  "end_col": 80
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "span",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "text-[var(--text-muted)]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "|"
+                      },
+                      "location": {
+                        "start_line": 53,
+                        "start_col": 49,
+                        "end_line": 53,
+                        "end_col": 50
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 53,
+                  "start_col": 6,
+                  "end_line": 53,
+                  "end_col": 57
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "button",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "onClick",
+                      "value": {
+                        "type": "Expression",
+                        "code": "onCommandPalette"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "title",
+                      "value": {
+                        "type": "String",
+                        "value": "Open Command Palette"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Command",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "h-3.5 w-3.5"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 60,
+                        "start_col": 8,
+                        "end_line": 60,
+                        "end_col": 43
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "KeyboardShortcut",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "keys",
+                            "value": {
+                              "type": "Expression",
+                              "code": "['Ctrl', 'Shift', 'P']"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 61,
+                        "start_col": 8,
+                        "end_line": 61,
+                        "end_col": 58
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 55,
+                  "start_col": 6,
+                  "end_line": 62,
+                  "end_col": 15
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex-1"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": []
+                },
+                "location": {
+                  "start_line": 64,
+                  "start_col": 6,
+                  "end_line": 64,
+                  "end_col": 32
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Conditional",
+                  "condition": "availablePanels.length > 0",
+                  "consequent": {
+                    "node_type": {
+                      "type": "Fragment",
+                      "children": [
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "DropdownMenu",
+                            "is_component": true,
+                            "attributes": [],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "DropdownMenuTrigger",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "asChild",
+                                      "value": {
+                                        "type": "True"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Button",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "ghost"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "size",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "sm"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "gap-1"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "title",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Add panel to left sidebar"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "Plus",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "h-4 w-4"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 71,
+                                              "start_col": 16,
+                                              "end_line": 71,
+                                              "end_col": 44
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Add to Left"
+                                            },
+                                            "location": {
+                                              "start_line": 71,
+                                              "start_col": 44,
+                                              "end_line": 73,
+                                              "end_col": 14
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 70,
+                                        "start_col": 14,
+                                        "end_line": 73,
+                                        "end_col": 23
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 69,
+                                  "start_col": 12,
+                                  "end_line": 74,
+                                  "end_col": 34
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "DropdownMenuContent",
+                                  "is_component": true,
+                                  "attributes": [],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Map",
+                                        "iterable": "availablePanels",
+                                        "item_name": "panel",
+                                        "key_expr": "panel.id",
+                                        "body": {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "DropdownMenuItem",
+                                            "is_component": true,
+                                            "attributes": [
+                                              {
+                                                "name": "key",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "panel.id"
+                                                },
+                                                "is_event_handler": false
+                                              },
+                                              {
+                                                "name": "onClick",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "() => onAddToLeft(panel.id)"
+                                                },
+                                                "is_event_handler": true
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Expression",
+                                                  "code": "panel.name"
+                                                },
+                                                "location": {
+                                                  "start_line": 78,
+                                                  "start_col": 18,
+                                                  "end_line": 78,
+                                                  "end_col": 30
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 77,
+                                            "start_col": 16,
+                                            "end_line": 79,
+                                            "end_col": 35
+                                          }
+                                        }
+                                      },
+                                      "location": {
+                                        "start_line": 76,
+                                        "start_col": 14,
+                                        "end_line": 80,
+                                        "end_col": 17
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 75,
+                                  "start_col": 12,
+                                  "end_line": 81,
+                                  "end_col": 34
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 68,
+                            "start_col": 10,
+                            "end_line": 82,
+                            "end_col": 25
+                          }
+                        },
+                        {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "DropdownMenu",
+                            "is_component": true,
+                            "attributes": [],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "DropdownMenuTrigger",
+                                  "is_component": true,
+                                  "attributes": [
+                                    {
+                                      "name": "asChild",
+                                      "value": {
+                                        "type": "True"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Button",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "ghost"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "size",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "sm"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "gap-1"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "title",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Add panel to right sidebar"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "Plus",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "h-4 w-4"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 87,
+                                              "start_col": 16,
+                                              "end_line": 87,
+                                              "end_col": 44
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Add to Right"
+                                            },
+                                            "location": {
+                                              "start_line": 87,
+                                              "start_col": 44,
+                                              "end_line": 89,
+                                              "end_col": 14
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 86,
+                                        "start_col": 14,
+                                        "end_line": 89,
+                                        "end_col": 23
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 85,
+                                  "start_col": 12,
+                                  "end_line": 90,
+                                  "end_col": 34
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "DropdownMenuContent",
+                                  "is_component": true,
+                                  "attributes": [],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Map",
+                                        "iterable": "availablePanels",
+                                        "item_name": "panel",
+                                        "key_expr": "panel.id",
+                                        "body": {
+                                          "node_type": {
+                                            "type": "Element",
+                                            "tag": "DropdownMenuItem",
+                                            "is_component": true,
+                                            "attributes": [
+                                              {
+                                                "name": "key",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "panel.id"
+                                                },
+                                                "is_event_handler": false
+                                              },
+                                              {
+                                                "name": "onClick",
+                                                "value": {
+                                                  "type": "Expression",
+                                                  "code": "() => onAddToRight(panel.id)"
+                                                },
+                                                "is_event_handler": true
+                                              }
+                                            ],
+                                            "children": [
+                                              {
+                                                "node_type": {
+                                                  "type": "Expression",
+                                                  "code": "panel.name"
+                                                },
+                                                "location": {
+                                                  "start_line": 94,
+                                                  "start_col": 18,
+                                                  "end_line": 94,
+                                                  "end_col": 30
+                                                }
+                                              }
+                                            ]
+                                          },
+                                          "location": {
+                                            "start_line": 93,
+                                            "start_col": 16,
+                                            "end_line": 95,
+                                            "end_col": 35
+                                          }
+                                        }
+                                      },
+                                      "location": {
+                                        "start_line": 92,
+                                        "start_col": 14,
+                                        "end_line": 96,
+                                        "end_col": 17
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 91,
+                                  "start_col": 12,
+                                  "end_line": 97,
+                                  "end_col": 34
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 84,
+                            "start_col": 10,
+                            "end_line": 98,
+                            "end_col": 25
+                          }
+                        }
+                      ]
+                    },
+                    "location": {
+                      "start_line": 67,
+                      "start_col": 8,
+                      "end_line": 99,
+                      "end_col": 11
+                    }
+                  },
+                  "alternate": null
+                },
+                "location": {
+                  "start_line": 66,
+                  "start_col": 6,
+                  "end_line": 100,
+                  "end_col": 8
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "span",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "text-[11px] text-[var(--text-secondary)]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "panelCount"
+                      },
+                      "location": {
+                        "start_line": 103,
+                        "start_col": 8,
+                        "end_line": 103,
+                        "end_col": 20
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "panels |"
+                      },
+                      "location": {
+                        "start_line": 103,
+                        "start_col": 20,
+                        "end_line": 103,
+                        "end_col": 30
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Expression",
+                        "code": "tabCount"
+                      },
+                      "location": {
+                        "start_line": 103,
+                        "start_col": 30,
+                        "end_line": 103,
+                        "end_col": 40
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Text",
+                        "value": "tabs"
+                      },
+                      "location": {
+                        "start_line": 103,
+                        "start_col": 40,
+                        "end_line": 104,
+                        "end_col": 6
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 102,
+                  "start_col": 6,
+                  "end_line": 104,
+                  "end_col": 13
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Button",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "variant",
+                      "value": {
+                        "type": "String",
+                        "value": "ghost"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "size",
+                      "value": {
+                        "type": "String",
+                        "value": "sm"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onClick",
+                      "value": {
+                        "type": "Expression",
+                        "code": "onToggleCollapse"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "ml-2"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "title",
+                      "value": {
+                        "type": "String",
+                        "value": "Collapse toolbar"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "ChevronUp",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "h-4 w-4"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 113,
+                        "start_col": 8,
+                        "end_line": 113,
+                        "end_col": 41
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 106,
+                  "start_col": 6,
+                  "end_line": 114,
+                  "end_col": 15
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 51,
+            "start_col": 4,
+            "end_line": 115,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "ChevronUp",
+        "Command",
+        "DropdownMenu",
+        "DropdownMenuContent",
+        "DropdownMenuItem",
+        "DropdownMenuTrigger",
+        "KeyboardShortcut",
+        "Plus"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/toolbar.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "collapsed",
+          "field_type": "Any",
+          "from_prop": "collapsed"
+        },
+        {
+          "name": "on_toggle_collapse",
+          "field_type": "Any",
+          "from_prop": "onToggleCollapse"
+        },
+        {
+          "name": "on_command_palette",
+          "field_type": "Any",
+          "from_prop": "onCommandPalette"
+        },
+        {
+          "name": "available_panels",
+          "field_type": "Any",
+          "from_prop": "availablePanels"
+        },
+        {
+          "name": "on_add_to_left",
+          "field_type": "Any",
+          "from_prop": "onAddToLeft"
+        },
+        {
+          "name": "on_add_to_right",
+          "field_type": "Any",
+          "from_prop": "onAddToRight"
+        },
+        {
+          "name": "panel_count",
+          "field_type": "Any",
+          "from_prop": "panelCount"
+        },
+        {
+          "name": "tab_count",
+          "field_type": "Any",
+          "from_prop": "tabCount"
+        },
+        {
+          "name": "class_name",
+          "field_type": "Any",
+          "from_prop": "className"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onToggleCollapse",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onToggleCollapse' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onCommandPalette",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onCommandPalette' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onAddToLeft",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onAddToLeft' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    },
+    {
+      "id": "callback_prop_onAddToRight",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onAddToRight' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "ChevronUp",
+      "Command",
+      "DropdownMenu",
+      "DropdownMenuContent",
+      "DropdownMenuItem",
+      "DropdownMenuTrigger",
+      "KeyboardShortcut",
+      "Plus"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

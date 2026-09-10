@@ -1,0 +1,317 @@
+invoke sigil_web·prelude·*;
+ᛈ IntelliJStyleChatMsg {
+    UpdateMessages,
+    UpdateInput,
+    UpdateContextItems,
+    UpdateIsGenerating,
+    UpdateConversationId,
+    UpdateExecutionMode,
+    UpdateStrictMode,
+    UpdateBraveMode,
+    UpdateEditingMessageId,
+    UpdateEditText,
+    AttachClick,
+    FileChange,
+    Send,
+    EditMessage,
+    CancelEdit,
+    Retry,
+    SaveEdit,
+    KeyDown,
+}
+actor IntelliJStyleChat {
+    state messages: Vec<Any>! = [],
+    state input: String! = "",
+    state contextItems: Vec<Any>! = [],
+    state isGenerating: bool! = false,
+    state conversationId: Option<Any>~ = None,
+    state executionMode: String! = "execute",
+    state strictMode: bool! = false,
+    state braveMode: bool! = false,
+    state editingMessageId: Option<Any>~ = None,
+    state editText: String! = "",
+    state messagesEndRef: Option<HTMLDivElement>! = ∅,
+    state textareaRef: Option<HTMLTextAreaElement>! = ∅,
+    state fileInputRef: Option<Element>! = ∅,
+
+    rite new(persona_code: Any, on_file_reference: Any) -> This! {
+        self.persona_code = persona_code;
+        self.on_file_reference = on_file_reference;
+        This
+    }
+
+    on UpdateMessages {
+        self.messages = msg.0;
+    }
+
+    on UpdateInput {
+        self.input = msg.0;
+    }
+
+    on UpdateContextItems {
+        self.contextItems = msg.0;
+    }
+
+    on UpdateIsGenerating {
+        self.isGenerating = msg.0;
+    }
+
+    on UpdateConversationId {
+        self.conversationId = msg.0;
+    }
+
+    on UpdateExecutionMode {
+        self.executionMode = msg.0;
+    }
+
+    on UpdateStrictMode {
+        self.strictMode = msg.0;
+    }
+
+    on UpdateBraveMode {
+        self.braveMode = msg.0;
+    }
+
+    on UpdateEditingMessageId {
+        self.editingMessageId = msg.0;
+    }
+
+    on UpdateEditText {
+        self.editText = msg.0;
+    }
+
+    on AttachClick {
+        // TODO: implement
+    }
+
+    on FileChange {
+        // TODO: implement
+    }
+
+    on Send {
+        self.messages = prev => [...prev, userMessage];
+        self.input = '';
+        self.isGenerating = true;
+        self.messages = prev => [...prev, assistantMessage];
+    }
+
+    on EditMessage {
+        self.editingMessageId = messageId;
+        self.editText = content;
+    }
+
+    on CancelEdit {
+        self.editingMessageId = null;
+        self.editText = '';
+    }
+
+    on Retry {
+        self.messages = prev => prev.filter(msg => msg.id !== messageId);
+        self.input = originalMessage;
+        setTimeout(() => handleSend(), 100);
+    }
+
+    on SaveEdit {
+        self.messages = [...messagesToKeep, updatedMessage];
+        self.editingMessageId = null;
+        self.editText = '';
+        self.input = self.editText;
+        setTimeout(() => handleSend(), 100);
+    }
+
+    on KeyDown {
+        // TODO: implement
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("flex flex-col h-full bg-transparent")
+            ·when(context_items.len() > 0, VNode·div()
+                ·class("flex gap-1.5 p-2 border-t border-b border-[#3c3c3c] bg-[#252525] flex-wrap min-h-[40px]")
+                // Map: ∀ item ∈ contextItems
+                ·children(self.context_items.iter().map(|item| VNode·div()
+                        ·attr("key", self.idx)
+                        ·class("flex items-center gap-1 px-2 py-1 bg-[#3c3c3c] rounded-xl text-xs text-[#cccccc]")
+                        ·child(
+                        VNode·span()
+                            ·text_child(item.name·to_string())
+                        )
+                        ·child(
+                        Button·view()
+                            ·attr("variant", "ghost")
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·class("min-w-0 p-0.5 h-auto")
+                            ·child(
+                            X·view()
+                                ·class("w-3 h-3")
+                            )
+                        )).collect()))
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-y-auto p-3 flex flex-col gap-4 bg-transparent")
+                ·when(self.messages.len() = 0, VNode·div()
+                    ·class("flex items-center justify-center h-full text-center p-6")
+                    ·child(
+                    VNode·div()
+                        ·class("max-w-md")
+                        ·child(
+                        VNode·div()
+                            ·class("text-lg font-semibold text-[#cccccc] mb-2")
+                            ·text_child("AI Chat Assistant")
+                        )
+                        ·when(self.persona_code, VNode·div()
+                            ·class("text-sm text-[#858585] mb-6")
+                            ·text_child("Persona:")
+                            ·text_child(self.persona_code·to_string()))
+                        ·child(
+                        VNode·div()
+                            ·class("text-sm text-[#858585] mb-4")
+                            ·text_child("Try one of these prompts:")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex flex-col gap-2")
+                            // Map: ∀ prompt ∈ [
+                  'Explain how this codebase is structured',
+                  'Help me fix the failing tests',
+                  'Refactor this function to be more readable',
+                  'Add error handling to the API calls',
+                ]
+                            ·children([
+                  "Explain how this codebase is structured",
+                  "Help me fix the failing tests",
+                  "Refactor this function to be more readable",
+                  "Add error handling to the API calls",
+                ].iter().map(|prompt| VNode·button()
+                                    ·attr("key", self.idx)
+                                    ·on_click(Click)
+                                    ·class("text-left px-4 py-2.5 bg-[#2b2b2b] hover:bg-[#323232] border border-[#3c3c3c] hover:border-[#007acc] rounded-lg text-sm text-[#cccccc] transition-colors")
+                                    ·text_child(prompt·to_string())).collect())
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("text-xs text-[#666] mt-6")
+                            ·text_child("Or type your own question below")
+                        )
+                    ))
+                ·when(self.is_generating, VNode·div()
+                    ·class("self-start max-w-[90%] flex flex-col gap-2")
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center gap-2")
+                        ·child(
+                        Loader2·view()
+                            ·class("w-4 h-4 animate-spin")
+                        )
+                        ·child(
+                        VNode·span()
+                            ·class("text-sm")
+                            ·text_child("Generating response...")
+                        )
+                    ))
+                ·child(
+                VNode·div()
+                    ·attr("ref", self.messages_end_ref)
+                )
+            )
+            ·child(
+            VNode·div()
+                ·class("flex flex-col p-0 gap-0 border-t border-[#3c3c3c] bg-[#252525]")
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-2 px-3 py-2 border-b border-[#3c3c3c] text-xs")
+                    ·child(
+                    VNode·span()
+                        ·class("text-[#858585] mr-1")
+                        ·text_child("Mode:")
+                    )
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("flex items-center gap-1.5 px-2 py-1 rounded transition-colors ")
+                        ·when_else(execution_mode = "plan", FileText·view()
+                            ·class("w-3 h-3"), Zap·view()
+                            ·class("w-3 h-3"))
+                        ·text_child(execution_mode = "plan" ? "Plan" : "Execute"·to_string())
+                    )
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("flex items-center gap-1.5 px-2 py-1 rounded transition-colors )
+                        ·child(
+                        AlertTriangle·view()
+                            ·class("w-3 h-3")
+                        )
+                        ·text_child("Strict" ·to_string())
+                    )
+                    ·child(
+                    VNode·button()
+                        ·on_click(Click)
+                        ·class("flex items-center gap-1.5 px-2 py-1 rounded transition-colors )
+                        ·when_else(self.brave_mode, Flame·view()
+                            ·class("w-3 h-3"), Shield·view()
+                            ·class("w-3 h-3"))
+                        ·text_child("Auto-approve" ·to_string())
+                    )
+                    ·when(self.brave_mode, VNode·span()
+                        ·class("text-[#f87171] text-[10px] ml-1")
+                        ·text_child("Risky commands will run without confirmation"))
+                )
+                ·child(
+                VNode·div()
+                    ·class("relative w-full")
+                    ·child(
+                    VNode·div()
+                        ·class("absolute left-2 bottom-2 z-10")
+                        ·child(
+                        Button·view()
+                            ·attr("variant", "ghost")
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·attr("title", "Attach files")
+                            ·class("min-w-0 text-[#858585] hover:text-white")
+                            ·child(
+                            Plus·view()
+                                ·class("w-4 h-4")
+                            )
+                        )
+                    )
+                    ·child(
+                    VNode·input()
+                        ·attr("ref", self.file_input_ref)
+                        ·attr("type", "file")
+                        ·attr("multiple", "true")
+                        ·on_change(Change)
+                        ·class("hidden")
+                    )
+                    ·child(
+                    Textarea·view()
+                        ·attr("ref", self.textarea_ref)
+                        ·attr("value", self.input)
+                        ·on_change(Change)
+                        ·on_keydown(KeyDown)
+                        ·attr("placeholder", "Enter to send • Shift+Enter for new line")
+                        ·class("w-full min-h-[90px] bg-[#1e1e1e] text-[#cccccc] border-none pl-9 pr-14 resize-none")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("absolute right-2 bottom-2")
+                        ·child(
+                        Button·view()
+                            ·attr("variant", "ghost")
+                            ·attr("size", "sm")
+                            ·on_click(Click)
+                            ·when(¬input.trim() ∨ is_generating, |n| n·attr("disabled", "true"))
+                            ·attr("title", "Send (Enter)")
+                            ·class("min-w-0 )
+                            ·child(
+                            Send·view()
+                                ·class("w-4 h-4")
+                            )
+                        )
+                    )
+                )
+            )
+    }
+}

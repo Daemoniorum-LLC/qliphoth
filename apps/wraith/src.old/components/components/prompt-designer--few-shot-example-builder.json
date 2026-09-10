@@ -1,0 +1,787 @@
+{
+  "id": "domains/prompts/components/PromptDesigner/FewShotExampleBuilder.tsx:FewShotExampleBuilder",
+  "name": "FewShotExampleBuilder",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/domains/prompts/components/PromptDesigner/FewShotExampleBuilder.tsx",
+    "code": "import { Button, Card, Label, Textarea } from \"@persona-framework/ui\"\nimport { Plus, Trash2 } from \"lucide-react\"\nimport type { FewShotExample } from \"../../types\"\n\ninterface FewShotExampleBuilderProps {\n  examples: FewShotExample[]\n  onChange: (examples: FewShotExample[]) => void\n}\n\nexport function FewShotExampleBuilder({ examples, onChange }: FewShotExampleBuilderProps) {\n  const addExample = () => {\n    onChange([...examples, { id: crypto.randomUUID(), input: \"\", output: \"\" }])\n  }\n\n  const removeExample = (id: string) => {\n    onChange(examples.filter(ex => ex.id !== id))\n  }\n\n  const updateExample = (id: string, field: \"input\" | \"output\", value: string) => {\n    onChange(examples.map(ex => ex.id === id ? { ...ex, [field]: value } : ex))\n  }\n\n  return (\n    <div className=\"flex flex-col gap-3\">\n      <div className=\"flex items-center justify-between gap-2\">\n        <Label className=\"font-semibold\">Few-Shot Examples</Label>\n        <Button onClick={addExample} size=\"sm\">\n          <Plus className=\"mr-2 h-4 w-4\" />\n          Add Example\n        </Button>\n      </div>\n\n      <div className=\"flex flex-col gap-2 max-h-[400px] overflow-auto\">\n        {examples.map((example, index) => (\n          <Card className=\"p-3\" key={example.id}>\n            <div className=\"flex items-center justify-between gap-2 mb-2\">\n              <Label className=\"font-semibold\">\n                Example\n                {\" \"}\n                {index + 1}\n              </Label>\n              <Button\n                onClick={() => removeExample(example.id)}\n                size=\"sm\"\n                variant=\"ghost\"\n              >\n                <Trash2 className=\"h-4 w-4\" />\n              </Button>\n            </div>\n            <div className=\"mb-2\">\n              <Label className=\"text-sm\">Input</Label>\n              <Textarea\n                onChange={(e) => updateExample(example.id, \"input\", e.target.value)}\n                placeholder=\"Example input...\"\n                rows={2}\n                value={example.input}\n                className=\"resize-y\"\n              />\n            </div>\n            <div>\n              <Label className=\"text-sm\">Expected Output</Label>\n              <Textarea\n                onChange={(e) => updateExample(example.id, \"output\", e.target.value)}\n                placeholder=\"Example output...\"\n                rows={2}\n                value={example.output}\n                className=\"resize-y\"\n              />\n            </div>\n          </Card>\n        ))}\n        {examples.length === 0 && (\n          <div className=\"text-muted-foreground p-4 text-center\">\n            No examples defined. Click \"Add Example\" to create one.\n          </div>\n        )}\n      </div>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "FewShotExampleBuilder",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 10,
+        "start_col": 7,
+        "end_line": 80,
+        "end_col": 1
+      },
+      "props": [
+        {
+          "name": "examples",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": false,
+          "is_children": false
+        },
+        {
+          "name": "onChange",
+          "type_annotation": null,
+          "required": true,
+          "default_value": null,
+          "is_callback": true,
+          "is_children": false
+        }
+      ],
+      "props_type": null,
+      "hooks": [],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col gap-3"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center justify-between gap-2"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Label",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "font-semibold"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Few-Shot Examples"
+                            },
+                            "location": {
+                              "start_line": 26,
+                              "start_col": 41,
+                              "end_line": 26,
+                              "end_col": 58
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 26,
+                        "start_col": 8,
+                        "end_line": 26,
+                        "end_col": 66
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Button",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "onClick",
+                            "value": {
+                              "type": "Expression",
+                              "code": "addExample"
+                            },
+                            "is_event_handler": true
+                          },
+                          {
+                            "name": "size",
+                            "value": {
+                              "type": "String",
+                              "value": "sm"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Plus",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "mr-2 h-4 w-4"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 28,
+                              "start_col": 10,
+                              "end_line": 28,
+                              "end_col": 43
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Add Example"
+                            },
+                            "location": {
+                              "start_line": 28,
+                              "start_col": 43,
+                              "end_line": 30,
+                              "end_col": 8
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 27,
+                        "start_col": 8,
+                        "end_line": 30,
+                        "end_col": 17
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 25,
+                  "start_col": 6,
+                  "end_line": 31,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex flex-col gap-2 max-h-[400px] overflow-auto"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Map",
+                        "iterable": "examples",
+                        "item_name": "example",
+                        "key_expr": "example.id",
+                        "body": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "Card",
+                            "is_component": true,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "p-3"
+                                },
+                                "is_event_handler": false
+                              },
+                              {
+                                "name": "key",
+                                "value": {
+                                  "type": "Expression",
+                                  "code": "example.id"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex items-center justify-between gap-2 mb-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Label",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "font-semibold"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Example"
+                                            },
+                                            "location": {
+                                              "start_line": 37,
+                                              "start_col": 47,
+                                              "end_line": 39,
+                                              "end_col": 16
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "\" \""
+                                            },
+                                            "location": {
+                                              "start_line": 39,
+                                              "start_col": 16,
+                                              "end_line": 39,
+                                              "end_col": 21
+                                            }
+                                          },
+                                          {
+                                            "node_type": {
+                                              "type": "Expression",
+                                              "code": "index + 1"
+                                            },
+                                            "location": {
+                                              "start_line": 40,
+                                              "start_col": 16,
+                                              "end_line": 40,
+                                              "end_col": 27
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 37,
+                                        "start_col": 14,
+                                        "end_line": 41,
+                                        "end_col": 22
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Button",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "onClick",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "() => removeExample(example.id)"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "size",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "sm"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "variant",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "ghost"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Element",
+                                              "tag": "Trash2",
+                                              "is_component": true,
+                                              "attributes": [
+                                                {
+                                                  "name": "className",
+                                                  "value": {
+                                                    "type": "String",
+                                                    "value": "h-4 w-4"
+                                                  },
+                                                  "is_event_handler": false
+                                                }
+                                              ],
+                                              "children": []
+                                            },
+                                            "location": {
+                                              "start_line": 47,
+                                              "start_col": 16,
+                                              "end_line": 47,
+                                              "end_col": 46
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 42,
+                                        "start_col": 14,
+                                        "end_line": 48,
+                                        "end_col": 23
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 36,
+                                  "start_col": 12,
+                                  "end_line": 49,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "mb-2"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Label",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-sm"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Input"
+                                            },
+                                            "location": {
+                                              "start_line": 51,
+                                              "start_col": 41,
+                                              "end_line": 51,
+                                              "end_col": 46
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 51,
+                                        "start_col": 14,
+                                        "end_line": 51,
+                                        "end_col": 54
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Textarea",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => updateExample(example.id, \"input\", e.target.value)"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "placeholder",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Example input..."
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "rows",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "2"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "example.input"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "resize-y"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 52,
+                                        "start_col": 14,
+                                        "end_line": 58,
+                                        "end_col": 16
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 50,
+                                  "start_col": 12,
+                                  "end_line": 59,
+                                  "end_col": 18
+                                }
+                              },
+                              {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Label",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "text-sm"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Expected Output"
+                                            },
+                                            "location": {
+                                              "start_line": 61,
+                                              "start_col": 41,
+                                              "end_line": 61,
+                                              "end_col": 56
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 61,
+                                        "start_col": 14,
+                                        "end_line": 61,
+                                        "end_col": 64
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Textarea",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "onChange",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "(e) => updateExample(example.id, \"output\", e.target.value)"
+                                            },
+                                            "is_event_handler": true
+                                          },
+                                          {
+                                            "name": "placeholder",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "Example output..."
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "rows",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "2"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "value",
+                                            "value": {
+                                              "type": "Expression",
+                                              "code": "example.output"
+                                            },
+                                            "is_event_handler": false
+                                          },
+                                          {
+                                            "name": "className",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "resize-y"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 62,
+                                        "start_col": 14,
+                                        "end_line": 68,
+                                        "end_col": 16
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 60,
+                                  "start_col": 12,
+                                  "end_line": 69,
+                                  "end_col": 18
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 35,
+                            "start_col": 10,
+                            "end_line": 70,
+                            "end_col": 17
+                          }
+                        }
+                      },
+                      "location": {
+                        "start_line": 34,
+                        "start_col": 8,
+                        "end_line": 71,
+                        "end_col": 11
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Conditional",
+                        "condition": "examples.length === 0",
+                        "consequent": {
+                          "node_type": {
+                            "type": "Element",
+                            "tag": "div",
+                            "is_component": false,
+                            "attributes": [
+                              {
+                                "name": "className",
+                                "value": {
+                                  "type": "String",
+                                  "value": "text-muted-foreground p-4 text-center"
+                                },
+                                "is_event_handler": false
+                              }
+                            ],
+                            "children": [
+                              {
+                                "node_type": {
+                                  "type": "Text",
+                                  "value": "No examples defined. Click \"Add Example\" to create one."
+                                },
+                                "location": {
+                                  "start_line": 73,
+                                  "start_col": 65,
+                                  "end_line": 75,
+                                  "end_col": 10
+                                }
+                              }
+                            ]
+                          },
+                          "location": {
+                            "start_line": 73,
+                            "start_col": 10,
+                            "end_line": 75,
+                            "end_col": 16
+                          }
+                        },
+                        "alternate": null
+                      },
+                      "location": {
+                        "start_line": 72,
+                        "start_col": 8,
+                        "end_line": 76,
+                        "end_col": 10
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 33,
+                  "start_col": 6,
+                  "end_line": 77,
+                  "end_col": 12
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 24,
+            "start_col": 4,
+            "end_line": 78,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Button",
+        "Card",
+        "Label",
+        "Plus",
+        "Textarea",
+        "Trash2"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/few_shot_example_builder.sigil",
+    "pattern": "function"
+  },
+  "recommendations": {
+    "state_fields": [],
+    "messages": [],
+    "effects": [],
+    "props_handling": {
+      "strategy": "constructor",
+      "fields": [
+        {
+          "name": "examples",
+          "field_type": "Any",
+          "from_prop": "examples"
+        },
+        {
+          "name": "on_change",
+          "field_type": "Any",
+          "from_prop": "onChange"
+        }
+      ]
+    }
+  },
+  "patterns": [
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "callback_prop_onChange",
+      "category": "event_mapping",
+      "question": "How should callback prop 'onChange' be handled?",
+      "options": [
+        {
+          "label": "Message dispatch",
+          "description": "Parent passes a message ID, child dispatches to parent",
+          "recommended": true
+        },
+        {
+          "label": "Actor reference",
+          "description": "Parent passes a reference, child sends messages to parent actor",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Button",
+      "Card",
+      "Label",
+      "Plus",
+      "Textarea",
+      "Trash2"
+    ],
+    "types": []
+  },
+  "complexity": "simple",
+  "complexity_factors": [],
+  "status": "pending"
+}

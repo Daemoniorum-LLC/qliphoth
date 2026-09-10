@@ -1,0 +1,940 @@
+{
+  "id": "ui/components/panels/ExtensionManagerPanel.tsx:ExtensionManagerPanel",
+  "name": "ExtensionManagerPanel",
+  "source": {
+    "path": "/home/crook/dev/wraith/wraith-framework/src/ui/components/panels/ExtensionManagerPanel.tsx",
+    "code": "import React, { useState, useEffect } from 'react'\nimport { Button, Input, Switch, Badge, Spinner, Tabs, TabsList, TabsTrigger, TabsContent } from '@persona-framework/ui'\nimport {\n  Search,\n  Plug,\n  Settings,\n  Trash2,\n  Download,\n  CheckCircle,\n  XCircle,\n  Star,\n} from 'lucide-react'\n\ninterface Extension {\n  id: string\n  name: string\n  author: string\n  version: string\n  description: string\n  icon?: string\n  rating: number\n  downloads: number\n  category: string\n  tags: string[]\n  installed: boolean\n  enabled: boolean\n  featured?: boolean\n}\n\ntype TabValue = 'installed' | 'marketplace' | 'featured'\n\nexport function ExtensionManagerPanel() {\n  const [searchQuery, setSearchQuery] = useState('')\n  const [activeTab, setActiveTab] = useState<TabValue>('installed')\n  const [extensions, setExtensions] = useState<Extension[]>([])\n  const [loading, setLoading] = useState(false)\n\n  useEffect(() => {\n    loadExtensions()\n  }, [activeTab])\n\n  const loadExtensions = async () => {\n    setLoading(true)\n\n    try {\n      const endpoint =\n        activeTab === 'installed'\n          ? '/api/extensions/installed'\n          : activeTab === 'featured'\n            ? '/api/extensions/featured'\n            : '/api/extensions/marketplace'\n\n      const response = await fetch(endpoint)\n      if (response.ok) {\n        const data = await response.json()\n        setExtensions(data.extensions || getMockExtensions())\n      } else {\n        setExtensions(getMockExtensions())\n      }\n    } catch (error) {\n      console.error('Failed to load extensions:', error)\n      setExtensions(getMockExtensions())\n    } finally {\n      setLoading(false)\n    }\n  }\n\n  const getMockExtensions = (): Extension[] => {\n    const mockExtensions: Extension[] = [\n      {\n        id: 'theme-dracula',\n        name: 'Dracula Theme',\n        author: 'Dracula Theme',\n        version: '2.24.2',\n        description: 'Official Dracula Theme. A dark theme for many editors, shells, and more.',\n        rating: 4.8,\n        downloads: 5420000,\n        category: 'Themes',\n        tags: ['theme', 'dark', 'dracula'],\n        installed: true,\n        enabled: true,\n        featured: true,\n      },\n      {\n        id: 'prettier',\n        name: 'Prettier - Code formatter',\n        author: 'Prettier',\n        version: '10.1.0',\n        description: 'Code formatter using prettier. Supports many languages.',\n        rating: 4.7,\n        downloads: 28500000,\n        category: 'Formatters',\n        tags: ['formatter', 'prettier', 'javascript'],\n        installed: true,\n        enabled: true,\n        featured: true,\n      },\n      {\n        id: 'eslint',\n        name: 'ESLint',\n        author: 'Microsoft',\n        version: '2.4.2',\n        description: 'Integrates ESLint JavaScript into VS Code.',\n        rating: 4.6,\n        downloads: 24800000,\n        category: 'Linters',\n        tags: ['linter', 'eslint', 'javascript'],\n        installed: true,\n        enabled: false,\n      },\n      {\n        id: 'git-graph',\n        name: 'Git Graph',\n        author: 'mhutchie',\n        version: '1.30.0',\n        description: 'View a Git Graph of your repository, and perform Git actions from the graph.',\n        rating: 4.9,\n        downloads: 4100000,\n        category: 'Source Control',\n        tags: ['git', 'graph', 'visualization'],\n        installed: false,\n        enabled: false,\n        featured: true,\n      },\n      {\n        id: 'docker',\n        name: 'Docker',\n        author: 'Microsoft',\n        version: '1.26.0',\n        description: 'Makes it easy to create, manage, and debug containerized applications.',\n        rating: 4.5,\n        downloads: 15300000,\n        category: 'Containers',\n        tags: ['docker', 'containers', 'devops'],\n        installed: false,\n        enabled: false,\n      },\n      {\n        id: 'copilot',\n        name: 'GitHub Copilot',\n        author: 'GitHub',\n        version: '1.120.0',\n        description: 'Your AI pair programmer. Get suggestions for whole lines or entire functions.',\n        rating: 4.4,\n        downloads: 12000000,\n        category: 'AI',\n        tags: ['ai', 'copilot', 'autocomplete'],\n        installed: false,\n        enabled: false,\n        featured: true,\n      },\n    ]\n\n    if (activeTab === 'installed') {\n      return mockExtensions.filter((ext) => ext.installed)\n    } else if (activeTab === 'featured') {\n      return mockExtensions.filter((ext) => ext.featured)\n    }\n\n    return mockExtensions\n  }\n\n  const installExtension = async (extensionId: string) => {\n    try {\n      await fetch('/api/extensions/install', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ extensionId }),\n      })\n\n      setExtensions((prev) =>\n        prev.map((ext) =>\n          ext.id === extensionId\n            ? { ...ext, installed: true, enabled: true }\n            : ext\n        )\n      )\n    } catch (error) {\n      console.error('Failed to install extension:', error)\n      alert('Failed to install extension')\n    }\n  }\n\n  const uninstallExtension = async (extensionId: string) => {\n    try {\n      await fetch('/api/extensions/uninstall', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ extensionId }),\n      })\n\n      setExtensions((prev) =>\n        prev.map((ext) =>\n          ext.id === extensionId\n            ? { ...ext, installed: false, enabled: false }\n            : ext\n        )\n      )\n    } catch (error) {\n      console.error('Failed to uninstall extension:', error)\n      alert('Failed to uninstall extension')\n    }\n  }\n\n  const toggleExtension = async (extensionId: string) => {\n    const extension = extensions.find((ext) => ext.id === extensionId)\n    if (!extension) return\n\n    try {\n      await fetch('/api/extensions/toggle', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ extensionId, enabled: !extension.enabled }),\n      })\n\n      setExtensions((prev) =>\n        prev.map((ext) =>\n          ext.id === extensionId ? { ...ext, enabled: !ext.enabled } : ext\n        )\n      )\n    } catch (error) {\n      console.error('Failed to toggle extension:', error)\n    }\n  }\n\n  const filteredExtensions = extensions.filter((ext) => {\n    if (!searchQuery.trim()) return true\n\n    const query = searchQuery.toLowerCase()\n    return (\n      ext.name.toLowerCase().includes(query) ||\n      ext.description.toLowerCase().includes(query) ||\n      ext.tags.some((tag) => tag.toLowerCase().includes(query))\n    )\n  })\n\n  const renderRating = (rating: number) => {\n    return (\n      <div className=\"flex items-center gap-1\">\n        {[...Array(5)].map((_, i) => (\n          <Star\n            key={i}\n            className={`w-3 h-3 ${i < Math.floor(rating) ? 'fill-[#f59e0b] text-[#f59e0b]' : 'text-[#858585]'}`}\n          />\n        ))}\n        <span className=\"ml-1\">{rating.toFixed(1)}</span>\n      </div>\n    )\n  }\n\n  const formatDownloads = (count: number): string => {\n    if (count >= 1000000) {\n      return `${(count / 1000000).toFixed(1)}M`\n    } else if (count >= 1000) {\n      return `${(count / 1000).toFixed(1)}K`\n    }\n    return count.toString()\n  }\n\n  return (\n    <div className=\"flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]\">\n      <div className=\"flex items-center gap-2 px-3 py-3 border-b border-[#3c3c3c]\">\n        <Plug className=\"w-[18px] h-[18px]\" />\n        <span className=\"text-sm font-semibold text-white\">Extension Manager</span>\n      </div>\n\n      <div className=\"px-3 py-3 border-b border-[#3c3c3c]\">\n        <div className=\"relative\">\n          <Search className=\"absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858585]\" />\n          <Input\n            placeholder=\"Search extensions...\"\n            value={searchQuery}\n            onChange={(e) => setSearchQuery(e.target.value)}\n            className=\"w-full pl-8\"\n          />\n        </div>\n      </div>\n\n      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabValue)} className=\"flex flex-col flex-1\">\n        <div className=\"px-3 py-2 border-b border-[#3c3c3c]\">\n          <TabsList>\n            <TabsTrigger value=\"installed\">Installed</TabsTrigger>\n            <TabsTrigger value=\"marketplace\">Marketplace</TabsTrigger>\n            <TabsTrigger value=\"featured\">Featured</TabsTrigger>\n          </TabsList>\n        </div>\n\n        <TabsContent value={activeTab} className=\"flex-1 overflow-auto px-3 py-3\">\n          {loading && (\n            <div className=\"flex flex-col items-center gap-3 px-5 py-10\">\n              <Spinner size=\"md\" />\n              <span>Loading extensions...</span>\n            </div>\n          )}\n\n          {!loading && filteredExtensions.length === 0 && (\n            <div className=\"px-5 py-10 text-center text-[#858585] text-[13px]\">\n              {searchQuery\n                ? `No extensions found for \"${searchQuery}\"`\n                : activeTab === 'installed'\n                  ? 'No extensions installed. Browse the marketplace to discover extensions.'\n                  : 'No extensions available.'}\n            </div>\n          )}\n\n          {!loading &&\n            filteredExtensions.map((extension) => (\n              <div\n                key={extension.id}\n                className=\"bg-[#252526] border border-[#3c3c3c] rounded p-4 mb-3 hover:border-[#4fc3f7] hover:bg-[#2b2b2b] transition-colors\"\n              >\n                <div className=\"flex items-start gap-3 mb-3\">\n                  <div className=\"w-12 h-12 min-w-[48px] rounded bg-[#4fc3f7] flex items-center justify-center text-2xl text-white\">\n                    <Plug />\n                  </div>\n\n                  <div className=\"flex-1 min-w-0\">\n                    <div className=\"text-sm font-semibold text-white mb-1\">{extension.name}</div>\n                    <div className=\"text-[11px] text-[#858585] mb-1\">\n                      {extension.author} • v{extension.version}\n                    </div>\n                  </div>\n\n                  {extension.installed && (\n                    <Switch\n                      checked={extension.enabled}\n                      onCheckedChange={() => toggleExtension(extension.id)}\n                    />\n                  )}\n                </div>\n\n                <div className=\"text-xs text-[#cccccc] leading-relaxed mt-2\">\n                  {extension.description}\n                </div>\n\n                <div className=\"flex items-center gap-3 text-[11px] text-[#858585] mt-2\">\n                  {renderRating(extension.rating)}\n                  <span>•</span>\n                  <span>{formatDownloads(extension.downloads)} downloads</span>\n                  <span>•</span>\n                  <Badge variant=\"secondary\" className=\"text-[10px]\">\n                    {extension.category}\n                  </Badge>\n                </div>\n\n                <div className=\"flex gap-2 mt-3\">\n                  {!extension.installed ? (\n                    <Button\n                      size=\"sm\"\n                      onClick={() => installExtension(extension.id)}\n                    >\n                      <Download className=\"w-3 h-3 mr-1\" />\n                      Install\n                    </Button>\n                  ) : (\n                    <>\n                      <Button\n                        size=\"sm\"\n                        variant=\"ghost\"\n                      >\n                        <Settings className=\"w-3 h-3 mr-1\" />\n                        Settings\n                      </Button>\n                      <Button\n                        size=\"sm\"\n                        variant=\"ghost\"\n                        onClick={() => uninstallExtension(extension.id)}\n                      >\n                        <Trash2 className=\"w-3 h-3 mr-1\" />\n                        Uninstall\n                      </Button>\n                    </>\n                  )}\n                </div>\n              </div>\n            ))}\n        </TabsContent>\n      </Tabs>\n    </div>\n  )\n}\n",
+    "extraction": {
+      "name": "ExtensionManagerPanel",
+      "component_type": "functional",
+      "exported": true,
+      "export_type": "named",
+      "location": {
+        "start_line": 32,
+        "start_col": 7,
+        "end_line": 381,
+        "end_col": 1
+      },
+      "props": [],
+      "props_type": null,
+      "hooks": [
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 33,
+            "start_col": 40,
+            "end_line": 33,
+            "end_col": 52
+          },
+          "state_name": "searchQuery",
+          "setter_name": "setSearchQuery",
+          "initial_value": "\"\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 34,
+            "start_col": 36,
+            "end_line": 34,
+            "end_col": 67
+          },
+          "state_name": "activeTab",
+          "setter_name": "setActiveTab",
+          "initial_value": "\"installed\"",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 35,
+            "start_col": 38,
+            "end_line": 35,
+            "end_col": 63
+          },
+          "state_name": "extensions",
+          "setter_name": "setExtensions",
+          "initial_value": "[]",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useState",
+          "location": {
+            "start_line": 36,
+            "start_col": 32,
+            "end_line": 36,
+            "end_col": 47
+          },
+          "state_name": "loading",
+          "setter_name": "setLoading",
+          "initial_value": "false",
+          "dependencies": null,
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        },
+        {
+          "hook_type": "useEffect",
+          "location": {
+            "start_line": 38,
+            "start_col": 2,
+            "end_line": 40,
+            "end_col": 17
+          },
+          "state_name": null,
+          "setter_name": null,
+          "initial_value": null,
+          "dependencies": [
+            "activeTab"
+          ],
+          "has_cleanup": false,
+          "memoized_deps": null,
+          "ref_name": null,
+          "ref_type": null,
+          "context_name": null,
+          "reducer_name": null,
+          "action_types": []
+        }
+      ],
+      "custom_hooks": [],
+      "class_info": null,
+      "jsx": {
+        "root": {
+          "node_type": {
+            "type": "Element",
+            "tag": "div",
+            "is_component": false,
+            "attributes": [
+              {
+                "name": "className",
+                "value": {
+                  "type": "String",
+                  "value": "flex flex-col h-full bg-[#1e1e1e] text-[#cccccc]"
+                },
+                "is_event_handler": false
+              }
+            ],
+            "children": [
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex items-center gap-2 px-3 py-3 border-b border-[#3c3c3c]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "Plug",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "w-[18px] h-[18px]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": []
+                      },
+                      "location": {
+                        "start_line": 263,
+                        "start_col": 8,
+                        "end_line": 263,
+                        "end_col": 46
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "span",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "text-sm font-semibold text-white"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Text",
+                              "value": "Extension Manager"
+                            },
+                            "location": {
+                              "start_line": 264,
+                              "start_col": 59,
+                              "end_line": 264,
+                              "end_col": 76
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 264,
+                        "start_col": 8,
+                        "end_line": 264,
+                        "end_col": 83
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 262,
+                  "start_col": 6,
+                  "end_line": 265,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "div",
+                  "is_component": false,
+                  "attributes": [
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "px-3 py-3 border-b border-[#3c3c3c]"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "relative"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Search",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858585]"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 269,
+                              "start_col": 10,
+                              "end_line": 269,
+                              "end_col": 96
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "Input",
+                              "is_component": true,
+                              "attributes": [
+                                {
+                                  "name": "placeholder",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "Search extensions..."
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "value",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "searchQuery"
+                                  },
+                                  "is_event_handler": false
+                                },
+                                {
+                                  "name": "onChange",
+                                  "value": {
+                                    "type": "Expression",
+                                    "code": "(e) => setSearchQuery(e.target.value)"
+                                  },
+                                  "is_event_handler": true
+                                },
+                                {
+                                  "name": "className",
+                                  "value": {
+                                    "type": "String",
+                                    "value": "w-full pl-8"
+                                  },
+                                  "is_event_handler": false
+                                }
+                              ],
+                              "children": []
+                            },
+                            "location": {
+                              "start_line": 270,
+                              "start_col": 10,
+                              "end_line": 275,
+                              "end_col": 12
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 268,
+                        "start_col": 8,
+                        "end_line": 276,
+                        "end_col": 14
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 267,
+                  "start_col": 6,
+                  "end_line": 277,
+                  "end_col": 12
+                }
+              },
+              {
+                "node_type": {
+                  "type": "Element",
+                  "tag": "Tabs",
+                  "is_component": true,
+                  "attributes": [
+                    {
+                      "name": "value",
+                      "value": {
+                        "type": "Expression",
+                        "code": "activeTab"
+                      },
+                      "is_event_handler": false
+                    },
+                    {
+                      "name": "onValueChange",
+                      "value": {
+                        "type": "Expression",
+                        "code": "(value) => setActiveTab(value as TabValue)"
+                      },
+                      "is_event_handler": true
+                    },
+                    {
+                      "name": "className",
+                      "value": {
+                        "type": "String",
+                        "value": "flex flex-col flex-1"
+                      },
+                      "is_event_handler": false
+                    }
+                  ],
+                  "children": [
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "div",
+                        "is_component": false,
+                        "attributes": [
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "px-3 py-2 border-b border-[#3c3c3c]"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Element",
+                              "tag": "TabsList",
+                              "is_component": true,
+                              "attributes": [],
+                              "children": [
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "TabsTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "installed"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Installed"
+                                        },
+                                        "location": {
+                                          "start_line": 282,
+                                          "start_col": 43,
+                                          "end_line": 282,
+                                          "end_col": 52
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 282,
+                                    "start_col": 12,
+                                    "end_line": 282,
+                                    "end_col": 66
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "TabsTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "marketplace"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Marketplace"
+                                        },
+                                        "location": {
+                                          "start_line": 283,
+                                          "start_col": 45,
+                                          "end_line": 283,
+                                          "end_col": 56
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 283,
+                                    "start_col": 12,
+                                    "end_line": 283,
+                                    "end_col": 70
+                                  }
+                                },
+                                {
+                                  "node_type": {
+                                    "type": "Element",
+                                    "tag": "TabsTrigger",
+                                    "is_component": true,
+                                    "attributes": [
+                                      {
+                                        "name": "value",
+                                        "value": {
+                                          "type": "String",
+                                          "value": "featured"
+                                        },
+                                        "is_event_handler": false
+                                      }
+                                    ],
+                                    "children": [
+                                      {
+                                        "node_type": {
+                                          "type": "Text",
+                                          "value": "Featured"
+                                        },
+                                        "location": {
+                                          "start_line": 284,
+                                          "start_col": 42,
+                                          "end_line": 284,
+                                          "end_col": 50
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "location": {
+                                    "start_line": 284,
+                                    "start_col": 12,
+                                    "end_line": 284,
+                                    "end_col": 64
+                                  }
+                                }
+                              ]
+                            },
+                            "location": {
+                              "start_line": 281,
+                              "start_col": 10,
+                              "end_line": 285,
+                              "end_col": 21
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 280,
+                        "start_col": 8,
+                        "end_line": 286,
+                        "end_col": 14
+                      }
+                    },
+                    {
+                      "node_type": {
+                        "type": "Element",
+                        "tag": "TabsContent",
+                        "is_component": true,
+                        "attributes": [
+                          {
+                            "name": "value",
+                            "value": {
+                              "type": "Expression",
+                              "code": "activeTab"
+                            },
+                            "is_event_handler": false
+                          },
+                          {
+                            "name": "className",
+                            "value": {
+                              "type": "String",
+                              "value": "flex-1 overflow-auto px-3 py-3"
+                            },
+                            "is_event_handler": false
+                          }
+                        ],
+                        "children": [
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "loading",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "flex flex-col items-center gap-3 px-5 py-10"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "Spinner",
+                                        "is_component": true,
+                                        "attributes": [
+                                          {
+                                            "name": "size",
+                                            "value": {
+                                              "type": "String",
+                                              "value": "md"
+                                            },
+                                            "is_event_handler": false
+                                          }
+                                        ],
+                                        "children": []
+                                      },
+                                      "location": {
+                                        "start_line": 291,
+                                        "start_col": 14,
+                                        "end_line": 291,
+                                        "end_col": 35
+                                      }
+                                    },
+                                    {
+                                      "node_type": {
+                                        "type": "Element",
+                                        "tag": "span",
+                                        "is_component": false,
+                                        "attributes": [],
+                                        "children": [
+                                          {
+                                            "node_type": {
+                                              "type": "Text",
+                                              "value": "Loading extensions..."
+                                            },
+                                            "location": {
+                                              "start_line": 292,
+                                              "start_col": 20,
+                                              "end_line": 292,
+                                              "end_col": 41
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "location": {
+                                        "start_line": 292,
+                                        "start_col": 14,
+                                        "end_line": 292,
+                                        "end_col": 48
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 290,
+                                  "start_col": 12,
+                                  "end_line": 293,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 289,
+                              "start_col": 10,
+                              "end_line": 294,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Conditional",
+                              "condition": "!loading && filteredExtensions.length === 0",
+                              "consequent": {
+                                "node_type": {
+                                  "type": "Element",
+                                  "tag": "div",
+                                  "is_component": false,
+                                  "attributes": [
+                                    {
+                                      "name": "className",
+                                      "value": {
+                                        "type": "String",
+                                        "value": "px-5 py-10 text-center text-[#858585] text-[13px]"
+                                      },
+                                      "is_event_handler": false
+                                    }
+                                  ],
+                                  "children": [
+                                    {
+                                      "node_type": {
+                                        "type": "Expression",
+                                        "code": "searchQuery\n                ? `No extensions found for \"${searchQuery}\"`\n                : activeTab === 'installed'\n                  ? 'No extensions installed. Browse the marketplace to discover extensions.'\n                  : 'No extensions available.'"
+                                      },
+                                      "location": {
+                                        "start_line": 298,
+                                        "start_col": 14,
+                                        "end_line": 302,
+                                        "end_col": 47
+                                      }
+                                    }
+                                  ]
+                                },
+                                "location": {
+                                  "start_line": 297,
+                                  "start_col": 12,
+                                  "end_line": 303,
+                                  "end_col": 18
+                                }
+                              },
+                              "alternate": null
+                            },
+                            "location": {
+                              "start_line": 296,
+                              "start_col": 10,
+                              "end_line": 304,
+                              "end_col": 12
+                            }
+                          },
+                          {
+                            "node_type": {
+                              "type": "Expression",
+                              "code": "!loading &&\n            filteredExtensions.map((extension) => (\n              <div\n                key={extension.id}\n                className=\"bg-[#252526] border border-[#3c3c3c] rounded p-4 mb-3 hover:border-[#4fc3f7] hover:bg-[#2b2b2b] transition-colors\"\n              >\n                <div className=\"flex items-start gap-3 mb-3\">\n                  <div className=\"w-12 h-12 min-w-[48px] rounded bg-[#4fc3f7] flex items-center justify-center text-2xl text-white\">\n                    <Plug />\n                  </div>\n\n                  <div className=\"flex-1 min-w-0\">\n                    <div className=\"text-sm font-semibold text-white mb-1\">{extension.name}</div>\n                    <div className=\"text-[11px] text-[#858585] mb-1\">\n                      {extension.author} • v{extension.version}\n                    </div>\n                  </div>\n\n                  {extension.installed && (\n                    <Switch\n                      checked={extension.enabled}\n                      onCheckedChange={() => toggleExtension(extension.id)}\n                    />\n                  )}\n                </div>\n\n                <div className=\"text-xs text-[#cccccc] leading-relaxed mt-2\">\n                  {extension.description}\n                </div>\n\n                <div className=\"flex items-center gap-3 text-[11px] text-[#858585] mt-2\">\n                  {renderRating(extension.rating)}\n                  <span>•</span>\n                  <span>{formatDownloads(extension.downloads)} downloads</span>\n                  <span>•</span>\n                  <Badge variant=\"secondary\" className=\"text-[10px]\">\n                    {extension.category}\n                  </Badge>\n                </div>\n\n                <div className=\"flex gap-2 mt-3\">\n                  {!extension.installed ? (\n                    <Button\n                      size=\"sm\"\n                      onClick={() => installExtension(extension.id)}\n                    >\n                      <Download className=\"w-3 h-3 mr-1\" />\n                      Install\n                    </Button>\n                  ) : (\n                    <>\n                      <Button\n                        size=\"sm\"\n                        variant=\"ghost\"\n                      >\n                        <Settings className=\"w-3 h-3 mr-1\" />\n                        Settings\n                      </Button>\n                      <Button\n                        size=\"sm\"\n                        variant=\"ghost\"\n                        onClick={() => uninstallExtension(extension.id)}\n                      >\n                        <Trash2 className=\"w-3 h-3 mr-1\" />\n                        Uninstall\n                      </Button>\n                    </>\n                  )}\n                </div>\n              </div>\n            ))"
+                            },
+                            "location": {
+                              "start_line": 306,
+                              "start_col": 10,
+                              "end_line": 376,
+                              "end_col": 15
+                            }
+                          }
+                        ]
+                      },
+                      "location": {
+                        "start_line": 288,
+                        "start_col": 8,
+                        "end_line": 377,
+                        "end_col": 22
+                      }
+                    }
+                  ]
+                },
+                "location": {
+                  "start_line": 279,
+                  "start_col": 6,
+                  "end_line": 378,
+                  "end_col": 13
+                }
+              }
+            ]
+          },
+          "location": {
+            "start_line": 261,
+            "start_col": 4,
+            "end_line": 379,
+            "end_col": 10
+          }
+        }
+      },
+      "handlers": [],
+      "child_components": [
+        "Input",
+        "Plug",
+        "Search",
+        "Spinner",
+        "Tabs",
+        "TabsContent",
+        "TabsList",
+        "TabsTrigger"
+      ],
+      "architecture": {
+        "service_actors": [],
+        "state_ownership": [
+          {
+            "state_name": "searchQuery",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "activeTab",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "extensions",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          },
+          {
+            "state_name": "loading",
+            "owner": "Self",
+            "access_pattern": "local",
+            "source": "useState"
+          }
+        ],
+        "communication_patterns": [],
+        "zustand_stores": []
+      }
+    }
+  },
+  "target": {
+    "suggested_path": "src/components/extension_manager_panel.sigil",
+    "pattern": "actor"
+  },
+  "recommendations": {
+    "state_fields": [
+      {
+        "from_hook": "useState:searchQuery",
+        "to_field": "searchQuery",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"\"",
+        "reasoning": "useState hook 'searchQuery' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:activeTab",
+        "to_field": "activeTab",
+        "field_type": "String",
+        "evidentiality": "!",
+        "initial_value": "\"installed\"",
+        "reasoning": "useState hook 'activeTab' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:extensions",
+        "to_field": "extensions",
+        "field_type": "Vec<Any>",
+        "evidentiality": "!",
+        "initial_value": "[]",
+        "reasoning": "useState hook 'extensions' maps to actor state field"
+      },
+      {
+        "from_hook": "useState:loading",
+        "to_field": "loading",
+        "field_type": "bool",
+        "evidentiality": "!",
+        "initial_value": "false",
+        "reasoning": "useState hook 'loading' maps to actor state field"
+      }
+    ],
+    "messages": [
+      {
+        "name": "UpdateSearchQuery",
+        "from_handler": "setSearchQuery",
+        "payload": null,
+        "state_changes": [
+          "self.searchQuery = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateActiveTab",
+        "from_handler": "setActiveTab",
+        "payload": null,
+        "state_changes": [
+          "self.activeTab = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateExtensions",
+        "from_handler": "setExtensions",
+        "payload": null,
+        "state_changes": [
+          "self.extensions = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      },
+      {
+        "name": "UpdateLoading",
+        "from_handler": "setLoading",
+        "payload": null,
+        "state_changes": [
+          "self.loading = /* new value */"
+        ],
+        "side_effects": [],
+        "service_calls": []
+      }
+    ],
+    "effects": [
+      {
+        "from_hook": "useEffect[activeTab]",
+        "strategy": "inline",
+        "reasoning": "Deps [activeTab] → inline in handlers that change these",
+        "inline_in": "activeTab",
+        "lifecycle_event": null
+      }
+    ],
+    "props_handling": {
+      "strategy": "none",
+      "fields": []
+    }
+  },
+  "patterns": [
+    {
+      "name": "useState_to_state",
+      "description": "Convert useState hook to actor state field",
+      "react": "const [count, setCount] = useState(0);",
+      "sigil": "state count: i32! = 0,"
+    },
+    {
+      "name": "useEffect_deps",
+      "description": "Convert useEffect with deps to inline in message handler",
+      "react": "useEffect(() => { save(count); }, [count]);",
+      "sigil": "// Inline in the message that changes count:\non Increment { self.count += 1; self.save(); }"
+    },
+    {
+      "name": "jsx_to_builder",
+      "description": "Convert JSX element to VNode builder",
+      "react": "<div className=\"container\" id=\"main\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>",
+      "sigil": "VNode·div()\n    ·class(\"container\")\n    ·id(\"main\")\n    ·child(VNode·h1()·text(\"Title\"))\n    ·child(VNode·p()·text(\"Content\"))"
+    },
+    {
+      "name": "onClick_to_message",
+      "description": "Convert onClick handler to message dispatch",
+      "react": "<button onClick={() => setCount(c => c + 1)}>",
+      "sigil": "VNode·button()·on_click(Increment)"
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "effect_4",
+      "category": "effect_placement",
+      "question": "Where should the effect with deps [activeTab] be placed?",
+      "options": [
+        {
+          "label": "Inline in handlers",
+          "description": "Add effect logic to message handlers that change the dependencies",
+          "recommended": true
+        },
+        {
+          "label": "Separate message",
+          "description": "Create a dedicated message for the effect logic",
+          "recommended": false
+        }
+      ],
+      "default_choice": 0
+    }
+  ],
+  "dependencies": {
+    "components": [
+      "Input",
+      "Plug",
+      "Search",
+      "Spinner",
+      "Tabs",
+      "TabsContent",
+      "TabsList",
+      "TabsTrigger"
+    ],
+    "types": []
+  },
+  "complexity": "moderate",
+  "complexity_factors": [],
+  "status": "pending"
+}

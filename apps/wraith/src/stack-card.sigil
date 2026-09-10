@@ -1,0 +1,139 @@
+invoke qliphoth·prelude·*;
+ᛈ StackCardMsg {
+    UpdateExpanded,
+}
+☉ actor StackCard {
+    state expanded: bool! = false,
+
+    rite new(stack: Any) -> This! {
+        self.stack = stack;
+        This
+    }
+
+    on UpdateExpanded {
+        self.expanded = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] overflow-hidden")
+            ·child(
+            VNode·div()
+                ·class("flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--bg-hover)]")
+                ·on_click(Click)
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-3")
+                    ·child(
+                    VNode·button()
+                        ·class("text-[var(--text-secondary)]")
+                        ·when_else(self.expanded, ChevronDown·view()
+                            ·class("h-4 w-4"), ChevronRight·view()
+                            ·class("h-4 w-4"))
+                    )
+                    ·child(
+                    ProviderIcon·view()
+                        ·attr("provider", stack.provider)
+                    )
+                    ·child(
+                    VNode·div()
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2")
+                            ·child(
+                            VNode·span()
+                                ·class("font-medium text-[var(--text-primary)]")
+                                ·text_child(stack.name·to_string())
+                            )
+                            ·child(
+                            StatusBadge·view()
+                                ·attr("status", stack.status)
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-2 text-xs text-[var(--text-muted)] mt-0.5")
+                            ·child(
+                            Boxes·view()
+                                ·class("h-3 w-3")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child(stack.resource_count·to_string())
+                                ·text_child("resources")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·class("text-[var(--border-primary)]")
+                                ·text_child("•")
+                            )
+                            ·child(
+                            VNode·span()
+                                ·text_child("Updated")
+                                ·text_child(self.format_relative_time(stack.last_updated)·to_string())
+                            )
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·class("flex items-center gap-1")
+                    ·on_click(Click)
+                    ·child(
+                    IconButton·view()
+                        ·attr("icon", None)
+                        ·attr("size", "sm")
+                        ·attr("tooltip", "Apply")
+                        ·on_click(Click)
+                    )
+                    ·child(
+                    IconButton·view()
+                        ·attr("icon", None)
+                        ·attr("size", "sm")
+                        ·attr("tooltip", "View plan")
+                        ·on_click(Click)
+                    )
+                    ·child(
+                    ActionMenu·view()
+                        ·child(
+                        ActionItem·view()
+                            ·attr("icon", None)
+                            ·attr("label", "Apply")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        ActionItem·view()
+                            ·attr("icon", None)
+                            ·attr("label", "Plan")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        ActionItem·view()
+                            ·attr("icon", None)
+                            ·attr("label", "Refresh")
+                            ·on_click(Click)
+                        )
+                        ·child(
+                        ActionItem·view()
+                            ·attr("icon", None)
+                            ·attr("label", "Destroy")
+                            ·on_click(Click)
+                            ·attr("variant", "danger")
+                        )
+                    )
+                )
+            )
+            ·when(self.expanded ∧ self.object·keys(stack.outputs).len() > 0, VNode·div()
+                ·class("border-t border-[var(--border-subtle)] bg-[var(--bg-primary)] p-4")
+                ·child(
+                VNode·h4()
+                    ·class("text-xs font-medium text-[var(--text-secondary)] mb-3")
+                    ·text_child("Outputs")
+                )
+                ·child(
+                VNode·div()
+                    ·class("space-y-2")
+                    ·text_child(None·to_string())
+                ))
+    }
+}

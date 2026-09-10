@@ -1,0 +1,203 @@
+invoke qliphoth·prelude·*;
+ᛈ MonitoringSectionMsg {
+    UpdateAlertFilter,
+}
+actor MonitoringSection {
+    state alertFilter: String! = "all",
+
+    on UpdateAlertFilter {
+        self.alertFilter = msg.0;
+    }
+
+    rite view(self) -> VNode! {
+        VNode·div()
+            ·class("h-full flex flex-col")
+            ·child(
+            SectionHeader·view()
+                ·attr("title", "Monitoring")
+                ·attr("subtitle", "System health & alerts")
+                ·attr("icon", None)
+                ·on_refresh(Refresh)
+            )
+            ·child(
+            VNode·div()
+                ·class("flex-1 overflow-auto space-y-6 pr-1")
+                ·child(
+                VNode·div()
+                    ·child(
+                    VNode·h3()
+                        ·class("text-xs font-medium text-[var(--text-secondary)] mb-3")
+                        ·text_child("System Metrics")
+                    )
+                    ·child(
+                    VNode·div()
+                        ·class("grid grid-cols-3 gap-3")
+                        ·child(
+                        VNode·div()
+                            ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4")
+                            ·child(
+                            VNode·div()
+                                ·class("flex items-center justify-between mb-3")
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[var(--text-secondary)]")
+                                    ·text_child("CPU Usage")
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[var(--accent-error)]")
+                                    ·text_child("+12%")
+                                )
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("flex items-end justify-between")
+                                ·child(
+                                VNode·div()
+                                    ·child(
+                                    VNode·span()
+                                        ·class("text-2xl font-semibold text-[var(--text-primary)]")
+                                        ·text_child("80")
+                                    )
+                                    ·child(
+                                    VNode·span()
+                                        ·class("text-sm text-[var(--text-muted)]")
+                                        ·text_child("%")
+                                    )
+                                )
+                                ·child(
+                                MiniChart·view()
+                                    ·attr("data", self.cpu_data)
+                                    ·attr("color", "var(--accent-error)")
+                                )
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4")
+                            ·child(
+                            VNode·div()
+                                ·class("flex items-center justify-between mb-3")
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[var(--text-secondary)]")
+                                    ·text_child("Memory")
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[var(--accent-warning)]")
+                                    ·text_child("+8%")
+                                )
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("flex items-end justify-between")
+                                ·child(
+                                VNode·div()
+                                    ·child(
+                                    VNode·span()
+                                        ·class("text-2xl font-semibold text-[var(--text-primary)]")
+                                        ·text_child("92")
+                                    )
+                                    ·child(
+                                    VNode·span()
+                                        ·class("text-sm text-[var(--text-muted)]")
+                                        ·text_child("%")
+                                    )
+                                )
+                                ·child(
+                                MiniChart·view()
+                                    ·attr("data", self.memory_data)
+                                    ·attr("color", "var(--accent-warning)")
+                                )
+                            )
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] p-4")
+                            ·child(
+                            VNode·div()
+                                ·class("flex items-center justify-between mb-3")
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[var(--text-secondary)]")
+                                    ·text_child("Requests/min")
+                                )
+                                ·child(
+                                VNode·span()
+                                    ·class("text-xs text-[var(--accent-success)]")
+                                    ·text_child("+15%")
+                                )
+                            )
+                            ·child(
+                            VNode·div()
+                                ·class("flex items-end justify-between")
+                                ·child(
+                                VNode·div()
+                                    ·child(
+                                    VNode·span()
+                                        ·class("text-2xl font-semibold text-[var(--text-primary)]")
+                                        ·text_child("195")
+                                    )
+                                    ·child(
+                                    VNode·span()
+                                        ·class("text-sm text-[var(--text-muted)]")
+                                        ·text_child("req/m")
+                                    )
+                                )
+                                ·child(
+                                MiniChart·view()
+                                    ·attr("data", self.requests_data)
+                                    ·attr("color", "var(--accent-success)")
+                                )
+                            )
+                        )
+                    )
+                )
+                ·child(
+                VNode·div()
+                    ·child(
+                    VNode·div()
+                        ·class("flex items-center justify-between mb-3")
+                        ·child(
+                        VNode·h3()
+                            ·class("text-xs font-medium text-[var(--text-secondary)]")
+                            ·text_child("Active Alerts (")
+                            ·text_child(filtered_alerts.len()·to_string())
+                            ·text_child(")")
+                        )
+                        ·child(
+                        VNode·div()
+                            ·class("flex items-center gap-1")
+                            ·child(
+                            VNode·button()
+                                ·on_click(Click)
+                                ·class("px-2 py-1 text-xs rounded ")
+                                ·text_child("All")
+                            )
+                            ·child(
+                            VNode·button()
+                                ·on_click(Click)
+                                ·class("px-2 py-1 text-xs rounded ")
+                                ·text_child("Firing")
+                            )
+                            ·child(
+                            VNode·button()
+                                ·on_click(Click)
+                                ·class("px-2 py-1 text-xs rounded ")
+                                ·text_child("Resolved")
+                            )
+                        )
+                    )
+                    ·child(
+                    DataTable·view()
+                        ·attr("data", self.filtered_alerts)
+                        ·attr("columns", self.alert_columns)
+                        ·attr("keyExtractor", |a| a.id)
+                        ·attr("emptyMessage", "No alerts")
+                        ·attr("compact", "true")
+                    )
+                )
+            )
+    }
+}
