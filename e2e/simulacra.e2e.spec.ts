@@ -196,14 +196,62 @@ test.describe('Simulacra: Screen Reader User', () => {
   test('can navigate with keyboard only', async ({ page }) => {
     await page.goto('/playground')
 
-    // Tab through the interface
-    for (let i = 0; i < 10; i++) {
+    // Every interactive control on the playground must be a natively focusable
+    // element that is visible once focused. This is the part that is actually the
+    // page's responsibility, and it is asserted directly.
+    const controls = [
+      'run-btn',
+      'format-btn',
+      'share-btn',
+      'example-select',
+      'editor-textarea',
+      'output-tab',
+      'wasm-tab',
+      'ast-tab',
+    ]
+
+    for (const testId of controls) {
+      const control = page.getByTestId(testId)
+      await control.focus()
+      await expect(control).toBeFocused()
+      await expect(control).toBeVisible()
+    }
+
+    // Tab traversal itself is checked separately, and deliberately does NOT assert a
+    // fixed number of stops.
+    //
+    // How many stops Tab offers is a browser/OS preference, not a property of this
+    // page. WebKit honours the macOS "Full Keyboard Access" setting, which is off by
+    // default: with it off, Tab visits only text fields and lists and skips links and
+    // buttons entirely. On this page that leaves exactly two stops (example-select,
+    // editor-textarea), which is why the previous version of this test -- a blind
+    // `for (i < 10)` asserting `:focus` was visible each time -- failed on the third
+    // press under webkit/mobile-safari/tablet on macOS runners while passing with the
+    // same markup on Linux and Windows. The markup was never the problem.
+    //
+    // What is portable, and what is asserted here: each stop Tab does offer must be a
+    // real, visible element, and there must be at least one.
+    await page.getByTestId('run-btn').focus()
+
+    let stops = 0
+    for (let i = 0; i < 20; i++) {
       await page.keyboard.press('Tab')
 
-      // Something should always be focused
-      const focusedElement = page.locator(':focus')
-      await expect(focusedElement).toBeVisible()
+      const focused = await page.evaluate(() => {
+        const el = document.activeElement
+        if (!el || el === document.body || el === document.documentElement) return null
+        const rect = el.getBoundingClientRect()
+        return { tag: el.tagName.toLowerCase(), visible: rect.width > 0 && rect.height > 0 }
+      })
+
+      // Focus left the document -- the browser has run out of tab stops.
+      if (!focused) break
+
+      expect(focused.visible).toBe(true)
+      stops++
     }
+
+    expect(stops).toBeGreaterThan(0)
   })
 
   test('finds accessible button labels', async ({ page }) => {
@@ -335,8 +383,15 @@ test.describe('Simulacra: Impatient User', () => {
 
     const endTime = Date.now()
 
-    // Should complete in reasonable time
-    expect(endTime - startTime).toBeLessThan(3000)
+    // Smoke check, not a performance gate.
+    //
+    // Roughly 500ms of this window is `clickWithArchetype`'s own deliberate
+    // `waitForTimeout` (impatient-user's 50ms delay, split either side of 10 clicks),
+    // and most of the rest is Playwright's per-click actionability and round-trip
+    // cost. The page's work is a small fraction of the total. Observed max 3696ms
+    // across the macOS/Windows matrix; set with headroom so a slow hosted runner
+    // cannot turn this red, and deliberately not tuned to just above the observation.
+    expect(endTime - startTime).toBeLessThan(10000)
 
     // UI should remain stable
     await expect(page.getByTestId('playground')).toBeVisible()
@@ -351,8 +406,11 @@ test.describe('Simulacra: Impatient User', () => {
 
     const endTime = Date.now()
 
-    // Page should load within 2 seconds
-    expect(endTime - startTime).toBeLessThan(2000)
+    // Smoke check, not a performance gate: this catches a page that never renders,
+    // not a slow one. Measured against the Vite dev server under two-worker
+    // contention, so it says nothing about shipped performance. Observed max 2587ms
+    // (firefox, Windows). See the THRESHOLDS note in e2e/performance.e2e.spec.ts.
+    expect(endTime - startTime).toBeLessThan(6000)
   })
 
   test('interactions do not block UI', async ({ page }) => {
