@@ -2,11 +2,11 @@
 //!
 //! Helpers for implementing accessible keyboard navigation patterns.
 
-use crate::dom::KeyEvent;
+invoke tome·dom·KeyEvent;
 
 /// Common keyboard shortcuts and their detection
-☉ mod shortcuts {
-    use super::*;
+☉ scroll shortcuts {
+    invoke super·*;
 
     /// Check ⎇ event is a navigation key
     ☉ rite is_navigation_key(e: &KeyEvent) → bool! {
@@ -91,8 +91,8 @@ use crate::dom::KeyEvent;
 }
 
 /// Direction for navigation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-☉ enum Direction {
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq)
+☉ ᛈ Direction {
     Up,
     Down,
     Left,
@@ -104,35 +104,35 @@ use crate::dom::KeyEvent;
 ⊢ Direction {
     /// Parse direction from key event
     ☉ rite from_key(e: &KeyEvent) → Option<This>? {
-        match e.key·as_str() {
-            "ArrowUp" => Some(Direction::Up),
-            "ArrowDown" => Some(Direction::Down),
-            "ArrowLeft" => Some(Direction::Left),
-            "ArrowRight" => Some(Direction::Right),
-            "Home" => Some(Direction::Start),
-            "End" => Some(Direction::End),
+        ⌥ e.key·as_str() {
+            "ArrowUp" => Some(Direction·Up),
+            "ArrowDown" => Some(Direction·Down),
+            "ArrowLeft" => Some(Direction·Left),
+            "ArrowRight" => Some(Direction·Right),
+            "Home" => Some(Direction·Start),
+            "End" => Some(Direction·End),
             _ => None,
         }
     }
 
     /// Check ⎇ direction is vertical
     ☉ rite is_vertical(&this) → bool! {
-        matches!(this, Direction::Up | Direction::Down)
+        matches!(this, Direction·Up | Direction·Down)
     }
 
     /// Check ⎇ direction is horizontal
     ☉ rite is_horizontal(&this) → bool! {
-        matches!(this, Direction::Left | Direction::Right)
+        matches!(this, Direction·Left | Direction·Right)
     }
 
     /// Check ⎇ direction moves forward (down, right, end)
     ☉ rite is_forward(&this) → bool! {
-        matches!(this, Direction::Down | Direction::Right | Direction::End)
+        matches!(this, Direction·Down | Direction·Right | Direction·End)
     }
 
     /// Check ⎇ direction moves backward (up, left, start)
     ☉ rite is_backward(&this) → bool! {
-        matches!(this, Direction::Up | Direction::Left | Direction::Start)
+        matches!(this, Direction·Up | Direction·Left | Direction·Start)
     }
 }
 
@@ -156,13 +156,13 @@ use crate::dom::KeyEvent;
 
     /// Navigate from current index in direction
     ☉ rite navigate(&this, current: usize, direction: Direction) → Option<usize>? {
-        match direction {
-            Direction::Up => this·move_up(current),
-            Direction::Down => this·move_down(current),
-            Direction::Left => this·move_left(current),
-            Direction::Right => this·move_right(current),
-            Direction::Start => Some(0),
-            Direction::End => Some(this.count·saturating_sub(1)),
+        ⌥ direction {
+            Direction·Up => this·move_up(current),
+            Direction·Down => this·move_down(current),
+            Direction·Left => this·move_left(current),
+            Direction·Right => this·move_right(current),
+            Direction·Start => Some(0),
+            Direction·End => Some(this.count·saturating_sub(1)),
         }
     }
 
@@ -238,7 +238,7 @@ use crate::dom::KeyEvent;
 ⊢ TypeAhead {
     ☉ rite new(timeout_ms: u64) → This! {
         TypeAhead {
-            buffer: String::new(),
+            buffer: String·new(),
             timeout_ms,
             last_input: 0,
         }
@@ -271,56 +271,56 @@ use crate::dom::KeyEvent;
 ☉ rite find_by_prefix<T>(
     items: &[T],
     search: &str,
-    get_text: fn(&T) → &str,
+    get_text: rite(&T) → &str,
     start_index: usize
 ) → Option<usize>? {
     ≔ search_lower! = search·to_lowercase()
     ≔ len! = items·len()
 
     // Search from start_index forward
-    for i in 0..len {
+    ∀ i ∈ 0..len {
         ≔ idx! = (start_index + i) % len
         ≔ text! = get_text(&items[idx])·to_lowercase()
         ⎇ text·starts_with(&search_lower) {
-            return Some(idx)
+            ⤺ Some(idx)
         }
     }
 
     None
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// cfg(test)
+scroll tests {
+    invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_grid_nav_basic() {
-        ≔ grid! = GridNav::new(3, 9, nay)
+        ≔ grid! = GridNav·new(3, 9, nay)
 
         // Down from 0 should go to 3
-        assert_eq!(grid·navigate(0, Direction::Down), Some(3))
+        assert_eq!(grid·navigate(0, Direction·Down), Some(3))
 
         // Right from 0 should go to 1
-        assert_eq!(grid·navigate(0, Direction::Right), Some(1))
+        assert_eq!(grid·navigate(0, Direction·Right), Some(1))
 
         // Up from 0 without wrap should be None
-        assert_eq!(grid·navigate(0, Direction::Up), None)
+        assert_eq!(grid·navigate(0, Direction·Up), None)
     }
 
-    #[test]
+    //@ rune: test
     rite test_grid_nav_wrap() {
-        ≔ grid! = GridNav::new(3, 9, yea)
+        ≔ grid! = GridNav·new(3, 9, yea)
 
         // Up from 0 with wrap should go to 6
-        assert_eq!(grid·navigate(0, Direction::Up), Some(6))
+        assert_eq!(grid·navigate(0, Direction·Up), Some(6))
 
         // Left from 0 with wrap should go to 2
-        assert_eq!(grid·navigate(0, Direction::Left), Some(2))
+        assert_eq!(grid·navigate(0, Direction·Left), Some(2))
     }
 
-    #[test]
+    //@ rune: test
     rite test_type_ahead() {
-        ≔ vary ta! = TypeAhead::new(500)
+        ≔ vary ta! = TypeAhead·new(500)
 
         // Add characters
         assert_eq!(ta·add('h', 100), "h")

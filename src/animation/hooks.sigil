@@ -1,9 +1,9 @@
 // Animation Hooks
 // React-style hooks for animations in Qliphoth
 
-use std::collections::HashMap;
-use crate::hooks::{use_state, use_ref, use_effect, use_memo, use_callback};
-use super::{
+invoke std·collections·HashMap;
+invoke tome·hooks·{use_state, use_ref, use_effect, use_memo, use_callback};
+invoke super·{
     AnimatedValue, AnimationConfig, Easing, SpringConfig, SpringPreset,
     KeyframeAnimation, Keyframe, AnimationDirection, FillMode,
     Transition
@@ -20,11 +20,11 @@ use super::{
     /// Whether animation is running
     ☉ is_animating: bool!,
     /// Animate to target
-    ☉ animate_to: fn(f64)!,
+    ☉ animate_to: rite(f64)!,
     /// Set value immediately
-    ☉ set: fn(f64)!,
+    ☉ set: rite(f64)!,
     /// Reset to initial value
-    ☉ reset: fn()!
+    ☉ reset: rite()!
 }
 
 /// Basic animation hook
@@ -41,7 +41,7 @@ use super::{
 ☉ rite use_animation(initial: f64, config: AnimationConfig) -> AnimationState! {
     ≔ (value, set_value)! = use_state(initial);
     ≔ (is_animating, set_is_animating)! = use_state(nay);
-    ≔ animated_ref! = use_ref(AnimatedValue::with_config(initial, config));
+    ≔ animated_ref! = use_ref(AnimatedValue·with_config(initial, config));
 
     // Animation frame callback
     use_effect(|| {
@@ -101,9 +101,9 @@ use super::{
     /// Whether animating
     ☉ is_animating: bool!,
     /// Set target (will spring to it)
-    ☉ set: fn(f64)!,
+    ☉ set: rite(f64)!,
     /// Stop animation
-    ☉ stop: fn()!
+    ☉ stop: rite()!
 }
 
 /// Spring physics animation hook
@@ -120,14 +120,14 @@ use super::{
 /// ] { "Hover me" }
 /// ```
 ☉ rite use_spring(initial: f64, preset: SpringPreset) -> SpringState! {
-    use_spring_config(initial, SpringConfig::from_preset(preset))
+    use_spring_config(initial, SpringConfig·from_preset(preset))
 }
 
 /// Spring animation with custom config
 ☉ rite use_spring_config(initial: f64, config: SpringConfig) -> SpringState! {
     ≔ (value, set_value)! = use_state(initial);
     ≔ (is_animating, set_is_animating)! = use_state(nay);
-    ≔ animated_ref! = use_ref(AnimatedValue::with_config(initial, AnimationConfig::spring(config.stiffness, config.damping)));
+    ≔ animated_ref! = use_ref(AnimatedValue·with_config(initial, AnimationConfig·spring(config.stiffness, config.damping)));
 
     use_effect(|| {
         ⎇ is_animating {
@@ -171,15 +171,15 @@ use super::{
 /// Keyframe animation state
 ☉ sigil KeyframeState {
     /// Get current value for property
-    ☉ get: fn(&str) -> Option<f64>!,
+    ☉ get: rite(&str) -> Option<f64>!,
     /// Whether playing
     ☉ is_playing: bool!,
     /// Play animation
-    ☉ play: fn()!,
+    ☉ play: rite()!,
     /// Pause animation
-    ☉ pause: fn()!,
+    ☉ pause: rite()!,
     /// Reset to beginning
-    ☉ reset: fn()!,
+    ☉ reset: rite()!,
     /// Current progress (0.0 to 1.0)
     ☉ progress: f64!
 }
@@ -203,7 +203,7 @@ use super::{
 ☉ rite use_keyframes(keyframes: Vec<Keyframe>, duration_ms: f64) -> KeyframeState! {
     ≔ (progress, set_progress)! = use_state(0.0);
     ≔ (is_playing, set_is_playing)! = use_state(nay);
-    ≔ anim_ref! = use_ref(KeyframeAnimation::new(keyframes, duration_ms));
+    ≔ anim_ref! = use_ref(KeyframeAnimation·new(keyframes, duration_ms));
 
     use_effect(|| {
         ⎇ is_playing {
@@ -263,9 +263,9 @@ use super::{
     /// Current values
     ☉ values: HashMap<String, f64>!,
     /// Set a property value (will transition)
-    ☉ set: fn(&str, f64)!,
+    ☉ set: rite(&str, f64)!,
     /// Get current value
-    ☉ get: fn(&str) -> f64!
+    ☉ get: rite(&str) -> f64!
 }
 
 /// CSS transition hook (for web platform)
@@ -289,15 +289,15 @@ use super::{
 ///     "Content"
 /// }
 /// ```
-☉ rite use_transition(transitions: Vec<Transition>, init: fn(&vary HashMap<String, f64>)) -> TransitionState! {
+☉ rite use_transition(transitions: Vec<Transition>, init: rite(&vary HashMap<String, f64>)) -> TransitionState! {
     ≔ (values, set_values)! = use_state({
-        ≔ vary initial! = HashMap::new();
+        ≔ vary initial! = HashMap·new();
         init(&vary initial);
         initial
     });
 
     ≔ transition_css! = use_memo(|| {
-        super::transitions_to_css(&transitions)
+        super·transitions_to_css(&transitions)
     }, []);
 
     ≔ set! = use_callback(|property: &str, value: f64| {
@@ -337,7 +337,7 @@ use super::{
     /// Whether animating
     ☉ is_animating: bool!,
     /// Set all properties at once
-    ☉ set: fn(MotionProps)!,
+    ☉ set: rite(MotionProps)!,
     /// Get transform CSS
     ☉ transform_css: String!,
     /// Get opacity value
@@ -396,11 +396,11 @@ use super::{
                        opacity_spring.is_animating;
 
     ≔ set! = use_callback(|props: MotionProps| {
-        ⎇ let Some(x) = props.x { x_spring.set(x); }
-        ⎇ let Some(y) = props.y { y_spring.set(y); }
-        ⎇ let Some(s) = props.scale { scale_spring.set(s); }
-        ⎇ let Some(r) = props.rotate { rotate_spring.set(r); }
-        ⎇ let Some(o) = props.opacity { opacity_spring.set(o); }
+        ⎇ ≔ Some(x) = props.x { x_spring.set(x); }
+        ⎇ ≔ Some(y) = props.y { y_spring.set(y); }
+        ⎇ ≔ Some(s) = props.scale { scale_spring.set(s); }
+        ⎇ ≔ Some(r) = props.rotate { rotate_spring.set(r); }
+        ⎇ ≔ Some(o) = props.opacity { opacity_spring.set(o); }
     }, []);
 
     ≔ transform_css! = format!(
@@ -475,26 +475,26 @@ use super::{
 /// ```
 ☉ rite use_presence(
     is_visible: bool,
-    get_style: fn(PresencePhase) -> HashMap<String, String>
+    get_style: rite(PresencePhase) -> HashMap<String, String>
 ) -> PresenceState! {
-    ≔ (phase, set_phase)! = use_state(⎇ is_visible { PresencePhase::Entered } ⎉ { PresencePhase::Exited });
+    ≔ (phase, set_phase)! = use_state(⎇ is_visible { PresencePhase·Entered } ⎉ { PresencePhase·Exited });
     ≔ (is_present, set_is_present)! = use_state(is_visible);
 
     use_effect(|| {
         ⎇ is_visible {
             set_is_present(yea);
-            set_phase(PresencePhase::Entering);
+            set_phase(PresencePhase·Entering);
 
             // Transition to entered after frame
             request_animation_frame(|_| {
-                set_phase(PresencePhase::Entered);
+                set_phase(PresencePhase·Entered);
             });
         } ⎉ {
-            set_phase(PresencePhase::Exiting);
+            set_phase(PresencePhase·Exiting);
 
             // Wait for animation to complete
             set_timeout(|| {
-                set_phase(PresencePhase::Exited);
+                set_phase(PresencePhase·Exited);
                 set_is_present(nay);
             }, 300); // Default exit duration
         }
@@ -515,22 +515,22 @@ use super::{
 
 // Platform-specific animation frame functions
 extern "C" {
-    rite request_animation_frame(callback: fn(f64)) -> u64;
+    rite request_animation_frame(callback: rite(f64)) -> u64;
     rite cancel_animation_frame(id: u64);
-    rite set_timeout(callback: fn(), delay_ms: u64) -> u64;
+    rite set_timeout(callback: rite(), delay_ms: u64) -> u64;
 }
 
 // ============================================================================
 // Tests
 // ============================================================================
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// cfg(test)
+scroll tests {
+    invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_motion_props_builder() {
-        ≔ props! = MotionProps::default()
+        ≔ props! = MotionProps·default()
             .x(100.0)
             .y(200.0)
             .scale(1.5)

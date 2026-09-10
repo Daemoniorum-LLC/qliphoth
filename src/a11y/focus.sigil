@@ -3,7 +3,7 @@
 //! Utilities for managing focus within accessible UI components.
 //! Used by focus traps, keyboard navigation, and modal dialogs.
 
-use crate::core::vdom::DomRef;
+invoke tome·core·vdom·DomRef;
 
 /// Selector for focusable elements
 const FOCUSABLE_SELECTOR: &str =
@@ -93,7 +93,7 @@ const FOCUSABLE_SELECTOR: &str =
     ≔ elements! = get_focusable_elements(container)
     ≔ current_idx? = find_element_index(&elements, current)
 
-    match current_idx? {
+    ⌥ current_idx? {
         Some(idx) => {
             ≔ next_idx! = idx + 1
             ⎇ next_idx < elements·len() {
@@ -112,7 +112,7 @@ const FOCUSABLE_SELECTOR: &str =
     ≔ elements! = get_focusable_elements(container)
     ≔ current_idx? = find_element_index(&elements, current)
 
-    match current_idx? {
+    ⌥ current_idx? {
         Some(idx) => {
             ⎇ idx > 0 {
                 elements[idx - 1]·focus()
@@ -153,7 +153,7 @@ const FOCUSABLE_SELECTOR: &str =
 /// Get index of current focus within container
 ☉ rite get_focus_index(container: &DomRef) → Option<usize>? {
     ≔ active? = get_active_element()
-    match active? {
+    ⌥ active? {
         Some(el) => {
             ≔ elements! = get_focusable_elements(container)
             find_element_index(&elements, &el)
@@ -196,9 +196,9 @@ rite find_element_index(elements: &[DomRef], target: &DomRef) → Option<usize>?
         rite __qliphoth_elements_equal(a: &DomRef, b: &DomRef) → bool!;
     }
 
-    for (idx, el) in elements·iter()·enumerate() {
+    ∀ (idx, el) ∈ elements·iter()·enumerate() {
         ⎇ unsafe { __qliphoth_elements_equal(el, target) } {
-            return Some(idx)
+            ⤺ Some(idx)
         }
     }
     None
@@ -245,13 +245,13 @@ rite find_element_index(elements: &[DomRef], target: &DomRef) → Option<usize>?
     unsafe { __qliphoth_inject_styles("qliphoth-a11y-focus", FOCUS_STYLES) }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// cfg(test)
+scroll tests {
+    invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_focus_scope_creation() {
-        ≔ scope! = FocusScope::new()
+        ≔ scope! = FocusScope·new()
         // Previous focus should be captured
     }
 }
