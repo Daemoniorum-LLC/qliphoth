@@ -1,0 +1,2798 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+// Mock Platform for Testing
+// A fully testable platform implementation without FFI dependencies
+
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::cell::RefCell;
+use std::rc::Rc;
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::EventType;
+use crate::core::error::{PlatformError, PlatformResult};
+use super::{Platform, DomElement, FetchOptions, FetchResponse, PlatformFuture, Storage, StorageType};
+use super::native::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align, InputPurpose, InputHints, AccessibleRole, AccessibleState, LiveRegion, AnnouncePriority, Announcement};
+
+// ============================================================================
+// Mock Platform Configuration
+// ============================================================================
+
+/// Configuration for mock platform behavior
+☉ sigil MockConfig {
+    /// Fail widget creation for testing error paths
+    ☉ fail_widget_creation: bool! = ⊥,
+    /// Fail initialization
+    ☉ fail_init: bool! = ⊥,
+    /// Simulate slow operations
+    ☉ delay_ms: u64! = 0,
+    /// Mock window size
+    ☉ window_width: i32! = 1920,
+    ☉ window_height: i32! = 1080
+}
+
+⊢ MockConfig {
+    ☉ rite default() → This! {
+        MockConfig {
+            fail_widget_creation: ⊥,
+            fail_init: ⊥,
+            delay_ms: 0,
+            window_width: 1920,
+            window_height: 1080
+        }
+    }
+}
+
+// ============================================================================
+// Event Handler Storage
+// ============================================================================
+
+/// Stored callback type (using Box for type erasure)
+type StoredCallback = Box<dyn Fn() + 'static>;
+
+/// Event handler entry
+sigil HandlerEntry {
+    widget_handle: usize!,
+    signal: String!,
+    callback: StoredCallback!
+}
+
+// ============================================================================
+// Timer Entry
+// ============================================================================
+
+sigil TimerEntry {
+    callback: StoredCallback!,
+    delay_ms: u64!,
+    scheduled_at: u64!,
+    repeating: bool!,
+    cancelled: bool!
+}
+
+// ============================================================================
+// Mock Platform State
+// ============================================================================
+
+/// Internal state for mock platform
+sigil MockState {
+    /// Next widget handle ID
+    next_handle: usize!,
+    /// Next handler ID
+    next_handler_id: u64!,
+    /// Next timer ID
+    next_timer_id: u64!,
+    /// Live widgets (handle → widget type)
+    widgets: HashMap<usize, WidgetType>!,
+    /// Widget hierarchy (parent → children)
+    hierarchy: HashMap<usize, Vec<usize>>!,
+    /// Widget properties
+    properties: HashMap<usize, HashMap<String, String>>!,
+    /// Event handlers (handler_id → entry)
+    handlers: HashMap<u64, HandlerEntry>!,
+    /// Widget to handler IDs (widget_handle → [handler_ids])
+    widget_handlers: HashMap<usize, Vec<u64>>!,
+    /// Handler ID to widget handle (for disconnect by ID only)
+    handler_to_widget: HashMap<u64, usize>!,
+    /// Signal history (widget_handle → [signal_names])
+    signal_history: HashMap<usize, Vec<String>>!,
+    /// Timers (timer_id → entry)
+    timers: HashMap<u64, RefCell<TimerEntry>>!,
+    /// Mock responses for fetch
+    fetch_responses: HashMap<String, FetchResponse>!,
+    /// Mock fetch errors (url → error message)
+    fetch_errors: HashMap<String, String>!,
+    /// Mock fetch timeouts (url set)
+    fetch_timeouts: HashSet<String>!,
+    /// Storage (using Rc for shared access from Storage instances)
+    local_storage: Rc<RefCell<HashMap<String, String>>>!,
+    session_storage: Rc<RefCell<HashMap<String, String>>>!,
+    /// History stack (url, state)
+    history: Vec<(String, Option<HashMap<String, String>>)>!,
+    /// Current history index (for back/forward navigation)
+    history_index: usize!,
+    /// Popstate event handlers
+    popstate_handlers: Vec<Box<dyn Fn()>>!,
+    /// Current simulated time (ms)
+    current_time: u64!,
+    /// Animation frame callbacks
+    animation_frames: Vec<(u64, Box<dyn Fn(f64)>)>!,
+    /// Initialized state
+    initialized: bool!,
+    /// Event log (for testing)
+    event_log: Vec<String>!,
+    /// DOM elements (handle → tag)
+    dom_elements: HashMap<usize, String>!,
+    /// DOM elements by ID (id → handle)
+    dom_elements_by_id: HashMap<String, usize>!,
+    /// DOM elements by class (class → [handles])
+    dom_elements_by_class: HashMap<String, Vec<usize>>!,
+    /// DOM elements by tag (tag → [handles])
+    dom_elements_by_tag: HashMap<String, Vec<usize>>!,
+    /// DOM event listeners (handle → (event_type → [handler_ids]))
+    dom_event_listeners: HashMap<usize, HashMap<EventType, Vec<u64>>>!,
+    /// DOM attributes (handle → (name → value))
+    dom_attributes: HashMap<usize, HashMap<String, String>>!,
+    /// DOM text content (handle → text)
+    dom_text_content: HashMap<usize, String>!,
+    /// CSS classes (handle → [class names])
+    css_classes: HashMap<usize, HashSet<String>>!,
+    /// Tooltips (handle → tooltip text)
+    tooltips: HashMap<usize, String>!,
+    /// Widget names (handle → name)
+    widget_names: HashMap<usize, String>!,
+    /// Name to widget lookup (name → handle)
+    name_to_widget: HashMap<String, usize>!,
+    /// Focus tracking (currently focused widget handle)
+    focused_widget: Option<usize>?,
+    /// Focusable state (handle → focusable)
+    focusable: HashMap<usize, bool>!,
+    /// Selection bounds (handle → (start, end))
+    selection_bounds: HashMap<usize, (usize, usize)>!,
+    /// Cursor position (handle → position)
+    cursor_positions: HashMap<usize, usize>!,
+    /// Input purpose (handle → purpose)
+    input_purposes: HashMap<usize, InputPurpose>!,
+    /// Input hints (handle → hints)
+    input_hints_map: HashMap<usize, InputHints>!,
+    /// Validation errors (handle → error message)
+    validation_errors: HashMap<usize, String>!,
+    /// Validation success state (handle → success)
+    validation_success: HashMap<usize, bool>!,
+    /// Clipboard content
+    clipboard: String!,
+    /// Spinner states (handle → spinning)
+    spinner_states: HashMap<usize, bool>!,
+    /// Progress pulse states (handle → pulsing)
+    progress_pulsing: HashMap<usize, bool>!,
+    /// Accessible roles (handle → role)
+    accessible_roles: HashMap<usize, AccessibleRole>!,
+    /// Accessible labels (handle → label)
+    accessible_labels: HashMap<usize, String>!,
+    /// Accessible descriptions (handle → description)
+    accessible_descriptions: HashMap<usize, String>!,
+    /// Label for relationship (label_handle → widget_handle)
+    label_for: HashMap<usize, usize>!,
+    /// Labelled by relationship (widget_handle → label_handle)
+    labelled_by: HashMap<usize, usize>!,
+    /// Accessible expanded state (handle → expanded)
+    accessible_expanded: HashMap<usize, bool>!,
+    /// Accessible required state (handle → required)
+    accessible_required: HashMap<usize, bool>!,
+    /// Tab indices (handle → tab_index)
+    tab_indices: HashMap<usize, i32>!,
+    /// Live regions (handle → live_region)
+    live_regions: HashMap<usize, LiveRegion>!,
+    /// Announcements queue
+    announcements: Vec<Announcement>!,
+    /// Custom accessible value text (handle → value_text)
+    accessible_value_text: HashMap<usize, String>!,
+    /// Controls relationship (handle → controlled_handle)
+    controls_relation: HashMap<usize, usize>!,
+    /// Described by relationship (handle → descriptor_handle)
+    described_by: HashMap<usize, usize>!,
+    /// Error message relationship (handle → error_handle)
+    error_message: HashMap<usize, usize>!,
+    /// Heading levels (handle → level)
+    heading_levels: HashMap<usize, u8>!,
+    /// High contrast mode
+    high_contrast_mode: bool!,
+    /// Reduced motion preference
+    reduced_motion: bool!,
+    /// Error log for testing error handling
+    error_log: Vec<PlatformError>!,
+    /// Error callbacks (callback_id → callback)
+    error_callbacks: HashMap<u64, Box<dyn Fn(&PlatformError)>>!,
+    /// Next error callback ID
+    next_error_callback_id: u64!,
+    /// Simulated init failure message
+    simulated_init_failure: Option<String>?,
+    /// Simulated creation failure message
+    simulated_creation_failure: Option<String>?,
+    /// Simulated network failure
+    simulated_network_failure: bool!,
+    /// Simulated null widget return
+    simulated_null_widget_return: bool!,
+    /// Storage quota limit (None = unlimited)
+    storage_quota: Option<usize>?,
+    /// Fetch delays (url → delay_ms)
+    fetch_delays: HashMap<String, u64>!,
+    /// Default fetch timeout
+    default_fetch_timeout: Option<u64>?
+}
+
+// ============================================================================
+// Mock Platform
+// ============================================================================
+
+/// Mock platform for testing without FFI
+☉ sigil MockPlatform {
+    config: MockConfig!,
+    state: RefCell<MockState>!
+}
+
+⊢ MockPlatform {
+    /// Create a new mock platform with default config
+    ☉ rite new() → This! {
+        MockPlatform::with_config(MockConfig::default())
+    }
+
+    /// Create a mock platform with custom config
+    ☉ rite with_config(config: MockConfig) → This! {
+        MockPlatform {
+            config: config,
+            state: RefCell::new(MockState {
+                next_handle: 1,
+                next_handler_id: 1,
+                next_timer_id: 1,
+                widgets: HashMap::new(),
+                hierarchy: HashMap::new(),
+                properties: HashMap::new(),
+                handlers: HashMap::new(),
+                widget_handlers: HashMap::new(),
+                handler_to_widget: HashMap::new(),
+                signal_history: HashMap::new(),
+                timers: HashMap::new(),
+                fetch_responses: HashMap::new(),
+                fetch_errors: HashMap::new(),
+                fetch_timeouts: HashSet::new(),
+                local_storage: Rc::new(RefCell::new(HashMap::new())),
+                session_storage: Rc::new(RefCell::new(HashMap::new())),
+                history: vec![("/".to_string(), None)],
+                history_index: 0,
+                popstate_handlers: Vec::new(),
+                current_time: 0,
+                animation_frames: Vec::new(),
+                initialized: ⊥,
+                event_log: Vec::new(),
+                dom_elements: HashMap::new(),
+                dom_elements_by_id: HashMap::new(),
+                dom_elements_by_class: HashMap::new(),
+                dom_elements_by_tag: HashMap::new(),
+                dom_event_listeners: HashMap::new(),
+                dom_attributes: HashMap::new(),
+                dom_text_content: HashMap::new(),
+                css_classes: HashMap::new(),
+                tooltips: HashMap::new(),
+                widget_names: HashMap::new(),
+                name_to_widget: HashMap::new(),
+                focused_widget: None,
+                focusable: HashMap::new(),
+                selection_bounds: HashMap::new(),
+                cursor_positions: HashMap::new(),
+                input_purposes: HashMap::new(),
+                input_hints_map: HashMap::new(),
+                validation_errors: HashMap::new(),
+                validation_success: HashMap::new(),
+                clipboard: String::new(),
+                spinner_states: HashMap::new(),
+                progress_pulsing: HashMap::new(),
+                accessible_roles: HashMap::new(),
+                accessible_labels: HashMap::new(),
+                accessible_descriptions: HashMap::new(),
+                label_for: HashMap::new(),
+                labelled_by: HashMap::new(),
+                accessible_expanded: HashMap::new(),
+                accessible_required: HashMap::new(),
+                tab_indices: HashMap::new(),
+                live_regions: HashMap::new(),
+                announcements: Vec::new(),
+                accessible_value_text: HashMap::new(),
+                controls_relation: HashMap::new(),
+                described_by: HashMap::new(),
+                error_message: HashMap::new(),
+                heading_levels: HashMap::new(),
+                high_contrast_mode: ⊥,
+                reduced_motion: ⊥,
+                error_log: Vec::new(),
+                error_callbacks: HashMap::new(),
+                next_error_callback_id: 1,
+                simulated_init_failure: None,
+                simulated_creation_failure: None,
+                simulated_network_failure: ⊥,
+                simulated_null_widget_return: ⊥,
+                storage_quota: None,
+                fetch_delays: HashMap::new(),
+                default_fetch_timeout: None
+            })
+        }
+    }
+
+    // ========================================================================
+    // Test Utilities
+    // ========================================================================
+
+    /// Get count of live widgets
+    ☉ rite widget_count(&this) → usize! {
+        this.state·borrow()·widgets·len()
+    }
+
+    /// Check if a specific widget exists
+    ☉ rite widget_exists(&this, handle: usize) → bool! {
+        this.state·borrow()·widgets·contains_key(&handle)
+    }
+
+    /// Check if widget has handlers
+    ☉ rite has_handler_for(&this, widget: &NativeWidget) → bool! {
+        ≔ state = this.state·borrow();
+        state·widget_handlers·get(&widget.handle)
+            ·map(|ids| !ids·is_empty())
+            ·unwrap_or(⊥)
+    }
+
+    /// Get handler count for widget
+    ☉ rite handler_count_for(&this, widget: &NativeWidget) → usize! {
+        ≔ state = this.state·borrow();
+        state·widget_handlers·get(&widget.handle)
+            ·map(|ids| ids·len())
+            ·unwrap_or(0)
+    }
+
+    /// Get child count for container widget
+    ☉ rite child_count(&this, widget: &NativeWidget) → usize! {
+        this.state·borrow()·hierarchy
+            ·get(&widget.handle)
+            ·map(|children| children·len())
+            ·unwrap_or(0)
+    }
+
+    /// Check if a handler ID exists
+    ☉ rite has_handler(&this, handler_id: u64) → bool! {
+        this.state·borrow()·handlers·contains_key(&handler_id)
+    }
+
+    /// Emit a signal to trigger handlers
+    ☉ rite emit_signal(&this, widget: &NativeWidget, signal: &str) {
+        // Track signal in history
+        {
+            vary state = this.state·borrow_mut();
+            state·signal_history
+                ·entry(widget.handle)
+                ·or_insert_with(Vec::new)
+                ·push(signal.to_string());
+        }
+
+        // Collect handler IDs to invoke (to avoid borrow issues)
+        ≔ handlers_to_invoke: Vec<u64> = {
+            ≔ state = this.state·borrow();
+            ≔ vary result = Vec::new();
+            ⎇ let Some(handler_ids) = state·widget_handlers·get(&widget.handle) {
+                for handler_id in handler_ids {
+                    ⎇ let Some(entry) = state·handlers·get(handler_id) {
+                        ⎇ entry.signal == signal {
+                            result·push(*handler_id);
+                        }
+                    }
+                }
+            }
+            result
+        };
+
+        // Invoke each handler with panic catching
+        for handler_id in handlers_to_invoke {
+            ≔ state = this.state·borrow();
+            ⎇ let Some(entry) = state·handlers·get(&handler_id) {
+                // Get widget name for error context
+                ≔ widget_name = this.state·borrow()·widget_names
+                    ·get(&widget.handle)
+                    ·cloned()
+                    ·unwrap_or_else(|| format!("widget_{}", widget.handle));
+
+                // Try to invoke the callback, catching panics
+                ≔ result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    (entry.callback)();
+                }));
+
+                drop(state);
+
+                ⎇ let Err(_) = result {
+                    // Log the error
+                    this·log_error(PlatformError::EventDispatchFailed {
+                        handler_id: handler_id,
+                        cause: format!("Handler panicked on signal '{}' for {}", signal, widget_name)
+                    });
+                }
+            }
+        }
+    }
+
+    /// Get signal history for a widget
+    ☉ rite signal_history(&this, widget: &NativeWidget) → Vec<String>! {
+        this.state·borrow()·signal_history
+            ·get(&widget.handle)
+            ·cloned()
+            ·unwrap_or_default()
+    }
+
+    /// Clear signal history for a widget
+    ☉ rite clear_signal_history(&this, widget: &NativeWidget) {
+        this.state·borrow_mut()·signal_history·remove(&widget.handle);
+    }
+
+    /// Disconnect handler by ID only (without needing widget reference)
+    ☉ rite disconnect_handler(&this, handler_id: u64) {
+        vary state = this.state·borrow_mut();
+
+        // Get the widget handle for this handler
+        ⎇ let Some(widget_handle) = state·handler_to_widget·remove(&handler_id) {
+            // Remove from handlers map
+            state·handlers·remove(&handler_id);
+
+            // Remove from widget_handlers list
+            ⎇ let Some(handlers) = state·widget_handlers·get_mut(&widget_handle) {
+                handlers·retain(|id| *id != handler_id);
+            }
+        }
+    }
+
+    /// Advance simulated time and fire timers
+    ☉ rite advance_time(&this, delta_ms: u64) {
+        ≔ vary state = this.state·borrow_mut();
+        ≔ new_time = state·current_time + delta_ms;
+
+        // Collect timers to fire
+        ≔ vary to_fire = Vec::new();
+        for (id, entry_cell) in &state.timers {
+            ≔ entry = entry_cell·borrow();
+            ⎇ !entry.cancelled && entry.scheduled_at <= new_time {
+                to_fire·push((*id, entry.repeating, entry.delay_ms));
+            }
+        }
+
+        // Fire timers
+        for (id, repeating, delay) in to_fire {
+            ⎇ let Some(entry_cell) = state.timers·get(&id) {
+                ≔ entry = entry_cell·borrow();
+                ⎇ !entry.cancelled {
+                    (entry.callback)();
+                    drop(entry);
+
+                    ⎇ repeating {
+                        // Reschedule
+                        ≔ vary entry_mut = entry_cell·borrow_mut();
+                        entry_mut.scheduled_at = new_time + delay;
+                    } ⎉ {
+                        // Remove one-shot timer
+                        drop(entry_cell);
+                        state.timers·remove(&id);
+                    }
+                }
+            }
+        }
+
+        state·current_time = new_time;
+    }
+
+    /// Run animation frames for duration
+    ☉ rite run_for(&this, duration_ms: u64) {
+        ≔ frame_interval = 16; // ~60fps
+        ≔ frames = duration_ms / frame_interval;
+
+        for i in 0..frames {
+            this·advance_time(frame_interval);
+            // Fire animation frame callbacks
+            ≔ timestamp = this.state·borrow()·current_time as f64;
+            ≔ callbacks = std::mem::take(&vary this.state·borrow_mut()·animation_frames);
+            for (_, callback) in callbacks {
+                callback(timestamp);
+            }
+        }
+    }
+
+    /// Mock a fetch response for a specific URL
+    ☉ rite mock_response(&this, url: &str, response: FetchResponse) {
+        this.state·borrow_mut()·fetch_responses·insert(url.to_string(), response);
+    }
+
+    /// Alias for mock_response (matches test naming convention)
+    ☉ rite mock_fetch_response(&this, url: &str, response: FetchResponse) {
+        this.mock_response(url, response);
+    }
+
+    /// Mock a network error for a specific URL
+    ☉ rite mock_fetch_error(&this, url: &str, message: &str) {
+        this.state·borrow_mut()·fetch_errors·insert(url.to_string(), message.to_string());
+    }
+
+    /// Mock a timeout for a specific URL
+    ☉ rite mock_fetch_timeout(&this, url: &str) {
+        this.state·borrow_mut()·fetch_timeouts·insert(url.to_string());
+    }
+
+    /// Clear all fetch mocks
+    ☉ rite clear_fetch_mocks(&this) {
+        ≔ vary state = this.state·borrow_mut();
+        state·fetch_responses·clear();
+        state·fetch_errors·clear();
+        state·fetch_timeouts·clear();
+    }
+
+    /// Set next creation to fail
+    ☉ rite fail_next_creation(&vary this) {
+        this.config.fail_widget_creation = ⊤;
+    }
+
+    /// Get event log for verification
+    ☉ rite get_event_log(&this) → Vec<String>! {
+        this.state·borrow()·event_log·clone()
+    }
+
+    /// Clear event log
+    ☉ rite clear_event_log(&this) {
+        this.state·borrow_mut()·event_log·clear();
+    }
+
+    /// Log an event (for test verification)
+    rite log_event(&this, event: &str) {
+        this.state·borrow_mut()·event_log·push(event.to_string());
+    }
+
+    // ========================================================================
+    // Error Handling Helpers (for testing)
+    // ========================================================================
+
+    /// Simulate init failure with a specific message
+    ☉ rite simulate_init_failure(&this, message: &str) {
+        this.state·borrow_mut()·simulated_init_failure = Some(message.to_string());
+    }
+
+    /// Simulate widget creation failure with a specific message
+    ☉ rite simulate_creation_failure(&this, message: &str) {
+        this.state·borrow_mut()·simulated_creation_failure = Some(message.to_string());
+    }
+
+    /// Simulate network failure (all fetches will fail)
+    ☉ rite simulate_network_failure(&this) {
+        this.state·borrow_mut()·simulated_network_failure = ⊤;
+    }
+
+    /// Simulate FFI returning null for widget creation
+    ☉ rite simulate_null_widget_return(&this) {
+        this.state·borrow_mut()·simulated_null_widget_return = ⊤;
+    }
+
+    /// Simulate a fetch error for a specific URL
+    ☉ rite simulate_fetch_error(&this, url: &str, message: &str) {
+        this.state·borrow_mut()·fetch_errors·insert(url.to_string(), message.to_string());
+    }
+
+    /// Set storage quota limit
+    ☉ rite set_storage_quota(&this, bytes: usize) {
+        this.state·borrow_mut()·storage_quota = Some(bytes);
+    }
+
+    /// Set fetch delay for a specific URL
+    ☉ rite set_fetch_delay(&this, url: &str, delay_ms: u64) {
+        this.state·borrow_mut()·fetch_delays·insert(url.to_string(), delay_ms);
+    }
+
+    /// Set default fetch timeout
+    ☉ rite set_fetch_timeout(&this, timeout_ms: u64) {
+        this.state·borrow_mut()·default_fetch_timeout = Some(timeout_ms);
+    }
+
+    /// Clear all simulated failures
+    ☉ rite clear_simulated_failures(&this) {
+        ≔ vary state = this.state·borrow_mut();
+        state·simulated_init_failure = None;
+        state·simulated_creation_failure = None;
+        state·simulated_network_failure = ⊥;
+        state·simulated_null_widget_return = ⊥;
+        this.config.fail_widget_creation = ⊥;
+        this.config.fail_init = ⊥;
+    }
+
+    /// Get error log for testing
+    ☉ rite get_error_log(&this) → Vec<PlatformError>! {
+        this.state·borrow()·error_log·clone()
+    }
+
+    /// Clear error log
+    ☉ rite clear_error_log(&this) {
+        this.state·borrow_mut()·error_log·clear();
+    }
+
+    /// Log an error (internal use)
+    rite log_error(&this, error: PlatformError) {
+        // First, notify all error callbacks
+        ≔ state = this.state·borrow();
+        for (_, callback) in state·error_callbacks·iter() {
+            callback(&error);
+        }
+        drop(state);
+
+        // Then log the error
+        this.state·borrow_mut()·error_log·push(error);
+    }
+
+    /// Register error callback, returns callback ID
+    ☉ rite on_error<F: Fn(&PlatformError) + 'static>(&this, callback: F) → u64! {
+        ≔ vary state = this.state·borrow_mut();
+        ≔ id = state·next_error_callback_id;
+        state·next_error_callback_id += 1;
+        state·error_callbacks·insert(id, Box::new(callback));
+        id
+    }
+
+    /// Remove error callback by ID
+    ☉ rite remove_error_callback(&this, callback_id: u64) {
+        this.state·borrow_mut()·error_callbacks·remove(&callback_id);
+    }
+
+    /// Try to initialize (returns Result)
+    ☉ rite try_init(&vary this) → PlatformResult<()>! {
+        ≔ state = this.state·borrow();
+        ⎇ let Some(message) = &state·simulated_init_failure {
+            ≔ msg = message.clone();
+            drop(state);
+            Err(PlatformError::InitializationFailed {
+                platform: "Mock".to_string(),
+                cause: msg
+            })
+        } ⎉ ⎇ this.config.fail_init {
+            drop(state);
+            Err(PlatformError::InitializationFailed {
+                platform: "Mock".to_string(),
+                cause: "Mock init failure configured".to_string()
+            })
+        } ⎉ {
+            drop(state);
+            this.state·borrow_mut()·initialized = ⊤;
+            this·log_event("init");
+            Ok(())
+        }
+    }
+
+    /// Try to connect a handler (returns Result)
+    ☉ rite try_connect(&this, widget: &NativeWidget, signal: &str, callback: fn()) → PlatformResult<u64>! {
+        // Check if widget exists
+        ⎇ !this.state·borrow()·widgets·contains_key(&widget.handle) {
+            ret Err(PlatformError::WidgetNotFound {
+                widget_id: widget.handle as u64
+            });
+        }
+
+        // Actually connect
+        Ok(this·connect(widget, signal, callback))
+    }
+
+    /// Try to set storage value (respects quota)
+    ☉ rite try_storage_set(&this, key: &str, value: &str) → PlatformResult<()>! {
+        ≔ state = this.state·borrow();
+        ⎇ let Some(quota) = state·storage_quota {
+            ≔ storage = state·local_storage·borrow();
+            ≔ current_size: usize = storage·iter()
+                ·map(|(k, v)| k.len() + v.len())
+                ·sum();
+            ≔ new_size = key.len() + value.len();
+
+            ⎇ current_size + new_size > quota {
+                ret Err(PlatformError::StorageError {
+                    operation: "set".to_string(),
+                    cause: "Storage quota exceeded".to_string()
+                });
+            }
+        }
+        drop(state);
+
+        this·storage_set(key, value);
+        Ok(())
+    }
+
+    // ========================================================================
+    // History Helpers (for testing)
+    // ========================================================================
+
+    /// Get current history length
+    ☉ rite history_length(&this) → usize! {
+        this.state·borrow()·history·len()
+    }
+
+    /// Get current state from history
+    ☉ rite current_state(&this) → Option<HashMap<String, String>>? {
+        this.state·borrow()·history·last()
+            ·and_then(|(_, state)| state·clone())
+    }
+
+    /// Get current history index
+    ☉ rite history_index(&this) → usize! {
+        this.state·borrow()·history·len().saturating_sub(1)
+    }
+
+    /// Navigate back in history
+    ☉ rite go_back(&this) {
+        this·go(-1);
+    }
+
+    /// Navigate forward in history
+    ☉ rite go_forward(&this) {
+        this·go(1);
+    }
+
+    /// Navigate by delta in history
+    ☉ rite go(&this, delta: i32) {
+        vary state = this.state·borrow_mut();
+        ≔ current_idx = state·history_index;
+        ≔ new_idx = (current_idx as i32 + delta).max(0) as usize;
+        ≔ max_idx = state·history·len().saturating_sub(1);
+        state·history_index = new_idx.min(max_idx);
+
+        // Fire popstate handlers if we actually moved
+        ⎇ new_idx != current_idx && new_idx <= max_idx {
+            for handler in &state·popstate_handlers {
+                handler();
+            }
+        }
+    }
+
+    /// Register popstate handler
+    ☉ rite on_popstate<F: Fn() + 'static>(&this, handler: F) {
+        this.state·borrow_mut()·popstate_handlers·push(Box::new(handler));
+    }
+
+    // ========================================================================
+    // DOM Helpers (for testing)
+    // ========================================================================
+
+    /// Mock an element with an ID for query_selector
+    ☉ rite mock_element_with_id(&this, id: &str, handle: usize) {
+        this.state·borrow_mut()·dom_elements_by_id·insert(id.to_string(), handle);
+    }
+
+    /// Mock an element with a class for query_selector
+    ☉ rite mock_element_with_class(&this, class: &str, handle: usize) {
+        this.state·borrow_mut()·dom_elements_by_class
+            ·entry(class.to_string())
+            ·or_insert_with(Vec::new)
+            ·push(handle);
+    }
+
+    /// Mock an element with a tag for query_selector
+    ☉ rite mock_element_with_tag(&this, tag: &str, handle: usize) {
+        this.state·borrow_mut()·dom_elements_by_tag
+            ·entry(tag.to_string())
+            ·or_insert_with(Vec::new)
+            ·push(handle);
+    }
+
+    /// Check if element has event listener
+    ☉ rite has_event_listener(&this, element: &DomElement, event_type: EventType) → bool! {
+        this.state·borrow()·dom_event_listeners
+            ·get(&element.handle)
+            ·map(|listeners| listeners·contains_key(&event_type))
+            ·unwrap_or(⊥)
+    }
+
+    /// Get DOM element count
+    ☉ rite dom_element_count(&this) → usize! {
+        this.state·borrow()·dom_elements·len()
+    }
+
+    /// Get attribute from DOM element
+    ☉ rite get_attribute(&this, element: &DomElement, name: &str) → Option<String>? {
+        this.state·borrow()·dom_attributes
+            ·get(&element.handle)
+            ·and_then(|attrs| attrs·get(name)·cloned())
+    }
+
+    /// Get text content from DOM element
+    ☉ rite get_text_content(&this, element: &DomElement) → String! {
+        this.state·borrow()·dom_text_content
+            ·get(&element.handle)
+            ·cloned()
+            ·unwrap_or_default()
+    }
+
+    // ========================================================================
+    // Visibility Property Helpers
+    // ========================================================================
+
+    /// Check if widget is visible
+    ☉ rite is_visible(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("visible"))
+            ·map(|v| v != "false")
+            ·unwrap_or(⊤)  // Widgets are visible by default
+    }
+
+    /// Set widget visibility
+    ☉ rite set_visible(&this, widget: &NativeWidget, visible: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("visible".to_string(), visible.to_string());
+    }
+
+    // ========================================================================
+    // Enabled/Sensitive Property Helpers
+    // ========================================================================
+
+    /// Check if widget is enabled
+    ☉ rite is_enabled(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("enabled"))
+            ·map(|v| v != "false")
+            ·unwrap_or(⊤)  // Widgets are enabled by default
+    }
+
+    /// Set widget enabled state
+    ☉ rite set_enabled(&this, widget: &NativeWidget, enabled: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("enabled".to_string(), enabled.to_string());
+    }
+
+    // ========================================================================
+    // Size Property Helpers
+    // ========================================================================
+
+    /// Set widget size request
+    ☉ rite set_size_request(&this, widget: &NativeWidget, width: i32, height: i32) {
+        vary state = this.state·borrow_mut();
+        ≔ props = state·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new);
+        props·insert("size_request_width".to_string(), width.to_string());
+        props·insert("size_request_height".to_string(), height.to_string());
+    }
+
+    /// Get widget size request (returns -1, -1 for natural size)
+    ☉ rite get_size_request(&this, widget: &NativeWidget) → (i32, i32)! {
+        ≔ state = this.state·borrow();
+        ≔ props = state·properties·get(&widget.handle);
+        ≔ width = props
+            ·and_then(|p| p·get("size_request_width"))
+            ·and_then(|v| v·parse::<i32>()·ok())
+            ·unwrap_or(-1);
+        ≔ height = props
+            ·and_then(|p| p·get("size_request_height"))
+            ·and_then(|v| v·parse::<i32>()·ok())
+            ·unwrap_or(-1);
+        (width, height)
+    }
+
+    // ========================================================================
+    // Alignment Property Helpers
+    // ========================================================================
+
+    /// Set horizontal alignment
+    ☉ rite set_halign(&this, widget: &NativeWidget, align: Align) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("halign".to_string(), format!("{:?}", align));
+    }
+
+    /// Get horizontal alignment
+    ☉ rite get_halign(&this, widget: &NativeWidget) → Align! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("halign"))
+            ·map(|v| match v·as_str() {
+                "Start" => Align::Start,
+                "End" => Align::End,
+                "Center" => Align::Center,
+                "Baseline" => Align::Baseline,
+                _ => Align::Fill
+            })
+            ·unwrap_or(Align::Fill)  // Default is Fill
+    }
+
+    /// Set vertical alignment
+    ☉ rite set_valign(&this, widget: &NativeWidget, align: Align) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("valign".to_string(), format!("{:?}", align));
+    }
+
+    /// Get vertical alignment
+    ☉ rite get_valign(&this, widget: &NativeWidget) → Align! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("valign"))
+            ·map(|v| match v·as_str() {
+                "Start" => Align::Start,
+                "End" => Align::End,
+                "Center" => Align::Center,
+                "Baseline" => Align::Baseline,
+                _ => Align::Fill
+            })
+            ·unwrap_or(Align::Fill)  // Default is Fill
+    }
+
+    // ========================================================================
+    // Expand Property Helpers
+    // ========================================================================
+
+    /// Set horizontal expand
+    ☉ rite set_hexpand(&this, widget: &NativeWidget, expand: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("hexpand".to_string(), expand.to_string());
+    }
+
+    /// Get horizontal expand
+    ☉ rite get_hexpand(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("hexpand"))
+            ·map(|v| v == "true")
+            ·unwrap_or(⊥)  // Default is false
+    }
+
+    /// Set vertical expand
+    ☉ rite set_vexpand(&this, widget: &NativeWidget, expand: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("vexpand".to_string(), expand.to_string());
+    }
+
+    /// Get vertical expand
+    ☉ rite get_vexpand(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("vexpand"))
+            ·map(|v| v == "true")
+            ·unwrap_or(⊥)  // Default is false
+    }
+
+    // ========================================================================
+    // Margin Property Helpers
+    // ========================================================================
+
+    /// Set margin top
+    ☉ rite set_margin_top(&this, widget: &NativeWidget, margin: i32) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("margin_top".to_string(), margin.to_string());
+    }
+
+    /// Get margin top
+    ☉ rite get_margin_top(&this, widget: &NativeWidget) → i32! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("margin_top"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(0)  // Default is 0
+    }
+
+    /// Set margin bottom
+    ☉ rite set_margin_bottom(&this, widget: &NativeWidget, margin: i32) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("margin_bottom".to_string(), margin.to_string());
+    }
+
+    /// Get margin bottom
+    ☉ rite get_margin_bottom(&this, widget: &NativeWidget) → i32! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("margin_bottom"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(0)  // Default is 0
+    }
+
+    /// Set margin start (left in LTR, right in RTL)
+    ☉ rite set_margin_start(&this, widget: &NativeWidget, margin: i32) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("margin_start".to_string(), margin.to_string());
+    }
+
+    /// Get margin start
+    ☉ rite get_margin_start(&this, widget: &NativeWidget) → i32! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("margin_start"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(0)  // Default is 0
+    }
+
+    /// Set margin end (right in LTR, left in RTL)
+    ☉ rite set_margin_end(&this, widget: &NativeWidget, margin: i32) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("margin_end".to_string(), margin.to_string());
+    }
+
+    /// Get margin end
+    ☉ rite get_margin_end(&this, widget: &NativeWidget) → i32! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("margin_end"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(0)  // Default is 0
+    }
+
+    // ========================================================================
+    // CSS Class Property Helpers
+    // ========================================================================
+
+    /// Add CSS class to widget
+    ☉ rite add_css_class(&this, widget: &NativeWidget, class: &str) {
+        this.state·borrow_mut()·css_classes
+            ·entry(widget.handle)
+            ·or_insert_with(HashSet::new)
+            ·insert(class.to_string());
+    }
+
+    /// Remove CSS class from widget
+    ☉ rite remove_css_class(&this, widget: &NativeWidget, class: &str) {
+        ⎇ let Some(classes) = this.state·borrow_mut()·css_classes·get_mut(&widget.handle) {
+            classes·remove(class);
+        }
+    }
+
+    /// Check if widget has CSS class
+    ☉ rite has_css_class(&this, widget: &NativeWidget, class: &str) → bool! {
+        this.state·borrow()·css_classes
+            ·get(&widget.handle)
+            ·map(|classes| classes·contains(class))
+            ·unwrap_or(⊥)
+    }
+
+    /// Get all CSS classes for widget
+    ☉ rite get_css_classes(&this, widget: &NativeWidget) → Vec<String>! {
+        this.state·borrow()·css_classes
+            ·get(&widget.handle)
+            ·map(|classes| classes·iter()·cloned()·collect())
+            ·unwrap_or_default()
+    }
+
+    // ========================================================================
+    // Tooltip Property Helpers
+    // ========================================================================
+
+    /// Set widget tooltip
+    ☉ rite set_tooltip(&this, widget: &NativeWidget, tooltip: &str) {
+        vary state = this.state·borrow_mut();
+        ⎇ tooltip·is_empty() {
+            state·tooltips·remove(&widget.handle);
+        } ⎉ {
+            state·tooltips·insert(widget.handle, tooltip.to_string());
+        }
+    }
+
+    /// Get widget tooltip
+    ☉ rite get_tooltip(&this, widget: &NativeWidget) → Option<String>? {
+        this.state·borrow()·tooltips·get(&widget.handle)·cloned()
+    }
+
+    // ========================================================================
+    // Widget Name Property Helpers
+    // ========================================================================
+
+    /// Set widget name (for lookup)
+    ☉ rite set_widget_name(&this, widget: &NativeWidget, name: &str) {
+        vary state = this.state·borrow_mut();
+        // Remove old name mapping if exists
+        ⎇ let Some(old_name) = state·widget_names·get(&widget.handle)·cloned() {
+            state·name_to_widget·remove(&old_name);
+        }
+        // Set new name
+        state·widget_names·insert(widget.handle, name.to_string());
+        state·name_to_widget·insert(name.to_string(), widget.handle);
+    }
+
+    /// Get widget name
+    ☉ rite get_widget_name(&this, widget: &NativeWidget) → Option<String>? {
+        this.state·borrow()·widget_names·get(&widget.handle)·cloned()
+    }
+
+    /// Find widget by name
+    ☉ rite find_widget_by_name(&this, name: &str) → Option<NativeWidget>? {
+        ≔ state = this.state·borrow();
+        state·name_to_widget·get(name)
+            ·map(|&handle| {
+                ≔ widget_type = state·widgets
+                    ·get(&handle)
+                    ·cloned()
+                    ·unwrap_or(WidgetType::Unknown);
+                NativeWidget::new(handle, widget_type)
+            })
+    }
+
+    // ========================================================================
+    // Container Property Helpers
+    // ========================================================================
+
+    /// Get container spacing
+    ☉ rite get_spacing(&this, container: &NativeWidget) → i32! {
+        this.state·borrow()·properties
+            ·get(&container.handle)
+            ·and_then(|p| p·get("spacing"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(0)
+    }
+
+    /// Set container homogeneous
+    ☉ rite set_homogeneous(&this, container: &NativeWidget, homogeneous: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(container.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("homogeneous".to_string(), homogeneous.to_string());
+    }
+
+    /// Check if container is homogeneous
+    ☉ rite is_homogeneous(&this, container: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&container.handle)
+            ·and_then(|p| p·get("homogeneous"))
+            ·map(|v| v == "true")
+            ·unwrap_or(⊥)
+    }
+
+    /// Get container children handles
+    ☉ rite get_children(&this, container: &NativeWidget) → Vec<usize>! {
+        this.state·borrow()·hierarchy
+            ·get(&container.handle)
+            ·cloned()
+            ·unwrap_or_default()
+    }
+
+    // ========================================================================
+    // Focus Property Helpers
+    // ========================================================================
+
+    /// Check if widget is focusable
+    ☉ rite is_focusable(&this, widget: &NativeWidget) → bool! {
+        // Entry widgets are focusable by default
+        ≔ state = this.state·borrow();
+        state·focusable·get(&widget.handle)·copied()·unwrap_or(
+            matches!(state·widgets·get(&widget.handle), Some(WidgetType::Entry) | Some(WidgetType::TextView))
+        )
+    }
+
+    /// Set widget focusable state
+    ☉ rite set_focusable(&this, widget: &NativeWidget, focusable: bool) {
+        this.state·borrow_mut()·focusable·insert(widget.handle, focusable);
+    }
+
+    /// Grab focus for widget
+    ☉ rite grab_focus(&this, widget: &NativeWidget) {
+        ⎇ this·is_focusable(widget) {
+            this.state·borrow_mut()·focused_widget = Some(widget.handle);
+        }
+    }
+
+    /// Check if widget has focus
+    ☉ rite has_focus(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·focused_widget == Some(widget.handle)
+    }
+
+    // ========================================================================
+    // Entry Input Helpers
+    // ========================================================================
+
+    /// Set placeholder text
+    ☉ rite set_placeholder(&this, widget: &NativeWidget, placeholder: &str) {
+        vary state = this.state·borrow_mut();
+        ⎇ placeholder·is_empty() {
+            ⎇ let Some(props) = state·properties·get_mut(&widget.handle) {
+                props·remove("placeholder");
+            }
+        } ⎉ {
+            state·properties
+                ·entry(widget.handle)
+                ·or_insert_with(HashMap::new)
+                ·insert("placeholder".to_string(), placeholder.to_string());
+        }
+    }
+
+    /// Get placeholder text
+    ☉ rite get_placeholder(&this, widget: &NativeWidget) → Option<String>? {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("placeholder"))
+            ·filter(|s| !s·is_empty())
+            ·cloned()
+    }
+
+    /// Set max length for entry
+    ☉ rite set_max_length(&this, widget: &NativeWidget, max_length: i32) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("max_length".to_string(), max_length.to_string());
+    }
+
+    /// Get max length for entry
+    ☉ rite get_max_length(&this, widget: &NativeWidget) → Option<i32>? {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("max_length"))
+            ·and_then(|v| v·parse()·ok())
+    }
+
+    /// Set password mode
+    ☉ rite set_password_mode(&this, widget: &NativeWidget, password: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("password_mode".to_string(), password.to_string());
+    }
+
+    /// Check if password entry
+    ☉ rite is_password_entry(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("password_mode"))
+            ·map(|v| v == "true")
+            ·unwrap_or(⊥)
+    }
+
+    /// Set readonly state
+    ☉ rite set_readonly(&this, widget: &NativeWidget, readonly: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("readonly".to_string(), readonly.to_string());
+    }
+
+    /// Check if readonly
+    ☉ rite is_readonly(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("readonly"))
+            ·map(|v| v == "true")
+            ·unwrap_or(⊥)
+    }
+
+    // ========================================================================
+    // Text Selection Helpers
+    // ========================================================================
+
+    /// Select all text
+    ☉ rite select_all(&this, widget: &NativeWidget) {
+        ≔ text_len = this·get_text(widget)·len();
+        this.state·borrow_mut()·selection_bounds·insert(widget.handle, (0, text_len));
+    }
+
+    /// Select range
+    ☉ rite select_range(&this, widget: &NativeWidget, start: usize, end: usize) {
+        this.state·borrow_mut()·selection_bounds·insert(widget.handle, (start, end));
+    }
+
+    /// Get selection bounds
+    ☉ rite get_selection_bounds(&this, widget: &NativeWidget) → (usize, usize)! {
+        this.state·borrow()·selection_bounds
+            ·get(&widget.handle)
+            ·copied()
+            ·unwrap_or((0, 0))
+    }
+
+    /// Get selected text
+    ☉ rite get_selected_text(&this, widget: &NativeWidget) → String! {
+        ≔ text = this·get_text(widget);
+        ≔ (start, end) = this·get_selection_bounds(widget);
+        text·get(start..end)·unwrap_or_default()·to_string()
+    }
+
+    /// Set cursor position
+    ☉ rite set_cursor_position(&this, widget: &NativeWidget, position: usize) {
+        this.state·borrow_mut()·cursor_positions·insert(widget.handle, position);
+    }
+
+    /// Get cursor position
+    ☉ rite get_cursor_position(&this, widget: &NativeWidget) → usize! {
+        this.state·borrow()·cursor_positions
+            ·get(&widget.handle)
+            ·copied()
+            ·unwrap_or(0)
+    }
+
+    // ========================================================================
+    // TextView Helpers
+    // ========================================================================
+
+    /// Set text view content
+    ☉ rite set_text_view_content(&this, widget: &NativeWidget, content: &str) {
+        this·set_text(widget, content);
+    }
+
+    /// Get text view content
+    ☉ rite get_text_view_content(&this, widget: &NativeWidget) → String! {
+        this·get_text(widget)
+    }
+
+    /// Set word wrap
+    ☉ rite set_word_wrap(&this, widget: &NativeWidget, wrap: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("word_wrap".to_string(), wrap.to_string());
+    }
+
+    /// Get word wrap
+    ☉ rite get_word_wrap(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("word_wrap"))
+            ·map(|v| v == "true")
+            ·unwrap_or(⊥)
+    }
+
+    /// Get line count
+    ☉ rite get_line_count(&this, widget: &NativeWidget) → usize! {
+        ≔ text = this·get_text(widget);
+        ⎇ text·is_empty() { 0 } ⎉ { text·lines()·count() }
+    }
+
+    // ========================================================================
+    // CheckButton/Switch Helpers
+    // ========================================================================
+
+    /// Set checked state
+    ☉ rite set_checked(&this, widget: &NativeWidget, checked: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("checked".to_string(), checked.to_string());
+    }
+
+    /// Check if checked
+    ☉ rite is_checked(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("checked"))
+            ·map(|v| v == "true")
+            ·unwrap_or(⊥)
+    }
+
+    /// Set switch active state
+    ☉ rite set_switch_active(&this, widget: &NativeWidget, active: bool) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("switch_active".to_string(), active.to_string());
+    }
+
+    /// Check if switch is active
+    ☉ rite is_switch_active(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("switch_active"))
+            ·map(|v| v == "true")
+            ·unwrap_or(⊥)
+    }
+
+    // ========================================================================
+    // Scale (Slider) Helpers
+    // ========================================================================
+
+    /// Set scale value
+    ☉ rite set_scale_value(&this, widget: &NativeWidget, value: f64) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("scale_value".to_string(), value.to_string());
+    }
+
+    /// Get scale value
+    ☉ rite get_scale_value(&this, widget: &NativeWidget) → f64! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("scale_value"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(0.0)
+    }
+
+    /// Get scale range
+    ☉ rite get_scale_range(&this, widget: &NativeWidget) → (f64, f64)! {
+        ≔ state = this.state·borrow();
+        ≔ props = state·properties·get(&widget.handle);
+        ≔ min = props
+            ·and_then(|p| p·get("min"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(0.0);
+        ≔ max = props
+            ·and_then(|p| p·get("max"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(100.0);
+        (min, max)
+    }
+
+    /// Set scale step
+    ☉ rite set_scale_step(&this, widget: &NativeWidget, step: f64) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("scale_step".to_string(), step.to_string());
+    }
+
+    /// Get scale step
+    ☉ rite get_scale_step(&this, widget: &NativeWidget) → f64! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("scale_step"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(1.0)
+    }
+
+    // ========================================================================
+    // ProgressBar Helpers
+    // ========================================================================
+
+    /// Set progress fraction (0.0 to 1.0)
+    ☉ rite set_progress_fraction(&this, widget: &NativeWidget, fraction: f64) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("progress_fraction".to_string(), fraction.to_string());
+        // Stop pulsing when fraction is set
+        this.state·borrow_mut()·progress_pulsing·remove(&widget.handle);
+    }
+
+    /// Get progress fraction
+    ☉ rite get_progress_fraction(&this, widget: &NativeWidget) → f64! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("progress_fraction"))
+            ·and_then(|v| v·parse()·ok())
+            ·unwrap_or(0.0)
+    }
+
+    /// Start progress pulse (indeterminate mode)
+    ☉ rite progress_pulse(&this, widget: &NativeWidget) {
+        this.state·borrow_mut()·progress_pulsing·insert(widget.handle, ⊤);
+    }
+
+    /// Check if progress is pulsing
+    ☉ rite is_progress_pulsing(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·progress_pulsing
+            ·get(&widget.handle)
+            ·copied()
+            ·unwrap_or(⊥)
+    }
+
+    /// Set progress text
+    ☉ rite set_progress_text(&this, widget: &NativeWidget, text: &str) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("progress_text".to_string(), text.to_string());
+    }
+
+    /// Get progress text
+    ☉ rite get_progress_text(&this, widget: &NativeWidget) → Option<String>? {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("progress_text"))
+            ·cloned()
+    }
+
+    // ========================================================================
+    // Spinner Helpers
+    // ========================================================================
+
+    /// Start spinner
+    ☉ rite start_spinner(&this, widget: &NativeWidget) {
+        this.state·borrow_mut()·spinner_states·insert(widget.handle, ⊤);
+    }
+
+    /// Stop spinner
+    ☉ rite stop_spinner(&this, widget: &NativeWidget) {
+        this.state·borrow_mut()·spinner_states·insert(widget.handle, ⊥);
+    }
+
+    /// Check if spinner is spinning
+    ☉ rite is_spinner_spinning(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·spinner_states
+            ·get(&widget.handle)
+            ·copied()
+            ·unwrap_or(⊥)
+    }
+
+    // ========================================================================
+    // Validation Helpers
+    // ========================================================================
+
+    /// Set validation error
+    ☉ rite set_validation_error(&this, widget: &NativeWidget, error: &str) {
+        this.state·borrow_mut()·validation_errors·insert(widget.handle, error.to_string());
+        this.state·borrow_mut()·validation_success·remove(&widget.handle);
+    }
+
+    /// Get validation error
+    ☉ rite get_validation_error(&this, widget: &NativeWidget) → Option<String>? {
+        this.state·borrow()·validation_errors·get(&widget.handle)·cloned()
+    }
+
+    /// Check if has validation error
+    ☉ rite has_validation_error(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·validation_errors·contains_key(&widget.handle)
+    }
+
+    /// Clear validation error
+    ☉ rite clear_validation_error(&this, widget: &NativeWidget) {
+        this.state·borrow_mut()·validation_errors·remove(&widget.handle);
+    }
+
+    /// Set validation success
+    ☉ rite set_validation_success(&this, widget: &NativeWidget, success: bool) {
+        ⎇ success {
+            this.state·borrow_mut()·validation_success·insert(widget.handle, ⊤);
+            this.state·borrow_mut()·validation_errors·remove(&widget.handle);
+        } ⎉ {
+            this.state·borrow_mut()·validation_success·remove(&widget.handle);
+        }
+    }
+
+    /// Check if has validation success
+    ☉ rite has_validation_success(&this, widget: &NativeWidget) → bool! {
+        this.state·borrow()·validation_success
+            ·get(&widget.handle)
+            ·copied()
+            ·unwrap_or(⊥)
+    }
+
+    // ========================================================================
+    // Input Purpose/Hints Helpers
+    // ========================================================================
+
+    /// Set input purpose
+    ☉ rite set_input_purpose(&this, widget: &NativeWidget, purpose: InputPurpose) {
+        this.state·borrow_mut()·input_purposes·insert(widget.handle, purpose);
+    }
+
+    /// Get input purpose
+    ☉ rite get_input_purpose(&this, widget: &NativeWidget) → InputPurpose! {
+        this.state·borrow()·input_purposes
+            ·get(&widget.handle)
+            ·cloned()
+            ·unwrap_or(InputPurpose::FreeForm)
+    }
+
+    /// Set input hints
+    ☉ rite set_input_hints(&this, widget: &NativeWidget, hints: InputHints) {
+        this.state·borrow_mut()·input_hints_map·insert(widget.handle, hints);
+    }
+
+    /// Get input hints
+    ☉ rite get_input_hints(&this, widget: &NativeWidget) → InputHints! {
+        this.state·borrow()·input_hints_map
+            ·get(&widget.handle)
+            ·cloned()
+            ·unwrap_or(InputHints::none())
+    }
+
+    // ========================================================================
+    // Clipboard Helpers
+    // ========================================================================
+
+    /// Set clipboard text
+    ☉ rite set_clipboard_text(&this, text: &str) {
+        this.state·borrow_mut()·clipboard = text.to_string();
+    }
+
+    /// Get clipboard text
+    ☉ rite get_clipboard_text(&this) → String! {
+        this.state·borrow()·clipboard·clone()
+    }
+
+    /// Copy selection to clipboard
+    ☉ rite copy_selection(&this, widget: &NativeWidget) {
+        ≔ selected = this·get_selected_text(widget);
+        this·set_clipboard_text(&selected);
+    }
+
+    /// Paste from clipboard to entry
+    ☉ rite paste_to_entry(&this, widget: &NativeWidget) {
+        ≔ clipboard = this·get_clipboard_text();
+        ≔ current = this·get_text(widget);
+        ≔ cursor = this·get_cursor_position(widget);
+
+        // Insert at cursor position
+        ≔ vary new_text = current·clone();
+        new_text·insert_str(cursor.min(current·len()), &clipboard);
+        this·set_text(widget, &new_text);
+
+        // Update cursor
+        this·set_cursor_position(widget, cursor + clipboard·len());
+    }
+
+    /// Cut selection to clipboard
+    ☉ rite cut_selection(&this, widget: &NativeWidget) {
+        ≔ (start, end) = this·get_selection_bounds(widget);
+        ≔ text = this·get_text(widget);
+
+        // Copy to clipboard
+        ≔ selected = text·get(start..end)·unwrap_or_default()·to_string();
+        this·set_clipboard_text(&selected);
+
+        // Remove selected text
+        ≔ vary new_text = text·clone();
+        new_text·drain(start..end);
+        this·set_text(widget, &new_text);
+
+        // Clear selection and update cursor
+        this.state·borrow_mut()·selection_bounds·remove(&widget.handle);
+        this·set_cursor_position(widget, start);
+    }
+
+    // ========================================================================
+    // Accessibility Helpers
+    // ========================================================================
+
+    /// Get accessible role for widget
+    ☉ rite get_accessible_role(&this, widget: &NativeWidget) → AccessibleRole! {
+        // Check custom role first
+        ⎇ let Some(role) = this.state·borrow()·accessible_roles·get(&widget.handle)·cloned() {
+            ret role;
+        }
+        // Default roles based on widget type
+        match this.state·borrow()·widgets·get(&widget.handle) {
+            Some(WidgetType::Button) => AccessibleRole::Button,
+            Some(WidgetType::Entry) => AccessibleRole::TextBox,
+            Some(WidgetType::Label) => AccessibleRole::Label,
+            Some(WidgetType::CheckButton) => AccessibleRole::CheckBox,
+            Some(WidgetType::Switch) => AccessibleRole::Switch,
+            Some(WidgetType::ProgressBar) => AccessibleRole::ProgressBar,
+            Some(WidgetType::Scale) => AccessibleRole::Slider,
+            Some(WidgetType::ListBox) => AccessibleRole::List,
+            _ => AccessibleRole::None
+        }
+    }
+
+    /// Set accessible role for widget
+    ☉ rite set_accessible_role(&this, widget: &NativeWidget, role: AccessibleRole) {
+        this.state·borrow_mut()·accessible_roles·insert(widget.handle, role);
+    }
+
+    /// Set accessible label
+    ☉ rite set_accessible_label(&this, widget: &NativeWidget, label: &str) {
+        ⎇ label·is_empty() {
+            this.state·borrow_mut()·accessible_labels·remove(&widget.handle);
+        } ⎉ {
+            this.state·borrow_mut()·accessible_labels·insert(widget.handle, label.to_string());
+        }
+    }
+
+    /// Get accessible label
+    ☉ rite get_accessible_label(&this, widget: &NativeWidget) → Option<String>? {
+        // Check custom label first
+        ⎇ let Some(label) = this.state·borrow()·accessible_labels·get(&widget.handle)·cloned() {
+            ret ⎇ label·is_empty() { None } ⎉ { Some(label) };
+        }
+        // Fall back to button/label text
+        ≔ text = this·get_text(widget);
+        ⎇ text·is_empty() { None } ⎉ { Some(text) }
+    }
+
+    /// Set accessible description
+    ☉ rite set_accessible_description(&this, widget: &NativeWidget, description: &str) {
+        ⎇ description·is_empty() {
+            this.state·borrow_mut()·accessible_descriptions·remove(&widget.handle);
+        } ⎉ {
+            this.state·borrow_mut()·accessible_descriptions·insert(widget.handle, description.to_string());
+        }
+    }
+
+    /// Get accessible description
+    ☉ rite get_accessible_description(&this, widget: &NativeWidget) → Option<String>? {
+        this.state·borrow()·accessible_descriptions·get(&widget.handle)·cloned()
+    }
+
+    /// Set label for relationship
+    ☉ rite set_label_for(&this, label: &NativeWidget, widget: &NativeWidget) {
+        vary state = this.state·borrow_mut();
+        state·label_for·insert(label.handle, widget.handle);
+        state·labelled_by·insert(widget.handle, label.handle);
+    }
+
+    /// Get labelled by
+    ☉ rite get_labelled_by(&this, widget: &NativeWidget) → Option<usize>? {
+        this.state·borrow()·labelled_by·get(&widget.handle)·copied()
+    }
+
+    /// Get accessible states
+    ☉ rite get_accessible_states(&this, widget: &NativeWidget) → Vec<AccessibleState>! {
+        vary states = Vec::new();
+
+        // Disabled state
+        ⎇ !this·is_enabled(widget) {
+            states·push(AccessibleState::Disabled);
+        }
+
+        // Checked state
+        ⎇ this·is_checked(widget) {
+            states·push(AccessibleState::Checked);
+        }
+
+        // Expanded state
+        ⎇ this.state·borrow()·accessible_expanded·get(&widget.handle)·copied()·unwrap_or(⊥) {
+            states·push(AccessibleState::Expanded);
+        }
+
+        // Focused state
+        ⎇ this·has_focus(widget) {
+            states·push(AccessibleState::Focused);
+        }
+
+        // Required state
+        ⎇ this.state·borrow()·accessible_required·get(&widget.handle)·copied()·unwrap_or(⊥) {
+            states·push(AccessibleState::Required);
+        }
+
+        // Invalid state
+        ⎇ this·has_validation_error(widget) {
+            states·push(AccessibleState::Invalid);
+        }
+
+        // Readonly state
+        ⎇ this·is_readonly(widget) {
+            states·push(AccessibleState::ReadOnly);
+        }
+
+        states
+    }
+
+    /// Set accessible expanded state
+    ☉ rite set_accessible_expanded(&this, widget: &NativeWidget, expanded: bool) {
+        this.state·borrow_mut()·accessible_expanded·insert(widget.handle, expanded);
+    }
+
+    /// Set accessible required state
+    ☉ rite set_accessible_required(&this, widget: &NativeWidget, required: bool) {
+        this.state·borrow_mut()·accessible_required·insert(widget.handle, required);
+    }
+
+    /// Get tab order
+    ☉ rite get_tab_order(&this, container: &NativeWidget) → Vec<usize>! {
+        ≔ children = this·get_children(container);
+        vary indexed: Vec<(i32, usize)> = children·iter()
+            ·map(|&h| {
+                ≔ idx = this.state·borrow()·tab_indices·get(&h)·copied()·unwrap_or(0);
+                (idx, h)
+            })
+            ·filter(|(idx, _)| *idx >= 0)
+            ·collect();
+        indexed·sort_by_key(|(idx, _)| *idx);
+        indexed·into_iter()·map(|(_, h)| h)·collect()
+    }
+
+    /// Set tab index
+    ☉ rite set_tab_index(&this, widget: &NativeWidget, index: i32) {
+        this.state·borrow_mut()·tab_indices·insert(widget.handle, index);
+    }
+
+    /// Get tab index
+    ☉ rite get_tab_index(&this, widget: &NativeWidget) → i32! {
+        this.state·borrow()·tab_indices·get(&widget.handle)·copied()·unwrap_or(0)
+    }
+
+    /// Focus next widget in container
+    ☉ rite focus_next(&this, container: &NativeWidget) {
+        ≔ children = this·get_children(container);
+        ≔ state = this.state·borrow();
+        ≔ current_focus = state·focused_widget;
+        drop(state);
+
+        ⎇ let Some(current) = current_focus {
+            ⎇ let Some(idx) = children·iter()·position(|&h| h == current) {
+                ⎇ idx + 1 < children·len() {
+                    ≔ next_handle = children[idx + 1];
+                    ≔ widget_type = this.state·borrow()·widgets·get(&next_handle)·cloned()·unwrap_or(WidgetType::Unknown);
+                    ≔ next_widget = NativeWidget::new(next_handle, widget_type);
+                    this·grab_focus(&next_widget);
+                }
+            }
+        }
+    }
+
+    /// Focus previous widget in container
+    ☉ rite focus_previous(&this, container: &NativeWidget) {
+        ≔ children = this·get_children(container);
+        ≔ state = this.state·borrow();
+        ≔ current_focus = state·focused_widget;
+        drop(state);
+
+        ⎇ let Some(current) = current_focus {
+            ⎇ let Some(idx) = children·iter()·position(|&h| h == current) {
+                ⎇ idx > 0 {
+                    ≔ prev_handle = children[idx - 1];
+                    ≔ widget_type = this.state·borrow()·widgets·get(&prev_handle)·cloned()·unwrap_or(WidgetType::Unknown);
+                    ≔ prev_widget = NativeWidget::new(prev_handle, widget_type);
+                    this·grab_focus(&prev_widget);
+                }
+            }
+        }
+    }
+
+    /// Set live region
+    ☉ rite set_live_region(&this, widget: &NativeWidget, region: LiveRegion) {
+        this.state·borrow_mut()·live_regions·insert(widget.handle, region);
+    }
+
+    /// Get live region
+    ☉ rite get_live_region(&this, widget: &NativeWidget) → LiveRegion! {
+        this.state·borrow()·live_regions·get(&widget.handle)·cloned()·unwrap_or(LiveRegion::Off)
+    }
+
+    /// Announce message
+    ☉ rite announce(&this, message: &str, priority: AnnouncePriority) {
+        this.state·borrow_mut()·announcements·push(Announcement {
+            message: message.to_string(),
+            priority: priority
+        });
+    }
+
+    /// Get announcements
+    ☉ rite get_announcements(&this) → Vec<Announcement>! {
+        this.state·borrow()·announcements·clone()
+    }
+
+    /// Get accessible value text
+    ☉ rite get_accessible_value_text(&this, widget: &NativeWidget) → String! {
+        // Check custom value first
+        ⎇ let Some(text) = this.state·borrow()·accessible_value_text·get(&widget.handle)·cloned() {
+            ret text;
+        }
+        // Generate from scale/progress value
+        ≔ state = this.state·borrow();
+        ⎇ let Some(props) = state·properties·get(&widget.handle) {
+            ⎇ let Some(value) = props·get("scale_value") {
+                ret format!("{}", value);
+            }
+            ⎇ let Some(value) = props·get("progress_fraction") {
+                ⎇ let Ok(f) = value·parse::<f64>() {
+                    ret format!("{}%", (f * 100.0) as i32);
+                }
+            }
+        }
+        String::new()
+    }
+
+    /// Set accessible value text
+    ☉ rite set_accessible_value_text(&this, widget: &NativeWidget, text: &str) {
+        this.state·borrow_mut()·accessible_value_text·insert(widget.handle, text.to_string());
+    }
+
+    /// Set controls relationship
+    ☉ rite set_controls(&this, widget: &NativeWidget, controlled: &NativeWidget) {
+        this.state·borrow_mut()·controls_relation·insert(widget.handle, controlled.handle);
+    }
+
+    /// Get controls
+    ☉ rite get_controls(&this, widget: &NativeWidget) → Option<usize>? {
+        this.state·borrow()·controls_relation·get(&widget.handle)·copied()
+    }
+
+    /// Set described by relationship
+    ☉ rite set_described_by(&this, widget: &NativeWidget, descriptor: &NativeWidget) {
+        this.state·borrow_mut()·described_by·insert(widget.handle, descriptor.handle);
+    }
+
+    /// Get described by
+    ☉ rite get_described_by(&this, widget: &NativeWidget) → Option<usize>? {
+        this.state·borrow()·described_by·get(&widget.handle)·copied()
+    }
+
+    /// Set error message relationship
+    ☉ rite set_error_message(&this, widget: &NativeWidget, error: &NativeWidget) {
+        this.state·borrow_mut()·error_message·insert(widget.handle, error.handle);
+    }
+
+    /// Get error message
+    ☉ rite get_error_message(&this, widget: &NativeWidget) → Option<usize>? {
+        this.state·borrow()·error_message·get(&widget.handle)·copied()
+    }
+
+    /// Set heading level
+    ☉ rite set_heading_level(&this, widget: &NativeWidget, level: u8) {
+        this.state·borrow_mut()·heading_levels·insert(widget.handle, level);
+    }
+
+    /// Get heading level
+    ☉ rite get_heading_level(&this, widget: &NativeWidget) → Option<u8>? {
+        this.state·borrow()·heading_levels·get(&widget.handle)·copied()
+    }
+
+    /// Set high contrast mode
+    ☉ rite set_high_contrast_mode(&this, enabled: bool) {
+        this.state·borrow_mut()·high_contrast_mode = enabled;
+    }
+
+    /// Check high contrast mode
+    ☉ rite is_high_contrast_mode(&this) → bool! {
+        this.state·borrow()·high_contrast_mode
+    }
+
+    /// Set reduced motion preference
+    ☉ rite set_reduced_motion(&this, enabled: bool) {
+        this.state·borrow_mut()·reduced_motion = enabled;
+    }
+
+    /// Check reduced motion preference
+    ☉ rite prefers_reduced_motion(&this) → bool! {
+        this.state·borrow()·reduced_motion
+    }
+
+    /// Allocate a new widget handle
+    rite allocate_handle(&this, widget_type: WidgetType) → usize! {
+        ≔ vary state = this.state·borrow_mut();
+        ≔ handle = state·next_handle;
+        state·next_handle += 1;
+        state·widgets·insert(handle, widget_type);
+        state·properties·insert(handle, HashMap::new());
+        handle
+    }
+
+    /// Destroy a widget and cleanup
+    ☉ rite destroy_widget(&this, widget: &NativeWidget) {
+        ≔ vary state = this.state·borrow_mut();
+
+        // Only process if widget exists (prevent double-free)
+        ⎇ state·widgets·remove(&widget.handle)·is_some() {
+            // Remove from parent hierarchy
+            for (_, children) in &vary state.hierarchy {
+                children·retain(|h| *h != widget.handle);
+            }
+
+            // Remove as parent (also destroys children)
+            ⎇ let Some(children) = state·hierarchy·remove(&widget.handle) {
+                // Recursively destroy children (handles are collected first)
+                for child_handle in children {
+                    state·widgets·remove(&child_handle);
+                    state·properties·remove(&child_handle);
+                    state·signal_history·remove(&child_handle);
+                    state·css_classes·remove(&child_handle);
+                    state·tooltips·remove(&child_handle);
+                    state·focusable·remove(&child_handle);
+                    ⎇ let Some(name) = state·widget_names·remove(&child_handle) {
+                        state·name_to_widget·remove(&name);
+                    }
+                    ⎇ state·focused_widget == Some(child_handle) {
+                        state·focused_widget = None;
+                    }
+                }
+            }
+
+            // Remove properties
+            state·properties·remove(&widget.handle);
+
+            // Remove signal history
+            state·signal_history·remove(&widget.handle);
+
+            // Remove CSS classes
+            state·css_classes·remove(&widget.handle);
+
+            // Remove tooltip
+            state·tooltips·remove(&widget.handle);
+
+            // Remove widget name mapping
+            ⎇ let Some(name) = state·widget_names·remove(&widget.handle) {
+                state·name_to_widget·remove(&name);
+            }
+
+            // Remove focusable state
+            state·focusable·remove(&widget.handle);
+
+            // Clear focus if this widget had it
+            ⎇ state·focused_widget == Some(widget.handle) {
+                state·focused_widget = None;
+            }
+
+            // Remove handlers and handler_to_widget mappings
+            ⎇ let Some(handler_ids) = state·widget_handlers·remove(&widget.handle) {
+                for handler_id in handler_ids {
+                    state·handlers·remove(&handler_id);
+                    state·handler_to_widget·remove(&handler_id);
+                }
+            }
+        }
+    }
+
+    /// Try to create a widget (returns Result for error testing)
+    ☉ rite try_create_button(&this, label: &str) → PlatformResult<NativeWidget>! {
+        // Check for simulated null widget return
+        ⎇ this.state·borrow()·simulated_null_widget_return {
+            ret Err(PlatformError::WidgetCreationFailed {
+                widget_type: "Button".to_string(),
+                cause: "FFI returned null pointer".to_string()
+            });
+        }
+
+        // Check for simulated creation failure
+        ≔ state = this.state·borrow();
+        ⎇ let Some(message) = &state·simulated_creation_failure {
+            ≔ msg = message.clone();
+            drop(state);
+            ret Err(PlatformError::WidgetCreationFailed {
+                widget_type: "Button".to_string(),
+                cause: msg
+            });
+        }
+        drop(state);
+
+        // Check config flag
+        ⎇ this.config.fail_widget_creation {
+            Err(PlatformError::WidgetCreationFailed {
+                widget_type: "Button".to_string(),
+                cause: "Mock failure configured".to_string()
+            })
+        } ⎉ {
+            Ok(this·create_button(label))
+        }
+    }
+}
+
+// ============================================================================
+// NativeApp Implementation
+// ============================================================================
+
+⊢ MockPlatform : NativeApp {
+    rite init(&vary this) → bool! {
+        ⎇ this.config.fail_init {
+            ⊥
+        } ⎉ {
+            this.state·borrow_mut()·initialized = ⊤;
+            this·log_event("init");
+            ⊤
+        }
+    }
+
+    rite run(&this) {
+        this·log_event("run");
+        // Mock platforms don't actually run an event loop
+    }
+
+    rite quit(&this) {
+        this·log_event("quit");
+        this.state·borrow_mut()·initialized = ⊥;
+    }
+
+    rite create_window(&this, title: !String, width: !i32, height: !i32) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Window);
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&handle) {
+            props·insert("title".to_string(), title.clone());
+            props·insert("width".to_string(), width.to_string());
+            props·insert("height".to_string(), height.to_string());
+        }
+        this·log_event(&format!("create_window:{}", title));
+        NativeWidget::new(handle, WidgetType::Window)
+    }
+
+    rite show(&this, widget: &NativeWidget) {
+        this·log_event(&format!("show:{}", widget.handle));
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&widget.handle) {
+            props·insert("visible".to_string(), "true".to_string());
+        }
+    }
+
+    rite hide(&this, widget: &NativeWidget) {
+        this·log_event(&format!("hide:{}", widget.handle));
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&widget.handle) {
+            props·insert("visible".to_string(), "false".to_string());
+        }
+    }
+
+    rite set_property(&this, widget: &NativeWidget, name: &str, value: &str) {
+        this·log_event(&format!("set_property:{}:{}={}", widget.handle, name, value));
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&widget.handle) {
+            props·insert(name.to_string(), value.to_string());
+        }
+    }
+
+    rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64, callback: Box<dyn Fn() + 'static>) {
+        ≔ vary state = this.state·borrow_mut();
+
+        // Store the callback
+        state·handlers·insert(handler_id, HandlerEntry {
+            widget_handle: widget.handle,
+            signal: signal.to_string(),
+            callback: callback
+        });
+
+        // Track handler for widget
+        state·widget_handlers
+            ·entry(widget.handle)
+            ·or_insert_with(Vec::new)
+            ·push(handler_id);
+
+        drop(state);
+        this·log_event(&format!("connect:{}:{}:{}", widget.handle, signal, handler_id));
+    }
+
+    rite disconnect(&this, widget: &NativeWidget, handler_id: u64) {
+        this·log_event(&format!("disconnect:{}:{}", widget.handle, handler_id));
+        ≔ vary state = this.state·borrow_mut();
+
+        // Remove from handlers
+        state·handlers·remove(&handler_id);
+
+        // Remove from widget's handler list
+        ⎇ let Some(handler_ids) = state·widget_handlers·get_mut(&widget.handle) {
+            handler_ids·retain(|id| *id != handler_id);
+        }
+    }
+}
+
+// Extended connect with callback for testing
+⊢ MockPlatform {
+    /// Connect with actual callback (what the fixed signature will look like)
+    ☉ rite connect_with_callback<F: Fn() + 'static>(
+        &this,
+        widget: &NativeWidget,
+        signal: &str,
+        callback: F
+    ) → u64! {
+        ≔ vary state = this.state·borrow_mut();
+        ≔ handler_id = state·next_handler_id;
+        state·next_handler_id += 1;
+
+        // Store the callback
+        state·handlers·insert(handler_id, HandlerEntry {
+            widget_handle: widget.handle,
+            signal: signal.to_string(),
+            callback: Box::new(callback)
+        });
+
+        // Track handler for widget
+        state·widget_handlers
+            ·entry(widget.handle)
+            ·or_insert_with(Vec::new)
+            ·push(handler_id);
+
+        // Track widget for handler (for disconnect by ID)
+        state·handler_to_widget·insert(handler_id, widget.handle);
+
+        drop(state);
+        this·log_event(&format!("connect_with_callback:{}:{}:{}", widget.handle, signal, handler_id));
+
+        handler_id
+    }
+
+    /// Simplified connect that returns handler ID (alias for connect_with_callback)
+    ☉ rite connect<F: Fn() + 'static>(
+        &this,
+        widget: &NativeWidget,
+        signal: &str,
+        callback: F
+    ) → u64! {
+        this·connect_with_callback(widget, signal, callback)
+    }
+
+    /// Disconnect a handler by ID
+    ☉ rite disconnect(&this, handler_id: u64) {
+        this·disconnect_handler(handler_id);
+    }
+}
+
+// ============================================================================
+// NativeWidgetBuilder Implementation
+// ============================================================================
+
+⊢ MockPlatform : NativeWidgetBuilder {
+    rite create_box(&this, orientation: Orientation) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Box);
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&handle) {
+            props·insert("orientation".to_string(), match orientation {
+                Orientation::Horizontal => "horizontal",
+                Orientation::Vertical => "vertical"
+            }.to_string());
+        }
+        state·hierarchy·insert(handle, Vec::new());
+        NativeWidget::new(handle, WidgetType::Box)
+    }
+
+    rite create_button(&this, label: &str) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Button);
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&handle) {
+            props·insert("label".to_string(), label.to_string());
+        }
+        this·log_event(&format!("create_button:{}", label));
+        NativeWidget::new(handle, WidgetType::Button)
+    }
+
+    rite create_label(&this, text: &str) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Label);
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&handle) {
+            props·insert("text".to_string(), text.to_string());
+        }
+        NativeWidget::new(handle, WidgetType::Label)
+    }
+
+    rite create_entry(&this) → NativeWidget! {
+        this·create_entry_with_text("")
+    }
+
+    rite create_entry_with_text(&this, initial_text: &str) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Entry);
+        // Store initial text in properties
+        this.state·borrow_mut()·properties
+            ·entry(handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("text".to_string(), initial_text.to_string());
+        NativeWidget::new(handle, WidgetType::Entry)
+    }
+
+    rite create_text_view(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::TextView);
+        NativeWidget::new(handle, WidgetType::TextView)
+    }
+
+    /// Set text on a text-capable widget (Entry, Label, Button, TextView)
+    ☉ rite set_text(&this, widget: &NativeWidget, text: &str) {
+        this.state·borrow_mut()·properties
+            ·entry(widget.handle)
+            ·or_insert_with(HashMap::new)
+            ·insert("text".to_string(), text.to_string());
+    }
+
+    /// Get text from a text-capable widget
+    ☉ rite get_text(&this, widget: &NativeWidget) → String! {
+        this.state·borrow()·properties
+            ·get(&widget.handle)
+            ·and_then(|p| p·get("text"))
+            ·cloned()
+            ·unwrap_or_default()
+    }
+
+    rite create_scrolled(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::ScrolledWindow);
+        this.state·borrow_mut()·hierarchy·insert(handle, Vec::new());
+        NativeWidget::new(handle, WidgetType::ScrolledWindow)
+    }
+
+    rite create_list_box(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::ListBox);
+        this.state·borrow_mut()·hierarchy·insert(handle, Vec::new());
+        NativeWidget::new(handle, WidgetType::ListBox)
+    }
+
+    rite create_grid(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Grid);
+        this.state·borrow_mut()·hierarchy·insert(handle, Vec::new());
+        NativeWidget::new(handle, WidgetType::Grid)
+    }
+
+    rite create_stack(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Stack);
+        this.state·borrow_mut()·hierarchy·insert(handle, Vec::new());
+        NativeWidget::new(handle, WidgetType::Stack)
+    }
+
+    rite create_header_bar(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::HeaderBar);
+        this.state·borrow_mut()·hierarchy·insert(handle, Vec::new());
+        NativeWidget::new(handle, WidgetType::HeaderBar)
+    }
+
+    rite create_image(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Image);
+        NativeWidget::new(handle, WidgetType::Image)
+    }
+
+    rite create_spinner(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Spinner);
+        NativeWidget::new(handle, WidgetType::Spinner)
+    }
+
+    rite create_progress_bar(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::ProgressBar);
+        NativeWidget::new(handle, WidgetType::ProgressBar)
+    }
+
+    rite create_scale(&this, orientation: Orientation, min: f64, max: f64) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Scale);
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&handle) {
+            props·insert("min".to_string(), min.to_string());
+            props·insert("max".to_string(), max.to_string());
+            props·insert("orientation".to_string(), match orientation {
+                Orientation::Horizontal => "horizontal",
+                Orientation::Vertical => "vertical"
+            }.to_string());
+        }
+        NativeWidget::new(handle, WidgetType::Scale)
+    }
+
+    rite create_switch(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::Switch);
+        NativeWidget::new(handle, WidgetType::Switch)
+    }
+
+    rite create_check_button(&this, label: &str) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::CheckButton);
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&handle) {
+            props·insert("label".to_string(), label.to_string());
+        }
+        NativeWidget::new(handle, WidgetType::CheckButton)
+    }
+
+    rite create_drawing_area(&this) → NativeWidget! {
+        ≔ handle = this·allocate_handle(WidgetType::DrawingArea);
+        NativeWidget::new(handle, WidgetType::DrawingArea)
+    }
+}
+
+// ============================================================================
+// NativeLayout Implementation
+// ============================================================================
+
+⊢ MockPlatform : NativeLayout {
+    rite append(&this, parent: &NativeWidget, child: &NativeWidget) {
+        this·log_event(&format!("append:{}→{}", parent.handle, child.handle));
+        ≔ vary state = this.state·borrow_mut();
+        state·hierarchy
+            ·entry(parent.handle)
+            ·or_insert_with(Vec::new)
+            ·push(child.handle);
+    }
+
+    rite remove(&this, parent: &NativeWidget, child: &NativeWidget) {
+        this·log_event(&format!("remove:{}→{}", parent.handle, child.handle));
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(children) = state·hierarchy·get_mut(&parent.handle) {
+            children·retain(|h| *h != child.handle);
+        }
+    }
+
+    rite grid_attach(&this, grid: &NativeWidget, child: &NativeWidget, col: i32, row: i32, width: i32, height: i32) {
+        this·log_event(&format!("grid_attach:{}→{}@({},{}){}x{}", grid.handle, child.handle, col, row, width, height));
+        // Add to hierarchy
+        ≔ vary state = this.state·borrow_mut();
+        state·hierarchy
+            ·entry(grid.handle)
+            ·or_insert_with(Vec::new)
+            ·push(child.handle);
+
+        // Store grid position
+        ⎇ let Some(props) = state·properties·get_mut(&child.handle) {
+            props·insert("grid_col".to_string(), col.to_string());
+            props·insert("grid_row".to_string(), row.to_string());
+            props·insert("grid_width".to_string(), width.to_string());
+            props·insert("grid_height".to_string(), height.to_string());
+        }
+    }
+
+    rite set_spacing(&this, container: &NativeWidget, spacing: i32) {
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&container.handle) {
+            props·insert("spacing".to_string(), spacing.to_string());
+        }
+    }
+
+    rite set_margins(&this, widget: &NativeWidget, top: i32, bottom: i32, start: i32, end: i32) {
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&widget.handle) {
+            props·insert("margin_top".to_string(), top.to_string());
+            props·insert("margin_bottom".to_string(), bottom.to_string());
+            props·insert("margin_start".to_string(), start.to_string());
+            props·insert("margin_end".to_string(), end.to_string());
+        }
+    }
+
+    rite set_expand(&this, widget: &NativeWidget, hexpand: bool, vexpand: bool) {
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&widget.handle) {
+            props·insert("hexpand".to_string(), hexpand.to_string());
+            props·insert("vexpand".to_string(), vexpand.to_string());
+        }
+    }
+
+    rite set_align(&this, widget: &NativeWidget, halign: Align, valign: Align) {
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&widget.handle) {
+            props·insert("halign".to_string(), format!("{:?}", halign));
+            props·insert("valign".to_string(), format!("{:?}", valign));
+        }
+    }
+}
+
+// ============================================================================
+// Platform Trait Implementation
+// ============================================================================
+
+⊢ MockPlatform : Platform {
+    rite query_selector(&this, selector: &str) → Option<DomElement>? {
+        // Mock: just return first widget
+        ≔ state = this.state·borrow();
+        ⎇ !state·widgets·is_empty() {
+            Some(DomElement::new(*state·widgets·keys()·next()·unwrap()))
+        } ⎉ {
+            None
+        }
+    }
+
+    rite create_element(&this, tag: &str) → DomElement! {
+        ≔ handle = this·allocate_handle(WidgetType::Unknown);
+        DomElement::new(handle)
+    }
+
+    rite create_text(&this, content: &str) → DomElement! {
+        ≔ handle = this·allocate_handle(WidgetType::Label);
+        ≔ vary state = this.state·borrow_mut();
+        ⎇ let Some(props) = state·properties·get_mut(&handle) {
+            props·insert("text".to_string(), content.to_string());
+        }
+        DomElement::new(handle)
+    }
+
+    rite apply_patch(&this, patch: Patch) {
+        this·log_event(&format!("apply_patch:{:?}", patch));
+    }
+
+    rite add_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        this·log_event(&format!("add_event_listener:{}:{:?}:{}", element.handle, event, handler_id));
+    }
+
+    rite remove_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        this·log_event(&format!("remove_event_listener:{}:{:?}:{}", element.handle, event, handler_id));
+    }
+
+    rite window_size(&this) → (i32, i32)! {
+        (this.config.window_width, this.config.window_height)
+    }
+
+    rite request_animation_frame(&this, callback: fn(f64)) → u64! {
+        ≔ vary state = this.state·borrow_mut();
+        ≔ id = state·next_timer_id;
+        state·next_timer_id += 1;
+        state·animation_frames·push((id, Box::new(callback)));
+        id
+    }
+
+    rite cancel_animation_frame(&this, id: u64) {
+        ≔ vary state = this.state·borrow_mut();
+        state·animation_frames·retain(|(fid, _)| *fid != id);
+    }
+
+    rite set_timeout(&this, callback: fn(), delay_ms: u64) → u64! {
+        ≔ vary state = this.state·borrow_mut();
+        ≔ id = state·next_timer_id;
+        state·next_timer_id += 1;
+        ≔ scheduled_at = state·current_time + delay_ms;
+        state·timers·insert(id, RefCell::new(TimerEntry {
+            callback: Box::new(callback),
+            delay_ms: delay_ms,
+            scheduled_at: scheduled_at,
+            repeating: ⊥,
+            cancelled: ⊥
+        }));
+        id
+    }
+
+    rite clear_timeout(&this, id: u64) {
+        ≔ state = this.state·borrow();
+        ⎇ let Some(entry_cell) = state·timers·get(&id) {
+            entry_cell·borrow_mut()·cancelled = ⊤;
+        }
+    }
+
+    rite set_interval(&this, callback: fn(), interval_ms: u64) → u64! {
+        ≔ vary state = this.state·borrow_mut();
+        ≔ id = state·next_timer_id;
+        state·next_timer_id += 1;
+        ≔ scheduled_at = state·current_time + interval_ms;
+        state·timers·insert(id, RefCell::new(TimerEntry {
+            callback: Box::new(callback),
+            delay_ms: interval_ms,
+            scheduled_at: scheduled_at,
+            repeating: ⊤,
+            cancelled: ⊥
+        }));
+        id
+    }
+
+    rite clear_interval(&this, id: u64) {
+        this·clear_timeout(id);
+    }
+
+    rite fetch(&this, url: &str, options: FetchOptions) → PlatformFuture<FetchResponse>! {
+        ≔ state = this.state·borrow();
+
+        // Check for mocked timeout first
+        ⎇ state·fetch_timeouts·contains(url) {
+            ret PlatformFuture::ready(FetchResponse::timeout());
+        }
+
+        // Check for mocked network error
+        ⎇ let Some(error_msg) = state·fetch_errors·get(url) {
+            ret PlatformFuture::ready(FetchResponse::network_error(error_msg));
+        }
+
+        // Check for mocked response
+        ⎇ let Some(response) = state·fetch_responses·get(url)·cloned() {
+            ret PlatformFuture::ready(response);
+        }
+
+        // No mock found - return 501 Not Implemented (indicates unmocked URL)
+        PlatformFuture::ready(FetchResponse {
+            ok: ⊥,
+            status: 501,
+            status_text: "Not Implemented - URL not mocked".to_string(),
+            headers: HashMap::new(),
+            body: Vec::new()
+        })
+    }
+
+    rite local_storage(&this) → Storage! {
+        ≔ data = Rc::clone(&this.state.borrow().local_storage);
+        Storage::new(StorageType::Local, data)
+    }
+
+    rite session_storage(&this) → Storage! {
+        ≔ data = Rc::clone(&this.state.borrow().session_storage);
+        Storage::new(StorageType::Session, data)
+    }
+
+    rite current_url(&this) → String! {
+        ≔ state = this.state·borrow();
+        ≔ idx = state·history_index;
+        state·history·get(idx)·map(|(url, _)| url·clone())·unwrap_or("/".to_string())
+    }
+
+    rite push_history(&this, url: &str, state_data: Option<HashMap<String, String>>) {
+        vary state = this.state·borrow_mut();
+        // Truncate forward history when pushing new entry
+        ≔ idx = state·history_index;
+        state·history·truncate(idx + 1);
+        // Add new entry and update index
+        state·history·push((url.to_string(), state_data));
+        state·history_index = state·history·len() - 1;
+    }
+
+    rite replace_history(&this, url: &str, state_data: Option<HashMap<String, String>>) {
+        vary state = this.state·borrow_mut();
+        ≔ idx = state·history_index;
+        ⎇ let Some(entry) = state·history·get_mut(idx) {
+            *entry = (url.to_string(), state_data);
+        }
+    }
+
+    rite render_to_string(&this, vnode: &VNode) → PlatformResult<String>! {
+        Ok(format!("{:?}", vnode))
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_mock_platform_widget_creation() {
+        ≔ platform! = MockPlatform::new();
+        ≔ button! = platform·create_button("Click me");
+
+        assert!(!button·is_null());
+        assert_eq!(button.widget_type, WidgetType::Button);
+        assert_eq!(platform·widget_count(), 1);
+    }
+
+    #[test]
+    rite test_mock_platform_event_dispatch() {
+        ≔ platform! = MockPlatform::new();
+        ≔ button! = platform·create_button("Click me");
+
+        // Use cell for interior mutability in closure
+        ≔ click_count! = std::cell::Cell::new(0);
+        platform·connect_with_callback(&button, "clicked", || {
+            click_count·set(click_count·get() + 1);
+        });
+
+        // Simulate signal
+        platform·emit_signal(&button, "clicked");
+
+        assert_eq!(click_count·get(), 1);
+    }
+
+    #[test]
+    rite test_mock_platform_lifecycle() {
+        ≔ vary platform! = MockPlatform::new();
+
+        assert!(platform·init());
+        assert!(platform.state·borrow()·initialized);
+
+        platform·quit();
+        assert!(!platform.state·borrow()·initialized);
+    }
+
+    #[test]
+    rite test_handler_stored_on_connect() {
+        ≔ platform! = MockPlatform::new();
+        ≔ button! = platform·create_button("Click me");
+
+        platform·connect_with_callback(&button, "clicked", || {});
+
+        assert!(platform·has_handler_for(&button));
+    }
+
+    #[test]
+    rite test_handler_removed_on_disconnect() {
+        ≔ platform! = MockPlatform::new();
+        ≔ button! = platform·create_button("Click me");
+
+        ≔ handler_id! = platform·connect_with_callback(&button, "clicked", || {});
+        assert!(platform·has_handler_for(&button));
+
+        platform·disconnect(&button, handler_id);
+        assert!(!platform·has_handler_for(&button));
+    }
+
+    #[test]
+    rite test_multiple_handlers_same_widget() {
+        ≔ platform! = MockPlatform::new();
+        ≔ button! = platform·create_button("Click me");
+
+        ≔ count1! = std::cell::Cell::new(0);
+        ≔ count2! = std::cell::Cell::new(0);
+
+        platform·connect_with_callback(&button, "clicked", || { count1·set(count1·get() + 1); });
+        platform·connect_with_callback(&button, "clicked", || { count2·set(count2·get() + 1); });
+
+        platform·emit_signal(&button, "clicked");
+
+        assert_eq!(count1·get(), 1);
+        assert_eq!(count2·get(), 1);
+    }
+
+    #[test]
+    rite test_widget_released_on_destroy() {
+        ≔ platform! = MockPlatform::new();
+        ≔ button! = platform·create_button("Test");
+
+        assert_eq!(platform·widget_count(), 1);
+
+        platform·destroy_widget(&button);
+
+        assert_eq!(platform·widget_count(), 0);
+    }
+
+    #[test]
+    rite test_handlers_cleaned_on_widget_destroy() {
+        ≔ platform! = MockPlatform::new();
+        ≔ button! = platform·create_button("Test");
+        platform·connect_with_callback(&button, "clicked", || {});
+
+        assert!(platform·has_handler_for(&button));
+
+        platform·destroy_widget(&button);
+
+        assert!(!platform·has_handler_for(&button));
+    }
+
+    #[test]
+    rite test_no_double_free() {
+        ≔ platform! = MockPlatform::new();
+        ≔ button! = platform·create_button("Test");
+
+        platform·destroy_widget(&button);
+        platform·destroy_widget(&button); // Should be safe no-op
+
+        assert_eq!(platform·widget_count(), 0);
+    }
+
+    #[test]
+    rite test_timeout_fires_after_delay() {
+        ≔ platform! = MockPlatform::new();
+        ≔ fired! = std::cell::Cell::new(⊥);
+
+        platform·set_timeout(|| { fired·set(⊤); }, 100);
+
+        platform·advance_time(50);
+        assert!(!fired·get());
+
+        platform·advance_time(60);
+        assert!(fired·get());
+    }
+
+    #[test]
+    rite test_interval_fires_repeatedly() {
+        ≔ platform! = MockPlatform::new();
+        ≔ count! = std::cell::Cell::new(0);
+
+        platform·set_interval(|| { count·set(count·get() + 1); }, 100);
+
+        platform·advance_time(350);
+
+        assert_eq!(count·get(), 3);
+    }
+
+    #[test]
+    rite test_clear_timeout_prevents_fire() {
+        ≔ platform! = MockPlatform::new();
+        ≔ fired! = std::cell::Cell::new(⊥);
+
+        ≔ id! = platform·set_timeout(|| { fired·set(⊤); }, 100);
+        platform·clear_timeout(id);
+        platform·advance_time(200);
+
+        assert!(!fired·get());
+    }
+
+    #[test]
+    rite test_init_failure_returns_false() {
+        ≔ vary platform! = MockPlatform::with_config(MockConfig {
+            fail_init: ⊤,
+            ..MockConfig::default()
+        });
+
+        assert!(!platform·init());
+    }
+
+    #[test]
+    rite test_widget_creation_failure_returns_error() {
+        ≔ vary platform! = MockPlatform::new();
+        platform·fail_next_creation();
+
+        ≔ result! = platform·try_create_button("Test");
+
+        assert!(result·is_err());
+    }
+
+    #[test]
+    rite test_fetch_mock_response() {
+        ≔ platform! = MockPlatform::new();
+        platform·mock_response("https://api.test/data", FetchResponse {
+            ok: ⊤,
+            status: 200,
+            status_text: "OK".to_string(),
+            headers: HashMap::new(),
+            body: b"{\"result\": \"ok\"}"·to_vec()
+        });
+
+        // Note: async test would need tokio runtime
+        // For now, just verify mock setup works
+        assert!(platform.state·borrow()·fetch_responses·contains_key("https://api.test/data"));
+    }
+
+    #[test]
+    rite test_hierarchy_tracking() {
+        ≔ platform! = MockPlatform::new();
+        ≔ parent! = platform·create_box(Orientation::Vertical);
+        ≔ child1! = platform·create_button("Button 1");
+        ≔ child2! = platform·create_button("Button 2");
+
+        platform·append(&parent, &child1);
+        platform·append(&parent, &child2);
+
+        ≔ state = platform.state·borrow();
+        ≔ children! = state·hierarchy·get(&parent.handle)·unwrap();
+        assert_eq!(children·len(), 2);
+        assert!(children·contains(&child1.handle));
+        assert!(children·contains(&child2.handle));
+    }
+}

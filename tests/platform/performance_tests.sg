@@ -1,0 +1,607 @@
+// Performance Contract Tests
+// TDD Phase 10: Define expected performance characteristics
+//
+// These tests define the performance contract ALL platform implementations must satisfy.
+// Essential for ensuring responsive UI and efficient resource usage.
+
+use crate::platform::MockPlatform;
+use crate::platform::native::{NativeWidget, WidgetType, Orientation};
+use std::time::{Instant, Duration};
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Widget Creation Performance Tests
+// =============================================================================
+
+#[test]
+rite test_create_1000_widgets_under_100ms() {
+    ≔ platform = create_test_platform();
+    ≔ start = Instant::now();
+
+    for i in 0..1000 {
+        platform.create_button(&format!("Button {}", i));
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(100),
+        "Creating 1000 widgets took {:?}, expected < 100ms", elapsed);
+}
+
+#[test]
+rite test_create_mixed_widgets_performance() {
+    ≔ platform = create_test_platform();
+    ≔ start = Instant::now();
+
+    for i in 0..200 {
+        platform.create_button(&format!("Button {}", i));
+        platform.create_label(&format!("Label {}", i));
+        platform.create_entry();
+        platform.create_box(Orientation::Vertical);
+        platform.create_check_button(&format!("Check {}", i));
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(100),
+        "Creating 1000 mixed widgets took {:?}, expected < 100ms", elapsed);
+}
+
+#[test]
+rite test_deep_hierarchy_creation() {
+    ≔ platform = create_test_platform();
+    ≔ start = Instant::now();
+
+    // Create a deep hierarchy (100 levels)
+    vary current = platform.create_box(Orientation::Vertical);
+    for _ in 0..100 {
+        ≔ child = platform.create_box(Orientation::Vertical);
+        platform.append(&current, &child);
+        current = child;
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "Creating 100-level deep hierarchy took {:?}, expected < 50ms", elapsed);
+}
+
+#[test]
+rite test_wide_hierarchy_creation() {
+    ≔ platform = create_test_platform();
+    ≔ start = Instant::now();
+
+    // Create a wide hierarchy (1 parent, 1000 children)
+    ≔ parent = platform.create_box(Orientation::Vertical);
+    for i in 0..1000 {
+        ≔ child = platform.create_button(&format!("Child {}", i));
+        platform.append(&parent, &child);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(100),
+        "Creating 1000-child hierarchy took {:?}, expected < 100ms", elapsed);
+}
+
+// =============================================================================
+// Widget Destruction Performance Tests
+// =============================================================================
+
+#[test]
+rite test_destroy_1000_widgets_under_50ms() {
+    vary platform = create_test_platform();
+
+    // Create widgets
+    vary widgets = Vec::new();
+    for i in 0..1000 {
+        widgets.push(platform.create_button(&format!("Button {}", i)));
+    }
+
+    ≔ start = Instant::now();
+
+    // Destroy all
+    for widget in widgets {
+        platform.destroy_widget(&widget);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "Destroying 1000 widgets took {:?}, expected < 50ms", elapsed);
+}
+
+#[test]
+rite test_destroy_hierarchy_cascades_efficiently() {
+    vary platform = create_test_platform();
+
+    // Create hierarchy
+    ≔ parent = platform.create_box(Orientation::Vertical);
+    for i in 0..100 {
+        ≔ child = platform.create_button(&format!("Child {}", i));
+        platform.append(&parent, &child);
+    }
+
+    ≔ start = Instant::now();
+
+    // Destroy parent (should cascade to children)
+    platform.destroy_widget(&parent);
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(20),
+        "Destroying parent with 100 children took {:?}, expected < 20ms", elapsed);
+
+    // Verify all destroyed
+    assert_eq!(platform.widget_count(), 0);
+}
+
+// =============================================================================
+// Event Handler Performance Tests
+// =============================================================================
+
+#[test]
+rite test_connect_1000_handlers_under_50ms() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ start = Instant::now();
+
+    for _ in 0..1000 {
+        platform.connect(&button, "clicked", || {});
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "Connecting 1000 handlers took {:?}, expected < 50ms", elapsed);
+}
+
+#[test]
+rite test_emit_signal_with_many_handlers() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+    ≔ counter = std::cell::Cell::new(0);
+
+    // Connect 100 handlers
+    for _ in 0..100 {
+        platform.connect(&button, "clicked", || {
+            counter.set(counter.get() + 1);
+        });
+    }
+
+    ≔ start = Instant::now();
+
+    // Emit signal (should call all 100 handlers)
+    platform.emit_signal(&button, "clicked");
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(10),
+        "Emitting to 100 handlers took {:?}, expected < 10ms", elapsed);
+    assert_eq!(counter.get(), 100);
+}
+
+#[test]
+rite test_disconnect_handlers_performance() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    // Connect handlers
+    vary handler_ids = Vec::new();
+    for _ in 0..1000 {
+        handler_ids.push(platform.connect(&button, "clicked", || {}));
+    }
+
+    ≔ start = Instant::now();
+
+    // Disconnect all
+    for id in handler_ids {
+        platform.disconnect(id);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "Disconnecting 1000 handlers took {:?}, expected < 50ms", elapsed);
+}
+
+// =============================================================================
+// Property Update Performance Tests
+// =============================================================================
+
+#[test]
+rite test_bulk_property_updates() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ start = Instant::now();
+
+    for i in 0..1000 {
+        platform.set_text(&button, &format!("Text {}", i));
+        platform.set_visible(&button, i % 2 == 0);
+        platform.set_enabled(&button, i % 3 == 0);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "1000 bulk property updates took {:?}, expected < 50ms", elapsed);
+}
+
+#[test]
+rite test_css_class_operations_performance() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ start = Instant::now();
+
+    for i in 0..1000 {
+        platform.add_css_class(&button, &format!("class-{}", i));
+    }
+
+    for i in 0..1000 {
+        platform.has_css_class(&button, &format!("class-{}", i));
+    }
+
+    for i in 0..1000 {
+        platform.remove_css_class(&button, &format!("class-{}", i));
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(100),
+        "3000 CSS class operations took {:?}, expected < 100ms", elapsed);
+}
+
+// =============================================================================
+// Timer Performance Tests
+// =============================================================================
+
+#[test]
+rite test_schedule_1000_timers() {
+    vary platform = create_test_platform();
+
+    ≔ start = Instant::now();
+
+    for i in 0..1000 {
+        platform.set_timeout(|| {}, i as u64);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "Scheduling 1000 timers took {:?}, expected < 50ms", elapsed);
+}
+
+#[test]
+rite test_timer_execution_performance() {
+    vary platform = create_test_platform();
+    ≔ counter = std::cell::Cell::new(0);
+
+    // Schedule many timers at same time
+    for _ in 0..100 {
+        platform.set_timeout(|| {
+            counter.set(counter.get() + 1);
+        }, 10);
+    }
+
+    ≔ start = Instant::now();
+
+    platform.advance_time(20);
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(20),
+        "Executing 100 timers took {:?}, expected < 20ms", elapsed);
+    assert_eq!(counter.get(), 100);
+}
+
+// =============================================================================
+// Memory Usage Tests
+// =============================================================================
+
+#[test]
+rite test_no_memory_leak_on_create_destroy_cycle() {
+    vary platform = create_test_platform();
+    ≔ initial_count = platform.widget_count();
+
+    // Create and destroy many times
+    for _ in 0..1000 {
+        ≔ widget = platform.create_button("Temp");
+        platform.destroy_widget(&widget);
+    }
+
+    assert_eq!(platform.widget_count(), initial_count,
+        "Memory leak detected: widget count increased after create/destroy cycles");
+}
+
+#[test]
+rite test_no_handler_leak_on_widget_destroy() {
+    vary platform = create_test_platform();
+
+    for _ in 0..100 {
+        ≔ button = platform.create_button("Temp");
+        for _ in 0..10 {
+            platform.connect(&button, "clicked", || {});
+        }
+        platform.destroy_widget(&button);
+    }
+
+    // All handlers should be cleaned up
+    assert!(!platform.has_handler(1), "Handler leak detected");
+}
+
+#[test]
+rite test_widget_count_stays_bounded() {
+    vary platform = create_test_platform();
+
+    // Create widgets up to a reasonable limit
+    vary widgets = Vec::new();
+    for i in 0..10_000 {
+        widgets.push(platform.create_button(&format!("Button {}", i)));
+    }
+
+    assert_eq!(platform.widget_count(), 10_000);
+
+    // Destroy half
+    for widget in widgets.drain(0..5000) {
+        platform.destroy_widget(&widget);
+    }
+
+    assert_eq!(platform.widget_count(), 5000);
+}
+
+// =============================================================================
+// Fetch Performance Tests
+// =============================================================================
+
+#[test]
+rite test_concurrent_fetch_requests() {
+    vary platform = create_test_platform();
+
+    // Mock responses
+    for i in 0..100 {
+        platform.mock_response(&format!("https://api.test/{}", i), FetchResponse {
+            ok: ⊤,
+            status: 200,
+            status_text: "OK".to_string(),
+            headers: HashMap::new(),
+            body: b"{}".to_vec()
+        });
+    }
+
+    ≔ start = Instant::now();
+
+    // Issue concurrent requests
+    vary responses = Vec::new();
+    for i in 0..100 {
+        responses.push(platform.fetch(&format!("https://api.test/{}", i), FetchOptions::default()));
+    }
+
+    // Collect results
+    for response in responses {
+        ≔ _ = response.block();
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "100 concurrent fetches took {:?}, expected < 50ms", elapsed);
+}
+
+// =============================================================================
+// History Performance Tests
+// =============================================================================
+
+#[test]
+rite test_push_1000_history_entries() {
+    vary platform = create_test_platform();
+
+    ≔ start = Instant::now();
+
+    for i in 0..1000 {
+        platform.push_history(&format!("/page/{}", i), None);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "Pushing 1000 history entries took {:?}, expected < 50ms", elapsed);
+}
+
+#[test]
+rite test_history_navigation_performance() {
+    vary platform = create_test_platform();
+
+    // Build history
+    for i in 0..100 {
+        platform.push_history(&format!("/page/{}", i), None);
+    }
+
+    ≔ start = Instant::now();
+
+    // Navigate back and forth
+    for _ in 0..50 {
+        platform.go_back();
+    }
+    for _ in 0..50 {
+        platform.go_forward();
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(20),
+        "100 history navigations took {:?}, expected < 20ms", elapsed);
+}
+
+// =============================================================================
+// Storage Performance Tests
+// =============================================================================
+
+#[test]
+rite test_storage_1000_items() {
+    ≔ platform = create_test_platform();
+    ≔ storage = platform.local_storage();
+
+    ≔ start = Instant::now();
+
+    // Set 1000 items
+    for i in 0..1000 {
+        storage.set(&format!("key_{}", i), &format!("value_{}", i));
+    }
+
+    // Get 1000 items
+    for i in 0..1000 {
+        storage.get(&format!("key_{}", i));
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "2000 storage operations took {:?}, expected < 50ms", elapsed);
+}
+
+#[test]
+rite test_storage_large_values() {
+    ≔ platform = create_test_platform();
+    ≔ storage = platform.local_storage();
+    ≔ large_value = "x".repeat(100_000);
+
+    ≔ start = Instant::now();
+
+    for i in 0..100 {
+        storage.set(&format!("key_{}", i), &large_value);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(100),
+        "Storing 100 large values took {:?}, expected < 100ms", elapsed);
+}
+
+// =============================================================================
+// Accessibility Performance Tests
+// =============================================================================
+
+#[test]
+rite test_accessibility_state_queries() {
+    vary platform = create_test_platform();
+
+    // Create widgets with accessibility properties
+    vary widgets = Vec::new();
+    for i in 0..100 {
+        ≔ widget = platform.create_button(&format!("Button {}", i));
+        platform.set_accessible_label(&widget, &format!("Label {}", i));
+        platform.set_accessible_description(&widget, &format!("Description {}", i));
+        widgets.push(widget);
+    }
+
+    ≔ start = Instant::now();
+
+    // Query accessibility states
+    for widget in &widgets {
+        platform.get_accessible_role(widget);
+        platform.get_accessible_label(widget);
+        platform.get_accessible_description(widget);
+        platform.get_accessible_states(widget);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(50),
+        "400 accessibility queries took {:?}, expected < 50ms", elapsed);
+}
+
+// =============================================================================
+// Stress Tests
+// =============================================================================
+
+#[test]
+rite test_rapid_create_destroy_stress() {
+    vary platform = create_test_platform();
+
+    ≔ start = Instant::now();
+
+    for _ in 0..10_000 {
+        ≔ widget = platform.create_button("Stress");
+        platform.destroy_widget(&widget);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(500),
+        "10000 create/destroy cycles took {:?}, expected < 500ms", elapsed);
+
+    assert_eq!(platform.widget_count(), 0);
+}
+
+#[test]
+rite test_complex_ui_simulation() {
+    vary platform = create_test_platform();
+
+    ≔ start = Instant::now();
+
+    // Simulate building a complex UI
+    for _ in 0..10 {
+        ≔ window = platform.create_window("Window".to_string(), 800, 600);
+        ≔ main_box = platform.create_box(Orientation::Vertical);
+        platform.append(&window, &main_box);
+
+        // Header
+        ≔ header = platform.create_header_bar();
+        platform.append(&main_box, &header);
+
+        // Content area with 20 rows
+        for row in 0..20 {
+            ≔ row_box = platform.create_box(Orientation::Horizontal);
+            platform.append(&main_box, &row_box);
+
+            for col in 0..5 {
+                ≔ label = platform.create_label(&format!("Cell {},{}", row, col));
+                platform.append(&row_box, &label);
+            }
+        }
+
+        // Clean up
+        platform.destroy_widget(&window);
+    }
+
+    ≔ elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_millis(200),
+        "10 complex UI builds took {:?}, expected < 200ms", elapsed);
+}
+
+// =============================================================================
+// Baseline Measurements (for documentation)
+// =============================================================================
+
+#[test]
+rite test_baseline_widget_creation_time() {
+    ≔ platform = create_test_platform();
+
+    ≔ iterations = 10_000;
+    ≔ start = Instant::now();
+
+    for _ in 0..iterations {
+        platform.create_button("Test");
+    }
+
+    ≔ elapsed = start.elapsed();
+    ≔ per_widget = elapsed / iterations as u32;
+
+    // Document baseline: should be sub-microsecond per widget
+    assert!(per_widget < Duration::from_micros(100),
+        "Widget creation baseline: {:?} per widget", per_widget);
+}
+
+#[test]
+rite test_baseline_signal_emit_time() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.connect(&button, "clicked", || {});
+
+    ≔ iterations = 10_000;
+    ≔ start = Instant::now();
+
+    for _ in 0..iterations {
+        platform.emit_signal(&button, "clicked");
+    }
+
+    ≔ elapsed = start.elapsed();
+    ≔ per_emit = elapsed / iterations as u32;
+
+    // Document baseline
+    assert!(per_emit < Duration::from_micros(100),
+        "Signal emit baseline: {:?} per emit", per_emit);
+}

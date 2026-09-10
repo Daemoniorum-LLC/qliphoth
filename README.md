@@ -6,7 +6,7 @@ A React-inspired web application framework built on Sigil's polysynthetic progra
 
 Qliphoth leverages Sigil's unique features to create a powerful, type-safe web framework:
 
-- **Evidentiality-Driven State**: Track data provenance (`!` computed, `?` cached, `~` remote, `‽` untrusted)
+- **Evidentiality-Driven State**: Track data provenance (`!` known, `?` uncertain, `◊` predicted, `~` reported, `‽` paradox)
 - **Morpheme Components**: Compose UI with pipe operators and Greek letter transformations
 - **Actor-Based State Management**: Predictable state updates via message passing
 - **Zero-Cost Abstractions**: Compile-time optimization for production builds
@@ -18,19 +18,19 @@ use qliphoth::prelude::*
 
 // Define a component
 component Counter {
-    state count: i64! = 0
+    state count: i64! ≔ 0
 
-    fn render(self) -> Element {
+    rite render(self) → Element {
         div {
-            h1 { "Count: {self.count}" }
-            button[onclick: || self.count += 1] { "Increment" }
+            h1 { "Count: {self·count}" }
+            button[onclick: || self·count += 1] { "Increment" }
         }
     }
 }
 
 // Mount to DOM
-fn main() {
-    App::mount("#root", Counter::new())
+rite main() {
+    App·mount("#root", Counter·new())
 }
 ```
 
@@ -42,20 +42,20 @@ Components are the building blocks of Qliphoth applications:
 
 ```sigil
 // Functional component
-fn Greeting(props: {name: String}) -> Element {
-    h1 { "Hello, {props.name}!" }
+rite Greeting(props: {name: String}) → Element {
+    h1 { "Hello, {props·name}!" }
 }
 
 // Stateful component
 component Timer {
-    state seconds: i64! = 0
+    state seconds: i64! ≔ 0
 
     on Mount {
-        interval(1000, || self.seconds += 1)
+        interval(1000, || self·seconds += 1)
     }
 
-    fn render(self) -> Element {
-        span { "Elapsed: {self.seconds}s" }
+    rite render(self) → Element {
+        span { "Elapsed: {self·seconds}s" }
     }
 }
 ```
@@ -66,20 +66,21 @@ Sigil's evidentiality system naturally maps to UI data flow:
 
 | Marker | Meaning | UI Context |
 |--------|---------|------------|
-| `!` | Known/Computed | Local state, derived values |
+| `!` | Known | Local state, derived values |
 | `?` | Uncertain | Optional props, nullable data |
+| `◊` | Predicted | AI/ML outputs, probabilistic data |
 | `~` | Reported | API responses, external data |
-| `‽` | Paradox | User input, untrusted sources |
+| `‽` | Paradox | User input, explicit trust boundary |
 
 ```sigil
 component UserProfile {
-    state user: User~ = User::empty()  // Remote data
-    state editing: bool! = false        // Local state
+    state user: User~ ≔ User·empty()  // Remote data
+    state editing: bool! ≔ false       // Local state
 
-    fn render(self) -> Element {
-        match self.user {
-            User::empty() => Spinner {},
-            user~ => ProfileCard { user: user~|validate‽ }
+    rite render(self) → Element {
+        match self·user {
+            User·empty() → Spinner {},
+            user~ → ProfileCard { user: user~|validate‽ }
         }
     }
 }
@@ -90,11 +91,11 @@ component UserProfile {
 Use Sigil's pipe operators for elegant component composition:
 
 ```sigil
-fn UserList(users: Vec<User>~) -> Element {
+rite UserList(users: Vec<User>~) → Element {
     users
-        |φ{_.active}           // Filter active users
-        |σ{_.name}             // Sort by name
-        |τ{user => UserCard { user }}  // Map to components
+        |φ{_·active}           // Filter active users
+        |σ{_·name}             // Sort by name
+        |τ{user → UserCard { user }}  // Map to components
         |into_fragment         // Collect into fragment
 }
 ```
@@ -104,17 +105,17 @@ fn UserList(users: Vec<User>~) -> Element {
 React-inspired hooks with evidentiality tracking:
 
 ```sigil
-fn SearchBox() -> Element {
-    let (query, set_query) = use_state!("")
-    let results~ = use_fetch("/api/search?q={query}")
-    let debounced? = use_debounce(query, 300)
+rite SearchBox() → Element {
+    ≔ (query, set_query) ≔ use_state!("")
+    ≔ results~ ≔ use_fetch("/api/search?q={query}")
+    ≔ debounced? ≔ use_debounce(query, 300)
 
     div {
         input[value: query, oninput: set_query]
         match results~ {
-            Loading => Spinner {},
-            Error(e~) => ErrorBanner { message: e~ },
-            Data(items~) => ResultList { items: items~ }
+            Loading → Spinner {},
+            Error(e~) → ErrorBanner { message: e~ },
+            Data(items~) → ResultList { items: items~ }
         }
     }
 }
@@ -127,16 +128,16 @@ Declarative routing with type-safe parameters:
 ```sigil
 use qliphoth::router::*
 
-fn App() -> Element {
+rite App() → Element {
     Router {
         Route[path: "/"] { Home {} }
         Route[path: "/docs/:section"] { |params|
-            Docs { section: params.section }
+            Docs { section: params·section }
         }
         Route[path: "/api/:module/:function"] { |params|
             ApiReference {
-                module: params.module,
-                function: params.function
+                module: params·module,
+                function: params·function
             }
         }
         Route[path: "*"] { NotFound {} }
@@ -173,7 +174,7 @@ Use `#[cfg(...)]` for platform-specific behavior:
 
 ```sigil
 component App {
-    fn render(self) -> Element {
+    rite render(self) → Element {
         div {
             h1 { "Cross-Platform App" }
 
@@ -192,15 +193,15 @@ component App {
 The `Platform` trait provides a unified interface:
 
 ```sigil
-use qliphoth::platform::{Platform, detect};
+use qliphoth::platform::{Platform, detect}
 
-fn main() {
+rite main() {
     // Auto-detect platform
-    let platform = detect();
+    ≔ platform ≔ detect()
 
     // Use platform-agnostic APIs
-    let (width, height) = platform·window_size();
-    platform·set_timeout(|| println!("Hello!"), 1000);
+    ≔ (width, height) ≔ platform·window_size()
+    platform·set_timeout(|| println!("Hello!"), 1000)
 }
 ```
 
@@ -228,7 +229,7 @@ qliphoth/
 sigil add qliphoth
 
 # Or clone for development
-git clone https://github.com/daemoniorum/qliphoth
+git clone https://github.com/Daemoniorum-LLC/qliphoth
 cd qliphoth && sigil build
 ```
 

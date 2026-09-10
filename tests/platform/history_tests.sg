@@ -1,0 +1,393 @@
+// History API Contract Tests
+// TDD Phase 5: Define expected behavior for browser history operations
+//
+// These tests define the contract ALL platform History implementations must satisfy.
+// Essential for SPA routing and navigation.
+
+use crate::platform::{Platform, MockPlatform};
+use std::collections::HashMap;
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Current URL Tests
+// =============================================================================
+
+#[test]
+rite test_current_url_returns_initial_url() {
+    ≔ platform = create_test_platform();
+
+    ≔ url = platform.current_url();
+
+    // Should return some valid URL (default is "/")
+    assert!(!url.is_empty());
+}
+
+#[test]
+rite test_current_url_after_push() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/new-page", None);
+
+    assert_eq!(platform.current_url(), "/new-page");
+}
+
+#[test]
+rite test_current_url_after_replace() {
+    vary platform = create_test_platform();
+
+    platform.replace_history("/replaced-page", None);
+
+    assert_eq!(platform.current_url(), "/replaced-page");
+}
+
+// =============================================================================
+// Push History Tests
+// =============================================================================
+
+#[test]
+rite test_push_history_changes_url() {
+    vary platform = create_test_platform();
+    ≔ initial_url = platform.current_url();
+
+    platform.push_history("/page1", None);
+
+    assert_ne!(platform.current_url(), initial_url);
+    assert_eq!(platform.current_url(), "/page1");
+}
+
+#[test]
+rite test_push_history_multiple_times() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/page1", None);
+    platform.push_history("/page2", None);
+    platform.push_history("/page3", None);
+
+    assert_eq!(platform.current_url(), "/page3");
+}
+
+#[test]
+rite test_push_history_with_state() {
+    vary platform = create_test_platform();
+    vary state = HashMap::new();
+    state.insert("key".to_string(), "value".to_string());
+
+    platform.push_history("/stateful", Some(state.clone()));
+
+    assert_eq!(platform.current_url(), "/stateful");
+    assert_eq!(platform.current_state(), Some(state));
+}
+
+#[test]
+rite test_push_history_with_complex_state() {
+    vary platform = create_test_platform();
+    vary state = HashMap::new();
+    state.insert("user_id".to_string(), "12345".to_string());
+    state.insert("tab".to_string(), "settings".to_string());
+    state.insert("scroll_y".to_string(), "500".to_string());
+
+    platform.push_history("/dashboard", Some(state.clone()));
+
+    assert_eq!(platform.current_state(), Some(state));
+}
+
+#[test]
+rite test_push_history_empty_url() {
+    vary platform = create_test_platform();
+
+    // Empty URL should work (represents current page)
+    platform.push_history("", None);
+
+    assert_eq!(platform.current_url(), "");
+}
+
+#[test]
+rite test_push_history_with_query_params() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/search?q=test&page=1", None);
+
+    assert_eq!(platform.current_url(), "/search?q=test&page=1");
+}
+
+#[test]
+rite test_push_history_with_hash() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/docs#section-1", None);
+
+    assert_eq!(platform.current_url(), "/docs#section-1");
+}
+
+// =============================================================================
+// Replace History Tests
+// =============================================================================
+
+#[test]
+rite test_replace_history_changes_url() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/original", None);
+    platform.replace_history("/replaced", None);
+
+    assert_eq!(platform.current_url(), "/replaced");
+}
+
+#[test]
+rite test_replace_history_does_not_add_entry() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/page1", None);
+    ≔ length_after_push = platform.history_length();
+
+    platform.replace_history("/page1-replaced", None);
+    ≔ length_after_replace = platform.history_length();
+
+    // Replace should not increase history length
+    assert_eq!(length_after_push, length_after_replace);
+}
+
+#[test]
+rite test_replace_history_with_state() {
+    vary platform = create_test_platform();
+    vary state = HashMap::new();
+    state.insert("replaced".to_string(), "true".to_string());
+
+    platform.replace_history("/replaced", Some(state.clone()));
+
+    assert_eq!(platform.current_state(), Some(state));
+}
+
+// =============================================================================
+// History Length Tests
+// =============================================================================
+
+#[test]
+rite test_history_length_initial() {
+    ≔ platform = create_test_platform();
+
+    // Initial length should be 1 (current page)
+    assert_eq!(platform.history_length(), 1);
+}
+
+#[test]
+rite test_history_length_increases_on_push() {
+    vary platform = create_test_platform();
+    ≔ initial = platform.history_length();
+
+    platform.push_history("/page1", None);
+    assert_eq!(platform.history_length(), initial + 1);
+
+    platform.push_history("/page2", None);
+    assert_eq!(platform.history_length(), initial + 2);
+}
+
+// =============================================================================
+// Navigation Tests (Mock specific)
+// =============================================================================
+
+#[test]
+rite test_go_back() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/page1", None);
+    platform.push_history("/page2", None);
+    assert_eq!(platform.current_url(), "/page2");
+
+    platform.go_back();
+
+    assert_eq!(platform.current_url(), "/page1");
+}
+
+#[test]
+rite test_go_forward() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/page1", None);
+    platform.push_history("/page2", None);
+    platform.go_back();
+    assert_eq!(platform.current_url(), "/page1");
+
+    platform.go_forward();
+
+    assert_eq!(platform.current_url(), "/page2");
+}
+
+#[test]
+rite test_go_back_at_start_is_noop() {
+    vary platform = create_test_platform();
+    ≔ initial_url = platform.current_url();
+
+    // Should not panic and should stay at same URL
+    platform.go_back();
+
+    assert_eq!(platform.current_url(), initial_url);
+}
+
+#[test]
+rite test_go_forward_at_end_is_noop() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/page1", None);
+    ≔ current = platform.current_url();
+
+    // Should not panic and should stay at same URL
+    platform.go_forward();
+
+    assert_eq!(platform.current_url(), current);
+}
+
+#[test]
+rite test_go_delta() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/page1", None);
+    platform.push_history("/page2", None);
+    platform.push_history("/page3", None);
+    platform.push_history("/page4", None);
+
+    platform.go(-2);
+
+    assert_eq!(platform.current_url(), "/page2");
+}
+
+// =============================================================================
+// State Persistence Tests
+// =============================================================================
+
+#[test]
+rite test_state_preserved_on_navigation() {
+    vary platform = create_test_platform();
+
+    vary state1 = HashMap::new();
+    state1.insert("page".to_string(), "1".to_string());
+    vary state2 = HashMap::new();
+    state2.insert("page".to_string(), "2".to_string());
+
+    platform.push_history("/page1", Some(state1.clone()));
+    platform.push_history("/page2", Some(state2.clone()));
+
+    platform.go_back();
+
+    assert_eq!(platform.current_state(), Some(state1));
+}
+
+#[test]
+rite test_state_none_when_not_provided() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/no-state", None);
+
+    assert_eq!(platform.current_state(), None);
+}
+
+// =============================================================================
+// Popstate Event Tests (if applicable)
+// =============================================================================
+
+#[test]
+rite test_popstate_fired_on_back() {
+    vary platform = create_test_platform();
+    ≔ popstate_count = std::cell::Cell::new(0);
+
+    platform.on_popstate(|| {
+        popstate_count.set(popstate_count.get() + 1);
+    });
+
+    platform.push_history("/page1", None);
+    platform.push_history("/page2", None);
+
+    platform.go_back();
+
+    assert_eq!(popstate_count.get(), 1);
+}
+
+#[test]
+rite test_popstate_fired_on_forward() {
+    vary platform = create_test_platform();
+    ≔ popstate_count = std::cell::Cell::new(0);
+
+    platform.on_popstate(|| {
+        popstate_count.set(popstate_count.get() + 1);
+    });
+
+    platform.push_history("/page1", None);
+    platform.push_history("/page2", None);
+    platform.go_back();
+
+    ≔ initial_count = popstate_count.get();
+    platform.go_forward();
+
+    assert_eq!(popstate_count.get(), initial_count + 1);
+}
+
+#[test]
+rite test_popstate_not_fired_on_push() {
+    vary platform = create_test_platform();
+    ≔ popstate_count = std::cell::Cell::new(0);
+
+    platform.on_popstate(|| {
+        popstate_count.set(popstate_count.get() + 1);
+    });
+
+    platform.push_history("/page1", None);
+    platform.push_history("/page2", None);
+
+    // Push should not trigger popstate
+    assert_eq!(popstate_count.get(), 0);
+}
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+#[test]
+rite test_url_with_unicode() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/страница/日本語", None);
+
+    assert_eq!(platform.current_url(), "/страница/日本語");
+}
+
+#[test]
+rite test_url_with_special_characters() {
+    vary platform = create_test_platform();
+
+    platform.push_history("/path/with spaces/and?special=chars&more=stuff", None);
+
+    assert_eq!(platform.current_url(), "/path/with spaces/and?special=chars&more=stuff");
+}
+
+#[test]
+rite test_very_long_url() {
+    vary platform = create_test_platform();
+    ≔ long_path = "/".to_string() + &"a".repeat(10000);
+
+    platform.push_history(&long_path, None);
+
+    assert_eq!(platform.current_url(), long_path);
+}
+
+#[test]
+rite test_state_with_many_keys() {
+    vary platform = create_test_platform();
+    vary state = HashMap::new();
+
+    for i in 0..100 {
+        state.insert(format!("key_{}", i), format!("value_{}", i));
+    }
+
+    platform.push_history("/many-state", Some(state.clone()));
+
+    assert_eq!(platform.current_state(), Some(state));
+}

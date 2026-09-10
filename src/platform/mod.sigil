@@ -5,9 +5,17 @@
 // Cross-platform bindings using message-based patterns instead of callbacks
 
 invoke std·collections·HashMap;
-invoke crate·core·vdom·{VNode, Patch};
-invoke crate·core·events·{Event, EventType};
-invoke crate·platform·native·NativePlatform;
+invoke tome·core·vdom·{VNode, Patch};
+invoke tome·core·events·{Event, EventType};
+// `invoke` is a use, not a declaration: without this `scroll` the file was
+// never loaded and `NativePlatform·new` resolved to nothing. It is a native
+// window backend, so a WebAssembly build leaves it out — and everything that
+// names it is gated the same way.
+@[cfg(not(target_family = "wasm"))]
+☉ scroll native;
+
+@[cfg(not(target_family = "wasm"))]
+invoke tome·platform·native·NativePlatform;
 
 // =============================================================================
 // Core Types
@@ -179,6 +187,7 @@ invoke crate·platform·native·NativePlatform;
 ☉ ᛈ Platform {
     Browser(BrowserPlatform),
     Server(ServerPlatform),
+    @[cfg(not(target_family = "wasm"))]
     Native(NativePlatform),
 }
 
@@ -194,11 +203,13 @@ invoke crate·platform·native·NativePlatform;
     }
 
     /// Create native platform
+    @[cfg(not(target_family = "wasm"))]
     ☉ rite native(title: &str, width: i32, height: i32) -> Self! {
         Platform·Native(NativePlatform·new(title, width, height))
     }
 
     /// Create native platform with defaults
+    @[cfg(not(target_family = "wasm"))]
     ☉ rite native_default() -> Self! {
         Platform·Native(NativePlatform·default())
     }
@@ -208,6 +219,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·query_selector(selector),
             Platform·Server(_) => None,
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·query_selector(selector),
         }
     }
@@ -217,6 +229,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·create_element(tag),
             Platform·Server(p) => p·create_element(tag),
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·create_element(tag),
         }
     }
@@ -226,6 +239,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·create_text(content),
             Platform·Server(p) => p·create_text(content),
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·create_text(content),
         }
     }
@@ -235,6 +249,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·apply_patch(patch),
             Platform·Server(_) => {},
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·apply_patch(patch),
         }
     }
@@ -244,6 +259,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·add_event_listener(element, event, message_id),
             Platform·Server(_) => {},
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·add_event_listener(element, event, message_id),
         }
     }
@@ -253,6 +269,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·remove_event_listener(element, event, message_id),
             Platform·Server(_) => {},
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·remove_event_listener(element, event, message_id),
         }
     }
@@ -262,6 +279,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·window_size(),
             Platform·Server(_) => (0, 0),
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·window_size(),
         }
     }
@@ -271,6 +289,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·request_animation_frame(message_id),
             Platform·Server(_) => 0,
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·request_animation_frame(message_id),
         }
     }
@@ -280,6 +299,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·cancel_animation_frame(id),
             Platform·Server(_) => {},
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·cancel_animation_frame(id),
         }
     }
@@ -289,6 +309,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·set_timeout(message_id, delay_ms),
             Platform·Server(_) => 0,
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·set_timeout(message_id, delay_ms),
         }
     }
@@ -298,6 +319,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·clear_timeout(id),
             Platform·Server(_) => {},
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·clear_timeout(id),
         }
     }
@@ -307,6 +329,7 @@ invoke crate·platform·native·NativePlatform;
         ⌥ self {
             Platform·Browser(p) => p·set_interval(message_id, interval_ms),
             Platform·Server(_) => 0,
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·set_interval(message_id, interval_ms),
         }
     }
@@ -315,6 +338,7 @@ invoke crate·platform·native·NativePlatform;
     ☉ rite clear_interval(&self, id: u64) {
         ⌥ self {
             Platform·Browser(p) => p·clear_interval(id),
+            @[cfg(not(target_family = "wasm"))]
             Platform·Native(p) => p·clear_interval(id),
             Platform·Server(_) => {},
         }
@@ -619,7 +643,7 @@ rite is_void_element(tag: &str) -> bool! {
 // cfg(test)
 scroll tests {
     invoke super·*;
-    invoke crate·core·vdom·{VElement, VText};
+    invoke tome·core·vdom·{VElement, VText};
 
     //@ rune: test
     rite test_render_to_string_simple() {

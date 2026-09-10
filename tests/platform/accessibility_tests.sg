@@ -1,0 +1,488 @@
+// Accessibility Contract Tests
+// TDD Phase 9: Define expected behavior for accessibility features
+//
+// These tests define the contract ALL platform implementations must satisfy
+// for accessibility support (ARIA, screen readers, keyboard navigation).
+
+use crate::platform::MockPlatform;
+use crate::platform::native::{NativeWidget, WidgetType, Orientation};
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// ARIA Role Tests
+// =============================================================================
+
+#[test]
+rite test_button_has_button_role() {
+    ≔ platform = create_test_platform();
+    ≔ button = platform.create_button("Click me");
+
+    assert_eq!(platform.get_accessible_role(&button), AccessibleRole::Button);
+}
+
+#[test]
+rite test_entry_has_textbox_role() {
+    ≔ platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    assert_eq!(platform.get_accessible_role(&entry), AccessibleRole::TextBox);
+}
+
+#[test]
+rite test_label_has_label_role() {
+    ≔ platform = create_test_platform();
+    ≔ label = platform.create_label("Description");
+
+    assert_eq!(platform.get_accessible_role(&label), AccessibleRole::Label);
+}
+
+#[test]
+rite test_checkbox_has_checkbox_role() {
+    ≔ platform = create_test_platform();
+    ≔ check = platform.create_check_button("Option");
+
+    assert_eq!(platform.get_accessible_role(&check), AccessibleRole::CheckBox);
+}
+
+#[test]
+rite test_switch_has_switch_role() {
+    ≔ platform = create_test_platform();
+    ≔ switch = platform.create_switch();
+
+    assert_eq!(platform.get_accessible_role(&switch), AccessibleRole::Switch);
+}
+
+#[test]
+rite test_custom_role() {
+    vary platform = create_test_platform();
+    ≔ widget = platform.create_box(Orientation::Vertical);
+
+    platform.set_accessible_role(&widget, AccessibleRole::Navigation);
+
+    assert_eq!(platform.get_accessible_role(&widget), AccessibleRole::Navigation);
+}
+
+// =============================================================================
+// Accessible Label Tests
+// =============================================================================
+
+#[test]
+rite test_set_accessible_label() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_accessible_label(&entry, "Email address");
+
+    assert_eq!(platform.get_accessible_label(&entry), Some("Email address".to_string()));
+}
+
+#[test]
+rite test_button_text_becomes_accessible_label() {
+    ≔ platform = create_test_platform();
+    ≔ button = platform.create_button("Submit Form");
+
+    // Button text should automatically become accessible label
+    assert_eq!(platform.get_accessible_label(&button), Some("Submit Form".to_string()));
+}
+
+#[test]
+rite test_label_for_widget() {
+    vary platform = create_test_platform();
+    ≔ label = platform.create_label("Username:");
+    ≔ entry = platform.create_entry();
+
+    platform.set_label_for(&label, &entry);
+
+    // Entry should reference the label
+    assert_eq!(platform.get_labelled_by(&entry), Some(label.handle));
+}
+
+#[test]
+rite test_accessible_description() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_accessible_description(&entry, "Enter your email address for account recovery");
+
+    assert_eq!(
+        platform.get_accessible_description(&entry),
+        Some("Enter your email address for account recovery".to_string())
+    );
+}
+
+// =============================================================================
+// Accessible State Tests
+// =============================================================================
+
+#[test]
+rite test_disabled_state_announced() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Click me");
+
+    platform.set_enabled(&button, ⊥);
+
+    assert!(platform.get_accessible_states(&button).contains(&AccessibleState::Disabled));
+}
+
+#[test]
+rite test_checked_state_announced() {
+    vary platform = create_test_platform();
+    ≔ check = platform.create_check_button("Option");
+
+    platform.set_checked(&check, ⊤);
+
+    assert!(platform.get_accessible_states(&check).contains(&AccessibleState::Checked));
+}
+
+#[test]
+rite test_expanded_state() {
+    vary platform = create_test_platform();
+    ≔ widget = platform.create_box(Orientation::Vertical);
+
+    platform.set_accessible_expanded(&widget, ⊤);
+
+    assert!(platform.get_accessible_states(&widget).contains(&AccessibleState::Expanded));
+}
+
+#[test]
+rite test_focused_state() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.grab_focus(&entry);
+
+    assert!(platform.get_accessible_states(&entry).contains(&AccessibleState::Focused));
+}
+
+#[test]
+rite test_required_state() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_accessible_required(&entry, ⊤);
+
+    assert!(platform.get_accessible_states(&entry).contains(&AccessibleState::Required));
+}
+
+#[test]
+rite test_invalid_state() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_validation_error(&entry, "Invalid email");
+
+    assert!(platform.get_accessible_states(&entry).contains(&AccessibleState::Invalid));
+}
+
+// =============================================================================
+// Keyboard Navigation Tests
+// =============================================================================
+
+#[test]
+rite test_tab_order_sequential() {
+    vary platform = create_test_platform();
+    ≔ button1 = platform.create_button("First");
+    ≔ button2 = platform.create_button("Second");
+    ≔ button3 = platform.create_button("Third");
+
+    ≔ container = platform.create_box(Orientation::Vertical);
+    platform.append(&container, &button1);
+    platform.append(&container, &button2);
+    platform.append(&container, &button3);
+
+    // Default tab order should match child order
+    ≔ tab_order = platform.get_tab_order(&container);
+    assert_eq!(tab_order, vec![button1.handle, button2.handle, button3.handle]);
+}
+
+#[test]
+rite test_custom_tab_index() {
+    vary platform = create_test_platform();
+    ≔ button1 = platform.create_button("First");
+    ≔ button2 = platform.create_button("Second");
+    ≔ button3 = platform.create_button("Third");
+
+    platform.set_tab_index(&button1, 3);
+    platform.set_tab_index(&button2, 1);
+    platform.set_tab_index(&button3, 2);
+
+    assert_eq!(platform.get_tab_index(&button1), 3);
+    assert_eq!(platform.get_tab_index(&button2), 1);
+    assert_eq!(platform.get_tab_index(&button3), 2);
+}
+
+#[test]
+rite test_skip_tab_navigation() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Skip me");
+
+    platform.set_tab_index(&button, -1);
+
+    assert_eq!(platform.get_tab_index(&button), -1);
+    // Widget should be skipped in tab navigation
+}
+
+#[test]
+rite test_focus_next() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Vertical);
+    ≔ button1 = platform.create_button("First");
+    ≔ button2 = platform.create_button("Second");
+
+    platform.append(&container, &button1);
+    platform.append(&container, &button2);
+
+    platform.grab_focus(&button1);
+    platform.focus_next(&container);
+
+    assert!(platform.has_focus(&button2));
+}
+
+#[test]
+rite test_focus_previous() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Vertical);
+    ≔ button1 = platform.create_button("First");
+    ≔ button2 = platform.create_button("Second");
+
+    platform.append(&container, &button1);
+    platform.append(&container, &button2);
+
+    platform.grab_focus(&button2);
+    platform.focus_previous(&container);
+
+    assert!(platform.has_focus(&button1));
+}
+
+// =============================================================================
+// Live Region Tests
+// =============================================================================
+
+#[test]
+rite test_live_region_polite() {
+    vary platform = create_test_platform();
+    ≔ status = platform.create_label("Status");
+
+    platform.set_live_region(&status, LiveRegion::Polite);
+
+    assert_eq!(platform.get_live_region(&status), LiveRegion::Polite);
+}
+
+#[test]
+rite test_live_region_assertive() {
+    vary platform = create_test_platform();
+    ≔ alert = platform.create_label("Alert");
+
+    platform.set_live_region(&alert, LiveRegion::Assertive);
+
+    assert_eq!(platform.get_live_region(&alert), LiveRegion::Assertive);
+}
+
+#[test]
+rite test_announce_message() {
+    vary platform = create_test_platform();
+
+    platform.announce("Form submitted successfully", AnnouncePriority::Polite);
+
+    ≔ announcements = platform.get_announcements();
+    assert_eq!(announcements.len(), 1);
+    assert_eq!(announcements[0].message, "Form submitted successfully");
+    assert_eq!(announcements[0].priority, AnnouncePriority::Polite);
+}
+
+#[test]
+rite test_announce_urgent() {
+    vary platform = create_test_platform();
+
+    platform.announce("Error: Connection lost", AnnouncePriority::Assertive);
+
+    ≔ announcements = platform.get_announcements();
+    assert_eq!(announcements.last().unwrap().priority, AnnouncePriority::Assertive);
+}
+
+// =============================================================================
+// Accessible Value Tests
+// =============================================================================
+
+#[test]
+rite test_slider_accessible_value() {
+    vary platform = create_test_platform();
+    ≔ scale = platform.create_scale(Orientation::Horizontal, 0.0, 100.0);
+
+    platform.set_scale_value(&scale, 50.0);
+
+    ≔ value_text = platform.get_accessible_value_text(&scale);
+    assert!(value_text.contains("50"));
+}
+
+#[test]
+rite test_progress_accessible_value() {
+    vary platform = create_test_platform();
+    ≔ progress = platform.create_progress_bar();
+
+    platform.set_progress_fraction(&progress, 0.75);
+
+    ≔ value_text = platform.get_accessible_value_text(&progress);
+    assert!(value_text.contains("75") || value_text.contains("0.75"));
+}
+
+#[test]
+rite test_custom_value_text() {
+    vary platform = create_test_platform();
+    ≔ scale = platform.create_scale(Orientation::Horizontal, 0.0, 100.0);
+
+    platform.set_accessible_value_text(&scale, "Medium volume");
+
+    assert_eq!(platform.get_accessible_value_text(&scale), "Medium volume");
+}
+
+// =============================================================================
+// Accessible Relations Tests
+// =============================================================================
+
+#[test]
+rite test_controls_relation() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Toggle");
+    ≔ panel = platform.create_box(Orientation::Vertical);
+
+    platform.set_controls(&button, &panel);
+
+    assert_eq!(platform.get_controls(&button), Some(panel.handle));
+}
+
+#[test]
+rite test_described_by_relation() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+    ≔ hint = platform.create_label("Must be at least 8 characters");
+
+    platform.set_described_by(&entry, &hint);
+
+    assert_eq!(platform.get_described_by(&entry), Some(hint.handle));
+}
+
+#[test]
+rite test_error_message_relation() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+    ≔ error = platform.create_label("Invalid input");
+
+    platform.set_error_message(&entry, &error);
+
+    assert_eq!(platform.get_error_message(&entry), Some(error.handle));
+}
+
+// =============================================================================
+// High Contrast Mode Tests
+// =============================================================================
+
+#[test]
+rite test_high_contrast_mode_detection() {
+    vary platform = create_test_platform();
+
+    platform.set_high_contrast_mode(⊤);
+
+    assert!(platform.is_high_contrast_mode());
+}
+
+#[test]
+rite test_reduced_motion_detection() {
+    vary platform = create_test_platform();
+
+    platform.set_reduced_motion(⊤);
+
+    assert!(platform.prefers_reduced_motion());
+}
+
+// =============================================================================
+// Screen Reader Hints Tests
+// =============================================================================
+
+#[test]
+rite test_group_widget() {
+    vary platform = create_test_platform();
+    ≔ group = platform.create_box(Orientation::Vertical);
+
+    platform.set_accessible_role(&group, AccessibleRole::Group);
+    platform.set_accessible_label(&group, "Personal Information");
+
+    assert_eq!(platform.get_accessible_role(&group), AccessibleRole::Group);
+    assert_eq!(platform.get_accessible_label(&group), Some("Personal Information".to_string()));
+}
+
+#[test]
+rite test_heading_level() {
+    vary platform = create_test_platform();
+    ≔ heading = platform.create_label("Main Title");
+
+    platform.set_heading_level(&heading, 1);
+
+    assert_eq!(platform.get_heading_level(&heading), Some(1));
+}
+
+// =============================================================================
+// Landmark Tests
+// =============================================================================
+
+#[test]
+rite test_main_landmark() {
+    vary platform = create_test_platform();
+    ≔ main_content = platform.create_box(Orientation::Vertical);
+
+    platform.set_accessible_role(&main_content, AccessibleRole::Main);
+
+    assert_eq!(platform.get_accessible_role(&main_content), AccessibleRole::Main);
+}
+
+#[test]
+rite test_navigation_landmark() {
+    vary platform = create_test_platform();
+    ≔ nav = platform.create_box(Orientation::Horizontal);
+
+    platform.set_accessible_role(&nav, AccessibleRole::Navigation);
+    platform.set_accessible_label(&nav, "Main navigation");
+
+    assert_eq!(platform.get_accessible_role(&nav), AccessibleRole::Navigation);
+}
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+#[test]
+rite test_empty_accessible_label() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("");
+
+    // Empty button should have no accessible label
+    assert_eq!(platform.get_accessible_label(&button), None);
+}
+
+#[test]
+rite test_unicode_accessible_label() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("提交 Submit 送信");
+
+    assert_eq!(platform.get_accessible_label(&button), Some("提交 Submit 送信".to_string()));
+}
+
+#[test]
+rite test_clear_accessible_description() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_accessible_description(&entry, "Some description");
+    platform.set_accessible_description(&entry, "");
+
+    assert_eq!(platform.get_accessible_description(&entry), None);
+}

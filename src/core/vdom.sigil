@@ -31,6 +31,7 @@ invoke std·collections·HashMap;
     ☉ rite div() -> Self! { VNode·Element(VElement·new("div")) }
     ☉ rite span() -> Self! { VNode·Element(VElement·new("span")) }
     ☉ rite main_elem() -> Self! { VNode·Element(VElement·new("main")) }
+    ☉ rite main() -> Self! { VNode·Element(VElement·new("main")) }
     ☉ rite section() -> Self! { VNode·Element(VElement·new("section")) }
     ☉ rite article() -> Self! { VNode·Element(VElement·new("article")) }
     ☉ rite aside() -> Self! { VNode·Element(VElement·new("aside")) }
@@ -59,6 +60,18 @@ invoke std·collections·HashMap;
     ☉ rite video() -> Self! { VNode·Element(VElement·new("video")) }
     ☉ rite audio() -> Self! { VNode·Element(VElement·new("audio")) }
     ☉ rite svg() -> Self! { VNode·Element(VElement·new("svg")) }
+    // SVG shapes. `path` was missing, so `bell_glyph` — a component made of two
+    // `<path>` elements — built nodes with an empty tag name and the mount
+    // threw. `main` and `datalist` were missing for the same reason: the list
+    // was never checked against what a real page uses.
+    ☉ rite path() -> Self! { VNode·Element(VElement·new("path")) }
+    ☉ rite circle() -> Self! { VNode·Element(VElement·new("circle")) }
+    ☉ rite rect() -> Self! { VNode·Element(VElement·new("rect")) }
+    ☉ rite line() -> Self! { VNode·Element(VElement·new("line")) }
+    ☉ rite polyline() -> Self! { VNode·Element(VElement·new("polyline")) }
+    ☉ rite polygon() -> Self! { VNode·Element(VElement·new("polygon")) }
+    ☉ rite g() -> Self! { VNode·Element(VElement·new("g")) }
+    ☉ rite datalist() -> Self! { VNode·Element(VElement·new("datalist")) }
 
     // Lists
     ☉ rite ul() -> Self! { VNode·Element(VElement·new("ul")) }
@@ -194,6 +207,57 @@ invoke std·collections·HashMap;
         }
     }
 
+    /// Register a handler for any event name.
+    ///
+    /// Two things arrive here that the four named methods above could not
+    /// express: DOM events nobody had got round to (`keydown`, `mousedown`,
+    /// `blur`), and a CHILD COMPONENT'S callback prop — `onOpenSession`,
+    /// `onLaunchClaude` — which is not a DOM event at all. The migrator was
+    /// emitting `·on_opensession(…)` for the latter, a method that could never
+    /// exist; 49 distinct names across the generated Lares client, most of them
+    /// used once.
+    ☉ rite on_event(Δ self, name: &str, message_id: u64) -> Self! {
+        ⌥ self {
+            VNode·Element(el) => VNode·Element(el·on_event(name, message_id)),
+            other => other,
+        }
+    }
+
+    /// Register keydown handler
+    ☉ rite on_keydown(Δ self, message_id: u64) -> Self! {
+        self·on_event("keydown", message_id)
+    }
+
+    /// Register keyup handler
+    ☉ rite on_keyup(Δ self, message_id: u64) -> Self! {
+        self·on_event("keyup", message_id)
+    }
+
+    /// Register mousedown handler
+    ☉ rite on_mousedown(Δ self, message_id: u64) -> Self! {
+        self·on_event("mousedown", message_id)
+    }
+
+    /// Register mouseup handler
+    ☉ rite on_mouseup(Δ self, message_id: u64) -> Self! {
+        self·on_event("mouseup", message_id)
+    }
+
+    /// Register focus handler
+    ☉ rite on_focus(Δ self, message_id: u64) -> Self! {
+        self·on_event("focus", message_id)
+    }
+
+    /// Register blur handler
+    ☉ rite on_blur(Δ self, message_id: u64) -> Self! {
+        self·on_event("blur", message_id)
+    }
+
+    /// Register double-click handler
+    ☉ rite on_dblclick(Δ self, message_id: u64) -> Self! {
+        self·on_event("dblclick", message_id)
+    }
+
     // =========================================================================
     // Conditional Helpers
     // =========================================================================
@@ -212,6 +276,33 @@ invoke std·collections·HashMap;
         ⌥ opt {
             Some(node) => self·child(node),
             None => self,
+        }
+    }
+
+    /// Add one of two children, on a condition.
+    ///
+    /// React's `cond ? <a/> : <b/>` has no expression form here — `when` only
+    /// covers the one-sided case — so the migrator emitted `when_else` against
+    /// nothing at all.
+    ☉ rite when_else(Δ self, condition: bool, then_node: VNode, else_node: VNode) -> Self! {
+        ⎇ condition {
+            self·child(then_node)
+        } ⎉ {
+            self·child(else_node)
+        }
+    }
+
+    /// Set an attribute only when a condition holds.
+    ///
+    /// This is `disabled={busy}` and its siblings — a boolean attribute driven
+    /// by state. The migrator used to emit `·when(cond, |n| n·attr(…))`, a
+    /// closure, which this builder deliberately has no form for: the header of
+    /// this file says "No DSL, no function types, no callbacks".
+    ☉ rite attr_when(Δ self, condition: bool, name: &str, value: &str) -> Self! {
+        ⎇ condition {
+            self·attr(name, value)
+        } ⎉ {
+            self
         }
     }
 }
@@ -292,6 +383,24 @@ invoke std·collections·HashMap;
         self
     }
 
+    /// Add one of two children, on a condition
+    ☉ rite when_else(Δ self, condition: bool, then_node: VNode, else_node: VNode) -> Self! {
+        ⎇ condition {
+            self·child(then_node)
+        } ⎉ {
+            self·child(else_node)
+        }
+    }
+
+    /// Set an attribute only when a condition holds
+    ☉ rite attr_when(Δ self, condition: bool, name: &str, value: &str) -> Self! {
+        ⎇ condition {
+            self·attr(name, value)
+        } ⎉ {
+            self
+        }
+    }
+
     /// Register click event (stores message ID)
     ☉ rite on_click(Δ self, message_id: u64) -> Self! {
         self.events·insert("click".to_string(), message_id)
@@ -313,6 +422,12 @@ invoke std·collections·HashMap;
     /// Register change event
     ☉ rite on_change(Δ self, message_id: u64) -> Self! {
         self.events·insert("change".to_string(), message_id)
+        self
+    }
+
+    /// Register a handler for any event name (see `VNode·on_event`)
+    ☉ rite on_event(Δ self, name: &str, message_id: u64) -> Self! {
+        self.events·insert(name.to_string(), message_id)
         self
     }
 }
@@ -539,5 +654,56 @@ scroll tests {
             }
             _ => {}
         }
+    }
+}
+
+/// Build the host's node tree from a `VNode` and return its handle.
+///
+/// A `VNode` is a Sigil value; the DOM is not. This is the bridge between them,
+/// and it did not exist: `App·mount` constructed an `App`, discarded it, and
+/// returned — its only comment was "platform-specific mounting handled by
+/// runtime", and no runtime did. Nothing this framework built had ever reached
+/// a page.
+☉ rite to_host_node(node: &VNode) -> i64! {
+    // A `∅` reaching here is not hypothetical: generated code emits one for a
+    // callback prop or an expression it could not translate, and `·child(∅)`
+    // appends it. `VNode·Element` is discriminant 0, so a null pointer reads as
+    // an element with a garbage tag and the host throws on `createElement('')`.
+    // A node that is not there renders nothing.
+    ⎇ node == ∅ {
+        ⤺ vdom_create_fragment();
+    }
+    ⌥ node {
+        VNode·Element(el) => {
+            ≔ host! = vdom_create_vnode(&el.tag);
+            ∀ (name, value) ∈ &el.attrs {
+                vdom_set_vnode_str_prop(host, name, value)
+            }
+            ∀ (prop, value) ∈ &el.styles {
+                vdom_set_vnode_style(host, prop, value)
+            }
+            // An event is a message id, not a callback — the host dispatches it
+            // back through the actor's generated dispatcher.
+            ∀ (event, message) ∈ &el.events {
+                vdom_set_vnode_prop(host, "on" + event, message)
+            }
+            ∀ child ∈ &el.children {
+                vdom_append_vnode_child(host, to_host_node(child))
+            }
+            host
+        }
+        VNode·Text(text) => vdom_create_text_vnode(&text.content),
+        VNode·Fragment(frag) => {
+            ≔ host! = vdom_create_fragment();
+            ∀ child ∈ &frag.children {
+                vdom_append_vnode_child(host, to_host_node(child))
+            }
+            host
+        }
+        VNode·Empty => vdom_create_fragment(),
+        // A handle that is not any of the four. Generated code can still put
+        // one here — an untranslated expression, a callback prop — and reading
+        // a tag name out of it hands the host an empty string. Render nothing.
+        _ => vdom_create_fragment(),
     }
 }

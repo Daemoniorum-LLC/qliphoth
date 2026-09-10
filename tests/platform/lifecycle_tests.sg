@@ -1,0 +1,406 @@
+// Memory Safety and Lifecycle Contract Tests
+// TDD Phase 6: Define expected behavior for widget lifecycle
+//
+// These tests ensure proper memory management and prevent leaks.
+// Critical for long-running applications.
+
+use crate::platform::MockPlatform;
+use crate::platform::native::{NativeWidget, WidgetType, Orientation};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Widget Creation and Destruction
+// =============================================================================
+
+#[test]
+rite test_widget_count_increases_on_creation() {
+    vary platform = create_test_platform();
+    ≔ initial_count = platform.widget_count();
+
+    ≔ button = platform.create_button("Test");
+
+    assert_eq!(platform.widget_count(), initial_count + 1);
+}
+
+#[test]
+rite test_widget_count_decreases_on_destroy() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+    ≔ count_after_create = platform.widget_count();
+
+    platform.destroy_widget(&button);
+
+    assert_eq!(platform.widget_count(), count_after_create - 1);
+}
+
+#[test]
+rite test_widget_exists_after_creation() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    assert!(platform.widget_exists(button.handle));
+}
+
+#[test]
+rite test_widget_not_exists_after_destroy() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+    ≔ handle = button.handle;
+
+    platform.destroy_widget(&button);
+
+    assert!(!platform.widget_exists(handle));
+}
+
+// =============================================================================
+// Double-Free Prevention
+// =============================================================================
+
+#[test]
+rite test_destroy_same_widget_twice_is_safe() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.destroy_widget(&button);
+    // Second destroy should be a no-op, not panic
+    platform.destroy_widget(&button);
+
+    // Platform should still be functional
+    ≔ button2 = platform.create_button("Still works");
+    assert!(button2.handle != 0);
+}
+
+#[test]
+rite test_destroy_invalid_handle_is_safe() {
+    vary platform = create_test_platform();
+
+    // Create a widget with an arbitrary handle
+    ≔ fake_widget = NativeWidget::new(99999, WidgetType::Button);
+
+    // Should not panic
+    platform.destroy_widget(&fake_widget);
+}
+
+// =============================================================================
+// Handler Cleanup on Widget Destruction
+// =============================================================================
+
+#[test]
+rite test_handlers_removed_on_widget_destroy() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    ≔ handler_id = platform.connect(&button, "clicked", move || {
+        *count_ref.borrow_mut() += 1;
+    });
+
+    platform.destroy_widget(&button);
+
+    // Handler should no longer exist
+    assert!(!platform.has_handler(handler_id));
+}
+
+#[test]
+rite test_all_handlers_removed_on_destroy() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    // Connect multiple handlers
+    ≔ id1 = platform.connect(&button, "clicked", || {});
+    ≔ id2 = platform.connect(&button, "clicked", || {});
+    ≔ id3 = platform.connect(&button, "hover", || {});
+
+    platform.destroy_widget(&button);
+
+    // All handlers should be gone
+    assert!(!platform.has_handler(id1));
+    assert!(!platform.has_handler(id2));
+    assert!(!platform.has_handler(id3));
+}
+
+#[test]
+rite test_emit_signal_after_destroy_is_safe() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.connect(&button, "clicked", || {
+        panic!("Should not be called after destroy");
+    });
+
+    platform.destroy_widget(&button);
+
+    // Should not panic (handler was removed)
+    platform.emit_signal(&button, "clicked");
+}
+
+// =============================================================================
+// Hierarchy Cleanup
+// =============================================================================
+
+#[test]
+rite test_child_removed_from_parent_on_destroy() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Vertical);
+    ≔ child = platform.create_button("Child");
+
+    platform.append(&container, &child);
+    assert_eq!(platform.child_count(&container), 1);
+
+    platform.destroy_widget(&child);
+
+    assert_eq!(platform.child_count(&container), 0);
+}
+
+#[test]
+rite test_destroy_parent_destroys_children() {
+    vary platform = create_test_platform();
+    ≔ parent = platform.create_box(Orientation::Vertical);
+    ≔ child1 = platform.create_button("Child 1");
+    ≔ child2 = platform.create_button("Child 2");
+
+    platform.append(&parent, &child1);
+    platform.append(&parent, &child2);
+
+    ≔ child1_handle = child1.handle;
+    ≔ child2_handle = child2.handle;
+
+    platform.destroy_widget(&parent);
+
+    // Children should also be destroyed
+    assert!(!platform.widget_exists(child1_handle));
+    assert!(!platform.widget_exists(child2_handle));
+}
+
+#[test]
+rite test_remove_from_parent_does_not_destroy() {
+    vary platform = create_test_platform();
+    ≔ parent = platform.create_box(Orientation::Vertical);
+    ≔ child = platform.create_button("Child");
+
+    platform.append(&parent, &child);
+    platform.remove(&parent, &child);
+
+    // Child should still exist, just not parented
+    assert!(platform.widget_exists(child.handle));
+    assert_eq!(platform.child_count(&parent), 0);
+}
+
+// =============================================================================
+// Properties Cleanup
+// =============================================================================
+
+#[test]
+rite test_properties_removed_on_destroy() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("test value");
+
+    platform.set_text(&entry, "modified");
+    assert_eq!(platform.get_text(&entry), "modified");
+
+    platform.destroy_widget(&entry);
+
+    // After destroy, getting text should return empty/default
+    assert_eq!(platform.get_text(&entry), "");
+}
+
+// =============================================================================
+// Signal History Cleanup
+// =============================================================================
+
+#[test]
+rite test_signal_history_cleared_on_destroy() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.emit_signal(&button, "clicked");
+    platform.emit_signal(&button, "clicked");
+    assert_eq!(platform.signal_history(&button).len(), 2);
+
+    platform.destroy_widget(&button);
+
+    // History should be cleared
+    assert_eq!(platform.signal_history(&button).len(), 0);
+}
+
+// =============================================================================
+// Resource Limits
+// =============================================================================
+
+#[test]
+rite test_create_many_widgets_then_destroy() {
+    vary platform = create_test_platform();
+    ≔ initial_count = platform.widget_count();
+
+    // Create many widgets
+    vary widgets = Vec::new();
+    for i in 0..100 {
+        widgets.push(platform.create_button(&format!("Button {}", i)));
+    }
+
+    assert_eq!(platform.widget_count(), initial_count + 100);
+
+    // Destroy all
+    for widget in widgets {
+        platform.destroy_widget(&widget);
+    }
+
+    assert_eq!(platform.widget_count(), initial_count);
+}
+
+#[test]
+rite test_rapid_create_destroy_cycles() {
+    vary platform = create_test_platform();
+    ≔ initial_count = platform.widget_count();
+
+    // Rapid create/destroy cycles
+    for _ in 0..1000 {
+        ≔ button = platform.create_button("Temp");
+        platform.destroy_widget(&button);
+    }
+
+    // Should be back to initial count
+    assert_eq!(platform.widget_count(), initial_count);
+}
+
+// =============================================================================
+// Handler Resource Management
+// =============================================================================
+
+#[test]
+rite test_connect_disconnect_many_handlers() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    // Connect many handlers
+    vary handler_ids = Vec::new();
+    for _ in 0..100 {
+        handler_ids.push(platform.connect(&button, "clicked", || {}));
+    }
+
+    // Disconnect all
+    for id in handler_ids {
+        platform.disconnect(id);
+    }
+
+    assert!(!platform.has_handler_for(&button));
+}
+
+#[test]
+rite test_handler_closure_dropped_on_disconnect() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    // Use a Rc to track if closure is dropped
+    ≔ tracker = Rc::new(());
+    ≔ weak = Rc::downgrade(&tracker);
+    ≔ tracker_clone = Rc::clone(&tracker);
+
+    ≔ handler_id = platform.connect(&button, "clicked", move || {
+        ≔ _ = &tracker_clone; // Capture tracker
+    });
+
+    // Tracker should have 2 strong refs (ours and closure's)
+    assert_eq!(Rc::strong_count(&tracker), 2);
+
+    platform.disconnect(handler_id);
+
+    // After disconnect, only our ref should remain
+    // (closure was dropped, releasing its ref)
+    drop(tracker);
+    assert!(weak.upgrade().is_none());
+}
+
+// =============================================================================
+// Timer Resource Management
+// =============================================================================
+
+#[test]
+rite test_timer_cleared_properly() {
+    vary platform = create_test_platform();
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    ≔ id = platform.set_timeout(move || {
+        *count_ref.borrow_mut() += 1;
+    }, 100);
+
+    platform.clear_timeout(id);
+    platform.advance_time(200);
+
+    // Timer should not have fired
+    assert_eq!(*count.borrow(), 0);
+}
+
+#[test]
+rite test_interval_cleared_stops_firing() {
+    vary platform = create_test_platform();
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    ≔ id = platform.set_interval(move || {
+        *count_ref.borrow_mut() += 1;
+    }, 100);
+
+    platform.advance_time(250); // Should fire 2 times
+    platform.clear_interval(id);
+    platform.advance_time(200); // Should not fire anymore
+
+    assert_eq!(*count.borrow(), 2);
+}
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+#[test]
+rite test_widget_handle_uniqueness() {
+    vary platform = create_test_platform();
+    vary handles = std::collections::HashSet::new();
+
+    // Create many widgets and verify handles are unique
+    for _ in 0..100 {
+        ≔ button = platform.create_button("Test");
+        assert!(handles.insert(button.handle), "Duplicate handle detected");
+    }
+}
+
+#[test]
+rite test_handler_id_uniqueness() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+    vary ids = std::collections::HashSet::new();
+
+    // Connect many handlers and verify IDs are unique
+    for _ in 0..100 {
+        ≔ id = platform.connect(&button, "clicked", || {});
+        assert!(ids.insert(id), "Duplicate handler ID detected");
+    }
+}
+
+#[test]
+rite test_destroyed_widget_handle_not_reused_immediately() {
+    vary platform = create_test_platform();
+
+    ≔ button1 = platform.create_button("First");
+    ≔ handle1 = button1.handle;
+    platform.destroy_widget(&button1);
+
+    ≔ button2 = platform.create_button("Second");
+
+    // New widget should have a different handle
+    assert!(button2.handle != handle1);
+}

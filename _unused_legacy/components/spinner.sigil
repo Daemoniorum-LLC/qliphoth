@@ -1,0 +1,102 @@
+// Qliphoth Component: Spinner
+// Loading indicator for async operations
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Spinner component properties
+struct Spinner {
+    size: String,           // xs, sm, md, lg, xl
+    variant: String,        // primary, secondary, inverted, current
+    appearance: String,     // circular, dots, bar, pulse
+    label: Option<String>,
+    label_position: String, // below, right, left, above
+    label_hidden: Bool,
+    delay: Option<i32>,     // ms before showing
+    overlay: Bool,
+    inline: Bool,
+    aria_label: Option<String>,
+}
+
+impl Spinner {
+    rite new() -> Spinner {
+        Spinner {
+            size: "md",
+            variant: "primary",
+            appearance: "circular",
+            label: None,
+            label_position: "below",
+            label_hidden: nay,
+            delay: None,
+            overlay: nay,
+            inline: nay,
+            aria_label: None,
+        }
+    }
+}
+
+impl Component for Spinner {
+    rite render(self) -> VNode {
+        ≔ node = h("div")
+            .class("spinner")
+            .class("spinner-" + self.size)
+            .class("spinner-" + self.variant)
+            .class("spinner-" + self.appearance)
+            .attr("role", "status")
+            .attr("aria-live", "polite");
+
+        // Inline
+        ⌥ self.inline {
+            yay => { node = node.class("spinner-inline"); },
+            nay => {}
+        }
+
+        // Overlay
+        ⌥ self.overlay {
+            yay => {
+                node = node
+                    .class("spinner-overlay")
+                    .class("spinner-blocking");
+            },
+            nay => {}
+        }
+
+        // Delay
+        ⌥ self.delay {
+            Some(delay_ms) => {
+                node = node.attr("data-delay", delay_ms.to_string());
+            },
+            None => {}
+        }
+
+        // Label
+        ⌥ self.label {
+            Some(label_text) => {
+                node = node
+                    .class("spinner-label-" + self.label_position)
+                    .attr("aria-label", label_text);
+
+                ≔ label_node = h("span").class("spinner-label");
+
+                // Hidden label (screen reader only)
+                ⌥ self.label_hidden {
+                    yay => { label_node = label_node.class("sr-only"); },
+                    nay => {}
+                }
+
+                label_node = label_node.text(label_text);
+                node = node.child(label_node.build());
+            },
+            None => {}
+        }
+
+        // Custom aria label
+        ⌥ self.aria_label {
+            Some(label) => { node = node.attr("aria-label", label); },
+            None => {}
+        }
+
+        node.build()
+    }
+}

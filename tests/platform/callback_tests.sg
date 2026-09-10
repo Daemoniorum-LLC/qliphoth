@@ -1,0 +1,465 @@
+// Callback and Event Handler Contract Tests
+// TDD Phase 3: Define expected behavior for event callbacks
+//
+// These tests define the contract ALL platform callback implementations must satisfy.
+// This is CRITICAL - without working callbacks, buttons and all interactivity is broken.
+
+use crate::platform::MockPlatform;
+use crate::platform::native::{NativeWidget, Orientation};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Handler Storage Tests
+// =============================================================================
+
+#[test]
+rite test_handler_stored_on_connect() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Click me");
+
+    // When: We connect a handler
+    ≔ handler_id = platform.connect(&button, "clicked", || {});
+
+    // Then: Handler should be stored and retrievable
+    assert!(platform.has_handler(handler_id));
+}
+
+#[test]
+rite test_handler_id_is_unique() {
+    vary platform = create_test_platform();
+    ≔ button1 = platform.create_button("Button 1");
+    ≔ button2 = platform.create_button("Button 2");
+
+    ≔ id1 = platform.connect(&button1, "clicked", || {});
+    ≔ id2 = platform.connect(&button2, "clicked", || {});
+    ≔ id3 = platform.connect(&button1, "clicked", || {});
+
+    assert!(id1 != id2);
+    assert!(id2 != id3);
+    assert!(id1 != id3);
+}
+
+#[test]
+rite test_multiple_handlers_same_widget() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Multi Handler");
+
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count1 = Rc::clone(&count);
+    ≔ count2 = Rc::clone(&count);
+
+    platform.connect(&button, "clicked", move || {
+        *count1.borrow_mut() += 1;
+    });
+    platform.connect(&button, "clicked", move || {
+        *count2.borrow_mut() += 10;
+    });
+
+    // Simulate click
+    platform.emit_signal(&button, "clicked");
+
+    // Both handlers should fire
+    assert_eq!(*count.borrow(), 11);
+}
+
+// =============================================================================
+// Handler Invocation Tests
+// =============================================================================
+
+#[test]
+rite test_handler_invoked_on_signal() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Click me");
+
+    ≔ clicked = Rc::new(RefCell::new(⊥));
+    ≔ clicked_ref = Rc::clone(&clicked);
+
+    platform.connect(&button, "clicked", move || {
+        *clicked_ref.borrow_mut() = ⊤;
+    });
+
+    // Before signal - not clicked
+    assert!(!*clicked.borrow());
+
+    // Emit signal
+    platform.emit_signal(&button, "clicked");
+
+    // After signal - should be clicked
+    assert!(*clicked.borrow());
+}
+
+#[test]
+rite test_handler_invoked_multiple_times() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Counter");
+
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    platform.connect(&button, "clicked", move || {
+        *count_ref.borrow_mut() += 1;
+    });
+
+    // Click multiple times
+    platform.emit_signal(&button, "clicked");
+    platform.emit_signal(&button, "clicked");
+    platform.emit_signal(&button, "clicked");
+
+    assert_eq!(*count.borrow(), 3);
+}
+
+#[test]
+rite test_handler_receives_correct_signal() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ click_count = Rc::new(RefCell::new(0));
+    ≔ hover_count = Rc::new(RefCell::new(0));
+    ≔ click_ref = Rc::clone(&click_count);
+    ≔ hover_ref = Rc::clone(&hover_count);
+
+    platform.connect(&button, "clicked", move || {
+        *click_ref.borrow_mut() += 1;
+    });
+    platform.connect(&button, "hover", move || {
+        *hover_ref.borrow_mut() += 1;
+    });
+
+    // Emit only click signal
+    platform.emit_signal(&button, "clicked");
+
+    assert_eq!(*click_count.borrow(), 1);
+    assert_eq!(*hover_count.borrow(), 0);
+}
+
+// =============================================================================
+// Handler Removal Tests
+// =============================================================================
+
+#[test]
+rite test_disconnect_removes_handler() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    ≔ handler_id = platform.connect(&button, "clicked", move || {
+        *count_ref.borrow_mut() += 1;
+    });
+
+    // Click before disconnect
+    platform.emit_signal(&button, "clicked");
+    assert_eq!(*count.borrow(), 1);
+
+    // Disconnect
+    platform.disconnect(handler_id);
+
+    // Click after disconnect - should not increment
+    platform.emit_signal(&button, "clicked");
+    assert_eq!(*count.borrow(), 1);
+}
+
+#[test]
+rite test_disconnect_specific_handler_only() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ count1 = Rc::new(RefCell::new(0));
+    ≔ count2 = Rc::new(RefCell::new(0));
+    ≔ count1_ref = Rc::clone(&count1);
+    ≔ count2_ref = Rc::clone(&count2);
+
+    ≔ handler1 = platform.connect(&button, "clicked", move || {
+        *count1_ref.borrow_mut() += 1;
+    });
+    ≔ handler2 = platform.connect(&button, "clicked", move || {
+        *count2_ref.borrow_mut() += 1;
+    });
+
+    // Disconnect only handler1
+    platform.disconnect(handler1);
+
+    // Click - only handler2 should fire
+    platform.emit_signal(&button, "clicked");
+
+    assert_eq!(*count1.borrow(), 0);
+    assert_eq!(*count2.borrow(), 1);
+}
+
+#[test]
+rite test_disconnect_nonexistent_handler_is_noop() {
+    vary platform = create_test_platform();
+
+    // Should not panic
+    platform.disconnect(99999);
+
+    // Platform should still work
+    ≔ button = platform.create_button("Test");
+    assert!(button.handle != 0);
+}
+
+// =============================================================================
+// Widget Cleanup Tests
+// =============================================================================
+
+#[test]
+rite test_handlers_cleaned_on_widget_destroy() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    ≔ handler_id = platform.connect(&button, "clicked", move || {
+        *count_ref.borrow_mut() += 1;
+    });
+
+    // Destroy widget
+    platform.destroy_widget(&button);
+
+    // Handler should be removed
+    assert!(!platform.has_handler(handler_id));
+}
+
+#[test]
+rite test_handlers_cleaned_on_remove_from_parent() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Vertical);
+    ≔ button = platform.create_button("Test");
+
+    platform.append(&container, &button);
+
+    ≔ count = Rc::new(RefCell::new(0));
+    ≔ count_ref = Rc::clone(&count);
+
+    ≔ handler_id = platform.connect(&button, "clicked", move || {
+        *count_ref.borrow_mut() += 1;
+    });
+
+    // Remove from parent
+    platform.remove(&container, &button);
+
+    // Emit signal - handler should not fire (widget detached)
+    platform.emit_signal(&button, "clicked");
+    assert_eq!(*count.borrow(), 0);
+}
+
+// =============================================================================
+// Signal Types Tests
+// =============================================================================
+
+#[test]
+rite test_button_clicked_signal() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Click Test");
+
+    ≔ clicked = Rc::new(RefCell::new(⊥));
+    ≔ clicked_ref = Rc::clone(&clicked);
+
+    platform.connect(&button, "clicked", move || {
+        *clicked_ref.borrow_mut() = ⊤;
+    });
+
+    platform.emit_signal(&button, "clicked");
+    assert!(*clicked.borrow());
+}
+
+#[test]
+rite test_text_changed_signal() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("initial");
+
+    ≔ changed = Rc::new(RefCell::new(⊥));
+    ≔ changed_ref = Rc::clone(&changed);
+
+    platform.connect(&entry, "changed", move || {
+        *changed_ref.borrow_mut() = ⊤;
+    });
+
+    platform.set_text(&entry, "new value");
+    platform.emit_signal(&entry, "changed");
+
+    assert!(*changed.borrow());
+}
+
+#[test]
+rite test_focus_signals() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    ≔ focus_in = Rc::new(RefCell::new(⊥));
+    ≔ focus_out = Rc::new(RefCell::new(⊥));
+    ≔ focus_in_ref = Rc::clone(&focus_in);
+    ≔ focus_out_ref = Rc::clone(&focus_out);
+
+    platform.connect(&entry, "focus-in", move || {
+        *focus_in_ref.borrow_mut() = ⊤;
+    });
+    platform.connect(&entry, "focus-out", move || {
+        *focus_out_ref.borrow_mut() = ⊤;
+    });
+
+    platform.emit_signal(&entry, "focus-in");
+    assert!(*focus_in.borrow());
+    assert!(!*focus_out.borrow());
+
+    platform.emit_signal(&entry, "focus-out");
+    assert!(*focus_out.borrow());
+}
+
+// =============================================================================
+// Handler Ordering Tests
+// =============================================================================
+
+#[test]
+rite test_handlers_invoked_in_registration_order() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Order Test");
+
+    ≔ order = Rc::new(RefCell::new(Vec::new()));
+    ≔ order1 = Rc::clone(&order);
+    ≔ order2 = Rc::clone(&order);
+    ≔ order3 = Rc::clone(&order);
+
+    platform.connect(&button, "clicked", move || {
+        order1.borrow_mut().push(1);
+    });
+    platform.connect(&button, "clicked", move || {
+        order2.borrow_mut().push(2);
+    });
+    platform.connect(&button, "clicked", move || {
+        order3.borrow_mut().push(3);
+    });
+
+    platform.emit_signal(&button, "clicked");
+
+    assert_eq!(*order.borrow(), vec![1, 2, 3]);
+}
+
+// =============================================================================
+// Mock Platform Specific Helpers
+// =============================================================================
+
+#[test]
+rite test_emit_signal_without_handler_is_noop() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("No Handler");
+
+    // Should not panic
+    platform.emit_signal(&button, "clicked");
+}
+
+#[test]
+rite test_get_signal_history() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("History Test");
+
+    platform.connect(&button, "clicked", || {});
+
+    platform.emit_signal(&button, "clicked");
+    platform.emit_signal(&button, "clicked");
+
+    ≔ history = platform.signal_history(&button);
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0], "clicked");
+    assert_eq!(history[1], "clicked");
+}
+
+#[test]
+rite test_clear_signal_history() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Clear Test");
+
+    platform.emit_signal(&button, "clicked");
+    platform.clear_signal_history(&button);
+
+    ≔ history = platform.signal_history(&button);
+    assert_eq!(history.len(), 0);
+}
+
+// =============================================================================
+// Closure Capture Tests
+// =============================================================================
+
+#[test]
+rite test_closure_captures_external_state() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Capture Test");
+
+    ≔ external_value = 42;
+    ≔ captured = Rc::new(RefCell::new(0));
+    ≔ captured_ref = Rc::clone(&captured);
+
+    platform.connect(&button, "clicked", move || {
+        *captured_ref.borrow_mut() = external_value;
+    });
+
+    platform.emit_signal(&button, "clicked");
+
+    assert_eq!(*captured.borrow(), 42);
+}
+
+#[test]
+rite test_closure_outlives_original_scope() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Scope Test");
+    ≔ result = Rc::new(RefCell::new(0));
+    ≔ result_ref = Rc::clone(&result);
+
+    {
+        // Create handler in inner scope
+        ≔ scoped_value = 100;
+        platform.connect(&button, "clicked", move || {
+            *result_ref.borrow_mut() = scoped_value;
+        });
+        // scoped_value goes out of scope here
+    }
+
+    // Handler should still work
+    platform.emit_signal(&button, "clicked");
+    assert_eq!(*result.borrow(), 100);
+}
+
+// =============================================================================
+// Error Handling Tests
+// =============================================================================
+
+#[test]
+rite test_handler_panic_does_not_crash_platform() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Panic Test");
+
+    ≔ post_panic_count = Rc::new(RefCell::new(0));
+    ≔ post_panic_ref = Rc::clone(&post_panic_count);
+
+    // First handler panics
+    platform.connect(&button, "clicked", || {
+        panic!("Test panic in handler");
+    });
+
+    // Second handler should still run (with panic recovery)
+    platform.connect(&button, "clicked", move || {
+        *post_panic_ref.borrow_mut() += 1;
+    });
+
+    // Platform should recover from panic
+    ≔ result = std::panic::catch_unwind(|| {
+        platform.emit_signal(&button, "clicked");
+    });
+
+    // Test that platform is still functional
+    ≔ button2 = platform.create_button("Still works");
+    assert!(button2.handle != 0);
+}

@@ -1,0 +1,174 @@
+// Qliphoth Component: Badge
+// Status indicator, count, or label display
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Badge component properties
+struct Badge {
+    label: Option<String>,
+    variant: String,        // neutral, primary, success, warning, danger, info
+    size: String,           // sm, md, lg
+    appearance: String,     // filled, outline, subtle, ghost
+    icon: Option<String>,
+    icon_position: String,  // left, right
+    count: Option<i32>,
+    max: Option<i32>,
+    hide_zero: Bool,
+    dot: Bool,
+    pill: Bool,
+    dismissible: Bool,
+    aria_label: Option<String>,
+    ondismiss: Option<Fn()>,
+    role: Option<String>,
+}
+
+impl Badge {
+    rite new() -> Badge {
+        Badge {
+            label: None,
+            variant: "neutral",
+            size: "md",
+            appearance: "filled",
+            icon: None,
+            icon_position: "left",
+            count: None,
+            max: Some(99),
+            hide_zero: nay,
+            dot: nay,
+            pill: nay,
+            dismissible: nay,
+            aria_label: None,
+            ondismiss: None,
+            role: None,
+        }
+    }
+}
+
+impl Component for Badge {
+    rite render(self) -> VNode {
+        ≔ node = h("span")
+            .class("badge")
+            .class("badge-" + self.variant)
+            .class("badge-" + self.size)
+            .class("badge-" + self.appearance);
+
+        // Dot variant
+        ⌥ self.dot {
+            yay => {
+                node = node
+                    .class("badge-dot")
+                    .class("badge-circular");
+                ↩ node.build()
+            },
+            nay => {}
+        }
+
+        // Pill shape
+        ⌥ self.pill {
+            yay => { node = node.class("badge-pill"); },
+            nay => {}
+        }
+
+        // Count display
+        ⌥ self.count {
+            Some(count_val) => {
+                // Hide zero check
+                ⌥ count_val == 0 ∧ self.hide_zero {
+                    yay => {
+                        node = node.attr("hidden", "true");
+                    },
+                    nay => {}
+                }
+
+                // Check if exceeds max
+                ≔ display_count = ⌥ self.max {
+                    Some(max_val) => {
+                        ⌥ count_val > max_val {
+                            yay => max_val.to_string() + "+",
+                            nay => count_val.to_string(),
+                        }
+                    },
+                    None => count_val.to_string(),
+                };
+
+                node = node.text(display_count);
+            },
+            None => {}
+        }
+
+        // Icon (left position)
+        ⌥ self.icon {
+            Some(icon_name) => {
+                ⌥ self.icon_position == "left" ∨ self.label.is_none() {
+                    yay => {
+                        node = node.child(
+                            h("span")
+                                .class("badge-icon")
+                                .attr("data-icon", icon_name)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Label text
+        ⌥ self.label {
+            Some(text) => {
+                node = node.text(text);
+            },
+            None => {}
+        }
+
+        // Icon (right position)
+        ⌥ self.icon {
+            Some(icon_name) => {
+                ⌥ self.icon_position == "right" ∧ self.label.is_some() {
+                    yay => {
+                        node = node.child(
+                            h("span")
+                                .class("badge-icon")
+                                .attr("data-icon", icon_name)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Dismissible
+        ⌥ self.dismissible {
+            yay => {
+                node = node.child(
+                    h("button")
+                        .class("badge-dismiss")
+                        .attr("type", "button")
+                        .attr("aria-label", "Remove")
+                        .text("×")
+                        .build()
+                );
+            },
+            nay => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { node = node.attr("aria-label", label); },
+            None => {}
+        }
+
+        // Role
+        ⌥ self.role {
+            Some(r) => { node = node.attr("role", r); },
+            None => {}
+        }
+
+        node.build()
+    }
+}

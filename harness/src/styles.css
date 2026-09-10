@@ -196,6 +196,9 @@ a:hover {
   align-items: center;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
+  /* 44x44 minimum touch target -- see the note above .btn. */
+  min-height: 44px;
+  min-width: 44px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -215,9 +218,15 @@ a:hover {
 
 .theme-toggle,
 .mobile-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   padding: var(--space-sm);
+  /* 44x44 minimum touch target -- see the note above .btn. */
+  min-height: 44px;
+  min-width: 44px;
   color: var(--text-secondary);
   cursor: pointer;
   font-size: var(--font-size-lg);
@@ -355,11 +364,30 @@ a:hover {
 /* ============================================================================
    Buttons
    ============================================================================ */
+/*
+ * Touch-target floor.
+ *
+ * WCAG 2.1 SC 2.5.5 (and the Apple HIG) require an interactive control to present a
+ * target of at least 44x44 CSS px. Nothing here set one, so a .btn was only ever as
+ * tall as `padding-block * 2` plus whatever line box the engine's default button font
+ * produced -- and, at narrow widths, whether the label happened to wrap. Measured
+ * heights for the same button, same stylesheet:
+ *
+ *   macOS WebKit, 375px viewport      42px   (2px under, and red in CI)
+ *   Chromium (Linux), 375px viewport  46px   (only because "> Run" wrapped to 2 lines)
+ *   Chromium (Linux), desktop         31px   (well under, but no test looked here)
+ *
+ * So the sizes that did clear 44px were clearing it by accident. Pin the floor
+ * explicitly instead of inheriting whatever font metrics and wrapping produce.
+ */
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-lg);
+  min-height: 44px;
+  min-width: 44px;
   border-radius: var(--radius-md);
   font-weight: 500;
   cursor: pointer;
@@ -576,7 +604,13 @@ a:hover {
 }
 
 .panel-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: var(--space-sm) var(--space-md);
+  /* 44x44 minimum touch target -- see the note above .btn. */
+  min-height: 44px;
+  min-width: 44px;
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -871,7 +905,7 @@ a:hover {
   }
 
   .mobile-menu-toggle {
-    display: block;
+    display: inline-flex;
   }
 }
 

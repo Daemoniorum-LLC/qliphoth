@@ -35,7 +35,8 @@ type ClosureInner[F] = Σ {
 
     /// Forget the closure (leak memory to prevent drop)
     ☉ rite forget(self: Self!) {
-        std·mem·forget(self);
+        // was `std·mem·forget(self)` — Rust's std. Sigil has no equivalent,
+        // and nothing here owns the closure to leak in the first place.
     }
 }
 
@@ -155,7 +156,12 @@ extern "js" {
 
 /// Convert Promise to Future
 ⊢ Promise {
-    ☉ rite into_future(self: Self!) -> ⊢ std·future·Future[Output = Result[JsValue, JsValue]]! {
-        wasm_bindgen_futures·JsFuture·from(self)
+    /// UNIMPLEMENTED: was `wasm_bindgen_futures·JsFuture·from(self)`, a Rust
+    /// crate. Sigil's own await is `async_await_promise`, which takes the host
+    /// promise handle directly — this wrapper has nothing left to do, and
+    /// returning the promise unchanged is a placeholder, not a conversion.
+    ☉ rite into_future(self: Self!) -> Any! {
+        console_error("qliphoth-sys: Promise·into_future() is unimplemented — see closure.sigil");
+        self
     }
 }

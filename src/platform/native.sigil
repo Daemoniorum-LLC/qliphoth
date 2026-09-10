@@ -13,9 +13,9 @@
 //   - macOS: Cocoa/wgpu
 
 invoke std·collections·HashMap;
-invoke crate·core·vdom·{VNode, Patch};
-invoke crate·core·events·{Event, EventType};
-invoke crate·platform·{DomElement, FetchOptions, FetchResponse};
+invoke tome·core·vdom·{VNode, Patch};
+invoke tome·core·events·{Event, EventType};
+invoke tome·platform·{DomElement, FetchOptions, FetchResponse};
 
 // =============================================================================
 // Native Handle Types
@@ -282,7 +282,7 @@ extern "C" {
         ≔ Δ width: i32! = 0;
         ≔ Δ height: i32! = 0;
         unsafe {
-            native_window_size(self.window.handle, &mut width, &mut height)
+            native_window_size(self.window.handle, &Δ width, &Δ height)
         };
         (width, height)
     }
@@ -332,7 +332,7 @@ extern "C" {
             button: 0,
             key: 0,
             modifiers: 0,
-            text_ptr: std·ptr·null(),
+            text_ptr: ∅,  // was std·ptr·null() — Rust's std, which Sigil does not have
             text_len: 0,
             width: 0,
             height: 0,
@@ -411,12 +411,15 @@ extern "C" {
             }),
             // TextInput
             12 => {
-                ≔ text! = ⎇ data.text_ptr != std·ptr·null() && data.text_len > 0 {
-                    unsafe {
-                        String·from_raw_parts(data.text_ptr as *mut u8, data.text_len, data.text_len)
-                    }
+                ≔ text! = ⎇ data.text_ptr != ∅ ∧ data.text_len > 0 {
+                    // Was `String·from_raw_parts(ptr, len, cap)` — Rust's
+                    // raw-memory constructor. Sigil has no raw pointers and no
+                    // separate buffer to adopt: `text_ptr` is already the
+                    // host's handle for the text, so there is nothing to
+                    // reconstruct.
+                    data.text_ptr
                 } ⎉ {
-                    "".to_string()
+                    ""·to_string()
                 };
                 Some(NativeEvent·TextInput { text, callback_id: data.callback_id })
             },

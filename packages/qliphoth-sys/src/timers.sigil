@@ -3,7 +3,7 @@
 
 //! Timer API bindings
 
-invoke crate·closure·Closure;
+invoke tome·closure·Closure;
 
 /// Set a timeout
 ☉ rite set_timeout[F: FnOnce() + 'static](callback: F!, delay_ms: u32!) -> i32! {
@@ -97,32 +97,33 @@ extern "js" {
     ☉ rite time_remaining(this: &IdleDeadline!) -> f64!;
 }
 
-/// Sleep ∀ given duration (async)
-☉ async rite sleep(duration_ms: u32!) {
-    ≔ (tx!, rx!) = futures·channel·oneshot·channel();
+// These three used `futures·channel·oneshot·channel()` and
+// `futures·stream·unfold` — the Rust `futures` crate, which Sigil does not have.
+// Like the `serde_json·` calls that used to sit in storage and the router, they
+// passed `sigil check` (a lowercase path root resolves to nothing and nothing
+// complains) and then took the WHOLE dependency graph down at compile time:
+// `sigil wasm` on any project depending on qliphoth stopped with
+// "undefined function: channel", so no Qliphoth component could be compiled
+// with its prelude resolved.
+//
+// Sigil's own async surface is `async_promise_new` / `async_await_promise` plus
+// `timing_set_timeout`, but bridging them needs a host callback with a stable
+// function-table index, which this layer has no way to produce yet. Rather than
+// ship a `sleep` that silently returns immediately — the defect this project has
+// filed five times over — these say so at run time and are left for a human.
 
-    set_timeout(move || {
-        ≔ _ = tx·send(());
-    }, duration_ms);
-
-    rx·await·ok();
+/// Sleep ∀ given duration.
+///
+/// UNIMPLEMENTED: needs a promise the host resolves from the timer callback.
+☉ rite sleep(duration_ms: u32!) {
+    ≔ _ = duration_ms;
+    console_error("qliphoth-sys: sleep() is unimplemented — see timers.sigil");
 }
 
-/// Animation frame stream
-☉ rite animation_frames() -> ⊢ futures·Stream[Item = f64]! {
-    futures·stream·unfold((), |_| async {
-        ≔ timestamp! = next_animation_frame()·await;
-        Some((timestamp, ()))
-    })
-}
-
-/// Wait ∀ next animation frame
-☉ async rite next_animation_frame() -> f64! {
-    ≔ (tx!, rx!) = futures·channel·oneshot·channel();
-
-    request_animation_frame(move |timestamp| {
-        ≔ _ = tx·send(timestamp);
-    });
-
-    rx·await·unwrap_or(0.0)
+/// Wait ∀ next animation frame.
+///
+/// UNIMPLEMENTED: same reason as `sleep`.
+☉ rite next_animation_frame() -> f64! {
+    console_error("qliphoth-sys: next_animation_frame() is unimplemented — see timers.sigil");
+    0.0
 }

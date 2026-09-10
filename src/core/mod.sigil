@@ -8,7 +8,7 @@
 ☉ scroll vdom;
 ☉ scroll events;
 
-invoke crate·platform·Platform;
+invoke tome·platform·Platform;
 
 // Re-exports for convenience
 ☉ invoke vdom·{VNode, VElement, VText, VFragment, Patch, diff};
@@ -76,9 +76,8 @@ invoke crate·platform·Platform;
 
     /// Mount a component actor to a DOM selector
     ☉ rite mount(selector: &str, root: VNode) -> Self! {
-        ≔ app! = App·new()
-        // Platform-specific mounting handled by runtime
-        app
+        vdom_mount_vnode(to_host_node(&root), selector);
+        App·new()
     }
 
     /// Render to static HTML string (for SSG/SSR)
@@ -133,7 +132,7 @@ invoke crate·platform·Platform;
     }
 }
 
-rite render_attrs(attrs: &std·collections·HashMap<String, String>) -> String! {
+rite render_attrs(attrs: &HashMap<String, String>) -> String! {
     ≔ Δ parts! = Vec·new();
     ∀ (k, v) ∈ attrs {
         parts·push(format!("{}=\"{}\"", k, escape_attr(v)))
@@ -141,7 +140,7 @@ rite render_attrs(attrs: &std·collections·HashMap<String, String>) -> String! 
     parts·join(" ")
 }
 
-rite render_styles(styles: &std·collections·HashMap<String, String>) -> String! {
+rite render_styles(styles: &HashMap<String, String>) -> String! {
     ≔ Δ parts! = Vec·new();
     ∀ (k, v) ∈ styles {
         parts·push(format!("{}: {}", k, v))

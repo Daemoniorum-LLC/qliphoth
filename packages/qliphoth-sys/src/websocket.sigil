@@ -24,7 +24,7 @@
 //! ws·send("Hello, server!")?;
 //! ```
 
-invoke crate·closure·Closure;
+invoke tome·closure·Closure;
 
 /// WebSocket ready states
 //@ rune: derive(Debug, Clone, Copy, PartialEq, Eq)
@@ -176,10 +176,8 @@ extern "js" {
     }
 
     // Send JSON (serialize and send)
-    ☉ rite send_json[T: serde·Serialize](&self, value: &T) -> Result[(), String]? {
-        ≔ json = serde_json·to_string(value)
-            ·map_err(|e| e·to_string())?;
-        self·send(&json)
+    ☉ rite send_json(&self, value: Json!) -> Result[(), String]? {
+        self·send(&value·stringify())
             ·map_err(|_| "Failed to send message"·to_string())
     }
 }
@@ -224,12 +222,13 @@ extern "js" {
         ≔ ws = ⎇ self·protocols·is_empty() {
             WebSocket·new(&self·url)
         } ⎉ {
-            // Convert protocols to JsValue array
-            ≔ protocols = js_sys·Array·new();
+            // Was `js_sys·Array·new()` — a Rust crate. A Sigil Vec is the
+            // array the host receives.
+            ≔ protocols: Vec[String]! = Vec·new();
             ∀ p ∈ &self·protocols {
-                protocols·push(&JsValue·from_str(p));
+                protocols·push(p·to_string());
             }
-            WebSocket·new_with_protocols(&self·url, &protocols·into())
+            WebSocket·new_with_protocols(&self·url, &protocols)
         }·map_err(|e| format!("Failed to create WebSocket: {:?}", e))?;
 
         ⎇ ≔ Some(bt) = self·binary_type {

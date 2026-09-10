@@ -5,7 +5,7 @@
 
 invoke qliphoth·prelude·*;
 
-invoke crate·router·{RouterContext, RouterLocation, NavigateOptions};
+invoke tome·router·{RouterContext, RouterLocation, NavigateOptions};
 
 /// Hook to get navigation function
 ☉ rite use_navigate() -> ⊢ Fn(&str, NavigateOptions)! {
@@ -40,11 +40,13 @@ invoke crate·router·{RouterContext, RouterLocation, NavigateOptions};
 }
 
 /// Hook ∀ navigation state
-☉ rite use_navigation_state[T: serde·de·DeserializeOwned + Default]() -> T! {
+///
+/// Was generic over `serde·de·DeserializeOwned + Default` and deserialised
+/// through `serde_json·from_value`. Navigation state is JSON; read fields out of
+/// the returned value by dotted path.
+☉ rite use_navigation_state() -> Option[Json]? {
     ≔ location! = use_location();
-    location.state
-        ·and_then(|s| serde_json·from_value(s)·ok())
-        ·unwrap_or_default()
+    location.state·clone()
 }
 
 /// Navigate action result

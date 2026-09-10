@@ -1,0 +1,602 @@
+// Input and Form Contract Tests
+// TDD Phase 8: Define expected behavior for form inputs
+//
+// These tests define the contract ALL platform input implementations must satisfy.
+// Essential for user data entry, validation, and form submission.
+
+use crate::platform::MockPlatform;
+use crate::platform::native::{NativeWidget, WidgetType, Orientation};
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Entry Widget Tests
+// =============================================================================
+
+#[test]
+rite test_entry_creation() {
+    ≔ platform = create_test_platform();
+
+    ≔ entry = platform.create_entry();
+
+    assert!(entry.handle != 0);
+    assert_eq!(entry.widget_type, WidgetType::Entry);
+}
+
+#[test]
+rite test_entry_with_initial_text() {
+    ≔ platform = create_test_platform();
+
+    ≔ entry = platform.create_entry_with_text("Initial value");
+
+    assert_eq!(platform.get_text(&entry), "Initial value");
+}
+
+#[test]
+rite test_entry_set_and_get_text() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_text(&entry, "User input");
+
+    assert_eq!(platform.get_text(&entry), "User input");
+}
+
+#[test]
+rite test_entry_placeholder_text() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_placeholder(&entry, "Enter your name...");
+
+    assert_eq!(platform.get_placeholder(&entry), Some("Enter your name...".to_string()));
+}
+
+#[test]
+rite test_entry_clear_placeholder() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_placeholder(&entry, "Placeholder");
+    platform.set_placeholder(&entry, "");
+
+    assert_eq!(platform.get_placeholder(&entry), None);
+}
+
+#[test]
+rite test_entry_max_length() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_max_length(&entry, 10);
+
+    assert_eq!(platform.get_max_length(&entry), Some(10));
+}
+
+#[test]
+rite test_entry_password_mode() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    assert!(!platform.is_password_entry(&entry));
+
+    platform.set_password_mode(&entry, ⊤);
+
+    assert!(platform.is_password_entry(&entry));
+}
+
+#[test]
+rite test_entry_readonly() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    assert!(!platform.is_readonly(&entry));
+
+    platform.set_readonly(&entry, ⊤);
+
+    assert!(platform.is_readonly(&entry));
+}
+
+// =============================================================================
+// Entry Signal Tests
+// =============================================================================
+
+#[test]
+rite test_entry_changed_signal() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+    ≔ changed_count = std::cell::Cell::new(0);
+
+    platform.connect(&entry, "changed", || {
+        changed_count.set(changed_count.get() + 1);
+    });
+
+    platform.set_text(&entry, "New value");
+    platform.emit_signal(&entry, "changed");
+
+    assert_eq!(changed_count.get(), 1);
+}
+
+#[test]
+rite test_entry_activate_signal() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+    ≔ activated = std::cell::Cell::new(⊥);
+
+    platform.connect(&entry, "activate", || {
+        activated.set(⊤);
+    });
+
+    // Simulate pressing Enter
+    platform.emit_signal(&entry, "activate");
+
+    assert!(activated.get());
+}
+
+// =============================================================================
+// Text Selection Tests
+// =============================================================================
+
+#[test]
+rite test_entry_select_all() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("Hello World");
+
+    platform.select_all(&entry);
+
+    ≔ (start, end) = platform.get_selection_bounds(&entry);
+    assert_eq!(start, 0);
+    assert_eq!(end, 11);
+}
+
+#[test]
+rite test_entry_select_range() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("Hello World");
+
+    platform.select_range(&entry, 0, 5);
+
+    ≔ (start, end) = platform.get_selection_bounds(&entry);
+    assert_eq!(start, 0);
+    assert_eq!(end, 5);
+}
+
+#[test]
+rite test_entry_get_selected_text() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("Hello World");
+
+    platform.select_range(&entry, 0, 5);
+
+    assert_eq!(platform.get_selected_text(&entry), "Hello");
+}
+
+#[test]
+rite test_entry_cursor_position() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("Hello World");
+
+    platform.set_cursor_position(&entry, 5);
+
+    assert_eq!(platform.get_cursor_position(&entry), 5);
+}
+
+// =============================================================================
+// TextView (Multi-line) Tests
+// =============================================================================
+
+#[test]
+rite test_text_view_creation() {
+    ≔ platform = create_test_platform();
+
+    ≔ text_view = platform.create_text_view();
+
+    assert!(text_view.handle != 0);
+    assert_eq!(text_view.widget_type, WidgetType::TextView);
+}
+
+#[test]
+rite test_text_view_multiline_text() {
+    vary platform = create_test_platform();
+    ≔ text_view = platform.create_text_view();
+    ≔ multiline = "Line 1\nLine 2\nLine 3";
+
+    platform.set_text_view_content(&text_view, multiline);
+
+    assert_eq!(platform.get_text_view_content(&text_view), multiline);
+}
+
+#[test]
+rite test_text_view_word_wrap() {
+    vary platform = create_test_platform();
+    ≔ text_view = platform.create_text_view();
+
+    platform.set_word_wrap(&text_view, ⊤);
+
+    assert!(platform.get_word_wrap(&text_view));
+}
+
+#[test]
+rite test_text_view_line_count() {
+    vary platform = create_test_platform();
+    ≔ text_view = platform.create_text_view();
+
+    platform.set_text_view_content(&text_view, "Line 1\nLine 2\nLine 3");
+
+    assert_eq!(platform.get_line_count(&text_view), 3);
+}
+
+// =============================================================================
+// CheckButton Tests
+// =============================================================================
+
+#[test]
+rite test_check_button_creation() {
+    ≔ platform = create_test_platform();
+
+    ≔ check = platform.create_check_button("Accept terms");
+
+    assert!(check.handle != 0);
+    assert_eq!(check.widget_type, WidgetType::CheckButton);
+}
+
+#[test]
+rite test_check_button_toggle() {
+    vary platform = create_test_platform();
+    ≔ check = platform.create_check_button("Option");
+
+    assert!(!platform.is_checked(&check));
+
+    platform.set_checked(&check, ⊤);
+
+    assert!(platform.is_checked(&check));
+}
+
+#[test]
+rite test_check_button_toggled_signal() {
+    vary platform = create_test_platform();
+    ≔ check = platform.create_check_button("Option");
+    ≔ toggled_count = std::cell::Cell::new(0);
+
+    platform.connect(&check, "toggled", || {
+        toggled_count.set(toggled_count.get() + 1);
+    });
+
+    platform.set_checked(&check, ⊤);
+    platform.emit_signal(&check, "toggled");
+
+    assert_eq!(toggled_count.get(), 1);
+}
+
+// =============================================================================
+// Switch Tests
+// =============================================================================
+
+#[test]
+rite test_switch_creation() {
+    ≔ platform = create_test_platform();
+
+    ≔ switch = platform.create_switch();
+
+    assert!(switch.handle != 0);
+    assert_eq!(switch.widget_type, WidgetType::Switch);
+}
+
+#[test]
+rite test_switch_toggle() {
+    vary platform = create_test_platform();
+    ≔ switch = platform.create_switch();
+
+    assert!(!platform.is_switch_active(&switch));
+
+    platform.set_switch_active(&switch, ⊤);
+
+    assert!(platform.is_switch_active(&switch));
+}
+
+#[test]
+rite test_switch_state_set_signal() {
+    vary platform = create_test_platform();
+    ≔ switch = platform.create_switch();
+    ≔ state_changed = std::cell::Cell::new(⊥);
+
+    platform.connect(&switch, "state-set", || {
+        state_changed.set(⊤);
+    });
+
+    platform.set_switch_active(&switch, ⊤);
+    platform.emit_signal(&switch, "state-set");
+
+    assert!(state_changed.get());
+}
+
+// =============================================================================
+// Scale (Slider) Tests
+// =============================================================================
+
+#[test]
+rite test_scale_creation() {
+    ≔ platform = create_test_platform();
+
+    ≔ scale = platform.create_scale(Orientation::Horizontal, 0.0, 100.0);
+
+    assert!(scale.handle != 0);
+    assert_eq!(scale.widget_type, WidgetType::Scale);
+}
+
+#[test]
+rite test_scale_value() {
+    vary platform = create_test_platform();
+    ≔ scale = platform.create_scale(Orientation::Horizontal, 0.0, 100.0);
+
+    platform.set_scale_value(&scale, 50.0);
+
+    assert_eq!(platform.get_scale_value(&scale), 50.0);
+}
+
+#[test]
+rite test_scale_range() {
+    vary platform = create_test_platform();
+    ≔ scale = platform.create_scale(Orientation::Horizontal, 0.0, 100.0);
+
+    ≔ (min, max) = platform.get_scale_range(&scale);
+
+    assert_eq!(min, 0.0);
+    assert_eq!(max, 100.0);
+}
+
+#[test]
+rite test_scale_step() {
+    vary platform = create_test_platform();
+    ≔ scale = platform.create_scale(Orientation::Horizontal, 0.0, 100.0);
+
+    platform.set_scale_step(&scale, 5.0);
+
+    assert_eq!(platform.get_scale_step(&scale), 5.0);
+}
+
+#[test]
+rite test_scale_value_changed_signal() {
+    vary platform = create_test_platform();
+    ≔ scale = platform.create_scale(Orientation::Horizontal, 0.0, 100.0);
+    ≔ changed = std::cell::Cell::new(⊥);
+
+    platform.connect(&scale, "value-changed", || {
+        changed.set(⊤);
+    });
+
+    platform.set_scale_value(&scale, 75.0);
+    platform.emit_signal(&scale, "value-changed");
+
+    assert!(changed.get());
+}
+
+// =============================================================================
+// ProgressBar Tests
+// =============================================================================
+
+#[test]
+rite test_progress_bar_creation() {
+    ≔ platform = create_test_platform();
+
+    ≔ progress = platform.create_progress_bar();
+
+    assert!(progress.handle != 0);
+    assert_eq!(progress.widget_type, WidgetType::ProgressBar);
+}
+
+#[test]
+rite test_progress_bar_fraction() {
+    vary platform = create_test_platform();
+    ≔ progress = platform.create_progress_bar();
+
+    platform.set_progress_fraction(&progress, 0.5);
+
+    assert_eq!(platform.get_progress_fraction(&progress), 0.5);
+}
+
+#[test]
+rite test_progress_bar_pulse() {
+    vary platform = create_test_platform();
+    ≔ progress = platform.create_progress_bar();
+
+    // Pulse mode for indeterminate progress
+    platform.progress_pulse(&progress);
+
+    assert!(platform.is_progress_pulsing(&progress));
+}
+
+#[test]
+rite test_progress_bar_text() {
+    vary platform = create_test_platform();
+    ≔ progress = platform.create_progress_bar();
+
+    platform.set_progress_text(&progress, "Loading...");
+
+    assert_eq!(platform.get_progress_text(&progress), Some("Loading...".to_string()));
+}
+
+// =============================================================================
+// Spinner Tests
+// =============================================================================
+
+#[test]
+rite test_spinner_creation() {
+    ≔ platform = create_test_platform();
+
+    ≔ spinner = platform.create_spinner();
+
+    assert!(spinner.handle != 0);
+    assert_eq!(spinner.widget_type, WidgetType::Spinner);
+}
+
+#[test]
+rite test_spinner_start_stop() {
+    vary platform = create_test_platform();
+    ≔ spinner = platform.create_spinner();
+
+    assert!(!platform.is_spinner_spinning(&spinner));
+
+    platform.start_spinner(&spinner);
+
+    assert!(platform.is_spinner_spinning(&spinner));
+
+    platform.stop_spinner(&spinner);
+
+    assert!(!platform.is_spinner_spinning(&spinner));
+}
+
+// =============================================================================
+// Form Validation Tests
+// =============================================================================
+
+#[test]
+rite test_entry_validation_error() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_validation_error(&entry, "Email is invalid");
+
+    assert_eq!(platform.get_validation_error(&entry), Some("Email is invalid".to_string()));
+    assert!(platform.has_validation_error(&entry));
+}
+
+#[test]
+rite test_entry_clear_validation_error() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_validation_error(&entry, "Required field");
+    platform.clear_validation_error(&entry);
+
+    assert!(!platform.has_validation_error(&entry));
+}
+
+#[test]
+rite test_entry_validation_success() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_validation_success(&entry, ⊤);
+
+    assert!(platform.has_validation_success(&entry));
+}
+
+// =============================================================================
+// Input Masking Tests
+// =============================================================================
+
+#[test]
+rite test_entry_input_purpose() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_input_purpose(&entry, InputPurpose::Email);
+
+    assert_eq!(platform.get_input_purpose(&entry), InputPurpose::Email);
+}
+
+#[test]
+rite test_entry_input_hints() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_input_hints(&entry, InputHints::NO_SPELLCHECK | InputHints::LOWERCASE);
+
+    ≔ hints = platform.get_input_hints(&entry);
+    assert!(hints.contains(InputHints::NO_SPELLCHECK));
+    assert!(hints.contains(InputHints::LOWERCASE));
+}
+
+// =============================================================================
+// Clipboard Integration Tests
+// =============================================================================
+
+#[test]
+rite test_entry_copy_to_clipboard() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("Copy this");
+
+    platform.select_all(&entry);
+    platform.copy_selection(&entry);
+
+    assert_eq!(platform.get_clipboard_text(), "Copy this");
+}
+
+#[test]
+rite test_entry_paste_from_clipboard() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.set_clipboard_text("Pasted text");
+    platform.paste_to_entry(&entry);
+
+    assert_eq!(platform.get_text(&entry), "Pasted text");
+}
+
+#[test]
+rite test_entry_cut_to_clipboard() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("Cut this");
+
+    platform.select_all(&entry);
+    platform.cut_selection(&entry);
+
+    assert_eq!(platform.get_clipboard_text(), "Cut this");
+    assert_eq!(platform.get_text(&entry), "");
+}
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+#[test]
+rite test_entry_unicode_input() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+    ≔ unicode_text = "Hello 👋 世界 مرحبا 🌍";
+
+    platform.set_text(&entry, unicode_text);
+
+    assert_eq!(platform.get_text(&entry), unicode_text);
+}
+
+#[test]
+rite test_entry_empty_string() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("Initial");
+
+    platform.set_text(&entry, "");
+
+    assert_eq!(platform.get_text(&entry), "");
+}
+
+#[test]
+rite test_entry_very_long_text() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+    ≔ long_text = "a".repeat(100_000);
+
+    platform.set_text(&entry, &long_text);
+
+    assert_eq!(platform.get_text(&entry), long_text);
+}
+
+#[test]
+rite test_text_view_special_characters() {
+    vary platform = create_test_platform();
+    ≔ text_view = platform.create_text_view();
+    ≔ special = "Tab:\tNewline:\nCarriage return:\rNull:\0End";
+
+    platform.set_text_view_content(&text_view, special);
+
+    assert_eq!(platform.get_text_view_content(&text_view), special);
+}
