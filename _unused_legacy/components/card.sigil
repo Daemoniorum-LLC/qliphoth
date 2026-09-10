@@ -1,0 +1,175 @@
+// Qliphoth Component: Card
+// A versatile container with header, body, and footer sections
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Card component properties
+struct Card {
+    variant: String,        // elevated, outlined, filled
+    padding: String,        // none, sm, md, lg
+    clickable: Bool,
+    as_element: String,     // div, article, section
+    aria_label: Option<String>,
+    onclick: Option<Fn()>,
+    children: List<VNode>,
+}
+
+impl Card {
+    rite new() -> Card {
+        Card {
+            variant: "elevated",
+            padding: "md",
+            clickable: nay,
+            as_element: "div",
+            aria_label: None,
+            onclick: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for Card {
+    rite render(self) -> VNode {
+        ≔ node = h(self.as_element)
+            .class("card")
+            .class("card-" + self.variant)
+            .class("card-p-" + self.padding);
+
+        // Clickable card
+        ⌥ self.clickable {
+            yay => {
+                node = node
+                    .class("card-clickable")
+                    .class("cursor-pointer")
+                    .attr("role", "button")
+                    .attr("tabindex", "0");
+            },
+            nay => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => {
+                node = node.attr("aria-label", label);
+            },
+            None => {}
+        }
+
+        // Children
+        node = node.children(self.children);
+
+        node.build()
+    }
+}
+
+/// CardHeader component
+struct CardHeader {
+    title: Option<String>,
+    subtitle: Option<String>,
+    image: Option<String>,
+    image_alt: Option<String>,
+    children: List<VNode>,
+}
+
+impl CardHeader {
+    rite new() -> CardHeader {
+        CardHeader {
+            title: None,
+            subtitle: None,
+            image: None,
+            image_alt: None,
+            children: List·new(),
+        }
+    }
+}
+
+impl Component for CardHeader {
+    rite render(self) -> VNode {
+        ≔ node = h("div").class("card-header");
+
+        // Image
+        ⌥ self.image {
+            Some(src) => {
+                ≔ img = h("img")
+                    .attr("src", src)
+                    .attr("alt", self.image_alt.unwrap_or(""))
+                    .build();
+                node = node.child(img);
+            },
+            None => {}
+        }
+
+        // Title
+        ⌥ self.title {
+            Some(title_text) => {
+                node = node.child(
+                    h("h3")
+                        .class("card-title")
+                        .text(title_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Subtitle
+        ⌥ self.subtitle {
+            Some(subtitle_text) => {
+                node = node.child(
+                    h("p")
+                        .class("card-subtitle")
+                        .text(subtitle_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Additional children
+        node = node.children(self.children);
+
+        node.build()
+    }
+}
+
+/// CardBody component
+struct CardBody {
+    children: List<VNode>,
+}
+
+impl CardBody {
+    rite new() -> CardBody {
+        CardBody { children: List·new() }
+    }
+}
+
+impl Component for CardBody {
+    rite render(self) -> VNode {
+        h("div")
+            .class("card-body")
+            .children(self.children)
+            .build()
+    }
+}
+
+/// CardFooter component
+struct CardFooter {
+    children: List<VNode>,
+}
+
+impl CardFooter {
+    rite new() -> CardFooter {
+        CardFooter { children: List·new() }
+    }
+}
+
+impl Component for CardFooter {
+    rite render(self) -> VNode {
+        h("div")
+            .class("card-footer")
+            .children(self.children)
+            .build()
+    }
+}

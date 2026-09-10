@@ -1,0 +1,253 @@
+// Qliphoth Component: Avatar
+// User profile images with fallback initials
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Avatar component
+struct Avatar {
+    src: Option<String>,
+    alt: Option<String>,
+    name: Option<String>,
+    icon: Option<String>,
+    size: String,              // xs, sm, md, lg, xl, or number
+    custom_size: Option<i32>,
+    shape: String,             // circle, square, rounded
+    status: Option<String>,    // online, offline, away, busy
+    status_position: String,   // bottom-right, top-right, bottom-left
+    badge: Option<i32>,
+    color: String,             // auto, blue, green, etc.
+    loading: Bool,
+    onerror: Option<Fn()>,
+}
+
+impl Avatar {
+    rite new() -> Avatar {
+        Avatar {
+            src: None,
+            alt: None,
+            name: None,
+            icon: None,
+            size: "md",
+            custom_size: None,
+            shape: "circle",
+            status: None,
+            status_position: "bottom-right",
+            badge: None,
+            color: "auto",
+            loading: nay,
+            onerror: None,
+        }
+    }
+
+    rite get_initials(name: String) -> String {
+        ≔ parts = name.split(" ");
+        ⌥ parts.len() >= 2 {
+            yay => {
+                ≔ first = parts[0].chars().next().unwrap_or('?');
+                ≔ last = parts[parts.len() - 1].chars().next().unwrap_or('?');
+                first.to_string().to_uppercase() + last.to_string().to_uppercase()
+            },
+            nay => {
+                ⌥ parts.len() == 1 ∧ parts[0].len() > 0 {
+                    yay => parts[0].chars().next().unwrap_or('?').to_string().to_uppercase(),
+                    nay => "?",
+                }
+            }
+        }
+    }
+}
+
+impl Component for Avatar {
+    rite render(self) -> VNode {
+        ≔ node = h("div")
+            .class("avatar")
+            .class("avatar-" + self.shape);
+
+        // Size classes or custom dimensions
+        ⌥ self.custom_size {
+            Some(px) => {
+                node = node.attr("style", "width: " + px.to_string() + "px; height: " + px.to_string() + "px;");
+            },
+            None => {
+                node = node.class("avatar-" + self.size);
+            }
+        }
+
+        // Color for initials
+        ⌥ self.color == "auto" {
+            yay => { node = node.class("avatar-color-auto"); },
+            nay => { node = node.class("avatar-" + self.color); }
+        }
+
+        // Loading state
+        ⌥ self.loading {
+            yay => {
+                node = node.class("avatar-loading");
+                node = node.child(
+                    h("div").class("avatar-skeleton").build()
+                );
+                ↩ node.build();
+            },
+            nay => {}
+        }
+
+        // Content priority: src > name (initials) > icon > placeholder
+        ⌥ self.src {
+            Some(src_url) => {
+                ≔ img = h("img")
+                    .class("avatar-image")
+                    .attr("src", src_url);
+
+                ⌥ self.alt {
+                    Some(alt_text) => { img = img.attr("alt", alt_text); },
+                    None => {
+                        ⌥ self.name {
+                            Some(name) => { img = img.attr("alt", name); },
+                            None => { img = img.attr("alt", "Avatar"); }
+                        }
+                    }
+                }
+
+                // Fallback behavior
+                ⌥ self.name {
+                    Some(_) => { node = node.attr("data-fallback", "initials"); },
+                    None => {}
+                }
+
+                node = node.child(img.build());
+            },
+            None => {
+                // No src - show initials or icon
+                ⌥ self.name {
+                    Some(name) => {
+                        ≔ initials = Avatar·get_initials(name);
+                        node = node.child(
+                            h("span")
+                                .class("avatar-initials")
+                                .text(initials)
+                                .build()
+                        );
+                    },
+                    None => {
+                        ⌥ self.icon {
+                            Some(icon_name) => {
+                                node = node.child(
+                                    h("span")
+                                        .class("avatar-icon")
+                                        .text(icon_name)
+                                        .build()
+                                );
+                            },
+                            None => {
+                                // Default placeholder
+                                node = node.child(
+                                    h("span")
+                                        .class("avatar-placeholder")
+                                        .text("?")
+                                        .build()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Status indicator
+        ⌥ self.status {
+            Some(status_type) => {
+                node = node.child(
+                    h("span")
+                        .class("avatar-status")
+                        .class("avatar-status-" + status_type)
+                        .class("avatar-status-" + self.status_position)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Badge
+        ⌥ self.badge {
+            Some(count) => {
+                node = node.child(
+                    h("span")
+                        .class("avatar-badge")
+                        .text(count.to_string())
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        node.build()
+    }
+}
+
+/// AvatarGroup component for displaying multiple avatars
+struct AvatarGroup {
+    children: List<Avatar>,
+    max: Option<i32>,
+    spacing: String,           // tight, normal, loose
+    size: Option<String>,
+}
+
+impl AvatarGroup {
+    rite new() -> AvatarGroup {
+        AvatarGroup {
+            children: List·new(),
+            max: None,
+            spacing: "normal",
+            size: None,
+        }
+    }
+}
+
+impl Component for AvatarGroup {
+    rite render(self) -> VNode {
+        ≔ node = h("div")
+            .class("avatar-group")
+            .class("avatar-group-" + self.spacing);
+
+        ≔ total = self.children.len();
+        ≔ max_to_show = ⌥ self.max {
+            Some(m) => m,
+            None => total,
+        };
+
+        ≔ shown = 0;
+        ⌽ avatar ∈ self.children {
+            ⌥ shown < max_to_show {
+                yay => {
+                    node = node.child(avatar.render());
+                    shown = shown + 1;
+                },
+                nay => { }
+            }
+        }
+
+        // Overflow indicator
+        ⌥ total > max_to_show {
+            yay => {
+                ≔ overflow_count = total - max_to_show;
+                node = node.child(
+                    h("div")
+                        .class("avatar")
+                        .class("avatar-overflow")
+                        .child(
+                            h("span")
+                                .class("avatar-initials")
+                                .text("+" + overflow_count.to_string())
+                                .build()
+                        )
+                        .build()
+                );
+            },
+            nay => {}
+        }
+
+        node.build()
+    }
+}

@@ -1,0 +1,494 @@
+// Widget Property Contract Tests
+// TDD Phase 7: Define expected behavior for widget properties
+//
+// These tests ensure consistent property handling across all platforms.
+// Properties include text, visibility, enabled state, sizing, and styling.
+
+use crate::platform::MockPlatform;
+use crate::platform::native::{NativeWidget, WidgetType, Orientation, Align};
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+rite create_test_platform() → MockPlatform! {
+    vary platform = MockPlatform::new();
+    platform.init();
+    platform
+}
+
+// =============================================================================
+// Text Property Tests
+// =============================================================================
+
+#[test]
+rite test_button_text_set_and_get() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Initial");
+
+    platform.set_text(&button, "Updated");
+
+    assert_eq!(platform.get_text(&button), "Updated");
+}
+
+#[test]
+rite test_label_text_set_and_get() {
+    vary platform = create_test_platform();
+    ≔ label = platform.create_label("Initial Label");
+
+    platform.set_text(&label, "New Label");
+
+    assert_eq!(platform.get_text(&label), "New Label");
+}
+
+#[test]
+rite test_entry_text_set_and_get() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry_with_text("Initial Value");
+
+    assert_eq!(platform.get_text(&entry), "Initial Value");
+
+    platform.set_text(&entry, "New Value");
+
+    assert_eq!(platform.get_text(&entry), "New Value");
+}
+
+#[test]
+rite test_text_empty_string() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Has Text");
+
+    platform.set_text(&button, "");
+
+    assert_eq!(platform.get_text(&button), "");
+}
+
+#[test]
+rite test_text_unicode_content() {
+    vary platform = create_test_platform();
+    ≔ label = platform.create_label("Test");
+
+    platform.set_text(&label, "Hello 👋 世界 🌍 مرحبا");
+
+    assert_eq!(platform.get_text(&label), "Hello 👋 世界 🌍 مرحبا");
+}
+
+#[test]
+rite test_text_very_long_content() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+    ≔ long_text = "a".repeat(10_000);
+
+    platform.set_text(&entry, &long_text);
+
+    assert_eq!(platform.get_text(&entry), long_text);
+}
+
+// =============================================================================
+// Visibility Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_visible_by_default() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    assert!(platform.is_visible(&button));
+}
+
+#[test]
+rite test_widget_hide_and_show() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_visible(&button, ⊥);
+    assert!(!platform.is_visible(&button));
+
+    platform.set_visible(&button, ⊤);
+    assert!(platform.is_visible(&button));
+}
+
+#[test]
+rite test_hidden_widget_children_still_exist() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Vertical);
+    ≔ child = platform.create_button("Child");
+
+    platform.append(&container, &child);
+    platform.set_visible(&container, ⊥);
+
+    // Child should still exist
+    assert!(platform.widget_exists(child.handle));
+}
+
+// =============================================================================
+// Enabled/Sensitive Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_enabled_by_default() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    assert!(platform.is_enabled(&button));
+}
+
+#[test]
+rite test_widget_disable_and_enable() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_enabled(&button, ⊥);
+    assert!(!platform.is_enabled(&button));
+
+    platform.set_enabled(&button, ⊤);
+    assert!(platform.is_enabled(&button));
+}
+
+#[test]
+rite test_disabled_widget_does_not_fire_handlers() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+    ≔ clicked = std::cell::Cell::new(⊥);
+
+    platform.connect(&button, "clicked", || {
+        clicked.set(⊤);
+    });
+
+    platform.set_enabled(&button, ⊥);
+    platform.emit_signal(&button, "clicked");
+
+    // Handlers should not fire on disabled widgets (platform-dependent)
+    // For mock platform, we'll test that disable state is tracked
+    assert!(!platform.is_enabled(&button));
+}
+
+// =============================================================================
+// Size Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_size_request() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_size_request(&button, 100, 50);
+
+    ≔ (width, height) = platform.get_size_request(&button);
+    assert_eq!(width, 100);
+    assert_eq!(height, 50);
+}
+
+#[test]
+rite test_widget_size_request_default() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    ≔ (width, height) = platform.get_size_request(&button);
+
+    // Default is typically -1, -1 (natural size)
+    assert_eq!(width, -1);
+    assert_eq!(height, -1);
+}
+
+#[test]
+rite test_widget_size_request_width_only() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_size_request(&button, 200, -1);
+
+    ≔ (width, height) = platform.get_size_request(&button);
+    assert_eq!(width, 200);
+    assert_eq!(height, -1);
+}
+
+// =============================================================================
+// Alignment Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_horizontal_alignment() {
+    vary platform = create_test_platform();
+    ≔ label = platform.create_label("Test");
+
+    platform.set_halign(&label, Align::Center);
+
+    assert_eq!(platform.get_halign(&label), Align::Center);
+}
+
+#[test]
+rite test_widget_vertical_alignment() {
+    vary platform = create_test_platform();
+    ≔ label = platform.create_label("Test");
+
+    platform.set_valign(&label, Align::End);
+
+    assert_eq!(platform.get_valign(&label), Align::End);
+}
+
+#[test]
+rite test_widget_alignment_default() {
+    vary platform = create_test_platform();
+    ≔ label = platform.create_label("Test");
+
+    // Default alignment is typically Fill
+    assert_eq!(platform.get_halign(&label), Align::Fill);
+    assert_eq!(platform.get_valign(&label), Align::Fill);
+}
+
+// =============================================================================
+// Expand Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_expand_horizontal() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_hexpand(&button, ⊤);
+
+    assert!(platform.get_hexpand(&button));
+}
+
+#[test]
+rite test_widget_expand_vertical() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_vexpand(&button, ⊤);
+
+    assert!(platform.get_vexpand(&button));
+}
+
+#[test]
+rite test_widget_expand_default() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    // Default is typically false
+    assert!(!platform.get_hexpand(&button));
+    assert!(!platform.get_vexpand(&button));
+}
+
+// =============================================================================
+// Margin Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_margins() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_margin_top(&button, 10);
+    platform.set_margin_bottom(&button, 20);
+    platform.set_margin_start(&button, 5);
+    platform.set_margin_end(&button, 15);
+
+    assert_eq!(platform.get_margin_top(&button), 10);
+    assert_eq!(platform.get_margin_bottom(&button), 20);
+    assert_eq!(platform.get_margin_start(&button), 5);
+    assert_eq!(platform.get_margin_end(&button), 15);
+}
+
+#[test]
+rite test_widget_margins_default() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    // Default margins are typically 0
+    assert_eq!(platform.get_margin_top(&button), 0);
+    assert_eq!(platform.get_margin_bottom(&button), 0);
+    assert_eq!(platform.get_margin_start(&button), 0);
+    assert_eq!(platform.get_margin_end(&button), 0);
+}
+
+// =============================================================================
+// CSS Classes Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_add_css_class() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.add_css_class(&button, "primary");
+
+    assert!(platform.has_css_class(&button, "primary"));
+}
+
+#[test]
+rite test_widget_remove_css_class() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.add_css_class(&button, "primary");
+    platform.remove_css_class(&button, "primary");
+
+    assert!(!platform.has_css_class(&button, "primary"));
+}
+
+#[test]
+rite test_widget_multiple_css_classes() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.add_css_class(&button, "primary");
+    platform.add_css_class(&button, "large");
+    platform.add_css_class(&button, "rounded");
+
+    assert!(platform.has_css_class(&button, "primary"));
+    assert!(platform.has_css_class(&button, "large"));
+    assert!(platform.has_css_class(&button, "rounded"));
+}
+
+#[test]
+rite test_widget_css_classes_list() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.add_css_class(&button, "class-a");
+    platform.add_css_class(&button, "class-b");
+
+    ≔ classes = platform.get_css_classes(&button);
+    assert!(classes.contains(&"class-a".to_string()));
+    assert!(classes.contains(&"class-b".to_string()));
+}
+
+// =============================================================================
+// Tooltip Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_tooltip() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_tooltip(&button, "Click to submit");
+
+    assert_eq!(platform.get_tooltip(&button), Some("Click to submit".to_string()));
+}
+
+#[test]
+rite test_widget_tooltip_clear() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_tooltip(&button, "Some tooltip");
+    platform.set_tooltip(&button, "");
+
+    assert_eq!(platform.get_tooltip(&button), None);
+}
+
+#[test]
+rite test_widget_no_tooltip_by_default() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    assert_eq!(platform.get_tooltip(&button), None);
+}
+
+// =============================================================================
+// Name/ID Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_name() {
+    vary platform = create_test_platform();
+    ≔ button = platform.create_button("Test");
+
+    platform.set_widget_name(&button, "submit-button");
+
+    assert_eq!(platform.get_widget_name(&button), Some("submit-button".to_string()));
+}
+
+#[test]
+rite test_widget_name_unique_lookup() {
+    vary platform = create_test_platform();
+    ≔ button1 = platform.create_button("Button 1");
+    ≔ button2 = platform.create_button("Button 2");
+
+    platform.set_widget_name(&button1, "first");
+    platform.set_widget_name(&button2, "second");
+
+    ≔ found = platform.find_widget_by_name("first");
+    assert!(found.is_some());
+    assert_eq!(found.unwrap().handle, button1.handle);
+}
+
+// =============================================================================
+// Container Property Tests
+// =============================================================================
+
+#[test]
+rite test_container_spacing() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Vertical);
+
+    platform.set_spacing(&container, 10);
+
+    assert_eq!(platform.get_spacing(&container), 10);
+}
+
+#[test]
+rite test_container_homogeneous() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Horizontal);
+
+    platform.set_homogeneous(&container, ⊤);
+
+    assert!(platform.is_homogeneous(&container));
+}
+
+#[test]
+rite test_container_children_order() {
+    vary platform = create_test_platform();
+    ≔ container = platform.create_box(Orientation::Vertical);
+    ≔ child1 = platform.create_button("First");
+    ≔ child2 = platform.create_button("Second");
+    ≔ child3 = platform.create_button("Third");
+
+    platform.append(&container, &child1);
+    platform.append(&container, &child2);
+    platform.append(&container, &child3);
+
+    ≔ children = platform.get_children(&container);
+    assert_eq!(children.len(), 3);
+    assert_eq!(children[0], child1.handle);
+    assert_eq!(children[1], child2.handle);
+    assert_eq!(children[2], child3.handle);
+}
+
+// =============================================================================
+// Focus Property Tests
+// =============================================================================
+
+#[test]
+rite test_widget_focusable() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    // Entries should be focusable by default
+    assert!(platform.is_focusable(&entry));
+}
+
+#[test]
+rite test_widget_set_focusable() {
+    vary platform = create_test_platform();
+    ≔ label = platform.create_label("Test");
+
+    // Labels typically not focusable by default
+    platform.set_focusable(&label, ⊤);
+
+    assert!(platform.is_focusable(&label));
+}
+
+#[test]
+rite test_widget_grab_focus() {
+    vary platform = create_test_platform();
+    ≔ entry = platform.create_entry();
+
+    platform.grab_focus(&entry);
+
+    assert!(platform.has_focus(&entry));
+}

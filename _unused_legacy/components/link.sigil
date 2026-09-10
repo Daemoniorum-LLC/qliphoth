@@ -1,0 +1,164 @@
+// Qliphoth Component: Link
+// Styled anchor elements with routing support
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Link component
+struct Link {
+    href: Option<String>,
+    children: List<VNode>,
+    external: Bool,
+    variant: String,           // default, subtle, bold, nav
+    size: String,              // sm, md, lg
+    color: String,             // primary, secondary, inherit
+    icon: Option<String>,
+    icon_position: String,     // left, right
+    disabled: Bool,
+    underline: String,         // always, hover, none
+    as_button: Bool,
+    onclick: Option<Fn()>,
+    download: Option<String>,
+    active: Bool,
+    aria_label: Option<String>,
+}
+
+impl Link {
+    rite new(href: String) -> Link {
+        Link {
+            href: Some(href),
+            children: List·new(),
+            external: nay,
+            variant: "default",
+            size: "md",
+            color: "primary",
+            icon: None,
+            icon_position: "left",
+            disabled: nay,
+            underline: "hover",
+            as_button: nay,
+            onclick: None,
+            download: None,
+            active: nay,
+            aria_label: None,
+        }
+    }
+}
+
+impl Component for Link {
+    rite render(self) -> VNode {
+        // Choose tag based on as_button
+        ≔ tag = ⌥ self.as_button {
+            yay => "button",
+            nay => "a",
+        };
+
+        ≔ node = h(tag)
+            .class("link")
+            .class("link-" + self.variant)
+            .class("link-" + self.size)
+            .class("link-" + self.color)
+            .class("link-underline-" + self.underline);
+
+        // Button type attribute
+        ⌥ self.as_button {
+            yay => { node = node.attr("type", "button"); },
+            nay => {}
+        }
+
+        // Href (only for anchor)
+        ⌥ self.as_button == nay ∧ self.disabled == nay {
+            yay => {
+                ⌥ self.href {
+                    Some(href) => { node = node.attr("href", href); },
+                    None => {}
+                }
+            },
+            nay => {}
+        }
+
+        // External link handling
+        ⌥ self.external {
+            yay => {
+                node = node.attr("target", "_blank");
+                node = node.attr("rel", "noopener noreferrer");
+            },
+            nay => {}
+        }
+
+        // Download attribute
+        ⌥ self.download {
+            Some(filename) => { node = node.attr("download", filename); },
+            None => {}
+        }
+
+        // Disabled state
+        ⌥ self.disabled {
+            yay => {
+                node = node.class("link-disabled");
+                node = node.attr("aria-disabled", "true");
+                node = node.attr("tabindex", "0");
+            },
+            nay => {}
+        }
+
+        // Active state (current page)
+        ⌥ self.active {
+            yay => {
+                node = node.class("link-active");
+                node = node.attr("aria-current", "page");
+            },
+            nay => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { node = node.attr("aria-label", label); },
+            None => {}
+        }
+
+        // Icon (left position)
+        ⌥ self.icon {
+            Some(icon_name) => {
+                ⌥ self.icon_position == "left" {
+                    yay => {
+                        node = node.child(
+                            h("span")
+                                .class("link-icon")
+                                .class("link-icon-left")
+                                .text(icon_name)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Children
+        node = node.children(self.children);
+
+        // Icon (right position)
+        ⌥ self.icon {
+            Some(icon_name) => {
+                ⌥ self.icon_position == "right" {
+                    yay => {
+                        node = node.child(
+                            h("span")
+                                .class("link-icon")
+                                .class("link-icon-right")
+                                .text(icon_name)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        node.build()
+    }
+}

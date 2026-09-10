@@ -1,0 +1,243 @@
+// Qliphoth Component: Checkbox
+// Boolean selection with indeterminate state support
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Checkbox component properties
+struct Checkbox {
+    name: String,
+    id: Option<String>,
+    value: Option<String>,
+    checked: Bool,
+    indeterminate: Bool,
+    label: Option<String>,
+    label_position: String, // left, right
+    description: Option<String>,
+    error: Option<String>,
+    size: String,           // sm, md, lg
+    disabled: Bool,
+    required: Bool,
+    aria_label: Option<String>,
+    onchange: Option<Fn(Bool)>,
+}
+
+impl Checkbox {
+    rite new() -> Checkbox {
+        Checkbox {
+            name: "",
+            id: None,
+            value: None,
+            checked: nay,
+            indeterminate: nay,
+            label: None,
+            label_position: "right",
+            description: None,
+            error: None,
+            size: "md",
+            disabled: nay,
+            required: nay,
+            aria_label: None,
+            onchange: None,
+        }
+    }
+}
+
+impl Component for Checkbox {
+    rite render(self) -> VNode {
+        ≔ checkbox_id = self.id.unwrap_or(self.name + "-checkbox");
+        ≔ wrapper = h("div")
+            .class("checkbox-wrapper")
+            .class("checkbox-label-" + self.label_position);
+
+        // Label (left position)
+        ⌥ self.label {
+            Some(label_text) => {
+                ⌥ self.label_position == "left" {
+                    yay => {
+                        wrapper = wrapper.child(
+                            h("label")
+                                .class("checkbox-label")
+                                .attr("for", checkbox_id)
+                                .text(label_text)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Checkbox input
+        ≔ input_node = h("input")
+            .class("checkbox")
+            .class("checkbox-" + self.size)
+            .attr("type", "checkbox")
+            .attr("name", self.name)
+            .attr("id", checkbox_id);
+
+        // Value
+        ⌥ self.value {
+            Some(v) => { input_node = input_node.attr("value", v); },
+            None => {}
+        }
+
+        // Checked
+        ⌥ self.checked {
+            yay => { input_node = input_node.attr("checked", "true"); },
+            nay => {}
+        }
+
+        // Indeterminate
+        ⌥ self.indeterminate {
+            yay => {
+                input_node = input_node
+                    .class("checkbox-indeterminate")
+                    .attr("data-indeterminate", "true");
+            },
+            nay => {}
+        }
+
+        // Disabled
+        ⌥ self.disabled {
+            yay => {
+                input_node = input_node
+                    .class("checkbox-disabled")
+                    .attr("disabled", "true");
+            },
+            nay => {}
+        }
+
+        // Required
+        ⌥ self.required {
+            yay => { input_node = input_node.attr("required", "true"); },
+            nay => {}
+        }
+
+        // Error state
+        ⌥ self.error {
+            Some(_) => {
+                input_node = input_node
+                    .class("checkbox-error")
+                    .attr("aria-invalid", "true");
+            },
+            None => {}
+        }
+
+        // Description aria
+        ⌥ self.description {
+            Some(_) => {
+                input_node = input_node.attr("aria-describedby", checkbox_id + "-description");
+            },
+            None => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { input_node = input_node.attr("aria-label", label); },
+            None => {}
+        }
+
+        wrapper = wrapper.child(input_node.build());
+
+        // Label (right position)
+        ⌥ self.label {
+            Some(label_text) => {
+                ⌥ self.label_position == "right" {
+                    yay => {
+                        wrapper = wrapper.child(
+                            h("label")
+                                .class("checkbox-label")
+                                .attr("for", checkbox_id)
+                                .text(label_text)
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+            },
+            None => {}
+        }
+
+        // Description
+        ⌥ self.description {
+            Some(desc_text) => {
+                wrapper = wrapper.child(
+                    h("p")
+                        .class("checkbox-description")
+                        .attr("id", checkbox_id + "-description")
+                        .text(desc_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Error message
+        ⌥ self.error {
+            Some(error_text) => {
+                wrapper = wrapper.child(
+                    h("p")
+                        .class("checkbox-error-message")
+                        .text(error_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        wrapper.build()
+    }
+}
+
+/// CheckboxGroup for multiple related checkboxes
+struct CheckboxGroup {
+    name: String,
+    label: Option<String>,
+    value: List<String>,
+    options: List<{value: String, label: String}>,
+    onchange: Option<Fn(List<String>)>,
+}
+
+impl CheckboxGroup {
+    rite new() -> CheckboxGroup {
+        CheckboxGroup {
+            name: "",
+            label: None,
+            value: List·new(),
+            options: List·new(),
+            onchange: None,
+        }
+    }
+}
+
+impl Component for CheckboxGroup {
+    rite render(self) -> VNode {
+        ≔ group = h("div")
+            .class("checkbox-group")
+            .attr("role", "group");
+
+        ⌥ self.label {
+            Some(label_text) => {
+                group = group.attr("aria-label", label_text);
+            },
+            None => {}
+        }
+
+        ⌽ opt ∈ self.options {
+            ≔ is_checked = self.value.contains(opt.value);
+            ≔ checkbox = Checkbox {
+                name: self.name,
+                value: Some(opt.value),
+                label: Some(opt.label),
+                checked: is_checked,
+                ..Checkbox·new()
+            };
+            group = group.child(checkbox.render());
+        }
+
+        group.build()
+    }
+}

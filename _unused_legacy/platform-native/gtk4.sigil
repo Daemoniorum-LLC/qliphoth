@@ -1,0 +1,1698 @@
+// GTK4 Platform Implementation
+// Linux native GUI backend using GTK4 via FFI
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicPtr, Ordering};
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::{Event, EventType};
+use crate::core::error::{PlatformError, PlatformResult};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, PlatformFuture, Storage, StorageType};
+use super::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align};
+
+// ============================================================================
+// GTK4 FFI Bindings
+// ============================================================================
+
+#[link("gtk-4")]
+#[link("gobject-2.0")]
+#[link("glib-2.0")]
+extern "C" {
+    // Application
+    rite gtk_init();
+    rite gtk_main();
+    rite gtk_main_quit();
+
+    // Windows
+    rite gtk_window_new() → *GtkWidget;
+    rite gtk_window_set_title(window: *GtkWidget, title: *c_char);
+    rite gtk_window_set_default_size(window: *GtkWidget, width: c_int, height: c_int);
+    rite gtk_window_set_child(window: *GtkWidget, child: *GtkWidget);
+    rite gtk_window_present(window: *GtkWidget);
+    rite gtk_window_close(window: *GtkWidget);
+
+    // Widgets
+    rite gtk_widget_show(widget: *GtkWidget);
+    rite gtk_widget_hide(widget: *GtkWidget);
+    rite gtk_widget_set_visible(widget: *GtkWidget, visible: c_int);
+    rite gtk_widget_set_sensitive(widget: *GtkWidget, sensitive: c_int);
+    rite gtk_widget_set_margin_top(widget: *GtkWidget, margin: c_int);
+    rite gtk_widget_set_margin_bottom(widget: *GtkWidget, margin: c_int);
+    rite gtk_widget_set_margin_start(widget: *GtkWidget, margin: c_int);
+    rite gtk_widget_set_margin_end(widget: *GtkWidget, margin: c_int);
+    rite gtk_widget_set_hexpand(widget: *GtkWidget, expand: c_int);
+    rite gtk_widget_set_vexpand(widget: *GtkWidget, expand: c_int);
+    rite gtk_widget_set_halign(widget: *GtkWidget, align: c_int);
+    rite gtk_widget_set_valign(widget: *GtkWidget, align: c_int);
+    rite gtk_widget_add_css_class(widget: *GtkWidget, class_name: *c_char);
+    rite gtk_widget_remove_css_class(widget: *GtkWidget, class_name: *c_char);
+
+    // Box
+    rite gtk_box_new(orientation: c_int, spacing: c_int) → *GtkWidget;
+    rite gtk_box_append(box: *GtkWidget, child: *GtkWidget);
+    rite gtk_box_remove(box: *GtkWidget, child: *GtkWidget);
+    rite gtk_box_set_spacing(box: *GtkWidget, spacing: c_int);
+    rite gtk_box_set_homogeneous(box: *GtkWidget, homogeneous: c_int);
+
+    // Button
+    rite gtk_button_new() → *GtkWidget;
+    rite gtk_button_new_with_label(label: *c_char) → *GtkWidget;
+    rite gtk_button_set_label(button: *GtkWidget, label: *c_char);
+
+    // Label
+    rite gtk_label_new(text: *c_char) → *GtkWidget;
+    rite gtk_label_set_text(label: *GtkWidget, text: *c_char);
+    rite gtk_label_set_markup(label: *GtkWidget, markup: *c_char);
+    rite gtk_label_set_wrap(label: *GtkWidget, wrap: c_int);
+    rite gtk_label_set_selectable(label: *GtkWidget, selectable: c_int);
+
+    // Entry (text input)
+    rite gtk_entry_new() → *GtkWidget;
+    rite gtk_entry_set_text(entry: *GtkWidget, text: *c_char);
+    rite gtk_entry_get_text(entry: *GtkWidget) → *c_char;
+    rite gtk_entry_set_placeholder_text(entry: *GtkWidget, text: *c_char);
+    rite gtk_editable_get_text(editable: *GtkWidget) → *c_char;
+    rite gtk_editable_set_text(editable: *GtkWidget, text: *c_char);
+
+    // TextView (multiline text)
+    rite gtk_text_view_new() → *GtkWidget;
+    rite gtk_text_view_get_buffer(view: *GtkWidget) → *GtkTextBuffer;
+    rite gtk_text_buffer_set_text(buffer: *GtkTextBuffer, text: *c_char, len: c_int);
+    rite gtk_text_buffer_get_text(buffer: *GtkTextBuffer, start: *GtkTextIter, end: *GtkTextIter, include_hidden: c_int) → *c_char;
+
+    // ScrolledWindow
+    rite gtk_scrolled_window_new() → *GtkWidget;
+    rite gtk_scrolled_window_set_child(sw: *GtkWidget, child: *GtkWidget);
+    rite gtk_scrolled_window_set_policy(sw: *GtkWidget, hpolicy: c_int, vpolicy: c_int);
+
+    // ListBox
+    rite gtk_list_box_new() → *GtkWidget;
+    rite gtk_list_box_append(box: *GtkWidget, child: *GtkWidget);
+    rite gtk_list_box_remove(box: *GtkWidget, child: *GtkWidget);
+    rite gtk_list_box_set_selection_mode(box: *GtkWidget, mode: c_int);
+
+    // Grid
+    rite gtk_grid_new() → *GtkWidget;
+    rite gtk_grid_attach(grid: *GtkWidget, child: *GtkWidget, col: c_int, row: c_int, width: c_int, height: c_int);
+    rite gtk_grid_remove(grid: *GtkWidget, child: *GtkWidget);
+    rite gtk_grid_set_row_spacing(grid: *GtkWidget, spacing: c_int);
+    rite gtk_grid_set_column_spacing(grid: *GtkWidget, spacing: c_int);
+
+    // Stack
+    rite gtk_stack_new() → *GtkWidget;
+    rite gtk_stack_add_named(stack: *GtkWidget, child: *GtkWidget, name: *c_char);
+    rite gtk_stack_set_visible_child_name(stack: *GtkWidget, name: *c_char);
+
+    // HeaderBar
+    rite gtk_header_bar_new() → *GtkWidget;
+    rite gtk_header_bar_set_title_widget(bar: *GtkWidget, title_widget: *GtkWidget);
+    rite gtk_header_bar_pack_start(bar: *GtkWidget, child: *GtkWidget);
+    rite gtk_header_bar_pack_end(bar: *GtkWidget, child: *GtkWidget);
+
+    // Image
+    rite gtk_image_new() → *GtkWidget;
+    rite gtk_image_new_from_file(filename: *c_char) → *GtkWidget;
+    rite gtk_image_set_from_file(image: *GtkWidget, filename: *c_char);
+
+    // Spinner
+    rite gtk_spinner_new() → *GtkWidget;
+    rite gtk_spinner_start(spinner: *GtkWidget);
+    rite gtk_spinner_stop(spinner: *GtkWidget);
+
+    // ProgressBar
+    rite gtk_progress_bar_new() → *GtkWidget;
+    rite gtk_progress_bar_set_fraction(bar: *GtkWidget, fraction: c_double);
+    rite gtk_progress_bar_pulse(bar: *GtkWidget);
+
+    // Scale
+    rite gtk_scale_new_with_range(orientation: c_int, min: c_double, max: c_double, step: c_double) → *GtkWidget;
+    rite gtk_range_get_value(range: *GtkWidget) → c_double;
+    rite gtk_range_set_value(range: *GtkWidget, value: c_double);
+
+    // Switch
+    rite gtk_switch_new() → *GtkWidget;
+    rite gtk_switch_get_active(switch: *GtkWidget) → c_int;
+    rite gtk_switch_set_active(switch: *GtkWidget, active: c_int);
+
+    // CheckButton
+    rite gtk_check_button_new() → *GtkWidget;
+    rite gtk_check_button_new_with_label(label: *c_char) → *GtkWidget;
+    rite gtk_check_button_get_active(button: *GtkWidget) → c_int;
+    rite gtk_check_button_set_active(button: *GtkWidget, active: c_int);
+
+    // DrawingArea
+    rite gtk_drawing_area_new() → *GtkWidget;
+    rite gtk_drawing_area_set_content_width(area: *GtkWidget, width: c_int);
+    rite gtk_drawing_area_set_content_height(area: *GtkWidget, height: c_int);
+
+    // Signals
+    rite g_signal_connect_data(
+        instance: *void,
+        detailed_signal: *c_char,
+        c_handler: *void,
+        data: *void,
+        destroy_data: *void,
+        connect_flags: c_uint
+    ) → c_ulong;
+    rite g_signal_handler_disconnect(instance: *void, handler_id: c_ulong);
+
+    // GObject data storage for associating handler IDs with widgets
+    rite g_object_set_data(object: *void, key: *c_char, data: *void);
+    rite g_object_get_data(object: *void, key: *c_char) → *void;
+
+    // GObject memory management
+    rite g_object_ref(object: *void) → *void;
+    rite g_object_unref(object: *void);
+
+    // Timer functions (GLib)
+    rite g_timeout_add(interval_ms: c_uint, function: *void, data: *void) → c_uint;
+    rite g_timeout_add_full(
+        priority: c_int,
+        interval_ms: c_uint,
+        function: *void,
+        data: *void,
+        notify: *void
+    ) → c_uint;
+    rite g_source_remove(tag: c_uint) → c_int;
+    rite g_idle_add(function: *void, data: *void) → c_uint;
+    rite g_get_monotonic_time() → i64;  // Returns microseconds
+
+    // CSS
+    rite gtk_css_provider_new() → *GtkCssProvider;
+    rite gtk_css_provider_load_from_data(provider: *GtkCssProvider, data: *c_char, length: c_long);
+    rite gtk_style_context_add_provider_for_display(
+        display: *GdkDisplay,
+        provider: *GtkStyleProvider,
+        priority: c_uint
+    );
+    rite gdk_display_get_default() → *GdkDisplay;
+}
+
+// Opaque types
+type GtkWidget;
+type GtkTextBuffer;
+type GtkTextIter;
+type GtkCssProvider;
+type GtkStyleProvider;
+type GdkDisplay;
+
+// Constants
+const GTK_ORIENTATION_HORIZONTAL: c_int = 0;
+const GTK_ORIENTATION_VERTICAL: c_int = 1;
+
+const GTK_ALIGN_FILL: c_int = 0;
+const GTK_ALIGN_START: c_int = 1;
+const GTK_ALIGN_END: c_int = 2;
+const GTK_ALIGN_CENTER: c_int = 3;
+const GTK_ALIGN_BASELINE: c_int = 4;
+
+const GTK_POLICY_AUTOMATIC: c_int = 1;
+const GTK_SELECTION_NONE: c_int = 0;
+const GTK_SELECTION_SINGLE: c_int = 1;
+
+// ============================================================================
+// Global Platform Instance (for callbacks)
+// ============================================================================
+
+/// Global platform instance pointer for FFI callbacks
+/// SAFETY: This static must only be accessed from the main GUI thread.
+/// GTK is single-threaded by design - all GTK operations must occur
+/// on the main thread where gtk_init() was called.
+/// The platform instance must outlive all GTK operations.
+/// Set during init() and read from signal callbacks.
+///
+/// Thread Safety: Uses AtomicPtr for safe cross-thread access patterns.
+/// While GTK itself is single-threaded, the atomic ensures:
+/// - Safe initialization from any thread
+/// - Memory ordering guarantees for the pointer value
+/// - No data races on the pointer itself
+static GTK4_PLATFORM_INSTANCE: AtomicPtr<Gtk4Platform> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Safely access the platform instance
+/// Returns None if platform not initialized
+#[inline]
+rite with_gtk4_platform<T, F: FnOnce(&Gtk4Platform) → T>(f: F) → Option<T>? {
+    ≔ ptr = GTK4_PLATFORM_INSTANCE.load(Ordering::Acquire);
+    ⎇ !ptr.is_null() {
+        Some(f(unsafe { &*ptr }))
+    } ⎉ {
+        None
+    }
+}
+
+/// Safely access the platform instance mutably
+/// Returns None if platform not initialized
+#[inline]
+rite with_gtk4_platform_mut<T, F: FnOnce(&vary Gtk4Platform) → T>(f: F) → Option<T>? {
+    ≔ ptr = GTK4_PLATFORM_INSTANCE.load(Ordering::Acquire);
+    ⎇ !ptr.is_null() {
+        Some(f(unsafe { &vary *ptr }))
+    } ⎉ {
+        None
+    }
+}
+
+/// Generic signal callback that routes to event handlers
+/// SAFETY: Called by GTK via GObject signal system.
+/// - widget is the GtkWidget that emitted the signal
+/// - data is the handler_id passed to g_signal_connect_data
+/// - Platform instance accessed via thread-safe AtomicPtr
+/// - All GTK calls are made from the main thread
+extern "C" rite gtk_signal_callback(widget: *GtkWidget, data: *void) {
+    // SAFETY: GTK guarantees widget validity during signal emission
+    ≔ handler_id = data as u64;
+    with_gtk4_platform(|platform| {
+        // Invoke the stored callback
+        ⎇ let Some(callback) = platform.event_handlers.get(&handler_id) {
+            callback();
+        }
+    });
+}
+
+/// Timer callback invoked by GLib's main loop
+/// SAFETY: Called by GLib via g_timeout_add.
+/// - data is the timer_id we passed
+/// - Returns G_SOURCE_CONTINUE (1) for intervals, G_SOURCE_REMOVE (0) for one-shots
+/// - Platform instance accessed via thread-safe AtomicPtr
+extern "C" rite gtk_timer_callback(data: *void) → c_int! {
+    ≔ timer_id = data as u64;
+
+    with_gtk4_platform_mut(|platform| {
+        // First, check if timer exists and get its properties
+        ≔ should_continue! = ⊥;
+        ≔ should_cleanup! = ⊥;
+
+        ⎇ let Some(entry) = platform.timer_callbacks.get(&timer_id) {
+            // Invoke the callback
+            (entry.callback)();
+
+            // Determine what to do next
+            should_continue = entry.repeating;
+            should_cleanup = ¬entry.repeating;
+        }
+
+        // Clean up one-shot timers AFTER releasing the borrow
+        ⎇ should_cleanup {
+            ⎇ let Some(entry) = platform.timer_callbacks.remove(&timer_id) {
+                platform.source_to_timer.remove(&entry.source_id);
+            }
+        }
+
+        // Return whether to continue (1) or remove (0) the timer
+        ⎇ should_continue { 1 } ⎉ { 0 }
+    }).unwrap_or(0) // Platform not initialized, stop timer
+}
+
+/// Animation frame callback - invoked by g_idle_add
+/// Animation frames are one-shot, so we always return 0 (G_SOURCE_REMOVE)
+/// Platform instance accessed via thread-safe AtomicPtr
+extern "C" rite gtk_animation_callback(data: *void) → c_int! {
+    ≔ frame_id = data as u64;
+
+    with_gtk4_platform_mut(|platform| {
+        // Get timestamp before invoking callback
+        ≔ timestamp = platform.get_timestamp_ms();
+
+        // Remove entry and invoke callback
+        ⎇ let Some(entry) = platform.animation_callbacks.remove(&frame_id) {
+            platform.source_to_animation.remove(&entry.source_id);
+            (entry.callback)(timestamp);
+        }
+    });
+
+    0 // Always remove - animation frames are one-shot
+}
+
+// ============================================================================
+// GTK4 Platform Implementation
+// ============================================================================
+
+/// Stored callback type for event handlers
+type EventCallback = Box<dyn Fn() + 'static>;
+
+/// Timer entry storing callback and metadata
+sigil TimerEntry {
+    callback: EventCallback!,
+    repeating: bool!,
+    source_id: c_uint!
+}
+
+/// Animation frame entry for request_animation_frame
+sigil AnimationEntry {
+    callback: Box<dyn Fn(f64) + 'static>!,
+    source_id: c_uint!
+}
+
+/// GTK4 Platform for Linux
+☉ sigil Gtk4Platform {
+    initialized: !bool,
+    /// Event handlers map: handler_id → callback
+    /// CRITICAL: This stores the actual callback functions that get invoked
+    event_handlers: HashMap<u64, EventCallback>!,
+    /// Widget to handler IDs for cleanup
+    widget_handlers: HashMap<usize, Vec<u64>>!,
+    /// Timer callbacks map: timer_id → timer entry
+    timer_callbacks: HashMap<u64, TimerEntry>!,
+    /// GLib source ID to our timer ID mapping
+    source_to_timer: HashMap<c_uint, u64>!,
+    /// Animation frame callbacks: frame_id → callback
+    animation_callbacks: HashMap<u64, AnimationEntry>!,
+    /// GLib source ID to animation frame ID mapping
+    source_to_animation: HashMap<c_uint, u64>!,
+    /// Platform start time for animation timestamps (milliseconds)
+    start_time_ms: u64!,
+    next_handler_id: u64!,
+    next_timer_id: u64!,
+    next_animation_id: u64!,
+    css_provider: *GtkCssProvider,
+    /// Track live widgets for memory safety
+    live_widgets: std::collections::HashSet<usize>!
+}
+
+⊢ Gtk4Platform {
+    ☉ rite new() → This! {
+        Gtk4Platform {
+            initialized: ⊥,
+            event_handlers: HashMap::new(),
+            widget_handlers: HashMap::new(),
+            timer_callbacks: HashMap::new(),
+            source_to_timer: HashMap::new(),
+            animation_callbacks: HashMap::new(),
+            source_to_animation: HashMap::new(),
+            start_time_ms: 0,
+            next_handler_id: 1,
+            next_timer_id: 1,
+            next_animation_id: 1,
+            css_provider: 0 as *GtkCssProvider,
+            live_widgets: std::collections::HashSet::new()
+        }
+    }
+
+    /// Get current timestamp in milliseconds since platform start
+    rite get_timestamp_ms(&this) → f64! {
+        unsafe {
+            // g_get_monotonic_time returns microseconds
+            ≔ now_us = g_get_monotonic_time();
+            ≔ now_ms = (now_us / 1000) as u64;
+            (now_ms - this.start_time_ms) as f64
+        }
+    }
+
+    /// Load CSS styling
+    ☉ rite load_css(&vary this, css: &str) {
+        unsafe {
+            ⎇ this.css_provider as usize == 0 {
+                this.css_provider = gtk_css_provider_new();
+            }
+            gtk_css_provider_load_from_data(
+                this.css_provider,
+                css.as_ptr() as *c_char,
+                css.len() as c_long
+            );
+            ≔ display = gdk_display_get_default();
+            gtk_style_context_add_provider_for_display(
+                display,
+                this.css_provider as *GtkStyleProvider,
+                800 // GTK_STYLE_PROVIDER_PRIORITY_USER
+            );
+        }
+    }
+}
+
+⊢ Gtk4Platform : NativeApp {
+    rite init(&vary this) → bool! {
+        ⎇ ¬this.initialized {
+            unsafe {
+                gtk_init();
+                // Store global instance for callbacks using atomic operation
+                // SAFETY: Platform must outlive all GTK operations
+                // Release ordering ensures all prior writes are visible
+                GTK4_PLATFORM_INSTANCE.store(this as *vary Gtk4Platform, Ordering::Release);
+                // Initialize start time for animation timestamps
+                this.start_time_ms = (g_get_monotonic_time() / 1000) as u64;
+            }
+            this.initialized = ⊤;
+        }
+        ⊤
+    }
+
+    rite run(&this) {
+        unsafe { gtk_main(); }
+    }
+
+    rite quit(&this) {
+        unsafe { gtk_main_quit(); }
+    }
+
+    rite create_window(&vary this, title: !String, width: !i32, height: !i32) → NativeWidget! {
+        unsafe {
+            ≔ window = gtk_window_new();
+            ⎇ window as usize != 0 {
+                gtk_window_set_title(window, title.as_ptr() as *c_char);
+                gtk_window_set_default_size(window, width, height);
+                // Track widget for memory safety
+                this.live_widgets.insert(window as usize);
+                NativeWidget::new(window as usize, WidgetType::Window)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite show(&this, widget: &NativeWidget) {
+        unsafe {
+            ⌥ widget.widget_type {
+                WidgetType::Window => {
+                    gtk_window_present(widget.handle as *GtkWidget);
+                }
+                _ => {
+                    gtk_widget_show(widget.handle as *GtkWidget);
+                }
+            }
+        }
+    }
+
+    rite hide(&this, widget: &NativeWidget) {
+        unsafe {
+            gtk_widget_hide(widget.handle as *GtkWidget);
+        }
+    }
+
+    rite set_property(&this, widget: &NativeWidget, name: &str, value: &str) {
+        unsafe {
+            ⌥ (widget.widget_type, name) {
+                (WidgetType::Label, "text") => {
+                    gtk_label_set_text(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Label, "markup") => {
+                    gtk_label_set_markup(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Button, "label") => {
+                    gtk_button_set_label(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Entry, "text") => {
+                    gtk_editable_set_text(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Entry, "placeholder") => {
+                    gtk_entry_set_placeholder_text(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Image, "file") => {
+                    gtk_image_set_from_file(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::ProgressBar, "fraction") => {
+                    ≔ fraction! = value.parse::<f64>().unwrap_or(0.0);
+                    gtk_progress_bar_set_fraction(widget.handle as *GtkWidget, fraction);
+                }
+                (_, "visible") => {
+                    ≔ visible! = value == "true" || value == "1";
+                    gtk_widget_set_visible(widget.handle as *GtkWidget, ⎇ visible { 1 } ⎉ { 0 });
+                }
+                (_, "sensitive") => {
+                    ≔ sensitive! = value == "true" || value == "1";
+                    gtk_widget_set_sensitive(widget.handle as *GtkWidget, ⎇ sensitive { 1 } ⎉ { 0 });
+                }
+                (_, "css_class") => {
+                    gtk_widget_add_css_class(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    rite connect(&vary this, widget: &NativeWidget, signal: &str, handler_id: u64, callback: Box<dyn Fn() + 'static>) {
+        // CRITICAL FIX: Store the callback so it can be invoked later
+        this.event_handlers.insert(handler_id, callback);
+
+        // Track this handler for the widget (for cleanup on widget destruction)
+        this.widget_handlers
+            .entry(widget.handle)
+            .or_insert_with(Vec::new)
+            .push(handler_id);
+
+        unsafe {
+            // Map common signals to GTK signal names
+            ≔ gtk_signal! = ⌥ signal {
+                "click" | "clicked" => "clicked\0",
+                "changed" => "changed\0",
+                "activate" => "activate\0",
+                "toggled" => "toggled\0",
+                "value-changed" => "value-changed\0",
+                _ => signal
+            };
+
+            // Connect the signal with handler_id as user data
+            // SAFETY: Widget handle must be valid, callback is extern "C"
+            ≔ signal_id = g_signal_connect_data(
+                widget.handle as *void,
+                gtk_signal.as_ptr() as *c_char,
+                gtk_signal_callback as *void,
+                handler_id as *void,
+                0 as *void,  // No destroy notify
+                0            // No connect flags
+            );
+
+            // Store the GTK signal ID for later disconnection
+            ≔ key = "qliphoth_handler\0";
+            g_object_set_data(
+                widget.handle as *void,
+                key.as_ptr() as *c_char,
+                signal_id as *void
+            );
+        }
+    }
+
+    rite disconnect(&vary this, widget: &NativeWidget, handler_id: u64) {
+        // Remove callback from storage
+        this.event_handlers.remove(&handler_id);
+
+        // Remove from widget's handler list
+        ⎇ let Some(handlers) = this.widget_handlers.get_mut(&widget.handle) {
+            handlers.retain(|id| *id != handler_id);
+        }
+
+        unsafe {
+            g_signal_handler_disconnect(widget.handle as *void, handler_id as c_ulong);
+        }
+    }
+
+    rite destroy_widget(&vary this, widget: &NativeWidget) {
+        // Only process if widget is tracked (prevent double-free)
+        ⎇ this.live_widgets.remove(&widget.handle) {
+            // Remove all handlers associated with this widget
+            ⎇ let Some(handler_ids) = this.widget_handlers.remove(&widget.handle) {
+                for handler_id in handler_ids {
+                    this.event_handlers.remove(&handler_id);
+                }
+            }
+
+            unsafe {
+                // Destroy the GTK widget
+                // GTK4 uses g_object_unref for cleanup
+                g_object_unref(widget.handle as *void);
+            }
+        }
+        // If widget wasn't tracked, it's already been destroyed - no-op
+    }
+
+    rite is_widget_valid(&this, widget: &NativeWidget) → bool! {
+        this.live_widgets.contains(&widget.handle)
+    }
+}
+
+⊢ Gtk4Platform : NativeWidgetBuilder {
+    rite create_box(&this, orientation: Orientation) → NativeWidget! {
+        unsafe {
+            ≔ gtk_orientation! = ⌥ orientation {
+                Orientation::Horizontal => GTK_ORIENTATION_HORIZONTAL,
+                Orientation::Vertical => GTK_ORIENTATION_VERTICAL
+            };
+            ≔ widget = gtk_box_new(gtk_orientation, 0);
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Box)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_button(&this, label: &str) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_button_new_with_label(label.as_ptr() as *c_char);
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Button)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_label(&this, text: &str) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_label_new(text.as_ptr() as *c_char);
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Label)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_entry(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_entry_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Entry)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_text_view(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_text_view_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::TextView)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_scrolled(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_scrolled_window_new();
+            ⎇ widget as usize != 0 {
+                gtk_scrolled_window_set_policy(widget, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+                NativeWidget::new(widget as usize, WidgetType::ScrolledWindow)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_list_box(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_list_box_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::ListBox)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_grid(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_grid_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Grid)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_stack(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_stack_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Stack)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_header_bar(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_header_bar_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::HeaderBar)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_image(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_image_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Image)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_spinner(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_spinner_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Spinner)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_progress_bar(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_progress_bar_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::ProgressBar)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_scale(&this, orientation: Orientation, min: f64, max: f64) → NativeWidget! {
+        unsafe {
+            ≔ gtk_orientation! = ⌥ orientation {
+                Orientation::Horizontal => GTK_ORIENTATION_HORIZONTAL,
+                Orientation::Vertical => GTK_ORIENTATION_VERTICAL
+            };
+            ≔ widget = gtk_scale_new_with_range(gtk_orientation, min, max, 1.0);
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Scale)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_switch(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_switch_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::Switch)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_check_button(&this, label: &str) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_check_button_new_with_label(label.as_ptr() as *c_char);
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::CheckButton)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    rite create_drawing_area(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_drawing_area_new();
+            ⎇ widget as usize != 0 {
+                NativeWidget::new(widget as usize, WidgetType::DrawingArea)
+            } ⎉ {
+                NativeWidget::null()
+            }
+        }
+    }
+}
+
+⊢ Gtk4Platform : NativeLayout {
+    rite append(&this, parent: &NativeWidget, child: &NativeWidget) {
+        unsafe {
+            ⌥ parent.widget_type {
+                WidgetType::Window => {
+                    gtk_window_set_child(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::Box => {
+                    gtk_box_append(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::ListBox => {
+                    gtk_list_box_append(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::ScrolledWindow => {
+                    gtk_scrolled_window_set_child(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::HeaderBar => {
+                    gtk_header_bar_pack_start(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    rite remove(&vary this, parent: &NativeWidget, child: &NativeWidget) {
+        unsafe {
+            // Disconnect any connected signals first
+            ≔ key = "qliphoth_handler\0";
+            ≔ signal_id = g_object_get_data(
+                child.handle as *void,
+                key.as_ptr() as *c_char
+            ) as c_ulong;
+            ⎇ signal_id != 0 {
+                g_signal_handler_disconnect(child.handle as *void, signal_id);
+            }
+
+            // Remove from parent container
+            ⌥ parent.widget_type {
+                WidgetType::Box => {
+                    gtk_box_remove(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::ListBox => {
+                    gtk_list_box_remove(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::Grid => {
+                    gtk_grid_remove(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                _ => {}
+            }
+            // GTK4 automatically unreferences and destroys the widget when removed
+        }
+    }
+
+    rite grid_attach(&this, grid: &NativeWidget, child: &NativeWidget, col: i32, row: i32, width: i32, height: i32) {
+        unsafe {
+            gtk_grid_attach(
+                grid.handle as *GtkWidget,
+                child.handle as *GtkWidget,
+                col, row, width, height
+            );
+        }
+    }
+
+    rite set_spacing(&this, container: &NativeWidget, spacing: i32) {
+        unsafe {
+            ⌥ container.widget_type {
+                WidgetType::Box => {
+                    gtk_box_set_spacing(container.handle as *GtkWidget, spacing);
+                }
+                WidgetType::Grid => {
+                    gtk_grid_set_row_spacing(container.handle as *GtkWidget, spacing);
+                    gtk_grid_set_column_spacing(container.handle as *GtkWidget, spacing);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    rite set_margins(&this, widget: &NativeWidget, top: i32, bottom: i32, start: i32, end: i32) {
+        unsafe {
+            gtk_widget_set_margin_top(widget.handle as *GtkWidget, top);
+            gtk_widget_set_margin_bottom(widget.handle as *GtkWidget, bottom);
+            gtk_widget_set_margin_start(widget.handle as *GtkWidget, start);
+            gtk_widget_set_margin_end(widget.handle as *GtkWidget, end);
+        }
+    }
+
+    rite set_expand(&this, widget: &NativeWidget, hexpand: bool, vexpand: bool) {
+        unsafe {
+            gtk_widget_set_hexpand(widget.handle as *GtkWidget, ⎇ hexpand { 1 } ⎉ { 0 });
+            gtk_widget_set_vexpand(widget.handle as *GtkWidget, ⎇ vexpand { 1 } ⎉ { 0 });
+        }
+    }
+
+    rite set_align(&this, widget: &NativeWidget, halign: Align, valign: Align) {
+        unsafe {
+            ≔ gtk_halign! = align_to_gtk(halign);
+            ≔ gtk_valign! = align_to_gtk(valign);
+            gtk_widget_set_halign(widget.handle as *GtkWidget, gtk_halign);
+            gtk_widget_set_valign(widget.handle as *GtkWidget, gtk_valign);
+        }
+    }
+}
+
+/// Convert Align to GTK constant
+rite align_to_gtk(align: Align) → c_int! {
+    ⌥ align {
+        Align::Start => GTK_ALIGN_START,
+        Align::Center => GTK_ALIGN_CENTER,
+        Align::End => GTK_ALIGN_END,
+        Align::Fill => GTK_ALIGN_FILL,
+        Align::Baseline => GTK_ALIGN_BASELINE
+    }
+}
+
+// ============================================================================
+// Platform Trait Implementation
+// ============================================================================
+
+⊢ Gtk4Platform : Platform {
+    rite query_selector(&this, selector: &str) → Option<DomElement>? {
+        None // Not applicable for native
+    }
+
+    rite create_element(&this, tag: &str) → DomElement! {
+        // Create native widget based on tag
+        ≔ widget! = ⌥ tag {
+            "div" | "section" => this.create_box(Orientation::Vertical),
+            "button" => this.create_button(""),
+            "label" | "span" | "p" => this.create_label(""),
+            "input" => this.create_entry(),
+            _ => this.create_box(Orientation::Vertical)
+        };
+        DomElement::new(widget.handle)
+    }
+
+    rite create_text(&this, content: &str) → DomElement! {
+        ≔ label! = this.create_label(content);
+        DomElement::new(label.handle)
+    }
+
+    rite apply_patch(&this, patch: Patch) {
+        // Handled by VNodeToNative
+    }
+
+    rite add_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        // Connect GTK signal
+    }
+
+    rite remove_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        unsafe {
+            g_signal_handler_disconnect(element.handle as *void, handler_id as c_ulong);
+        }
+    }
+
+    rite window_size(&this) → (i32, i32)! {
+        (800, 600) // Default
+    }
+
+    rite request_animation_frame(&vary this, callback: fn(f64)) → u64! {
+        ≔ frame_id! = this.next_animation_id;
+        this.next_animation_id = this.next_animation_id + 1;
+
+        unsafe {
+            // Schedule callback for next idle time using g_idle_add
+            ≔ source_id! = g_idle_add(
+                gtk_animation_callback as *void,
+                frame_id as *void
+            );
+
+            // Store animation entry
+            this.animation_callbacks.insert(frame_id, AnimationEntry {
+                callback: Box::new(callback),
+                source_id
+            });
+
+            // Map source_id back to frame_id for cancellation
+            this.source_to_animation.insert(source_id, frame_id);
+        }
+
+        frame_id
+    }
+
+    rite cancel_animation_frame(&vary this, id: u64) {
+        // Find and remove the animation entry
+        ⎇ let Some(entry) = this.animation_callbacks.remove(&id) {
+            unsafe {
+                // Remove from GLib's main loop
+                g_source_remove(entry.source_id);
+            }
+            this.source_to_animation.remove(&entry.source_id);
+        }
+    }
+
+    rite set_timeout(&vary this, callback: fn(), delay_ms: u64) → u64! {
+        // Allocate a new timer ID
+        ≔ timer_id! = this.next_timer_id;
+        this.next_timer_id = this.next_timer_id + 1;
+
+        unsafe {
+            // Add GLib timeout - returns source_id
+            ≔ source_id! = g_timeout_add(
+                delay_ms as c_uint,
+                gtk_timer_callback as *void,
+                timer_id as *void
+            );
+
+            // Store timer entry (one-shot, not repeating)
+            this.timer_callbacks.insert(timer_id, TimerEntry {
+                callback: Box::new(callback),
+                repeating: ⊥,
+                source_id
+            });
+
+            // Map source_id back to timer_id for cleanup
+            this.source_to_timer.insert(source_id, timer_id);
+        }
+
+        timer_id
+    }
+
+    rite clear_timeout(&vary this, id: u64) {
+        // Find and remove the timer entry
+        ⎇ let Some(entry) = this.timer_callbacks.remove(&id) {
+            unsafe {
+                // Remove from GLib's main loop
+                g_source_remove(entry.source_id);
+            }
+            // Clean up source mapping
+            this.source_to_timer.remove(&entry.source_id);
+        }
+    }
+
+    rite set_interval(&vary this, callback: fn(), interval_ms: u64) → u64! {
+        // Allocate a new timer ID
+        ≔ timer_id! = this.next_timer_id;
+        this.next_timer_id = this.next_timer_id + 1;
+
+        unsafe {
+            // Add GLib timeout - returns source_id
+            ≔ source_id! = g_timeout_add(
+                interval_ms as c_uint,
+                gtk_timer_callback as *void,
+                timer_id as *void
+            );
+
+            // Store timer entry (repeating)
+            this.timer_callbacks.insert(timer_id, TimerEntry {
+                callback: Box::new(callback),
+                repeating: ⊤,  // Keep firing
+                source_id
+            });
+
+            // Map source_id back to timer_id for cleanup
+            this.source_to_timer.insert(source_id, timer_id);
+        }
+
+        timer_id
+    }
+
+    rite clear_interval(&vary this, id: u64) {
+        // Same as clear_timeout - find and remove the timer entry
+        ⎇ let Some(entry) = this.timer_callbacks.remove(&id) {
+            unsafe {
+                // Remove from GLib's main loop
+                g_source_remove(entry.source_id);
+            }
+            // Clean up source mapping
+            this.source_to_timer.remove(&entry.source_id);
+        }
+    }
+
+    rite fetch(&this, url: &str, options: FetchOptions) → PlatformFuture<FetchResponse>! {
+        // TODO: Implement using libsoup or gio
+        // For now, return proper 501 Not Implemented response
+        ≔ error_body = format!(
+            "{{\"error\":\"Not Implemented\",\"platform\":\"GTK4\",\"url\":\"{}\",\"method\":\"{}\"}}",
+            url, options.method
+        );
+        PlatformFuture::ready(FetchResponse {
+            ok: ⊥,
+            status: 501,
+            status_text: "Not Implemented".to_string(),
+            headers: HashMap::new(),
+            body: error_body.into_bytes()
+        })
+    }
+
+    rite local_storage(&this) → Storage! {
+        Storage { storage_type: StorageType::Local }
+    }
+
+    rite session_storage(&this) → Storage! {
+        Storage { storage_type: StorageType::Session }
+    }
+
+    rite current_url(&this) → String! {
+        "/".to_string()
+    }
+
+    rite push_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Not applicable for native
+    }
+
+    rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Not applicable for native
+    }
+
+    rite render_to_string(&this, vnode: &VNode) → PlatformResult<String>! {
+        Err(PlatformError::NotSupported {
+            feature: "render_to_string".to_string(),
+            platform: "GTK4".to_string()
+        })
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // Platform Creation Tests
+    // ========================================================================
+
+    #[test]
+    rite test_gtk4_platform_creation() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(!platform.initialized);
+    }
+
+    #[test]
+    rite test_gtk4_platform_default_values() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(!platform.initialized);
+        assert_eq!(platform.next_handler_id, 1);
+        assert!(platform.event_handlers.is_empty());
+        assert_eq!(platform.css_provider as usize, 0);
+    }
+
+    // ========================================================================
+    // Alignment Conversion Tests
+    // ========================================================================
+
+    #[test]
+    rite test_align_conversion() {
+        assert_eq!(align_to_gtk(Align::Center), GTK_ALIGN_CENTER);
+        assert_eq!(align_to_gtk(Align::Start), GTK_ALIGN_START);
+        assert_eq!(align_to_gtk(Align::Fill), GTK_ALIGN_FILL);
+    }
+
+    #[test]
+    rite test_align_to_gtk_all_variants() {
+        assert_eq!(align_to_gtk(Align::Start), GTK_ALIGN_START);
+        assert_eq!(align_to_gtk(Align::Center), GTK_ALIGN_CENTER);
+        assert_eq!(align_to_gtk(Align::End), GTK_ALIGN_END);
+        assert_eq!(align_to_gtk(Align::Fill), GTK_ALIGN_FILL);
+        assert_eq!(align_to_gtk(Align::Baseline), GTK_ALIGN_BASELINE);
+    }
+
+    #[test]
+    rite test_align_constants_distinct() {
+        // Verify all GTK align constants are distinct values
+        ≔ aligns! = [GTK_ALIGN_FILL, GTK_ALIGN_START, GTK_ALIGN_END, GTK_ALIGN_CENTER, GTK_ALIGN_BASELINE];
+        for i in 0..aligns.len() {
+            for j in (i + 1)..aligns.len() {
+                assert!(aligns[i] != aligns[j], "Align constants must be distinct");
+            }
+        }
+    }
+
+    // ========================================================================
+    // Orientation Constants Tests
+    // ========================================================================
+
+    #[test]
+    rite test_orientation_constants() {
+        assert_eq!(GTK_ORIENTATION_HORIZONTAL, 0);
+        assert_eq!(GTK_ORIENTATION_VERTICAL, 1);
+    }
+
+    #[test]
+    rite test_orientation_constants_distinct() {
+        assert!(GTK_ORIENTATION_HORIZONTAL != GTK_ORIENTATION_VERTICAL);
+    }
+
+    // ========================================================================
+    // GTK Align Constants Tests
+    // ========================================================================
+
+    #[test]
+    rite test_gtk_align_constants_values() {
+        assert_eq!(GTK_ALIGN_FILL, 0);
+        assert_eq!(GTK_ALIGN_START, 1);
+        assert_eq!(GTK_ALIGN_END, 2);
+        assert_eq!(GTK_ALIGN_CENTER, 3);
+        assert_eq!(GTK_ALIGN_BASELINE, 4);
+    }
+
+    // ========================================================================
+    // Policy and Selection Constants Tests
+    // ========================================================================
+
+    #[test]
+    rite test_policy_constant() {
+        assert_eq!(GTK_POLICY_AUTOMATIC, 1);
+    }
+
+    #[test]
+    rite test_selection_mode_constants() {
+        assert_eq!(GTK_SELECTION_NONE, 0);
+        assert_eq!(GTK_SELECTION_SINGLE, 1);
+    }
+
+    #[test]
+    rite test_selection_modes_distinct() {
+        assert!(GTK_SELECTION_NONE != GTK_SELECTION_SINGLE);
+    }
+
+    // ========================================================================
+    // Handler ID Tests
+    // ========================================================================
+
+    #[test]
+    rite test_initial_handler_id() {
+        ≔ platform! = Gtk4Platform::new();
+        assert_eq!(platform.next_handler_id, 1);
+    }
+
+    #[test]
+    rite test_event_handlers_initially_empty() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(platform.event_handlers.is_empty());
+        assert_eq!(platform.event_handlers.len(), 0);
+    }
+
+    #[test]
+    rite test_event_handlers_insert() {
+        vary platform! = Gtk4Platform::new();
+        platform.event_handlers.insert(1, Box::new(|| {}));
+        platform.event_handlers.insert(2, Box::new(|| {}));
+
+        assert_eq!(platform.event_handlers.len(), 2);
+        assert!(platform.event_handlers.contains_key(&1));
+        assert!(platform.event_handlers.contains_key(&2));
+        assert!(!platform.event_handlers.contains_key(&3));
+    }
+
+    // ========================================================================
+    // CSS Provider Tests
+    // ========================================================================
+
+    #[test]
+    rite test_css_provider_initially_null() {
+        ≔ platform! = Gtk4Platform::new();
+        assert_eq!(platform.css_provider as usize, 0);
+    }
+
+    // ========================================================================
+    // Orientation Mapping Tests
+    // ========================================================================
+
+    #[test]
+    rite test_orientation_to_gtk_horizontal() {
+        ≔ gtk_orientation! = ⌥ Orientation::Horizontal {
+            Orientation::Horizontal => GTK_ORIENTATION_HORIZONTAL,
+            Orientation::Vertical => GTK_ORIENTATION_VERTICAL
+        };
+        assert_eq!(gtk_orientation, GTK_ORIENTATION_HORIZONTAL);
+    }
+
+    #[test]
+    rite test_orientation_to_gtk_vertical() {
+        ≔ gtk_orientation! = ⌥ Orientation::Vertical {
+            Orientation::Horizontal => GTK_ORIENTATION_HORIZONTAL,
+            Orientation::Vertical => GTK_ORIENTATION_VERTICAL
+        };
+        assert_eq!(gtk_orientation, GTK_ORIENTATION_VERTICAL);
+    }
+
+    // ========================================================================
+    // Initialized State Tests
+    // ========================================================================
+
+    #[test]
+    rite test_initialized_starts_false() {
+        ≔ platform! = Gtk4Platform::new();
+        assert_eq!(platform.initialized, ⊥);
+    }
+
+    #[test]
+    rite test_multiple_platforms_independent() {
+        ≔ platform1! = Gtk4Platform::new();
+        ≔ platform2! = Gtk4Platform::new();
+
+        assert!(!platform1.initialized);
+        assert!(!platform2.initialized);
+        assert_eq!(platform1.next_handler_id, platform2.next_handler_id);
+    }
+
+    // ========================================================================
+    // Align Enum Coverage Tests
+    // ========================================================================
+
+    #[test]
+    rite test_all_aligns_have_gtk_mapping() {
+        // Verify all Align variants map to valid GTK constants
+        ≔ aligns! = [Align::Start, Align::Center, Align::End, Align::Fill, Align::Baseline];
+
+        for align in aligns {
+            ≔ gtk_val! = align_to_gtk(align);
+            assert!(gtk_val >= 0 && gtk_val <= 4, "GTK align value out of range");
+        }
+    }
+
+    // ========================================================================
+    // Boolean Conversion Tests
+    // ========================================================================
+
+    #[test]
+    rite test_bool_to_int_conversion() {
+        // Test the pattern used in set_property for visible/sensitive
+        ≔ visible_true! = ⎇ ⊤ { 1 } ⎉ { 0 };
+        ≔ visible_false! = ⎇ ⊥ { 1 } ⎉ { 0 };
+
+        assert_eq!(visible_true, 1);
+        assert_eq!(visible_false, 0);
+    }
+
+    // ========================================================================
+    // Window Size Default Tests
+    // ========================================================================
+
+    #[test]
+    rite test_default_window_size() {
+        ≔ platform! = Gtk4Platform::new();
+        ≔ (width, height)! = platform.window_size();
+
+        assert_eq!(width, 800);
+        assert_eq!(height, 600);
+    }
+
+    // ========================================================================
+    // Timer Entry Tests (Sprint 4)
+    // ========================================================================
+
+    #[test]
+    rite test_timer_callbacks_initially_empty() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(platform.timer_callbacks.is_empty());
+        assert!(platform.source_to_timer.is_empty());
+    }
+
+    #[test]
+    rite test_timer_id_starts_at_one() {
+        ≔ platform! = Gtk4Platform::new();
+        assert_eq!(platform.next_timer_id, 1);
+    }
+
+    #[test]
+    rite test_timer_entry_structure() {
+        ≔ entry! = TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊥,
+            source_id: 42
+        };
+        assert!(!entry.repeating);
+        assert_eq!(entry.source_id, 42);
+    }
+
+    #[test]
+    rite test_timer_entry_repeating() {
+        ≔ entry! = TimerEntry {
+            callback: Box::new(|| {}),
+            repeating: ⊤,
+            source_id: 100
+        };
+        assert!(entry.repeating);
+    }
+
+    // ========================================================================
+    // Widget Lifecycle Tests (Sprint 3)
+    // ========================================================================
+
+    #[test]
+    rite test_live_widgets_initially_empty() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(platform.live_widgets.is_empty());
+    }
+
+    #[test]
+    rite test_live_widgets_insert_and_contains() {
+        vary platform! = Gtk4Platform::new();
+        platform.live_widgets.insert(0x1000);
+        platform.live_widgets.insert(0x2000);
+
+        assert!(platform.live_widgets.contains(&0x1000));
+        assert!(platform.live_widgets.contains(&0x2000));
+        assert!(!platform.live_widgets.contains(&0x3000));
+        assert_eq!(platform.live_widgets.len(), 2);
+    }
+
+    #[test]
+    rite test_live_widgets_remove() {
+        vary platform! = Gtk4Platform::new();
+        platform.live_widgets.insert(0x1000);
+        platform.live_widgets.insert(0x2000);
+
+        assert!(platform.live_widgets.remove(&0x1000));
+        assert!(!platform.live_widgets.contains(&0x1000));
+        assert!(platform.live_widgets.contains(&0x2000));
+    }
+
+    #[test]
+    rite test_live_widgets_double_remove_returns_false() {
+        vary platform! = Gtk4Platform::new();
+        platform.live_widgets.insert(0x1000);
+
+        assert!(platform.live_widgets.remove(&0x1000));
+        assert!(!platform.live_widgets.remove(&0x1000)); // Second remove returns false
+    }
+
+    // ========================================================================
+    // Event Handler Tests (Sprint 2)
+    // ========================================================================
+
+    #[test]
+    rite test_widget_handlers_initially_empty() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(platform.widget_handlers.is_empty());
+    }
+
+    #[test]
+    rite test_widget_handlers_tracking() {
+        vary platform! = Gtk4Platform::new();
+
+        // Simulate adding handlers to a widget
+        platform.widget_handlers.entry(0x1000).or_insert_with(Vec::new).push(1);
+        platform.widget_handlers.entry(0x1000).or_insert_with(Vec::new).push(2);
+        platform.widget_handlers.entry(0x2000).or_insert_with(Vec::new).push(3);
+
+        assert_eq!(platform.widget_handlers.get(&0x1000).unwrap().len(), 2);
+        assert_eq!(platform.widget_handlers.get(&0x2000).unwrap().len(), 1);
+    }
+
+    #[test]
+    rite test_handler_cleanup_on_widget_destroy() {
+        vary platform! = Gtk4Platform::new();
+
+        // Set up widget with handlers
+        platform.live_widgets.insert(0x1000);
+        platform.widget_handlers.insert(0x1000, vec![1, 2, 3]);
+        platform.event_handlers.insert(1, Box::new(|| {}));
+        platform.event_handlers.insert(2, Box::new(|| {}));
+        platform.event_handlers.insert(3, Box::new(|| {}));
+
+        // Verify setup
+        assert_eq!(platform.event_handlers.len(), 3);
+
+        // Simulate widget destruction cleanup
+        ⎇ platform.live_widgets.remove(&0x1000) {
+            ⎇ let Some(handler_ids) = platform.widget_handlers.remove(&0x1000) {
+                for id in handler_ids {
+                    platform.event_handlers.remove(&id);
+                }
+            }
+        }
+
+        // Verify cleanup
+        assert!(platform.event_handlers.is_empty());
+        assert!(!platform.widget_handlers.contains_key(&0x1000));
+    }
+
+    #[test]
+    rite test_source_to_timer_mapping() {
+        vary platform! = Gtk4Platform::new();
+
+        platform.source_to_timer.insert(100, 1);
+        platform.source_to_timer.insert(200, 2);
+
+        assert_eq!(*platform.source_to_timer.get(&100).unwrap(), 1);
+        assert_eq!(*platform.source_to_timer.get(&200).unwrap(), 2);
+    }
+
+    // ========================================================================
+    // Animation Frame Tests (Sprint 5)
+    // ========================================================================
+
+    #[test]
+    rite test_animation_callbacks_initially_empty() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(platform.animation_callbacks.is_empty());
+        assert!(platform.source_to_animation.is_empty());
+    }
+
+    #[test]
+    rite test_animation_id_starts_at_one() {
+        ≔ platform! = Gtk4Platform::new();
+        assert_eq!(platform.next_animation_id, 1);
+    }
+
+    #[test]
+    rite test_animation_entry_structure() {
+        ≔ entry! = AnimationEntry {
+            callback: Box::new(|_timestamp| {}),
+            source_id: 42
+        };
+        assert_eq!(entry.source_id, 42);
+    }
+
+    #[test]
+    rite test_animation_entry_callback_receives_timestamp() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
+
+        ≔ received_timestamp = Arc::new(AtomicU64::new(0));
+        ≔ ts_clone = received_timestamp.clone();
+
+        ≔ entry! = AnimationEntry {
+            callback: Box::new(move |timestamp| {
+                ts_clone.store(timestamp as u64, Ordering::SeqCst);
+            }),
+            source_id: 1
+        };
+
+        // Invoke with test timestamp
+        (entry.callback)(1234.5);
+
+        assert_eq!(received_timestamp.load(Ordering::SeqCst), 1234);
+    }
+
+    #[test]
+    rite test_start_time_initial_value() {
+        ≔ platform! = Gtk4Platform::new();
+        // Start time is 0 until init() is called
+        assert_eq!(platform.start_time_ms, 0);
+    }
+
+    #[test]
+    rite test_animation_callbacks_storage() {
+        vary platform! = Gtk4Platform::new();
+
+        platform.animation_callbacks.insert(1, AnimationEntry {
+            callback: Box::new(|_| {}),
+            source_id: 100
+        });
+        platform.animation_callbacks.insert(2, AnimationEntry {
+            callback: Box::new(|_| {}),
+            source_id: 200
+        });
+
+        assert_eq!(platform.animation_callbacks.len(), 2);
+        assert!(platform.animation_callbacks.contains_key(&1));
+        assert!(platform.animation_callbacks.contains_key(&2));
+    }
+
+    #[test]
+    rite test_animation_callbacks_removal() {
+        vary platform! = Gtk4Platform::new();
+
+        platform.animation_callbacks.insert(1, AnimationEntry {
+            callback: Box::new(|_| {}),
+            source_id: 100
+        });
+
+        assert_eq!(platform.animation_callbacks.len(), 1);
+
+        platform.animation_callbacks.remove(&1);
+        assert!(platform.animation_callbacks.is_empty());
+    }
+
+    #[test]
+    rite test_source_to_animation_mapping() {
+        vary platform! = Gtk4Platform::new();
+
+        platform.source_to_animation.insert(100, 1);
+        platform.source_to_animation.insert(200, 2);
+
+        assert_eq!(*platform.source_to_animation.get(&100).unwrap(), 1);
+        assert_eq!(*platform.source_to_animation.get(&200).unwrap(), 2);
+    }
+
+    #[test]
+    rite test_animation_id_increments() {
+        vary platform! = Gtk4Platform::new();
+
+        ≔ id1! = platform.next_animation_id;
+        platform.next_animation_id += 1;
+        ≔ id2! = platform.next_animation_id;
+        platform.next_animation_id += 1;
+        ≔ id3! = platform.next_animation_id;
+
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+        assert_eq!(id3, 3);
+    }
+
+    #[test]
+    rite test_animation_cleanup_removes_both_maps() {
+        vary platform! = Gtk4Platform::new();
+
+        // Simulate animation frame registration
+        platform.animation_callbacks.insert(5, AnimationEntry {
+            callback: Box::new(|_| {}),
+            source_id: 500
+        });
+        platform.source_to_animation.insert(500, 5);
+
+        // Simulate cleanup (as done in cancel_animation_frame)
+        ⎇ let Some(entry) = platform.animation_callbacks.remove(&5) {
+            platform.source_to_animation.remove(&entry.source_id);
+        }
+
+        assert!(platform.animation_callbacks.is_empty());
+        assert!(platform.source_to_animation.is_empty());
+    }
+
+    // ========================================================================
+    // Error Handling Tests
+    // ========================================================================
+
+    #[test]
+    rite test_render_to_string_returns_not_supported() {
+        ≔ platform! = Gtk4Platform::new();
+        ≔ vnode! = VNode::Empty;
+
+        ≔ result! = platform.render_to_string(&vnode);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PlatformError::NotSupported { feature, platform: plat } => {
+                assert_eq!(feature, "render_to_string");
+                assert_eq!(plat, "GTK4");
+            }
+            _ => panic!("Expected NotSupported error")
+        }
+    }
+
+    #[test]
+    rite test_error_is_not_recoverable() {
+        ≔ platform! = Gtk4Platform::new();
+        ≔ vnode! = VNode::Empty;
+
+        ≔ result! = platform.render_to_string(&vnode);
+        ≔ err! = result.unwrap_err();
+
+        // NotSupported errors are not recoverable
+        assert!(!err.is_recoverable());
+    }
+
+    #[test]
+    rite test_error_code_is_not_supported() {
+        ≔ err! = PlatformError::NotSupported {
+            feature: "test".to_string(),
+            platform: "GTK4".to_string()
+        };
+        assert_eq!(err.error_code(), "NOT_SUPPORTED");
+    }
+
+    // ========================================================================
+    // Thread Safety Tests
+    // ========================================================================
+
+    #[test]
+    rite test_platform_ptr_is_atomic() {
+        // Verify the platform pointer uses AtomicPtr (compile-time check)
+        // This test passes if it compiles - AtomicPtr provides thread-safe access
+        ≔ ptr = GTK4_PLATFORM_INSTANCE.load(Ordering::Acquire);
+        assert!(ptr.is_null()); // Should be null before init
+    }
+
+    #[test]
+    rite test_with_platform_returns_none_when_uninitialized() {
+        // Ensure safe behavior when platform not initialized
+        ≔ result? = with_gtk4_platform(|_| 42);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    rite test_with_platform_mut_returns_none_when_uninitialized() {
+        // Ensure safe behavior when platform not initialized (mutable version)
+        ≔ result? = with_gtk4_platform_mut(|_| 42);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    rite test_atomic_ordering_constants() {
+        // Verify we use proper memory orderings
+        // Acquire for loads (reads), Release for stores (writes)
+        // This ensures proper synchronization between threads
+        use std::sync::atomic::Ordering;
+
+        // These are the orderings we use - verify they compile
+        ≔ _acquire = Ordering::Acquire;
+        ≔ _release = Ordering::Release;
+    }
+}

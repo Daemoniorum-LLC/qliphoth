@@ -1,0 +1,247 @@
+// Qliphoth Component: Select
+// Dropdown for choosing from a list of options
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// SelectOption for individual options
+struct SelectOption {
+    value: String,
+    label: String,
+    disabled: Bool,
+    group: Option<String>,
+}
+
+impl SelectOption {
+    rite new(value: String, label: String) -> SelectOption {
+        SelectOption {
+            value: value,
+            label: label,
+            disabled: nay,
+            group: None,
+        }
+    }
+}
+
+/// Select component properties
+struct Select {
+    name: String,
+    id: Option<String>,
+    value: Option<String>,
+    placeholder: Option<String>,
+    label: Option<String>,
+    helper: Option<String>,
+    error: Option<String>,
+    size: String,           // sm, md, lg
+    required: Bool,
+    disabled: Bool,
+    multiple: Bool,
+    native: Bool,
+    aria_label: Option<String>,
+    options: List<SelectOption>,
+    onchange: Option<Fn(String)>,
+}
+
+impl Select {
+    rite new() -> Select {
+        Select {
+            name: "",
+            id: None,
+            value: None,
+            placeholder: None,
+            label: None,
+            helper: None,
+            error: None,
+            size: "md",
+            required: nay,
+            disabled: nay,
+            multiple: nay,
+            native: yay,
+            aria_label: None,
+            options: List·new(),
+            onchange: None,
+        }
+    }
+}
+
+impl Component for Select {
+    rite render(self) -> VNode {
+        ≔ select_id = self.id.unwrap_or(self.name + "-select");
+        ≔ wrapper = h("div").class("select-wrapper");
+
+        // Label
+        ⌥ self.label {
+            Some(label_text) => {
+                wrapper = wrapper.child(
+                    h("label")
+                        .class("select-label")
+                        .attr("for", select_id)
+                        .text(label_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Select element
+        ≔ select_class = ⌥ self.native {
+            yay => "select-native",
+            nay => "select-custom",
+        };
+
+        ≔ select_node = h("select")
+            .class("select")
+            .class("select-" + self.size)
+            .class(select_class)
+            .attr("name", self.name)
+            .attr("id", select_id);
+
+        // Value
+        ⌥ self.value {
+            Some(v) => { select_node = select_node.attr("value", v); },
+            None => {}
+        }
+
+        // Required
+        ⌥ self.required {
+            yay => {
+                select_node = select_node
+                    .attr("required", "true")
+                    .attr("aria-required", "true");
+            },
+            nay => {}
+        }
+
+        // Disabled
+        ⌥ self.disabled {
+            yay => {
+                select_node = select_node
+                    .class("select-disabled")
+                    .attr("disabled", "true");
+            },
+            nay => {}
+        }
+
+        // Multiple
+        ⌥ self.multiple {
+            yay => { select_node = select_node.attr("multiple", "true"); },
+            nay => {}
+        }
+
+        // Error state
+        ⌥ self.error {
+            Some(_) => {
+                select_node = select_node
+                    .class("select-error")
+                    .attr("aria-invalid", "true");
+            },
+            None => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { select_node = select_node.attr("aria-label", label); },
+            None => {}
+        }
+
+        // Placeholder option
+        ⌥ self.placeholder {
+            Some(placeholder_text) => {
+                select_node = select_node.child(
+                    h("option")
+                        .attr("value", "")
+                        .attr("disabled", "true")
+                        .attr("selected", "true")
+                        .text(placeholder_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Group options by optgroup
+        ≔ groups = Map·new();
+        ≔ ungrouped = List·new();
+
+        ⌽ opt ∈ self.options {
+            ⌥ opt.group {
+                Some(group_name) => {
+                    ⌥ groups.contains_key(group_name) {
+                        yay => groups.get_mut(group_name).push(opt),
+                        nay => {
+                            ≔ new_list = List·new();
+                            new_list.push(opt);
+                            groups.insert(group_name, new_list);
+                        }
+                    }
+                },
+                None => ungrouped.push(opt),
+            }
+        }
+
+        // Render ungrouped options
+        ⌽ opt ∈ ungrouped {
+            ≔ option_node = h("option")
+                .attr("value", opt.value)
+                .text(opt.label);
+
+            ⌥ opt.disabled {
+                yay => { option_node = option_node.attr("disabled", "true"); },
+                nay => {}
+            }
+
+            select_node = select_node.child(option_node.build());
+        }
+
+        // Render grouped options
+        ⌽ (group_name, opts) ∈ groups {
+            ≔ optgroup = h("optgroup").attr("label", group_name);
+
+            ⌽ opt ∈ opts {
+                ≔ option_node = h("option")
+                    .attr("value", opt.value)
+                    .text(opt.label);
+
+                ⌥ opt.disabled {
+                    yay => { option_node = option_node.attr("disabled", "true"); },
+                    nay => {}
+                }
+
+                optgroup = optgroup.child(option_node.build());
+            }
+
+            select_node = select_node.child(optgroup.build());
+        }
+
+        wrapper = wrapper.child(select_node.build());
+
+        // Helper text
+        ⌥ self.helper {
+            Some(helper_text) => {
+                wrapper = wrapper.child(
+                    h("p")
+                        .class("select-helper")
+                        .text(helper_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Error message
+        ⌥ self.error {
+            Some(error_text) => {
+                wrapper = wrapper.child(
+                    h("p")
+                        .class("select-error-message")
+                        .text(error_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        wrapper.build()
+    }
+}

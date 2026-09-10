@@ -1,0 +1,274 @@
+// Qliphoth Component: Input
+// A text input field with validation and accessibility
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Input component properties
+struct Input {
+    name: String,
+    id: Option<String>,
+    input_type: String,     // text, email, password, number, search, tel, url
+    value: Option<String>,
+    placeholder: Option<String>,
+    label: Option<String>,
+    helper: Option<String>,
+    error: Option<String>,
+    size: String,           // sm, md, lg
+    required: Bool,
+    disabled: Bool,
+    readonly: Bool,
+    min_length: Option<i32>,
+    max_length: Option<i32>,
+    pattern: Option<String>,
+    title: Option<String>,
+    autocomplete: Option<String>,
+    prefix: Option<String>,
+    suffix: Option<String>,
+    prefix_icon: Option<String>,
+    aria_label: Option<String>,
+    onchange: Option<Fn(String)>,
+}
+
+impl Input {
+    rite new() -> Input {
+        Input {
+            name: "",
+            id: None,
+            input_type: "text",
+            value: None,
+            placeholder: None,
+            label: None,
+            helper: None,
+            error: None,
+            size: "md",
+            required: nay,
+            disabled: nay,
+            readonly: nay,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            title: None,
+            autocomplete: None,
+            prefix: None,
+            suffix: None,
+            prefix_icon: None,
+            aria_label: None,
+            onchange: None,
+        }
+    }
+}
+
+impl Component for Input {
+    rite render(self) -> VNode {
+        ≔ input_id = self.id.unwrap_or(self.name + "-field");
+        ≔ wrapper = h("div").class("input-wrapper");
+
+        // Label
+        ⌥ self.label {
+            Some(label_text) => {
+                ≔ label_node = h("label")
+                    .class("input-label")
+                    .attr("for", input_id)
+                    .text(label_text);
+
+                ⌥ self.required {
+                    yay => {
+                        label_node = label_node.child(
+                            h("span")
+                                .class("required-indicator")
+                                .text("*")
+                                .build()
+                        );
+                    },
+                    nay => {}
+                }
+
+                wrapper = wrapper.child(label_node.build());
+            },
+            None => {}
+        }
+
+        // Input container (for prefix/suffix)
+        ≔ input_container = h("div").class("input-container");
+
+        // Prefix
+        ⌥ self.prefix {
+            Some(prefix_text) => {
+                input_container = input_container.child(
+                    h("span")
+                        .class("input-prefix")
+                        .text(prefix_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Prefix icon
+        ⌥ self.prefix_icon {
+            Some(icon_name) => {
+                input_container = input_container.child(
+                    h("span")
+                        .class("input-icon")
+                        .attr("data-icon", icon_name)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Input element
+        ≔ input_node = h("input")
+            .class("input")
+            .class("input-" + self.size)
+            .attr("type", self.input_type)
+            .attr("name", self.name)
+            .attr("id", input_id);
+
+        // Value
+        ⌥ self.value {
+            Some(v) => { input_node = input_node.attr("value", v); },
+            None => {}
+        }
+
+        // Placeholder
+        ⌥ self.placeholder {
+            Some(p) => { input_node = input_node.attr("placeholder", p); },
+            None => {}
+        }
+
+        // Required
+        ⌥ self.required {
+            yay => {
+                input_node = input_node
+                    .attr("required", "true")
+                    .attr("aria-required", "true");
+            },
+            nay => {}
+        }
+
+        // Disabled
+        ⌥ self.disabled {
+            yay => {
+                input_node = input_node
+                    .class("input-disabled")
+                    .attr("disabled", "true");
+            },
+            nay => {}
+        }
+
+        // Readonly
+        ⌥ self.readonly {
+            yay => { input_node = input_node.attr("readonly", "true"); },
+            nay => {}
+        }
+
+        // Length constraints
+        ⌥ self.min_length {
+            Some(min) => { input_node = input_node.attr("minlength", min.to_string()); },
+            None => {}
+        }
+
+        ⌥ self.max_length {
+            Some(max) => { input_node = input_node.attr("maxlength", max.to_string()); },
+            None => {}
+        }
+
+        // Pattern
+        ⌥ self.pattern {
+            Some(p) => { input_node = input_node.attr("pattern", p); },
+            None => {}
+        }
+
+        // Title (for pattern hint)
+        ⌥ self.title {
+            Some(t) => { input_node = input_node.attr("title", t); },
+            None => {}
+        }
+
+        // Autocomplete
+        ⌥ self.autocomplete {
+            Some(ac) => { input_node = input_node.attr("autocomplete", ac); },
+            None => {}
+        }
+
+        // Error state
+        ⌥ self.error {
+            Some(error_text) => {
+                input_node = input_node
+                    .class("input-error")
+                    .attr("aria-invalid", "true")
+                    .attr("aria-describedby", input_id + "-error");
+            },
+            None => {}
+        }
+
+        // Helper text aria
+        ⌥ self.helper {
+            Some(_) => {
+                ≔ describedby = input_node.node.attr("aria-describedby");
+                ⌥ describedby == "" {
+                    yay => input_node = input_node.attr("aria-describedby", input_id + "-helper"),
+                    nay => input_node = input_node.attr("aria-describedby", describedby + " " + input_id + "-helper"),
+                };
+            },
+            None => {}
+        }
+
+        // Aria label
+        ⌥ self.aria_label {
+            Some(label) => { input_node = input_node.attr("aria-label", label); },
+            None => {}
+        }
+
+        input_container = input_container.child(input_node.build());
+
+        // Suffix
+        ⌥ self.suffix {
+            Some(suffix_text) => {
+                input_container = input_container.child(
+                    h("span")
+                        .class("input-suffix")
+                        .text(suffix_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        wrapper = wrapper.child(input_container.build());
+
+        // Helper text
+        ⌥ self.helper {
+            Some(helper_text) => {
+                wrapper = wrapper.child(
+                    h("p")
+                        .class("input-helper")
+                        .attr("id", input_id + "-helper")
+                        .text(helper_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        // Error message
+        ⌥ self.error {
+            Some(error_text) => {
+                wrapper = wrapper.child(
+                    h("p")
+                        .class("input-error-message")
+                        .attr("id", input_id + "-error")
+                        .attr("role", "alert")
+                        .text(error_text)
+                        .build()
+                );
+            },
+            None => {}
+        }
+
+        wrapper.build()
+    }
+}

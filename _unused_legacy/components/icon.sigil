@@ -1,0 +1,162 @@
+// Qliphoth Component: Icon
+// SVG icon rendering from icon libraries
+
+invoke qliphoth·core·VNode;
+invoke qliphoth·core·h;
+invoke qliphoth·core·Component;
+
+/// Icon component
+struct Icon {
+    name: Option<String>,
+    svg: Option<String>,       // Custom SVG content
+    viewBox: Option<String>,
+    size: String,              // xs, sm, md, lg, xl, or number
+    custom_size: Option<i32>,
+    color: String,             // currentColor, primary, success, warning, danger, or hex
+    variant: String,           // filled, outlined, twotone
+    rotate: Option<i32>,       // Rotation in degrees
+    flip: Option<String>,      // horizontal, vertical, both
+    animation: Option<String>, // spin, pulse, bounce
+    library: Option<String>,   // material, feather, etc.
+    stroke_width: Option<i32>,
+    display: String,           // block, inline
+    aria_label: Option<String>,
+}
+
+impl Icon {
+    rite new(name: String) -> Icon {
+        Icon {
+            name: Some(name),
+            svg: None,
+            viewBox: None,
+            size: "md",
+            custom_size: None,
+            color: "currentColor",
+            variant: "filled",
+            rotate: None,
+            flip: None,
+            animation: None,
+            library: None,
+            stroke_width: None,
+            display: "block",
+            aria_label: None,
+        }
+    }
+
+    rite from_svg(svg: String, viewBox: String) -> Icon {
+        Icon {
+            name: None,
+            svg: Some(svg),
+            viewBox: Some(viewBox),
+            size: "md",
+            custom_size: None,
+            color: "currentColor",
+            variant: "filled",
+            rotate: None,
+            flip: None,
+            animation: None,
+            library: None,
+            stroke_width: None,
+            display: "block",
+            aria_label: None,
+        }
+    }
+}
+
+impl Component for Icon {
+    rite render(self) -> VNode {
+        ≔ node = h("svg")
+            .class("icon")
+            .class("icon-" + self.variant)
+            .class("icon-" + self.display);
+
+        // Size classes or custom dimensions
+        ⌥ self.custom_size {
+            Some(px) => {
+                node = node.attr("width", px.to_string());
+                node = node.attr("height", px.to_string());
+            },
+            None => {
+                node = node.class("icon-" + self.size);
+            }
+        }
+
+        // Color handling
+        ⌥ self.color.starts_with("#") {
+            yay => { node = node.attr("fill", self.color); },
+            nay => {
+                ⌥ self.color == "currentColor" {
+                    yay => { node = node.attr("fill", "currentColor"); },
+                    nay => { node = node.class("icon-" + self.color); }
+                }
+            }
+        }
+
+        // Rotation
+        ⌥ self.rotate {
+            Some(deg) => { node = node.class("icon-rotate-" + deg.to_string()); },
+            None => {}
+        }
+
+        // Flip
+        ⌥ self.flip {
+            Some(flip_type) => { node = node.class("icon-flip-" + flip_type); },
+            None => {}
+        }
+
+        // Animation
+        ⌥ self.animation {
+            Some(anim) => { node = node.class("icon-" + anim); },
+            None => {}
+        }
+
+        // Stroke width (for outlined icons)
+        ⌥ self.stroke_width {
+            Some(width) => { node = node.attr("stroke-width", width.to_string()); },
+            None => {}
+        }
+
+        // Library
+        ⌥ self.library {
+            Some(lib) => { node = node.attr("data-library", lib); },
+            None => {}
+        }
+
+        // Icon name
+        ⌥ self.name {
+            Some(name) => { node = node.attr("data-icon", name); },
+            None => {}
+        }
+
+        // ViewBox
+        ⌥ self.viewBox {
+            Some(vb) => { node = node.attr("viewBox", vb); },
+            None => { node = node.attr("viewBox", "0 0 24 24"); }
+        }
+
+        // Accessibility
+        ⌥ self.aria_label {
+            Some(label) => {
+                // When accessible label is provided, icon is not hidden
+                node = node.attr("aria-hidden", "false");
+                node = node.attr("aria-label", label);
+                node = node.attr("role", "img");
+            },
+            None => {
+                // Default: decorative icon, hidden from screen readers
+                node = node.attr("aria-hidden", "true");
+            }
+        }
+
+        // Custom SVG content
+        ⌥ self.svg {
+            Some(svg_content) => {
+                // In a real implementation, this would inject the SVG path
+                node = node.attr("data-svg", svg_content);
+            },
+            None => {}
+        }
+
+        node.build()
+    }
+}
