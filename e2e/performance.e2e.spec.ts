@@ -9,16 +9,49 @@ import { test, expect } from '@playwright/test'
  * Sprint 8: Integration Testing - Performance Benchmarks
  */
 
-// Performance thresholds (in milliseconds)
-// Note: These are CI-friendly thresholds that account for slower runners
-// and browser automation overhead (especially on Windows/webkit)
+/*
+ * THESE ARE SMOKE CHECKS, NOT A PERFORMANCE GATE. Do not read a number below as a
+ * measured budget, and do not tighten one because the current runs come in well under
+ * it -- that is the point of the headroom.
+ *
+ * Three things make a wall-clock assertion here unable to measure the product:
+ *
+ *   1. The suite runs against the Vite *dev* server (see `webServer` in
+ *      playwright.config.ts), not a production build. It measures on-demand module
+ *      transforms, not shipped code.
+ *   2. Two Playwright workers share one dev server across 900+ tests, so every
+ *      measurement includes contention from whatever else is running.
+ *   3. Most of these numbers are dominated by Playwright's own per-action cost --
+ *      actionability checks plus a driver round trip -- not by anything the page does.
+ *
+ * On top of that, hosted macOS and Windows runners are materially slower than Linux.
+ *
+ * So each value is set high enough to catch a *hang* -- something that stopped
+ * responding entirely -- and nothing finer. Values were chosen with roughly 2x
+ * headroom over the worst figure observed across the macOS and Windows matrix in run
+ * 34438478023, deliberately not tuned to just above it. The previously observed
+ * maximum is recorded next to each one so the next reader can see what the real
+ * spread looks like.
+ *
+ * If you want an actual performance budget, measure a production build somewhere with
+ * stable timing and track it as a trend. Do not put it here.
+ */
 const THRESHOLDS = {
-  pageLoad: 3000,           // Max time for initial page load
-  interactionResponse: 250, // Max time for button click response (CI overhead)
-  typingLatency: 75,        // Max latency per keystroke
-  tabSwitch: 350,           // Max time to switch tabs
-  widgetCreation: 500,      // Max time to create widgets
-  eventDispatch: 100,       // Max time for event dispatch
+  // Full navigation to first paint of the target view. Observed max 2.6s.
+  pageLoad: 6000,
+  // Single click/select round trip through Playwright. Observed max 443ms.
+  interactionResponse: 1000,
+  // Per-keystroke latency of a bulk `fill`. Never observed failing; kept as-is.
+  typingLatency: 75,
+  // Click plus a class-change assertion. Observed max 534ms.
+  tabSwitch: 1000,
+  // NOTE: despite the name, `widgetCreation` covers a full `page.goto` plus four
+  // visibility waits -- it is a page-load measurement, not a widget-construction one.
+  // Its old 500ms value was never achievable off Linux. Observed max 2.66s.
+  widgetCreation: 6000,
+  // Per-event cost of 20 forced clicks in a loop; almost entirely driver round-trip
+  // time. Observed max 140ms.
+  eventDispatch: 400,
 }
 
 test.describe('Performance: Page Load', () => {
@@ -213,7 +246,10 @@ test.describe('Performance: Event Dispatch', () => {
     const totalTime = Date.now() - startTime
 
     console.log(`Keyboard event time: ${totalTime}ms`)
-    expect(totalTime).toBeLessThan(1500) // 20 events in 1.5 seconds (CI overhead)
+    // Smoke check, not a performance gate. 20 sequential `keyboard.press` calls are
+    // 20 driver round trips; the page's own handling is a rounding error next to that.
+    // Observed max 1921ms (webkit, macOS). See the note on THRESHOLDS above.
+    expect(totalTime).toBeLessThan(5000)
   })
 })
 
@@ -321,7 +357,12 @@ test.describe('Performance: Metrics Collection', () => {
     console.log(`  First Paint: ${metrics.firstPaint.toFixed(2)}ms`)
     console.log(`  First Contentful Paint: ${metrics.firstContentfulPaint.toFixed(2)}ms`)
 
-    // Verify reasonable performance
-    expect(metrics.firstContentfulPaint).toBeLessThan(2000)
+    // Smoke check, not a performance gate: this asserts the page painted at all, not
+    // that it painted fast. FCP is the noisiest number in this file because it is
+    // taken against a cold Vite dev server under two-worker contention -- the spread
+    // across the macOS/Windows matrix was 2095ms to 8366ms (firefox, Windows) while
+    // Linux stayed under 2000ms. A production build measured on stable hardware is
+    // the only place an FCP budget means anything. See the note on THRESHOLDS above.
+    expect(metrics.firstContentfulPaint).toBeLessThan(15000)
   })
 })
