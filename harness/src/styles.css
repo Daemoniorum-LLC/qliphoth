@@ -367,12 +367,18 @@ a:hover {
 /*
  * Touch-target floor.
  *
- * WCAG 2.1 SC 2.5.5 (and the Apple HIG) require an interactive control to present
- * a target of at least 44x44 CSS px. Without an explicit minimum, a .btn is only
- * as tall as `padding-block * 2 + line-height`, which resolves to 42px under
- * WebKit's default font metrics -- so the control silently fell 2px under the
- * requirement on Safari/iOS while clearing it on Chromium and Gecko. Pin the floor
- * rather than relying on intrinsic sizing, which varies per engine and per font.
+ * WCAG 2.1 SC 2.5.5 (and the Apple HIG) require an interactive control to present a
+ * target of at least 44x44 CSS px. Nothing here set one, so a .btn was only ever as
+ * tall as `padding-block * 2` plus whatever line box the engine's default button font
+ * produced -- and, at narrow widths, whether the label happened to wrap. Measured
+ * heights for the same button, same stylesheet:
+ *
+ *   macOS WebKit, 375px viewport      42px   (2px under, and red in CI)
+ *   Chromium (Linux), 375px viewport  46px   (only because "> Run" wrapped to 2 lines)
+ *   Chromium (Linux), desktop         31px   (well under, but no test looked here)
+ *
+ * So the sizes that did clear 44px were clearing it by accident. Pin the floor
+ * explicitly instead of inheriting whatever font metrics and wrapping produce.
  */
 .btn {
   display: inline-flex;
