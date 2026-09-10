@@ -39,12 +39,17 @@ import { test, expect } from '@playwright/test'
 const THRESHOLDS = {
   // Full navigation to first paint of the target view. Observed max 2.6s.
   pageLoad: 6000,
-  // Single click/select round trip through Playwright. Observed max 443ms.
-  interactionResponse: 1000,
+  // Single click/select round trip through Playwright. 443ms was the max in ONE
+  // sample; CI webkit has since produced 1155, 1243, 1283, 1913 and 2433ms for the
+  // same three tests. A budget set at ~2x a single observation is a coin flip, not
+  // a threshold -- run 34451271114 passed and 34452618290 failed on identical code.
+  interactionResponse: 6000,
   // Per-keystroke latency of a bulk `fill`. Never observed failing; kept as-is.
   typingLatency: 75,
-  // Click plus a class-change assertion. Observed max 534ms.
-  tabSwitch: 1000,
+  // Click plus a class-change assertion. 534ms was one sample; the same CI webkit
+  // variance above applies -- this and interactionResponse failed together, in the
+  // same runs, on the same machines.
+  tabSwitch: 6000,
   // NOTE: despite the name, `widgetCreation` covers a full `page.goto` plus four
   // visibility waits -- it is a page-load measurement, not a widget-construction one.
   // Its old 500ms value was never achievable off Linux. Observed max 2.66s.
