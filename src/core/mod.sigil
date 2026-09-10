@@ -77,7 +77,13 @@ invoke crate·platform·Platform;
     /// Mount a component actor to a DOM selector
     ☉ rite mount(selector: &str, root: VNode) -> Self! {
         ≔ app! = App·new()
-        // Platform-specific mounting handled by runtime
+        ≔ container! = dom·query_selector(selector, selector·len() as i32)
+        ⎇ container != 0 {
+            ≔ el! = render_vnode_to_dom(&root)
+            ⎇ el != 0 {
+                dom·append_child(container, el)
+            }
+        }
         app
     }
 
@@ -130,6 +136,44 @@ invoke crate·platform·Platform;
         }
 
         VNode·Empty => "".to_string()
+    }
+}
+
+/// Render a VNode tree to real DOM nodes via `dom.*` WASM imports.
+/// Returns an i32 DOM element handle, or 0 for Empty nodes.
+rite render_vnode_to_dom(node: &VNode) -> i32! {
+    ⌥ node {
+        VNode·Element(el) => {
+            ≔ handle! = dom·create_element(&el.tag, el.tag·len() as i32)
+            ∀ (name, value) ∈ &el.attrs {
+                dom·set_attribute(handle, name, name·len() as i32, value, value·len() as i32)
+            }
+            ⎇ !el.styles·is_empty() {
+                ≔ style_str! = render_styles(&el.styles)
+                dom·set_attribute(handle, "style", "style"·len() as i32, &style_str, style_str·len() as i32)
+            }
+            ∀ child ∈ &el.children {
+                ≔ ch! = render_vnode_to_dom(child)
+                ⎇ ch != 0 {
+                    dom·append_child(handle, ch)
+                }
+            }
+            handle
+        }
+        VNode·Text(t) => {
+            dom·create_text(&t.content, t.content·len() as i32)
+        }
+        VNode·Fragment(frag) => {
+            ≔ wrapper! = dom·create_element("span", "span"·len() as i32)
+            ∀ child ∈ &frag.children {
+                ≔ ch! = render_vnode_to_dom(child)
+                ⎇ ch != 0 {
+                    dom·append_child(wrapper, ch)
+                }
+            }
+            wrapper
+        }
+        VNode·Empty => 0
     }
 }
 

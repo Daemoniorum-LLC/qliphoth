@@ -275,7 +275,13 @@ extern "C" {
 
                 ⌥ self.widgets.get_mut(&parent_id) {
                     Some(parent) => {
-                        parent.children.retain(|&id| id ≠ child_id);
+                        ≔ Δ kept: Vec<usize>! = Vec·new();
+                        ∀ id ∈ &parent.children {
+                            ⎇ id != child_id {
+                                kept.push(id);
+                            }
+                        }
+                        parent.children = kept;
                     }
                     None => {}
                 }
@@ -303,7 +309,7 @@ extern "C" {
         ≔ Δ width: i32! = 0;
         ≔ Δ height: i32! = 0;
         unsafe {
-            native_window_size(self.window.handle, &mut width, &mut height)
+            native_window_size(self.window.handle, &Δ width, &Δ height)
         };
         (width, height)
     }

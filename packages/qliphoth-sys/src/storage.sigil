@@ -164,11 +164,14 @@ invoke crate·window·Window;
 
     /// Get a JSON value from localStorage
     ☉ rite get_json[T: serde·de·DeserializeOwned](key: &str) -> Result[Option[T], String]? {
-        ⌥ Self·get(key)? {
+        // Workaround: avoid Self·get (Self not resolved by WASM backend) and map_err with format!
+        // (triggers env.set arity bug). Inline the storage read and use match for error mapping.
+        ⌥ local_storage()·ok_or_else(|| "localStorage not available"·to_string())?·get_item(key)·map_err(|_| "Failed to read from localStorage"·to_string())? {
             Some(json) => {
-                serde_json·from_str(&json)
-                    ·map(Some)
-                    ·map_err(|e| format!("JSON parse error: {}", e))
+                ⌥ serde_json·from_str(&json) {
+                    Ok(v) => Ok(Some(v)),
+                    Err(_) => Err("JSON parse error".to_string()),
+                }
             }
             None => Ok(None),
         }
@@ -176,14 +179,25 @@ invoke crate·window·Window;
 
     /// Set a JSON value ∈ localStorage
     ☉ rite set_json[T: serde·Serialize](key: &str, value: &T) -> Result[(), String]? {
-        ≔ json = serde_json·to_string(value)
-            ·map_err(|e| format!("JSON serialize error: {}", e))?;
-        Self·set(key, &json)
+        // Workaround: avoid Self·set (Self not resolved by WASM backend → falls back to env.set
+        // with wrong arity). Inline the storage write directly.
+        ⌥ serde_json·to_string(value) {
+            Err(_) => Err("JSON serialize error".to_string()),
+            Ok(json) => {
+                local_storage()
+                    ·ok_or_else(|| "localStorage not available"·to_string())?
+                    ·set_item(key, &json)
+                    ·map_err(|_| "Failed to write to localStorage (quota exceeded?)"·to_string())
+            },
+        }
     }
 
     /// Check ⎇ key exists
     ☉ rite contains(key: &str) -> bool! {
-        Self·get(key)·ok()·flatten()·is_some()
+        // Workaround: avoid Self·get (Self not resolved by WASM backend). Inline directly.
+        local_storage()
+            ·and_then(|s| s·get_item(key)·ok()·flatten())
+            ·is_some()
     }
 
     /// Get number of items stored
@@ -195,7 +209,10 @@ invoke crate·window·Window;
 
     /// Check ⎇ storage is empty
     ☉ rite is_empty() -> bool! {
-        Self·len() == 0
+        // Workaround: avoid Self·len (Self not resolved by WASM backend). Inline directly.
+        local_storage()
+            ·map(|s| s·length() == 0)
+            ·unwrap_or(true)
     }
 }
 
@@ -239,11 +256,14 @@ invoke crate·window·Window;
 
     /// Get a JSON value from sessionStorage
     ☉ rite get_json[T: serde·de·DeserializeOwned](key: &str) -> Result[Option[T], String]? {
-        ⌥ Self·get(key)? {
+        // Workaround: avoid Self·get (Self not resolved by WASM backend) and map_err with format!
+        // (triggers env.set arity bug). Inline the storage read and use match for error mapping.
+        ⌥ session_storage()·ok_or_else(|| "sessionStorage not available"·to_string())?·get_item(key)·map_err(|_| "Failed to read from sessionStorage"·to_string())? {
             Some(json) => {
-                serde_json·from_str(&json)
-                    ·map(Some)
-                    ·map_err(|e| format!("JSON parse error: {}", e))
+                ⌥ serde_json·from_str(&json) {
+                    Ok(v) => Ok(Some(v)),
+                    Err(_) => Err("JSON parse error".to_string()),
+                }
             }
             None => Ok(None),
         }
@@ -251,8 +271,16 @@ invoke crate·window·Window;
 
     /// Set a JSON value ∈ sessionStorage
     ☉ rite set_json[T: serde·Serialize](key: &str, value: &T) -> Result[(), String]? {
-        ≔ json = serde_json·to_string(value)
-            ·map_err(|e| format!("JSON serialize error: {}", e))?;
-        Self·set(key, &json)
+        // Workaround: avoid Self·set (Self not resolved by WASM backend → falls back to env.set
+        // with wrong arity). Inline the storage write directly.
+        ⌥ serde_json·to_string(value) {
+            Err(_) => Err("JSON serialize error".to_string()),
+            Ok(json) => {
+                session_storage()
+                    ·ok_or_else(|| "sessionStorage not available"·to_string())?
+                    ·set_item(key, &json)
+                    ·map_err(|_| "Failed to write to sessionStorage"·to_string())
+            },
+        }
     }
 }

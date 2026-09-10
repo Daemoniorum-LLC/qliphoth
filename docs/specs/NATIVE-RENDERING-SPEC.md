@@ -1,8 +1,8 @@
 # Qliphoth Native Rendering Backend Specification
 
-**Version:** 0.2.0
-**Date:** 2025-02-17
-**Status:** Draft (Reviewed)
+**Version:** 0.3.0
+**Date:** 2026-02-20
+**Status:** Draft (Active)
 **SDD Phase:** Spec
 **Parent Spec:** None
 
@@ -483,6 +483,205 @@ event_dispatch(event):
 
 **Note:** Phase 1 does NOT implement stopPropagation. All events bubble to root.
 
+### 3.10 Monospace Font Support
+
+**Invariant:** When `font-family: monospace` is set, all ASCII printable glyphs at the same
+font size have equal advance width.
+
+**New CSS property** (extends §4.4 table):
+
+| Property | Values | Notes |
+|----------|--------|-------|
+| `font-family` | `sans-serif`, `monospace` | Default: `sans-serif` |
+
+**Contract:**
+
+```
+set_style(element, "font-family", value):
+    IF value ∈ {"monospace", "sans-serif"}:
+        POST: element.styles.font_family = value
+        POST: layout marked dirty
+    ELSE:
+        POST: no change (unrecognized values ignored, use default)
+
+render_text(element):
+    IF element.styles.font_family == "monospace":
+        USE bundled NotoSansMono-Regular font
+    ELSE:
+        USE bundled NotoSans-Regular font (default)
+```
+
+**Invariant (monospace property):**
+
+```
+∀ c₁, c₂ ∈ ASCII printable (U+0020..U+007E),
+∀ font_size > 0:
+    advance_width(c₁, monospace, font_size) == advance_width(c₂, monospace, font_size)
+```
+
+This is verified behaviorally: two equal-length strings rendered with `font-family: monospace`
+and `width: auto` must produce elements of equal computed width, regardless of which characters
+they contain.
+
+**Implementation note:** Requires bundling `NotoSansMono-Regular.ttf` in addition to the existing
+Noto Sans Regular and Bold. Font selection must propagate from element `StyleProperties` through
+to the `TextSystem::render_text` call.
+
+---
+
+### 3.11 Text Span API
+
+**Invariant:** Text spans override element-level color for their character ranges. Characters not
+covered by any span use the element's `color` CSS property.
+
+**New FFI function:**
+
+```rust
+/// Set per-run color spans on an element's text content.
+/// spans: pointer to an array of TextSpan (C-compatible layout)
+/// count: number of spans. count == 0 clears all spans.
+/// PRE:  element handle is valid
+/// PRE:  each span's start ≤ end ≤ len(element.text_content) (in UTF-8 bytes)
+/// POST: element.text_spans = spans[0..count]
+extern "C" fn native_set_text_spans(elem: usize, spans: *const TextSpan, count: usize);
+
+/// C-compatible span descriptor
+#[repr(C)]
+pub struct TextSpan {
+    start: u32,  // Inclusive start byte offset in text_content (UTF-8)
+    end: u32,    // Exclusive end byte offset
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+```
+
+**Contract:**
+
+```
+set_text_spans(element, spans, count):
+    PRE:  element handle is valid
+    POST: element.text_spans = spans[0..count]
+    IF count == 0:
+        POST: element.text_spans is empty
+        POST: all text rendered with element.styles.color
+
+render_text_with_spans(element):
+    ≔ text_len = len(element.text_content_bytes)
+    FOR each UTF-8 character at byte offset i:
+        color ← element.styles.color  // element-level default
+        FOR each span in element.text_spans (in array order):
+            ≔ eff_end = min(span.end, text_len)  // clamp to current text length
+            IF span.start ≤ i < eff_end:
+                color ← span.color    // span overrides; later span wins on overlap
+        render_glyph(char, color)
+```
+
+**Overlap resolution:** Later span in the array wins (higher index overrides lower index).
+
+**Out-of-range spans:** `native_set_text_content` does NOT clear spans. If text is replaced
+with shorter content, spans with `end > new_len` are silently clamped to `new_len` at render
+time. No error is raised and no crash occurs. Callers are responsible for resetting spans when
+span ranges are no longer meaningful.
+
+**Invariant:** A span with `start == end` (zero-length) has no visible effect.
+
+---
+
+### 3.12 GPU Rendering Activation
+
+**Invariant:** Both rendering modes (Software and GPU) produce visually equivalent output for
+rectangular elements with solid colors. GPU mode must meet stricter performance targets.
+
+**New FFI functions:**
+
+```rust
+/// Set the rendering mode for a window.
+/// mode: RENDER_MODE_SOFTWARE (0) or RENDER_MODE_GPU (1)
+/// Returns: 0 on success, -1 if GPU mode requested but GPU unavailable.
+/// On failure, render mode remains Software.
+/// PRE:  window handle is valid
+extern "C" fn native_set_render_mode(window: usize, mode: i32) -> i32;
+
+/// Query current rendering mode.
+/// Returns: 0 (Software) or 1 (GPU)
+/// PRE:  window handle is valid
+extern "C" fn native_get_render_mode(window: usize) -> i32;
+
+// Mode constants
+const RENDER_MODE_SOFTWARE: i32 = 0;
+const RENDER_MODE_GPU: i32 = 1;
+```
+
+**Contract:**
+
+```
+set_render_mode(window, RENDER_MODE_GPU):
+    IF gpu_state is None:
+        ATTEMPT initialize_gpu(window)
+        IF initialization fails:
+            POST: render_mode = Software (unchanged)
+            RETURN -1
+    POST: window.render_mode = Gpu
+    RETURN 0
+
+set_render_mode(window, RENDER_MODE_SOFTWARE):
+    POST: window.render_mode = Software
+    RETURN 0
+
+get_render_mode(window):
+    RETURN 0 if Software, 1 if Gpu
+
+native_render(window) where render_mode == Gpu:
+    collect_gpu_instances(window)  // walk element tree, emit RectInstance per element
+    upload_instances_to_gpu(buffer)
+    submit_draw_call()
+    // Does NOT fall back to software; caller must set mode explicitly
+
+native_render(window) where render_mode == Software:
+    render_to_framebuffer(window)  // existing CPU path
+
+native_sample_pixel(window, x, y) where render_mode == Software:
+    RETURN framebuffer[y * width + x]  // direct CPU read
+
+native_sample_pixel(window, x, y) where render_mode == Gpu:
+    // GPU framebuffer is not CPU-readable without an explicit copy.
+    // Implementation MUST perform a synchronous GPU→CPU readback:
+    //   1. Issue wgpu::CommandEncoder::copy_texture_to_buffer for the pixel region
+    //   2. Submit and poll the device to completion (device.poll(Maintain::Wait))
+    //   3. Map the staging buffer, read the pixel, unmap
+    // This is intentionally synchronous; native_sample_pixel is #[cfg(test)] only
+    // and correctness takes priority over throughput in test contexts.
+    RETURN readback_pixel_from_gpu(window, x, y)
+```
+
+**Visual equivalence invariant:**
+
+```
+∀ window, ∀ element_tree containing only rectangular elements with solid colors:
+    pixels_software = render_software(window, tree)
+    pixels_gpu      = render_gpu(window, tree)
+    ∀ pixel at (x, y):
+        |pixels_software[x,y].r - pixels_gpu[x,y].r| ≤ 1
+        |pixels_software[x,y].g - pixels_gpu[x,y].g| ≤ 1
+        |pixels_software[x,y].b - pixels_gpu[x,y].b| ≤ 1
+```
+
+(Tolerance of 1 per channel for GPU precision differences.)
+
+**Performance targets (GPU mode):**
+
+| Operation | Target |
+|-----------|--------|
+| Frame render (simple scene) | < 4ms |
+| Frame render (1000 rect elements) | < 8ms |
+| GPU initialization (one-time) | < 500ms |
+
+**Test environment note:** GPU tests require either a physical GPU or a software Vulkan adapter
+(wgpu's Vulkan software backend via `WGPU_BACKEND=vulkan` + llvmpipe). Tests that require
+GPU hardware must be annotated `#[cfg_attr(not(feature = "gpu_tests"), ignore)]`.
+
 ---
 
 ## 4. Constraints & Invariants
@@ -523,6 +722,7 @@ event_dispatch(event):
 | `background-color` | hex, named | |
 | `color` | hex, named | |
 | `font-size` | px | |
+| `font-family` | sans-serif, monospace | New in §3.10 |
 | `border-radius` | px | |
 | `overflow` | hidden, scroll | visible is hidden |
 
@@ -597,9 +797,9 @@ VNode diffing must:
 
 ### 7.2 Unresolved
 
-- **Q:** How to handle system clipboard? (need platform-specific code)
+- **Q:** How to handle system clipboard? **A:** ✅ Resolved — async event-based API via arboard (Phase 9)
 - **Q:** How to handle DPI scaling? (query from OS, scale layout)
-- **Q:** How to bundle fonts? (embed in binary vs load from disk)
+- **Q:** How to bundle fonts? **A:** ✅ Resolved — `include_bytes!()` embedded in binary. Monospace font (NotoSansMono-Regular.ttf) to be added to `assets/fonts/`.
 - **Q:** How to handle IME for CJK input?
 
 ---
@@ -618,12 +818,20 @@ VNode diffing must:
 
 **Success Criteria:** Render a simple counter app (button + text).
 
-### Phase 2: Wraith Requirements
+### Phase 2: IDE Requirements (This Spec v0.3.0)
+
+- [ ] Monospace font support (`font-family: monospace` CSS property) — §3.10
+- [ ] Text span API (`native_set_text_spans`) — §3.11
+- [ ] GPU rendering activation (`native_set_render_mode`) — §3.12
+
+**Success Criteria:** Code editor can render syntax-highlighted monospace text at 60fps.
+
+### Phase 3: Wraith Requirements
 
 - [ ] Scrolling containers
 - [ ] Text selection
-- [ ] Clipboard integration
-- [ ] Focus management
+- [ ] Clipboard integration ✅ (Phase 9 complete)
+- [ ] Focus management ✅ (Phase 6 complete)
 - [ ] Cursor styles
 
 **Success Criteria:** Render Wraith IDE with basic functionality.
@@ -728,3 +936,4 @@ fn integration_text_input_receives_keys()
 |---------|------|---------|
 | 0.1.0 | 2025-02-17 | Initial draft |
 | 0.2.0 | 2025-02-17 | Added: KeyCode enum, Layout struct, Pixel struct, NativeEventData struct, event constants, modifier flags. Added FFI: set_root, get_root, get_layout, compute_layout, get_text_content, get_child_count, get_child_at, focus, blur, get_focused, poll_events, poll_event_timeout, now_ms, test simulation functions. Added contracts: coordinate system, focus management, root element, event bubbling. Added default styles table. |
+| 0.3.0 | 2026-02-20 | Added §3.10 Monospace Font Support, §3.11 Text Span API, §3.12 GPU Rendering Activation. Updated §4.4 CSS table with font-family. Updated §7.2 (clipboard and font bundling resolved). Reorganized §8 phases to reflect Phase 2 = IDE requirements (monospace, spans, GPU). Context: P0 work for Eidolon IDE migration from Rust/egui → Sigil/Qliphoth. |

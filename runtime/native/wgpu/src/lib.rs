@@ -3133,9 +3133,11 @@ fn run_gpu_event_loop() {
 
     impl ApplicationHandler for App {
         fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+            eprintln!("[RESUMED] resumed() called");
             // Initialize all pending windows
             let mut state = STATE.lock();
             let handles: Vec<usize> = state.windows.keys().copied().collect();
+            eprintln!("[RESUMED] pending window handles: {:?}", handles);
 
             for handle in handles {
                 let win_state = match state.windows.get(&handle) {
@@ -3156,12 +3158,18 @@ fn run_gpu_event_loop() {
                     .with_title("Qliphoth Application")
                     .with_inner_size(winit::dpi::PhysicalSize::new(width, height));
 
+                eprintln!("[RESUMED] creating window for handle {}", handle);
                 match event_loop.create_window(window_attrs) {
                     Ok(window) => {
                         let window = Arc::new(window);
                         let window_id = window.id();
+                        eprintln!("[RESUMED] winit window created: {:?}", window_id);
 
-                        // Initialize GPU
+                        // Always register the window ID so events are dispatched.
+                        self.windows.insert(window_id, handle);
+
+                        // Initialize GPU — fall back to software if unavailable
+                        // (e.g., Xvfb / headless CI / no discrete GPU).
                         match initialize_gpu(window.clone(), width, height) {
                             Ok(gpu_state) => {
                                 if let Some(win) = state.windows.get_mut(&handle) {
@@ -3169,11 +3177,16 @@ fn run_gpu_event_loop() {
                                     win.winit_window = Some(window);
                                     win.render_mode = RenderMode::Gpu;
                                 }
-                                self.windows.insert(window_id, handle);
                                 log::info!("GPU initialized for window {}", handle);
                             }
                             Err(e) => {
-                                log::error!("GPU init failed: {}, using software rendering", e);
+                                log::warn!("GPU init failed: {}, using software rendering", e);
+                                // Keep the window alive in software mode so the event
+                                // loop stays running and the user sees a window.
+                                if let Some(win) = state.windows.get_mut(&handle) {
+                                    win.winit_window = Some(window);
+                                    win.render_mode = RenderMode::Software;
+                                }
                             }
                         }
                     }
@@ -3315,14 +3328,19 @@ fn run_gpu_event_loop() {
     }
 
     // Create and run event loop
+    eprintln!("[EVENT-LOOP] Creating event loop...");
     let event_loop = EventLoop::new().expect("Failed to create event loop");
+    eprintln!("[EVENT-LOOP] Event loop created");
     event_loop.set_control_flow(ControlFlow::Poll);
 
     let mut app = App {
         windows: HashMap::new(),
     };
 
-    if let Err(e) = event_loop.run_app(&mut app) {
+    eprintln!("[EVENT-LOOP] Starting run_app...");
+    let result = event_loop.run_app(&mut app);
+    eprintln!("[EVENT-LOOP] run_app returned: {:?}", result);
+    if let Err(e) = result {
         log::error!("Event loop error: {}", e);
     }
 }
@@ -5891,6 +5909,25 @@ impl AppState {
 
         log::debug!("cleanup_window: destroyed window {} with root {:?}", window_handle, root);
     }
+}
+
+// =============================================================================
+// OQ2/OQ3: Message dispatch and system colour-scheme stubs
+// These are called by the NativePlatform Sigil code. Full implementations are
+// deferred; stubs allow the binary to link and launch.
+// =============================================================================
+
+/// Post a synthetic callback event to the event loop (OQ2).
+/// Stub: no-op until the inter-actor message dispatch is wired up.
+#[no_mangle]
+pub extern "C" fn native_post_message(_callback_id: u64) {}
+
+/// Query the OS colour-scheme preference (OQ3).
+/// Returns 0 = dark, 1 = light, -1 = unknown/unsupported.
+/// Stub: always returns -1 (unknown) until D-Bus / portal query is implemented.
+#[no_mangle]
+pub extern "C" fn native_system_color_scheme() -> i32 {
+    -1
 }
 
 // =============================================================================
